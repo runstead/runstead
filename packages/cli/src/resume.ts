@@ -2,6 +2,7 @@ import type { Task } from "@runstead/core";
 import { createRunsteadId, type JsonObject, type RunsteadEvent } from "@runstead/core";
 import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sqlite";
 
+import { withRunsteadManagerLock } from "./manager-lock.js";
 import { listTasks } from "./tasks.js";
 
 export interface InterruptedTask {
@@ -60,6 +61,14 @@ export function findInterruptedTasks(
 }
 
 export function resumeInterruptedTasks(
+  options: ResumeInterruptedTasksOptions = {}
+): Promise<ResumeInterruptedTasksResult> {
+  return withRunsteadManagerLock(options, async () =>
+    resumeInterruptedTasksUnlocked(options)
+  );
+}
+
+function resumeInterruptedTasksUnlocked(
   options: ResumeInterruptedTasksOptions = {}
 ): ResumeInterruptedTasksResult {
   const detected = findInterruptedTasks(options);

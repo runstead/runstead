@@ -2,6 +2,7 @@ import { resolve } from "node:path";
 
 import type { Task } from "@runstead/core";
 
+import { withRunsteadManagerLock } from "./manager-lock.js";
 import { listTasks } from "./tasks.js";
 import {
   runTaskVerifiers,
@@ -29,6 +30,11 @@ export interface RunOnceExecutedTaskResult {
 
 export async function runOnce(options: RunOnceOptions = {}): Promise<RunOnceResult> {
   const cwd = resolve(options.cwd ?? process.cwd());
+
+  return withRunsteadManagerLock({ cwd }, async () => runOnceUnlocked(cwd));
+}
+
+async function runOnceUnlocked(cwd: string): Promise<RunOnceResult> {
   const task = pickNextQueuedTask(cwd);
 
   if (task !== undefined) {

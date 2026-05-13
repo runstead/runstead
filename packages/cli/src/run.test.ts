@@ -2,7 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import type { Task } from "@runstead/core";
+import { acquireManagerLock, type Task } from "@runstead/core";
 import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sqlite";
 import { describe, expect, it } from "vitest";
 
@@ -39,6 +39,28 @@ describe("runOnce", () => {
       expect(formatRunOnceReport(result)).toBe(
         "Runstead run --once\nStatus: idle\nReason: no queued task"
       );
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("refuses to run while another manager holds the workspace lock", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-run-"));
+
+    try {
+      const initialized = await initRunstead({ cwd: workspace });
+      const lock = await acquireManagerLock({
+        lockPath: join(initialized.root, "manager.lock"),
+        ownerId: "test-manager"
+      });
+
+      try {
+        await expect(runOnce({ cwd: workspace })).rejects.toThrow(
+          "Runstead manager lock is already held"
+        );
+      } finally {
+        await lock.release();
+      }
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }

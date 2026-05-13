@@ -9,6 +9,7 @@ import {
 import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sqlite";
 
 import { listGoals } from "./goals.js";
+import { withRunsteadManagerLock } from "./manager-lock.js";
 import { requireRunsteadStateDbSync } from "./runstead-root.js";
 import { buildRunLocalVerifiersTask, listTasks } from "./tasks.js";
 
@@ -49,6 +50,19 @@ const ACTIVE_TASK_STATUSES = new Set(["queued", "claimed", "running"]);
 
 export async function scheduleDueTasks(
   options: ScheduleDueTasksOptions = {}
+): Promise<ScheduleDueTasksResult> {
+  const cwd = resolve(options.cwd ?? process.cwd());
+
+  return withRunsteadManagerLock({ cwd }, async () =>
+    scheduleDueTasksUnlocked({
+      ...options,
+      cwd
+    })
+  );
+}
+
+async function scheduleDueTasksUnlocked(
+  options: ScheduleDueTasksOptions
 ): Promise<ScheduleDueTasksResult> {
   const cwd = resolve(options.cwd ?? process.cwd());
   const stateDb = requireRunsteadStateDbSync(cwd).stateDb;

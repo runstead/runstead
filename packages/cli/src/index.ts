@@ -99,7 +99,7 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     .option("--cwd <path>", "Workspace directory")
     .action(async (options: { cwd?: string }) => {
       const { resumeInterruptedTasks } = await import("./resume.js");
-      const result = resumeInterruptedTasks(options);
+      const result = await resumeInterruptedTasks(options);
 
       console.log(`Requeued tasks: ${result.requeuedTasks.length}`);
       for (const item of result.requeuedTasks) {

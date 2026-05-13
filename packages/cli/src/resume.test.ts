@@ -74,7 +74,7 @@ describe("findInterruptedTasks", () => {
         now: new Date("2026-05-14T07:11:00.000Z")
       });
 
-      const result = resumeInterruptedTasks({
+      const result = await resumeInterruptedTasks({
         cwd: workspace,
         now: new Date("2026-05-14T07:12:00.000Z")
       });
@@ -150,7 +150,7 @@ describe("findInterruptedTasks", () => {
         database.close();
       }
 
-      const result = resumeInterruptedTasks({
+      const result = await resumeInterruptedTasks({
         cwd: workspace,
         now: new Date("2026-05-14T07:22:00.000Z")
       });
