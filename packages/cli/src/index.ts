@@ -106,6 +106,24 @@ export function createProgram(): Command {
       }
     });
 
+  program
+    .command("run")
+    .description("Run local work.")
+    .option("--once", "Run at most one task")
+    .option("--cwd <path>", "Workspace directory")
+    .action(async (options: { once?: boolean; cwd?: string }) => {
+      if (options.once !== true) {
+        throw new Error("Only --once is supported in v0.0.1");
+      }
+
+      const { runOnce } = await import("./run.js");
+      const result = runOnce(options);
+
+      if (!result.ranTask) {
+        console.log("No task was run.");
+      }
+    });
+
   const goal = program.command("goal").description("Manage durable goals.");
 
   goal
