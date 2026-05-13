@@ -31,6 +31,7 @@ export interface WrappedWorkerPromptInput {
 export interface WrappedWorkerRunOptions extends WrappedWorkerPromptInput {
   runner?: WorkerProcessRunner;
   checkpointDir?: string;
+  checkpointBefore?: WorkspaceCheckpoint;
   checkpointRunner?: GitCheckpointRunner;
   env?: Record<string, string>;
 }
@@ -122,7 +123,8 @@ export async function startWrappedWorker(
   const prompt = buildWrappedWorkerPrompt(options);
   const command = workerCommand(options.worker, prompt);
   const checkpointBefore =
-    options.checkpointDir === undefined
+    options.checkpointBefore ??
+    (options.checkpointDir === undefined
       ? undefined
       : await createWorkspaceCheckpoint({
           workspace: options.workspace,
@@ -130,7 +132,7 @@ export async function startWrappedWorker(
           ...(options.checkpointRunner === undefined
             ? {}
             : { runner: options.checkpointRunner })
-        });
+        }));
   const result = await (options.runner ?? runWorkerProcess)(
     command.command,
     command.args,

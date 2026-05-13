@@ -169,4 +169,54 @@ describe("startWrappedWorker", () => {
       await rm(workspace, { force: true, recursive: true });
     }
   });
+
+  it("reuses a precreated checkpoint without creating another one", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-worker-"));
+    const checkpointDir = join(workspace, ".runstead", "checkpoints");
+    const gitCalls: string[][] = [];
+    const runner: WorkerProcessRunner = () =>
+      Promise.resolve({
+        stdout: '{"summary":"done"}',
+        stderr: "",
+        exitCode: 0
+      });
+
+    try {
+      const result = await startWrappedWorker({
+        worker: "codex_cli",
+        goal,
+        task,
+        workspace,
+        evidenceDir: join(workspace, ".runstead", "evidence"),
+        checkpointDir,
+        checkpointBefore: {
+          id: "chk_precreated",
+          workspace,
+          checkpointDir,
+          metadataPath: join(checkpointDir, "chk_precreated.json"),
+          statusPath: join(checkpointDir, "chk_precreated.status.txt"),
+          patchPath: join(checkpointDir, "chk_precreated.patch"),
+          untrackedDir: join(checkpointDir, "chk_precreated.untracked"),
+          untrackedFiles: [],
+          head: "abc123",
+          createdAt: "2026-05-14T00:00:00.000Z"
+        },
+        checkpointRunner: (args) => {
+          gitCalls.push(args);
+
+          return Promise.resolve({
+            stdout: "",
+            stderr: "",
+            exitCode: 0
+          });
+        },
+        runner
+      });
+
+      expect(result.checkpointBefore?.id).toBe("chk_precreated");
+      expect(gitCalls).toEqual([]);
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
 });
