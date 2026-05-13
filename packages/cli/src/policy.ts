@@ -100,6 +100,24 @@ export const DEFAULT_EXTERNAL_WRITE_SIDE_EFFECTS = [
   "git_push",
   "github_pr_create"
 ];
+export const DEFAULT_READ_WORKSPACE_ACTION_TYPES = [
+  "filesystem.read",
+  "git.status",
+  "git.diff",
+  "github.run.read",
+  "github.run.log.read"
+];
+export const DEFAULT_CI_REPAIR_WORKSPACE_ACTION_TYPES = [
+  "git.branch.create",
+  "checkpoint.create",
+  "checkpoint.restore",
+  "worker.external.start"
+];
+export const CI_REPAIR_WORKSPACE_OBLIGATIONS = [
+  "capture_output",
+  "attach_as_evidence",
+  "verify_diff_scope"
+];
 
 export const DEFAULT_DANGEROUS_SHELL_COMMAND_PATTERNS = [
   ".*rm -rf.*",
@@ -172,8 +190,51 @@ export function createRepoMaintenanceMinimumPolicy(
           ? {}
           : { paths: options.dependencyChangePaths })
       }).rules,
+      ...createReadWorkspaceAllowPolicy().rules,
+      ...createCiRepairWorkspaceActionAllowPolicy().rules,
       ...createVerifierCommandAllowPolicy(options.verifierCommandPatterns).rules,
       ...createExternalWriteApprovalPolicy(options.externalWriteSideEffects).rules
+    ]
+  };
+}
+
+export function createReadWorkspaceAllowPolicy(
+  actionTypes = DEFAULT_READ_WORKSPACE_ACTION_TYPES,
+  id = "policy_read_workspace_allow_v1"
+): PolicyProfile {
+  return {
+    id,
+    version: 1,
+    rules: [
+      {
+        id: "allow_read_workspace",
+        when: {
+          actionType: actionTypes
+        },
+        decision: "allow",
+        risk: "low"
+      }
+    ]
+  };
+}
+
+export function createCiRepairWorkspaceActionAllowPolicy(
+  actionTypes = DEFAULT_CI_REPAIR_WORKSPACE_ACTION_TYPES,
+  id = "policy_ci_repair_workspace_allow_v1"
+): PolicyProfile {
+  return {
+    id,
+    version: 1,
+    rules: [
+      {
+        id: "allow_ci_repair_workspace_actions",
+        when: {
+          actionType: actionTypes
+        },
+        decision: "allow",
+        risk: "medium",
+        obligations: CI_REPAIR_WORKSPACE_OBLIGATIONS
+      }
     ]
   };
 }

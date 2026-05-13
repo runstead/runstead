@@ -48,6 +48,33 @@ default_decision: require_approval
 default_risk: medium
 
 rules:
+  - id: allow_read_workspace
+    when:
+      action_type:
+        in:
+          - filesystem.read
+          - git.status
+          - git.diff
+          - github.run.read
+          - github.run.log.read
+    decision: allow
+    risk: low
+
+  - id: allow_ci_repair_workspace_actions
+    when:
+      action_type:
+        in:
+          - git.branch.create
+          - checkpoint.create
+          - checkpoint.restore
+          - worker.external.start
+    decision: allow
+    risk: medium
+    obligations:
+      - capture_output
+      - attach_as_evidence
+      - verify_diff_scope
+
   - id: allow_verifier_commands
     when:
       action_type: shell.exec

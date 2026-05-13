@@ -4,10 +4,13 @@ import { describe, expect, it } from "vitest";
 
 import {
   VERIFIER_COMMAND_OBLIGATIONS,
+  CI_REPAIR_WORKSPACE_OBLIGATIONS,
+  createCiRepairWorkspaceActionAllowPolicy,
   createDangerousShellDenyPolicy,
   createDependencyChangeApprovalPolicy,
   createExternalWriteApprovalPolicy,
   createProtectedPathDenyPolicy,
+  createReadWorkspaceAllowPolicy,
   createRepoMaintenanceMinimumPolicy,
   createVerifierCommandAllowPolicy,
   evaluatePolicy
@@ -23,6 +26,8 @@ const verifierCommandPolicy = createVerifierCommandAllowPolicy();
 const externalWritePolicy = createExternalWriteApprovalPolicy();
 const dangerousShellPolicy = createDangerousShellDenyPolicy();
 const dependencyChangePolicy = createDependencyChangeApprovalPolicy();
+const readWorkspacePolicy = createReadWorkspaceAllowPolicy();
+const ciRepairWorkspacePolicy = createCiRepairWorkspaceActionAllowPolicy();
 const minimumPolicy = createRepoMaintenanceMinimumPolicy({
   protectedPaths: [".env", ".env.*", "**/secrets/**", "infra/prod/**"]
 });
@@ -248,6 +253,41 @@ describe("evaluatePolicy external write rules", () => {
       risk: "critical",
       ruleId: "deny_protected_paths",
       matchedPath: ".env"
+    });
+  });
+});
+
+describe("evaluatePolicy CI repair workspace action rules", () => {
+  it("allows GitHub workflow run reads as read-only actions", () => {
+    const result = evaluatePolicy({
+      policy: readWorkspacePolicy,
+      action: {
+        actionId: "act_run_log",
+        actionType: "github.run.log.read"
+      }
+    });
+
+    expect(result).toMatchObject({
+      decision: "allow",
+      risk: "low",
+      ruleId: "allow_read_workspace"
+    });
+  });
+
+  it("allows governed local CI repair workspace actions", () => {
+    const result = evaluatePolicy({
+      policy: ciRepairWorkspacePolicy,
+      action: {
+        actionId: "act_worker",
+        actionType: "worker.external.start"
+      }
+    });
+
+    expect(result).toMatchObject({
+      decision: "allow",
+      risk: "medium",
+      ruleId: "allow_ci_repair_workspace_actions",
+      obligations: CI_REPAIR_WORKSPACE_OBLIGATIONS
     });
   });
 });
