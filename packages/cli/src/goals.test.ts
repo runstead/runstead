@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { cp, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -170,6 +170,34 @@ describe("createGoal", () => {
       expect(listed.goals).toEqual([created.goal]);
       expect(shown.goal).toEqual(created.goal);
       expect(shown.stateDb).toBe(created.stateDb);
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("creates and reads goals from a legacy .team workspace", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-goal-team-"));
+
+    try {
+      await initRunstead({ cwd: workspace });
+      await cp(join(workspace, ".runstead"), join(workspace, ".team"), {
+        recursive: true
+      });
+      await rm(join(workspace, ".runstead"), { force: true, recursive: true });
+
+      const created = await createGoal({
+        cwd: workspace,
+        domain: "repo-maintenance",
+        title: "Legacy team goal",
+        now: new Date("2026-05-14T02:10:00.000Z")
+      });
+      const listed = listGoals({ cwd: workspace });
+      const shown = showGoal({ cwd: workspace, id: created.goal.id });
+
+      expect(created.stateDb).toBe(join(workspace, ".team", "state.db"));
+      expect(listed.stateDb).toBe(join(workspace, ".team", "state.db"));
+      expect(listed.goals).toEqual([created.goal]);
+      expect(shown.goal).toEqual(created.goal);
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }

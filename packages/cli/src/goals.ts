@@ -12,6 +12,7 @@ import { loadDomainPackBundleFromDir } from "@runstead/domain-packs";
 import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sqlite";
 
 import { inspectGitRepository } from "./repo-inspection.js";
+import { resolveRunsteadRoot, resolveRunsteadRootSync } from "./runstead-root.js";
 import { buildRunLocalVerifiersTask } from "./tasks.js";
 
 export interface CreateGoalOptions {
@@ -53,7 +54,7 @@ export async function createGoal(
   options: CreateGoalOptions
 ): Promise<CreateGoalResult> {
   const cwd = resolve(options.cwd ?? process.cwd());
-  const root = join(cwd, ".runstead");
+  const root = (await resolveRunsteadRoot(cwd)).root;
   const stateDb = join(root, "state.db");
   const bundle = await loadDomainPackBundleFromDir(
     join(root, "domains", options.domain)
@@ -209,7 +210,7 @@ function goalScope(input: {
 }
 
 function resolveStateDb(cwd = process.cwd()): string {
-  return join(resolve(cwd), ".runstead", "state.db");
+  return join(resolveRunsteadRootSync(cwd).root, "state.db");
 }
 
 interface GoalRow {
