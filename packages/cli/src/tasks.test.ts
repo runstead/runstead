@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { cp, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -108,6 +108,47 @@ describe("task queries", () => {
         aggregateType: "task",
         aggregateId: task.id
       });
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("reads and claims tasks from a legacy .team workspace", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-task-team-"));
+
+    try {
+      await initRunstead({ cwd: workspace });
+
+      const goal = await createGoal({
+        cwd: workspace,
+        domain: "repo-maintenance",
+        now: new Date("2026-05-14T03:20:00.000Z")
+      });
+      const task = goal.generatedTasks[0];
+
+      if (task === undefined) {
+        throw new Error("Expected createGoal to generate run_local_verifiers task");
+      }
+
+      await cp(join(workspace, ".runstead"), join(workspace, ".team"), {
+        recursive: true
+      });
+      await rm(join(workspace, ".runstead"), { force: true, recursive: true });
+
+      const listed = listTasks({ cwd: workspace });
+      const shown = showTask({ cwd: workspace, id: task.id });
+      const claimed = claimTask({
+        cwd: workspace,
+        id: task.id,
+        now: new Date("2026-05-14T03:21:00.000Z")
+      });
+
+      expect(listed.stateDb).toBe(join(workspace, ".team", "state.db"));
+      expect(listed.tasks).toEqual([task]);
+      expect(shown.task).toEqual(task);
+      expect(claimed.stateDb).toBe(join(workspace, ".team", "state.db"));
+      expect(claimed.task.status).toBe("claimed");
+      expect(showTask({ cwd: workspace, id: task.id }).task.status).toBe("claimed");
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }
