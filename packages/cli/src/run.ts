@@ -83,5 +83,10 @@ export function formatRunOnceReport(result: RunOnceResult): string {
 }
 
 export function runOnceExitCode(result: RunOnceResult): number {
-  return result.ranTask && result.task.status === "failed" ? 1 : 0;
+  return result.ranTask &&
+    (result.task.status === "failed" ||
+      result.task.status === "blocked" ||
+      result.task.status === "waiting_approval")
+    ? 1
+    : 0;
 }
