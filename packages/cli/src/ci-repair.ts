@@ -18,8 +18,12 @@ import {
   type GitHubWorkflowRunLog,
   type GitHubWorkflowRunStatus
 } from "./github-actions.js";
+import { runGovernedToolAction } from "./governed-action.js";
 import { listGoals } from "./goals.js";
+import { loadPolicyProfileFromFile } from "./policy-loader.js";
+import type { ActionEnvelope } from "./policy.js";
 import { requireRunsteadStateDbSync } from "./runstead-root.js";
+import { finishWorkerRun, startWorkerRun } from "./runtime-audit.js";
 import type { CommandVerifierInput } from "./verifier-evidence.js";
 
 export interface CreateCiRepairTaskOptions {
@@ -27,6 +31,7 @@ export interface CreateCiRepairTaskOptions {
   runId: string;
   runner?: GitHubCliRunner;
   verifierCommands?: CommandVerifierInput[];
+  governed?: boolean;
   now?: Date;
 }
 
@@ -57,6 +62,10 @@ const CI_LOG_EVIDENCE_METADATA = {
 export async function createCiRepairTaskFromWorkflowRun(
   options: CreateCiRepairTaskOptions
 ): Promise<CreateCiRepairTaskResult> {
+  if (options.governed === true) {
+    return createGovernedCiRepairTaskFromWorkflowRun(options);
+  }
+
   const cwd = resolve(options.cwd ?? process.cwd());
   const resolvedState = requireRunsteadStateDbSync(cwd);
   const createdAt = (options.now ?? new Date()).toISOString();
@@ -211,6 +220,262 @@ export async function createCiRepairTaskFromWorkflowRun(
   };
 }
 
+async function createGovernedCiRepairTaskFromWorkflowRun(
+  options: CreateCiRepairTaskOptions
+): Promise<CreateCiRepairTaskResult> {
+  const cwd = resolve(options.cwd ?? process.cwd());
+  const resolvedState = requireRunsteadStateDbSync(cwd);
+  const createdAt = (options.now ?? new Date()).toISOString();
+  const goal = listGoals({ cwd }).goals.find(
+    (candidate) =>
+      candidate.domain === "repo-maintenance" && candidate.status === "active"
+  );
+
+  if (goal === undefined) {
+    throw new Error("No active repo-maintenance goal found for CI repair");
+  }
+
+  const task: Task = {
+    id: createRunsteadId("task"),
+    goalId: goal.id,
+    domain: "repo-maintenance",
+    type: "ci_repair",
+    status: "queued",
+    priority: "high",
+    attempt: 0,
+    maxAttempts: 1,
+    input: {
+      source: "github_actions",
+      runId: options.runId,
+      intake: {
+        governed: true
+      },
+      ...(options.verifierCommands === undefined
+        ? {}
+        : { commands: options.verifierCommands })
+    },
+    verifiers: [
+      "evidence:github_workflow_run",
+      ...(options.verifierCommands ?? []).map((command) => `command:${command.name}`),
+      ...(options.verifierCommands === undefined ? ["command:local_verifiers"] : [])
+    ],
+    createdAt,
+    updatedAt: createdAt
+  };
+  const taskCreatedEvent: RunsteadEvent = {
+    eventId: createRunsteadId("evt"),
+    type: "task.created",
+    aggregateType: "task",
+    aggregateId: task.id,
+    payload: {
+      goalId: task.goalId,
+      type: task.type,
+      runId: options.runId,
+      intake: "governed"
+    },
+    createdAt
+  };
+  const database = openRunsteadDatabase(resolvedState.stateDb);
+
+  try {
+    appendEventAndProject(database, {
+      event: taskCreatedEvent,
+      projection: {
+        type: "task",
+        value: task
+      }
+    });
+
+    const policy = await loadPolicyProfileFromFile(
+      join(resolvedState.root, "policies", "repo-maintenance.yaml")
+    );
+    const workerRun = startWorkerRun({
+      database,
+      task,
+      workerType: "ci_repair_intake",
+      enforcementLevel: "policy_enforced",
+      ...(options.now === undefined ? {} : { now: options.now })
+    });
+    const [workflowRunResult, logResult] = await Promise.all([
+      runGovernedToolAction({
+        cwd,
+        stateDb: resolvedState.stateDb,
+        database,
+        policy,
+        task,
+        workerRun,
+        action: githubRunReadAction({ task, cwd, runId: options.runId }),
+        requestedBy: "runstead:ci-repair",
+        ...(options.now === undefined ? {} : { now: options.now }),
+        run: async () => {
+          const value = await getGitHubWorkflowRunStatus({
+            cwd,
+            runId: options.runId,
+            ...(options.runner === undefined ? {} : { runner: options.runner })
+          });
+
+          return {
+            value,
+            output: {
+              runId: value.runId,
+              status: value.status,
+              ...(value.conclusion === undefined
+                ? {}
+                : { conclusion: value.conclusion })
+            }
+          };
+        }
+      }),
+      runGovernedToolAction({
+        cwd,
+        stateDb: resolvedState.stateDb,
+        database,
+        policy,
+        task,
+        workerRun,
+        action: githubRunLogReadAction({ task, cwd, runId: options.runId }),
+        requestedBy: "runstead:ci-repair",
+        ...(options.now === undefined ? {} : { now: options.now }),
+        run: async () => {
+          const value = await fetchGitHubWorkflowRunLog({
+            cwd,
+            runId: options.runId,
+            ...(options.runner === undefined ? {} : { runner: options.runner })
+          });
+
+          return {
+            value,
+            output: {
+              runId: value.runId,
+              byteLength: value.byteLength,
+              trust: CI_LOG_EVIDENCE_METADATA.trust
+            }
+          };
+        }
+      })
+    ]);
+    const workflowRun = workflowRunResult.value;
+    const evidenceLog = redactGitHubWorkflowRunLog(logResult.value);
+
+    assertRepairableWorkflowRun(workflowRun);
+
+    const finalTask: Task = {
+      ...task,
+      input: {
+        source: "github_actions",
+        runId: workflowRun.runId,
+        workflowRun,
+        logEvidenceType: "github_workflow_run",
+        logEvidenceMetadata: CI_LOG_EVIDENCE_METADATA,
+        repairPlan: {
+          fetchLog: true,
+          classifyFailure: true,
+          runLocalVerifiers: true,
+          createPullRequestWithEvidence: true
+        },
+        ...(options.verifierCommands === undefined
+          ? {}
+          : { commands: options.verifierCommands })
+      },
+      updatedAt: createdAt
+    };
+    const evidenceArtifact = {
+      schemaVersion: 1,
+      createdAt,
+      taskId: finalTask.id,
+      goalId: finalTask.goalId,
+      metadata: CI_LOG_EVIDENCE_METADATA,
+      workflowRun,
+      log: evidenceLog
+    };
+    const evidenceContents = `${JSON.stringify(evidenceArtifact, null, 2)}\n`;
+    const evidenceId = createRunsteadId("ev");
+    const evidenceDir = join(resolvedState.root, "evidence");
+    const evidencePath = join(
+      evidenceDir,
+      `github-workflow-run-${workflowRun.runId}-${evidenceId}.json`
+    );
+    const evidence: Evidence = {
+      id: evidenceId,
+      type: "github_workflow_run",
+      subjectType: "task",
+      subjectId: finalTask.id,
+      uri: pathToFileURL(evidencePath).href,
+      hash: sha256(evidenceContents),
+      summary: workflowRunSummary(workflowRun, evidenceLog),
+      createdAt
+    };
+    const evidenceEvent: RunsteadEvent = {
+      eventId: createRunsteadId("evt"),
+      type: "evidence.recorded",
+      aggregateType: "evidence",
+      aggregateId: evidence.id,
+      payload: {
+        evidenceId: evidence.id,
+        evidenceType: evidence.type,
+        taskId: finalTask.id,
+        uri: evidence.uri,
+        hash: evidence.hash,
+        summary: evidence.summary,
+        metadata: CI_LOG_EVIDENCE_METADATA
+      },
+      createdAt
+    };
+
+    await mkdir(evidenceDir, { recursive: true });
+    await writeFile(evidencePath, evidenceContents, "utf8");
+    appendEventAndProject(database, {
+      event: evidenceEvent,
+      projection: {
+        type: "evidence",
+        value: evidence
+      }
+    });
+    appendEventAndProject(database, {
+      event: {
+        eventId: createRunsteadId("evt"),
+        type: "task.updated",
+        aggregateType: "task",
+        aggregateId: finalTask.id,
+        payload: {
+          runId: workflowRun.runId,
+          workflowName: workflowRun.workflowName,
+          conclusion: workflowRun.conclusion,
+          evidenceId: evidence.id
+        },
+        createdAt
+      },
+      projection: {
+        type: "task",
+        value: finalTask
+      }
+    });
+    finishWorkerRun({
+      database,
+      workerRun,
+      status: "completed",
+      output: {
+        workflowRun: workflowRun.runId,
+        evidenceId: evidence.id
+      },
+      ...(options.now === undefined ? {} : { now: options.now })
+    });
+
+    return {
+      cwd,
+      stateDb: resolvedState.stateDb,
+      task: finalTask,
+      event: taskCreatedEvent,
+      evidence,
+      evidencePath,
+      workflowRun,
+      log: evidenceLog
+    };
+  } finally {
+    database.close();
+  }
+}
+
 export function formatCiRepairTaskReport(result: CreateCiRepairTaskResult): string {
   return [
     "Runstead CI repair task",
@@ -259,7 +524,9 @@ export function repairableWorkflowRunIdFromWebhook(
 
 function assertRepairableWorkflowRun(status: GitHubWorkflowRunStatus): void {
   if (status.status !== "completed") {
-    throw new Error(`Workflow run ${status.runId} is ${status.status}, expected completed`);
+    throw new Error(
+      `Workflow run ${status.runId} is ${status.status}, expected completed`
+    );
   }
 
   if (
@@ -307,6 +574,53 @@ function redactSecretLikeValues(value: string): string {
       /\b([A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|KEY)[A-Z0-9_]*)=([^\s]+)/gi,
       "$1=[REDACTED]"
     );
+}
+
+function githubRunReadAction(input: {
+  task: Task;
+  cwd: string;
+  runId: string;
+}): ActionEnvelope {
+  return {
+    actionId: stableActionId("github_run_read", [input.task.id, input.runId]),
+    actionType: "github.run.read",
+    resource: {
+      type: "workflow_run",
+      id: input.runId
+    },
+    context: {
+      cwd: input.cwd,
+      networkDomains: ["github.com"]
+    }
+  };
+}
+
+function githubRunLogReadAction(input: {
+  task: Task;
+  cwd: string;
+  runId: string;
+}): ActionEnvelope {
+  return {
+    actionId: stableActionId("github_run_log_read", [input.task.id, input.runId]),
+    actionType: "github.run.log.read",
+    resource: {
+      type: "workflow_run",
+      id: input.runId
+    },
+    context: {
+      cwd: input.cwd,
+      networkDomains: ["github.com"]
+    }
+  };
+}
+
+function stableActionId(prefix: string, parts: unknown[]): string {
+  const hash = createHash("sha256")
+    .update(JSON.stringify(parts))
+    .digest("hex")
+    .slice(0, 12);
+
+  return `act_${prefix}_${hash}`;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -79,6 +79,14 @@ describe("runCiRepairOrchestrator", () => {
         expect(toolCalls).toEqual(
           expect.arrayContaining([
             expect.objectContaining({
+              action_type: "github.run.read",
+              status: "completed"
+            }),
+            expect.objectContaining({
+              action_type: "github.run.log.read",
+              status: "completed"
+            }),
+            expect.objectContaining({
               action_type: "git.branch.create",
               status: "completed"
             }),
