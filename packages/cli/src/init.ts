@@ -2,9 +2,11 @@ import { constants } from "node:fs";
 import { access, copyFile, mkdir, readdir, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
+import type { Goal, Task } from "@runstead/core";
 import { getRepoMaintenancePackDir } from "@runstead/domain-packs";
 import { openRunsteadDatabase } from "@runstead/state-sqlite";
 
+import { createGoal } from "./goals.js";
 import { storeRepoInspectionEvidence } from "./inspection-evidence.js";
 import { DEFAULT_RBAC_YAML } from "./rbac.js";
 import { DEFAULT_TEAM_POLICY_YAML } from "./team-policy.js";
@@ -12,12 +14,15 @@ import { DEFAULT_TEAM_POLICY_YAML } from "./team-policy.js";
 export interface InitRunsteadOptions {
   cwd?: string;
   force?: boolean;
+  createDefaultGoal?: boolean;
 }
 
 export interface InitRunsteadResult {
   root: string;
   domain: "repo-maintenance";
   stateDb: string;
+  defaultGoal?: Goal;
+  generatedTasks: Task[];
 }
 
 const DEFAULT_CONFIG = `version: 1
@@ -160,10 +165,19 @@ export async function initRunstead(
     database.close();
   }
 
+  const createdGoal = options.createDefaultGoal
+    ? await createGoal({
+        cwd,
+        domain: "repo-maintenance"
+      })
+    : undefined;
+
   return {
     root,
     domain: "repo-maintenance",
-    stateDb
+    stateDb,
+    ...(createdGoal === undefined ? {} : { defaultGoal: createdGoal.goal }),
+    generatedTasks: createdGoal?.generatedTasks ?? []
   };
 }
 

@@ -22,14 +22,29 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     .description("Initialize .runstead state and the repo-maintenance domain pack.")
     .option("--cwd <path>", "Workspace directory")
     .option("--force", "Overwrite generated config files")
-    .action(async (options: { cwd?: string; force?: boolean }) => {
-      const { initRunstead } = await import("./init.js");
-      const result = await initRunstead(options);
+    .option("--create-default-goal", "Create the default repo-maintenance goal")
+    .action(
+      async (options: {
+        cwd?: string;
+        force?: boolean;
+        createDefaultGoal?: boolean;
+      }) => {
+        const { initRunstead } = await import("./init.js");
+        const result = await initRunstead(options);
 
-      console.log(`Initialized ${result.root}`);
-      console.log(`Installed domain pack: ${result.domain}`);
-      console.log(`Created SQLite state: ${result.stateDb}`);
-    });
+        console.log(`Initialized ${result.root}`);
+        console.log(`Installed domain pack: ${result.domain}`);
+        console.log(`Created SQLite state: ${result.stateDb}`);
+        if (result.defaultGoal !== undefined) {
+          console.log(
+            `Created goal: ${result.defaultGoal.id} ${result.defaultGoal.title}`
+          );
+          for (const task of result.generatedTasks) {
+            console.log(`Created task: ${task.id} ${task.type}`);
+          }
+        }
+      }
+    );
 
   program
     .command("status")

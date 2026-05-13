@@ -55,4 +55,36 @@ describe("initRunstead", () => {
       await rm(workspace, { force: true, recursive: true });
     }
   });
+
+  it("can create the default repo-maintenance goal during init", async () => {
+    const workspace = join(tmpdir(), `runstead-cli-goal-${process.pid}`);
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      const result = await initRunstead({
+        cwd: workspace,
+        createDefaultGoal: true
+      });
+
+      const generatedTask = result.generatedTasks[0];
+
+      if (generatedTask === undefined || result.defaultGoal === undefined) {
+        throw new Error("Expected init to create a default goal and task");
+      }
+
+      expect(result.defaultGoal).toMatchObject({
+        domain: "repo-maintenance",
+        title: "Keep repository CI green",
+        status: "active"
+      });
+      expect(result.generatedTasks).toHaveLength(1);
+      expect(generatedTask).toMatchObject({
+        goalId: result.defaultGoal.id,
+        type: "run_local_verifiers",
+        status: "queued"
+      });
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
 });
