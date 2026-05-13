@@ -19,7 +19,13 @@ describe("openRunsteadDatabase", () => {
       database.close();
 
       expect(rows.map((row) => row.name)).toEqual(
-        expect.arrayContaining(["goals", "tasks", "evidence", "events"])
+        expect.arrayContaining([
+          "goals",
+          "tasks",
+          "evidence",
+          "policy_decisions",
+          "events"
+        ])
       );
     } finally {
       await rm(workspace, { force: true, recursive: true });
@@ -72,6 +78,83 @@ describe("appendEventAndProject", () => {
         id: "goal_001",
         status: "active",
         scope_json: JSON.stringify({ repositories: ["local"] })
+      });
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("appends an event and updates a policy decision projection", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-state-"));
+
+    try {
+      const database = openRunsteadDatabase(join(workspace, "state.db"));
+
+      appendEventAndProject(database, {
+        event: {
+          eventId: "evt_policy_decision_001",
+          type: "policy.decision_recorded",
+          aggregateType: "policy_decision",
+          aggregateId: "poldec_001",
+          payload: {
+            actionId: "act_001",
+            decision: "require_approval"
+          },
+          createdAt: "2026-05-14T03:06:00.000Z"
+        },
+        projection: {
+          type: "policyDecision",
+          value: {
+            id: "poldec_001",
+            actionId: "act_001",
+            policyId: "policy_repo_maintenance_v1",
+            decision: "require_approval",
+            risk: "high",
+            ruleId: "require_approval_external_write",
+            reason: "Matched policy rule require_approval_external_write",
+            obligations: [],
+            action: {
+              actionId: "act_001",
+              actionType: "github.pr.create"
+            },
+            result: {
+              decision: "require_approval",
+              risk: "high"
+            },
+            createdAt: "2026-05-14T03:06:00.000Z"
+          }
+        }
+      });
+
+      const decision = database
+        .prepare(
+          `
+          SELECT id, action_id, policy_id, decision, risk, rule_id,
+                 obligations_json
+          FROM policy_decisions
+          WHERE id = ?
+        `
+        )
+        .get("poldec_001") as {
+        id: string;
+        action_id: string;
+        policy_id: string;
+        decision: string;
+        risk: string;
+        rule_id: string;
+        obligations_json: string;
+      };
+
+      database.close();
+
+      expect(decision).toEqual({
+        id: "poldec_001",
+        action_id: "act_001",
+        policy_id: "policy_repo_maintenance_v1",
+        decision: "require_approval",
+        risk: "high",
+        rule_id: "require_approval_external_write",
+        obligations_json: "[]"
       });
     } finally {
       await rm(workspace, { force: true, recursive: true });

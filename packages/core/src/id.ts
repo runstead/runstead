@@ -5,6 +5,7 @@ export type RunsteadIdPrefix =
   | "task"
   | "ev"
   | "evt"
+  | "poldec"
   | "wrun"
   | "tool"
   | "appr";

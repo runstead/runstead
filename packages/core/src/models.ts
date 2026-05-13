@@ -22,6 +22,10 @@ export const TaskStatusSchema = z.enum([
 
 export const PrioritySchema = z.enum(["low", "medium", "high", "critical"]);
 
+export const PolicyDecisionValueSchema = z.enum(["allow", "deny", "require_approval"]);
+
+export const PolicyRiskSchema = z.enum(["low", "medium", "high", "critical"]);
+
 export const GoalSchema = z.object({
   id: z.string().min(1),
   domain: z.string().min(1),
@@ -68,6 +72,22 @@ export const EvidenceSchema = z.object({
 });
 
 export type Evidence = z.infer<typeof EvidenceSchema>;
+
+export const PolicyDecisionRecordSchema = z.object({
+  id: z.string().min(1),
+  actionId: z.string().min(1),
+  policyId: z.string().min(1),
+  decision: PolicyDecisionValueSchema,
+  risk: PolicyRiskSchema,
+  ruleId: z.string().min(1).optional(),
+  reason: z.string().min(1),
+  obligations: z.array(z.string().min(1)),
+  action: JsonObjectSchema,
+  result: JsonObjectSchema,
+  createdAt: z.string().min(1)
+});
+
+export type PolicyDecisionRecord = z.infer<typeof PolicyDecisionRecordSchema>;
 
 export const RunsteadEventSchema = z.object({
   eventId: z.string().min(1),

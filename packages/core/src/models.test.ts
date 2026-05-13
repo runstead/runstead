@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { GoalSchema } from "./models.js";
+import { GoalSchema, PolicyDecisionRecordSchema } from "./models.js";
 
 describe("GoalSchema", () => {
   it("accepts the minimal active goal shape", () => {
@@ -16,5 +16,31 @@ describe("GoalSchema", () => {
     });
 
     expect(goal.domain).toBe("repo-maintenance");
+  });
+});
+
+describe("PolicyDecisionRecordSchema", () => {
+  it("accepts a policy decision audit record", () => {
+    const record = PolicyDecisionRecordSchema.parse({
+      id: "poldec_001",
+      actionId: "act_001",
+      policyId: "policy_repo_maintenance_v1",
+      decision: "require_approval",
+      risk: "high",
+      ruleId: "require_approval_external_write",
+      reason: "Matched policy rule require_approval_external_write",
+      obligations: [],
+      action: {
+        actionId: "act_001",
+        actionType: "github.pr.create"
+      },
+      result: {
+        decision: "require_approval",
+        risk: "high"
+      },
+      createdAt: "2026-05-14T03:06:00.000Z"
+    });
+
+    expect(record.policyId).toBe("policy_repo_maintenance_v1");
   });
 });

@@ -41,6 +41,20 @@ CREATE TABLE IF NOT EXISTS evidence (
   created_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS policy_decisions (
+  id TEXT PRIMARY KEY,
+  action_id TEXT NOT NULL,
+  policy_id TEXT NOT NULL,
+  decision TEXT NOT NULL,
+  risk TEXT NOT NULL,
+  rule_id TEXT,
+  reason TEXT NOT NULL,
+  obligations_json TEXT NOT NULL,
+  action_json TEXT NOT NULL,
+  result_json TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS events (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   event_id TEXT UNIQUE NOT NULL,

@@ -1,7 +1,14 @@
-import type { Evidence, Goal, RunsteadEvent, Task } from "@runstead/core";
+import type {
+  Evidence,
+  Goal,
+  PolicyDecisionRecord,
+  RunsteadEvent,
+  Task
+} from "@runstead/core";
 import {
   EvidenceSchema,
   GoalSchema,
+  PolicyDecisionRecordSchema,
   RunsteadEventSchema,
   TaskSchema
 } from "@runstead/core";
@@ -11,7 +18,8 @@ import type { RunsteadDatabase } from "./index.js";
 export type StateProjection =
   | { type: "goal"; value: Goal }
   | { type: "task"; value: Task }
-  | { type: "evidence"; value: Evidence };
+  | { type: "evidence"; value: Evidence }
+  | { type: "policyDecision"; value: PolicyDecisionRecord };
 
 export interface AppendEventAndProjectInput {
   event: RunsteadEvent;
@@ -77,6 +85,12 @@ function upsertProjection(
       return;
     case "evidence":
       upsertEvidence(database, EvidenceSchema.parse(projection.value));
+      return;
+    case "policyDecision":
+      upsertPolicyDecision(
+        database,
+        PolicyDecisionRecordSchema.parse(projection.value)
+      );
       return;
   }
 }
@@ -208,6 +222,54 @@ function upsertEvidence(database: RunsteadDatabase, evidence: Evidence): void {
       evidence.hash ?? null,
       evidence.summary ?? null,
       evidence.createdAt
+    );
+}
+
+function upsertPolicyDecision(
+  database: RunsteadDatabase,
+  decision: PolicyDecisionRecord
+): void {
+  database
+    .prepare(
+      `
+      INSERT INTO policy_decisions (
+        id,
+        action_id,
+        policy_id,
+        decision,
+        risk,
+        rule_id,
+        reason,
+        obligations_json,
+        action_json,
+        result_json,
+        created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        action_id = excluded.action_id,
+        policy_id = excluded.policy_id,
+        decision = excluded.decision,
+        risk = excluded.risk,
+        rule_id = excluded.rule_id,
+        reason = excluded.reason,
+        obligations_json = excluded.obligations_json,
+        action_json = excluded.action_json,
+        result_json = excluded.result_json,
+        created_at = excluded.created_at
+    `
+    )
+    .run(
+      decision.id,
+      decision.actionId,
+      decision.policyId,
+      decision.decision,
+      decision.risk,
+      decision.ruleId ?? null,
+      decision.reason,
+      JSON.stringify(decision.obligations),
+      JSON.stringify(decision.action),
+      JSON.stringify(decision.result),
+      decision.createdAt
     );
 }
 
