@@ -7,6 +7,7 @@ import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
 
 import {
+  inspectCiProvider,
   inspectGitRepository,
   inspectLintCommand,
   inspectPackageManager,
@@ -245,6 +246,79 @@ describe("inspectLintCommand", () => {
         detected: false,
         scriptName: "lint",
         packageJsonPath: join(workspace, "package.json")
+      });
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+});
+
+describe("inspectCiProvider", () => {
+  it("detects GitHub Actions workflow files", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-ci-provider-"));
+    const workflowsDir = join(workspace, ".github", "workflows");
+
+    try {
+      await mkdir(workflowsDir, { recursive: true });
+      await writeFile(join(workflowsDir, "verify.yml"), "name: verify\n", "utf8");
+
+      const inspection = await inspectCiProvider(workspace);
+
+      expect(inspection).toEqual({
+        detected: true,
+        cwd: workspace,
+        providers: [
+          {
+            provider: "github_actions",
+            configPath: workflowsDir
+          }
+        ]
+      });
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("detects conventional CI config files", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-ci-provider-"));
+    const circleCiDir = join(workspace, ".circleci");
+
+    try {
+      await mkdir(circleCiDir, { recursive: true });
+      await writeFile(join(circleCiDir, "config.yml"), "version: 2.1\n", "utf8");
+      await writeFile(join(workspace, ".gitlab-ci.yml"), "test:\n", "utf8");
+
+      const inspection = await inspectCiProvider(workspace);
+
+      expect(inspection).toEqual({
+        detected: true,
+        cwd: workspace,
+        providers: [
+          {
+            provider: "gitlab_ci",
+            configPath: join(workspace, ".gitlab-ci.yml")
+          },
+          {
+            provider: "circleci",
+            configPath: join(circleCiDir, "config.yml")
+          }
+        ]
+      });
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("returns undetected when no CI config exists", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-ci-provider-"));
+
+    try {
+      const inspection = await inspectCiProvider(workspace);
+
+      expect(inspection).toEqual({
+        detected: false,
+        cwd: workspace,
+        providers: []
       });
     } finally {
       await rm(workspace, { force: true, recursive: true });
