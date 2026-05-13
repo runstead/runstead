@@ -8,6 +8,7 @@ export interface ShellCommandInput {
   env?: Record<string, string | undefined>;
   timeoutMs?: number;
   maxOutputBytes?: number;
+  redactValues?: string[];
 }
 
 export interface ShellCommandResult {
@@ -36,6 +37,11 @@ export function runShellCommand(input: ShellCommandInput): Promise<ShellCommandR
 
   const cwd = resolve(input.cwd ?? process.cwd());
   const maxOutputBytes = input.maxOutputBytes ?? DEFAULT_MAX_OUTPUT_BYTES;
+  const env = {
+    ...process.env,
+    ...input.env
+  };
+  const redactionValues = collectRedactionValues(env, input.redactValues ?? []);
   const startedAt = performance.now();
 
   return new Promise((resolveResult, reject) => {
@@ -44,10 +50,7 @@ export function runShellCommand(input: ShellCommandInput): Promise<ShellCommandR
     const stderr = createOutputCapture(maxOutputBytes);
     const child = spawn(input.command, {
       cwd,
-      env: {
-        ...process.env,
-        ...input.env
-      },
+      env,
       shell: true,
       stdio: ["ignore", "pipe", "pipe"],
       windowsHide: true
@@ -81,14 +84,14 @@ export function runShellCommand(input: ShellCommandInput): Promise<ShellCommandR
       }
 
       resolveResult({
-        command: input.command,
+        command: redactText(input.command, redactionValues),
         cwd,
         exitCode,
         signal,
         durationMs: Math.round(performance.now() - startedAt),
         timedOut,
-        stdout: stdout.contents(),
-        stderr: stderr.contents(),
+        stdout: redactText(stdout.contents(), redactionValues),
+        stderr: redactText(stderr.contents(), redactionValues),
         stdoutTruncated: stdout.truncated,
         stderrTruncated: stderr.truncated
       });
@@ -131,4 +134,42 @@ function createOutputCapture(maxBytes: number): {
       return Buffer.concat(chunks).toString("utf8");
     }
   };
+}
+
+const SENSITIVE_ENV_KEY_PATTERN =
+  /(?:secret|token|password|passwd|pwd|api[_-]?key|private[_-]?key|credential|auth)/i;
+
+function collectRedactionValues(
+  env: Record<string, string | undefined>,
+  explicitValues: string[]
+): string[] {
+  const values = new Set<string>();
+
+  for (const value of explicitValues) {
+    if (value.length > 0) {
+      values.add(value);
+    }
+  }
+
+  for (const [key, value] of Object.entries(env)) {
+    if (
+      value !== undefined &&
+      value.length >= 8 &&
+      SENSITIVE_ENV_KEY_PATTERN.test(key)
+    ) {
+      values.add(value);
+    }
+  }
+
+  return Array.from(values).sort((left, right) => right.length - left.length);
+}
+
+function redactText(input: string, redactionValues: string[]): string {
+  let output = input;
+
+  for (const value of redactionValues) {
+    output = output.split(value).join("[REDACTED]");
+  }
+
+  return output;
 }

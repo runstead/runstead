@@ -57,6 +57,30 @@ describe("runShellCommand", () => {
     expect(result.stdout).toBe("abcd");
     expect(result.stdoutTruncated).toBe(true);
   });
+
+  it("redacts sensitive environment values from command output", async () => {
+    const result = await runShellCommand({
+      command: nodeCommand(
+        "console.log(process.env.RUNSTEAD_TEST_TOKEN); console.error(process.env.RUNSTEAD_TEST_TOKEN);"
+      ),
+      env: {
+        RUNSTEAD_TEST_TOKEN: "secret-token-value"
+      }
+    });
+
+    expect(result.stdout).toBe("[REDACTED]\n");
+    expect(result.stderr).toBe("[REDACTED]\n");
+  });
+
+  it("redacts explicit values from the reported command", async () => {
+    const result = await runShellCommand({
+      command: nodeCommand("process.exit(0)") + " # command-secret-value",
+      redactValues: ["command-secret-value"]
+    });
+
+    expect(result.command).toContain("[REDACTED]");
+    expect(result.command).not.toContain("command-secret-value");
+  });
 });
 
 function nodeCommand(script: string): string {
