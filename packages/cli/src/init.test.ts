@@ -1,4 +1,4 @@
-import { readFile, rm, stat } from "node:fs/promises";
+import { readFile, readdir, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -35,11 +35,15 @@ describe("initRunstead", () => {
         "utf8"
       );
       const database = await stat(result.stateDb);
+      const evidenceFiles = await readdir(join(result.root, "evidence"));
 
       expect(config).toContain("domain: repo-maintenance");
       expect(goalTemplate).toContain("id: keep-ci-green");
       expect(domainPolicy).toContain("id: policy_repo_maintenance_v1");
       expect(database.isFile()).toBe(true);
+      expect(evidenceFiles).toEqual([
+        expect.stringMatching(/^repo-inspection-ev_[a-f0-9]+\.json$/)
+      ]);
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }

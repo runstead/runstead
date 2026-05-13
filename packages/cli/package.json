@@ -26,6 +26,7 @@
     "clean": "rm -rf dist coverage"
   },
   "dependencies": {
+    "@runstead/core": "workspace:*",
     "@runstead/domain-packs": "workspace:*",
     "@runstead/state-sqlite": "workspace:*",
     "commander": "catalog:"

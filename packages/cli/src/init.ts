@@ -5,6 +5,8 @@ import { join, resolve } from "node:path";
 import { getRepoMaintenancePackDir } from "@runstead/domain-packs";
 import { openRunsteadDatabase } from "@runstead/state-sqlite";
 
+import { storeRepoInspectionEvidence } from "./inspection-evidence.js";
+
 export interface InitRunsteadOptions {
   cwd?: string;
   force?: boolean;
@@ -78,7 +80,16 @@ export async function initRunstead(
   );
 
   const database = openRunsteadDatabase(stateDb);
-  database.close();
+
+  try {
+    await storeRepoInspectionEvidence({
+      cwd,
+      runsteadRoot: root,
+      database
+    });
+  } finally {
+    database.close();
+  }
 
   return {
     root,

@@ -77,6 +77,9 @@ importers:
 
   packages/cli:
     dependencies:
+      '@runstead/core':
+        specifier: workspace:*
+        version: link:../core
       '@runstead/domain-packs':
         specifier: workspace:*
         version: link:../domain-packs
