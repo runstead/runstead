@@ -40,6 +40,33 @@ export function createProgram(): Command {
 
       console.log(`Runstead initialized at ${status.root}`);
       console.log(`Domain: ${status.domain ?? "unknown"}`);
+
+      const goals = status.goals ?? [];
+      if (goals.length === 0) {
+        console.log("Goals: none");
+      } else {
+        console.log("Goals:");
+        for (const goal of goals) {
+          console.log(`  ${goal.status.padEnd(9)} ${goal.id} ${goal.title}`);
+        }
+      }
+
+      const taskCounts = status.tasks?.byStatus ?? {};
+      const taskStatuses = Object.keys(taskCounts);
+      if (taskStatuses.length === 0) {
+        console.log("Tasks: none");
+      } else {
+        console.log("Tasks:");
+        for (const taskStatus of taskStatuses) {
+          console.log(`  ${taskStatus.padEnd(9)} ${taskCounts[taskStatus]}`);
+        }
+      }
+
+      if (status.latestEvidence !== undefined) {
+        console.log(
+          `Latest evidence: ${status.latestEvidence.id} ${status.latestEvidence.type}`
+        );
+      }
     });
 
   program
