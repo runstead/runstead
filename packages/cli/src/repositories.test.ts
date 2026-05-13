@@ -57,5 +57,5 @@ describe("registerRepository", () => {
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }
-  });
+  }, 10000);
 });

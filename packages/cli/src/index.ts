@@ -900,7 +900,73 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     );
 
   const github = program.command("github").description("GitHub integration.");
+  const githubApp = github.command("app").description("Use GitHub App mode.");
   const githubRun = github.command("run").description("Inspect GitHub workflow runs.");
+
+  githubApp
+    .command("init")
+    .description("Configure GitHub App mode.")
+    .requiredOption("--app-id <id>", "GitHub App id")
+    .requiredOption("--private-key <path>", "GitHub App private key PEM path")
+    .option("--cwd <path>", "Workspace directory")
+    .option("--installation-id <id>", "GitHub App installation id")
+    .option("--api-base-url <url>", "GitHub API base URL")
+    .option("--force", "Overwrite an existing GitHub App config")
+    .action(
+      async (options: {
+        cwd?: string;
+        appId: string;
+        privateKey: string;
+        installationId?: string;
+        apiBaseUrl?: string;
+        force?: boolean;
+      }) => {
+        const { initGitHubAppMode } = await import("./github-app.js");
+        const result = await initGitHubAppMode({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          appId: options.appId,
+          privateKeyPath: options.privateKey,
+          ...(options.installationId === undefined
+            ? {}
+            : { installationId: options.installationId }),
+          ...(options.apiBaseUrl === undefined
+            ? {}
+            : { apiBaseUrl: options.apiBaseUrl }),
+          ...(options.force === undefined ? {} : { force: options.force })
+        });
+
+        console.log(
+          `${result.overwritten ? "Overwrote" : "Configured"} GitHub App: ${result.path}`
+        );
+      }
+    );
+
+  githubApp
+    .command("status")
+    .description("Show GitHub App mode configuration.")
+    .option("--cwd <path>", "Workspace directory")
+    .action(async (options: { cwd?: string }) => {
+      const { formatGitHubAppConfigSummary, loadGitHubAppConfig } =
+        await import("./github-app.js");
+      const config = await loadGitHubAppConfig({
+        ...(options.cwd === undefined ? {} : { cwd: options.cwd })
+      });
+
+      console.log(formatGitHubAppConfigSummary(config));
+    });
+
+  githubApp
+    .command("jwt")
+    .description("Print a signed GitHub App JWT.")
+    .option("--cwd <path>", "Workspace directory")
+    .action(async (options: { cwd?: string }) => {
+      const { createGitHubAppJwtFromConfig } = await import("./github-app.js");
+      const result = await createGitHubAppJwtFromConfig({
+        ...(options.cwd === undefined ? {} : { cwd: options.cwd })
+      });
+
+      console.log(result.token);
+    });
 
   githubRun
     .command("status")
