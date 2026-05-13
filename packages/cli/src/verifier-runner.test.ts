@@ -1,4 +1,4 @@
-import { cp, mkdtemp, rm } from "node:fs/promises";
+import { cp, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -119,10 +119,106 @@ describe("runTaskVerifiers", () => {
       await rm(workspace, { force: true, recursive: true });
     }
   });
+
+  it("blocks denied verifier commands before execution", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-verifier-policy-"));
+
+    try {
+      const task = await createTaskWithRawCommand(
+        workspace,
+        "pnpm test && rm -rf .runstead"
+      );
+
+      const result = await runTaskVerifiers({
+        cwd: workspace,
+        taskId: task.id,
+        now: new Date("2026-05-14T06:50:00.000Z")
+      });
+      const database = openRunsteadDatabase(join(workspace, ".runstead", "state.db"));
+
+      try {
+        const policyDecision = database
+          .prepare("SELECT decision, rule_id FROM policy_decisions")
+          .get() as { decision: string; rule_id: string };
+        const toolCall = database
+          .prepare("SELECT status FROM tool_calls")
+          .get() as { status: string };
+
+        expect(result.task.status).toBe("blocked");
+        expect(result.commandResults).toMatchObject([
+          {
+            verifier: "test",
+            exitCode: null,
+            timedOut: false
+          }
+        ]);
+        expect(policyDecision).toEqual({
+          decision: "deny",
+          rule_id: "deny_destructive_shell"
+        });
+        expect(toolCall.status).toBe("denied");
+      } finally {
+        database.close();
+      }
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("requests approval for unknown verifier commands without execution", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-verifier-approval-"));
+
+    try {
+      const task = await createTaskWithRawCommand(
+        workspace,
+        nodeCommand("process.exit(0)")
+      );
+
+      const result = await runTaskVerifiers({
+        cwd: workspace,
+        taskId: task.id,
+        now: new Date("2026-05-14T06:55:00.000Z")
+      });
+      const database = openRunsteadDatabase(join(workspace, ".runstead", "state.db"));
+
+      try {
+        const approval = database
+          .prepare("SELECT status, action_id FROM approvals")
+          .get() as { status: string; action_id: string };
+        const toolCall = database
+          .prepare("SELECT status FROM tool_calls")
+          .get() as { status: string };
+
+        expect(result.task.status).toBe("waiting_approval");
+        const commandResult = result.commandResults[0];
+
+        if (commandResult === undefined) {
+          throw new Error("Expected policy-blocked command result");
+        }
+
+        expect(commandResult).toMatchObject({
+          verifier: "test",
+          exitCode: null,
+          approvalId: expect.stringMatching(/^appr_/)
+        });
+        expect(approval).toMatchObject({
+          status: "pending",
+          action_id: expect.stringMatching(/^act_/)
+        });
+        expect(toolCall.status).toBe("approval_required");
+      } finally {
+        database.close();
+      }
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
 });
 
 async function createTaskWithCommand(workspace: string, script: string): Promise<Task> {
   await initRunstead({ cwd: workspace });
+  const command = nodeCommand(script);
+  await allowVerifierCommand(workspace, command);
 
   const goal = await createGoal({
     cwd: workspace,
@@ -141,7 +237,7 @@ async function createTaskWithCommand(workspace: string, script: string): Promise
       commands: [
         {
           name: "test",
-          command: nodeCommand(script)
+          command
         }
       ]
     },
@@ -173,6 +269,91 @@ async function createTaskWithCommand(workspace: string, script: string): Promise
   return verifierTask;
 }
 
+async function createTaskWithRawCommand(
+  workspace: string,
+  command: string
+): Promise<Task> {
+  await initRunstead({ cwd: workspace });
+
+  const goal = await createGoal({
+    cwd: workspace,
+    domain: "repo-maintenance",
+    now: new Date("2026-05-14T05:30:00.000Z")
+  });
+  const task = goal.generatedTasks[0];
+
+  if (task === undefined) {
+    throw new Error("Expected createGoal to generate run_local_verifiers task");
+  }
+
+  const verifierTask: Task = {
+    ...task,
+    input: {
+      commands: [
+        {
+          name: "test",
+          command
+        }
+      ]
+    },
+    verifiers: ["command:test"]
+  };
+  const database = openRunsteadDatabase(goal.stateDb);
+
+  try {
+    appendEventAndProject(database, {
+      event: {
+        eventId: `evt_${task.id}_configured_raw`,
+        type: "task.updated",
+        aggregateType: "task",
+        aggregateId: task.id,
+        payload: {
+          commands: verifierTask.input.commands
+        },
+        createdAt: "2026-05-14T05:31:00.000Z"
+      },
+      projection: {
+        type: "task",
+        value: verifierTask
+      }
+    });
+  } finally {
+    database.close();
+  }
+
+  return verifierTask;
+}
+
 function nodeCommand(script: string): string {
   return `${JSON.stringify(process.execPath)} -e ${JSON.stringify(script)}`;
+}
+
+async function allowVerifierCommand(workspace: string, command: string): Promise<void> {
+  await writeFile(
+    join(workspace, ".runstead", "policies", "repo-maintenance.yaml"),
+    `id: policy_repo_maintenance_v1
+version: 1
+default_decision: require_approval
+default_risk: medium
+
+rules:
+  - id: allow_test_command
+    when:
+      action_type: shell.exec
+      command:
+        matches_any:
+          - '${escapeYamlSingleQuoted(`^${escapeRegex(command)}$`)}'
+    decision: allow
+    risk: low
+`,
+    "utf8"
+  );
+}
+
+function escapeRegex(value: string): string {
+  return value.replace(/[\\^$.*+?()[\]{}|]/g, "\\$&");
+}
+
+function escapeYamlSingleQuoted(value: string): string {
+  return value.replaceAll("'", "''");
 }

@@ -74,6 +74,18 @@ rules:
     decision: deny
     risk: critical
 
+  - id: deny_destructive_shell
+    when:
+      action_type: shell.exec
+      command:
+        matches_any:
+          - ".*rm -rf.*"
+          - ".*sudo .*"
+          - ".*mkfs.*"
+          - ".*dd if=.*"
+    decision: deny
+    risk: critical
+
   - id: require_approval_dependency_change
     when:
       action_type:

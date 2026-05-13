@@ -1,4 +1,5 @@
-import { resolve } from "node:path";
+import { createHash } from "node:crypto";
+import { join, resolve } from "node:path";
 
 import {
   createRunsteadId,
@@ -8,10 +9,22 @@ import {
 } from "@runstead/core";
 import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sqlite";
 
+import { requestApproval } from "./approvals.js";
+import { loadPolicyProfileFromFile } from "./policy-loader.js";
+import type { ActionEnvelope, PolicyProfile } from "./policy.js";
+import { recordPolicyDecision } from "./policy-log.js";
 import { requireRunsteadStateDbSync } from "./runstead-root.js";
+import {
+  finishToolCall,
+  finishWorkerRun,
+  startToolCall,
+  startWorkerRun
+} from "./runtime-audit.js";
 import { claimTask } from "./tasks.js";
+import { preflightToolAction } from "./tool-proxy.js";
 import {
   storeCommandVerifierEvidence,
+  storeCommandVerifierPolicyEvidence,
   type CommandVerifierInput,
   type StoreCommandVerifierEvidenceResult
 } from "./verifier-evidence.js";
@@ -28,6 +41,8 @@ export interface RunTaskVerifierCommandResult {
   exitCode: number | null;
   timedOut: boolean;
   evidenceId: string;
+  policyDecisionId?: string;
+  approvalId?: string;
 }
 
 export interface RunTaskVerifiersResult {
@@ -43,6 +58,7 @@ export async function runTaskVerifiers(
   const root = resolvedState.root;
   const stateDb = resolvedState.stateDb;
   const createdAt = (options.now ?? new Date()).toISOString();
+  const policy = await loadVerifierPolicy(root);
   const task = claimTask({
     cwd,
     id: options.taskId,
@@ -70,38 +86,194 @@ export async function runTaskVerifiers(
         value: runningTask
       }
     });
+    let workerRun = startWorkerRun({
+      database,
+      task: runningTask,
+      workerType: "shell_verifier",
+      enforcementLevel: "policy_enforced",
+      ...(options.now === undefined ? {} : { now: options.now })
+    });
 
-    const evidenceResults: StoreCommandVerifierEvidenceResult[] = [];
+    const commandResults: RunTaskVerifierCommandResult[] = [];
 
-    for (const command of commands) {
-      evidenceResults.push(
-        await storeCommandVerifierEvidence({
+    for (const [index, command] of commands.entries()) {
+      const action = shellVerifierAction({
+        task: runningTask,
+        command,
+        index,
+        cwd
+      });
+      const toolCall = startToolCall({
+        database,
+        workerRun,
+        task: runningTask,
+        action,
+        ...(options.now === undefined ? {} : { now: options.now })
+      });
+      const preflight = preflightToolAction({ policy, action });
+      const recordedPolicy = recordPolicyDecision({
+        cwd,
+        stateDb,
+        policyId: policy.id,
+        action: preflight.action,
+        result: preflight.policyResult,
+        ...(options.now === undefined ? {} : { now: options.now })
+      });
+
+      if (preflight.status === "denied") {
+        const evidenceResult = await storeCommandVerifierPolicyEvidence({
           cwd,
           runsteadRoot: root,
           database,
           task: runningTask,
           command,
-          ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
+          policyDecisionId: recordedPolicy.decision.id,
+          decision: "deny",
+          reason: preflight.policyResult.reason,
           ...(options.now === undefined ? {} : { now: options.now })
-        })
-      );
+        });
+
+        commandResults.push(
+          policyCommandResult(command, evidenceResult, recordedPolicy.decision.id)
+        );
+        finishToolCall({
+          database,
+          toolCall,
+          status: "denied",
+          policyDecisionId: recordedPolicy.decision.id,
+          output: {
+            decision: preflight.policyResult.decision,
+            reason: preflight.policyResult.reason,
+            evidenceId: evidenceResult.evidence.id
+          },
+          ...(options.now === undefined ? {} : { now: options.now })
+        });
+        finishWorkerRun({
+          database,
+          workerRun,
+          status: "blocked",
+          output: verifierOutput(commandResults, false),
+          ...(options.now === undefined ? {} : { now: options.now })
+        });
+
+        const finalTask = finalizeTask({
+          runningTask,
+          status: "blocked",
+          output: verifierOutput(commandResults, false),
+          updatedAt: createdAt,
+          database
+        });
+
+        return {
+          task: finalTask,
+          commandResults
+        };
+      }
+
+      if (preflight.status === "approval_required") {
+        const approval = requestApproval({
+          database,
+          policyDecision: recordedPolicy.decision,
+          requestedBy: "runstead:verifier",
+          ...(options.now === undefined ? {} : { now: options.now })
+        });
+        const evidenceResult = await storeCommandVerifierPolicyEvidence({
+          cwd,
+          runsteadRoot: root,
+          database,
+          task: runningTask,
+          command,
+          policyDecisionId: recordedPolicy.decision.id,
+          decision: "require_approval",
+          reason: preflight.policyResult.reason,
+          approvalId: approval.id,
+          ...(options.now === undefined ? {} : { now: options.now })
+        });
+
+        commandResults.push(
+          policyCommandResult(
+            command,
+            evidenceResult,
+            recordedPolicy.decision.id,
+            approval.id
+          )
+        );
+        finishToolCall({
+          database,
+          toolCall,
+          status: "approval_required",
+          policyDecisionId: recordedPolicy.decision.id,
+          output: {
+            approvalId: approval.id,
+            decision: preflight.policyResult.decision,
+            reason: preflight.policyResult.reason,
+            evidenceId: evidenceResult.evidence.id
+          },
+          ...(options.now === undefined ? {} : { now: options.now })
+        });
+        finishWorkerRun({
+          database,
+          workerRun,
+          status: "waiting_approval",
+          output: verifierOutput(commandResults, false),
+          ...(options.now === undefined ? {} : { now: options.now })
+        });
+
+        const finalTask = finalizeTask({
+          runningTask,
+          status: "waiting_approval",
+          output: verifierOutput(commandResults, false),
+          updatedAt: createdAt,
+          database
+        });
+
+        return {
+          task: finalTask,
+          commandResults
+        };
+      }
+
+      const evidenceResult = await storeCommandVerifierEvidence({
+        cwd,
+        runsteadRoot: root,
+        database,
+        task: runningTask,
+        command,
+        ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
+        ...(options.now === undefined ? {} : { now: options.now })
+      });
+
+      commandResults.push({
+        verifier: evidenceResult.artifact.verifier,
+        exitCode: evidenceResult.artifact.result.exitCode,
+        timedOut: evidenceResult.artifact.result.timedOut,
+        evidenceId: evidenceResult.evidence.id,
+        policyDecisionId: recordedPolicy.decision.id
+      });
+      finishToolCall({
+        database,
+        toolCall,
+        status: "completed",
+        policyDecisionId: recordedPolicy.decision.id,
+        output: {
+          evidenceId: evidenceResult.evidence.id,
+          exitCode: evidenceResult.artifact.result.exitCode,
+          timedOut: evidenceResult.artifact.result.timedOut
+        },
+        ...(options.now === undefined ? {} : { now: options.now })
+      });
     }
 
-    const commandResults = evidenceResults.map((result) => ({
-      verifier: result.artifact.verifier,
-      exitCode: result.artifact.result.exitCode,
-      timedOut: result.artifact.result.timedOut,
-      evidenceId: result.evidence.id
-    }));
     const passed =
       commandResults.length > 0 &&
       commandResults.every(
         (result) => result.exitCode === 0 && result.timedOut === false
       );
+    const output = verifierOutput(commandResults, passed);
     const finalTask: Task = {
       ...runningTask,
       status: passed ? "completed" : "failed",
-      output: verifierOutput(commandResults, passed),
+      output,
       updatedAt: createdAt
     };
 
@@ -116,6 +288,13 @@ export async function runTaskVerifiers(
         type: "task",
         value: finalTask
       }
+    });
+    finishWorkerRun({
+      database,
+      workerRun,
+      status: passed ? "completed" : "failed",
+      output,
+      ...(options.now === undefined ? {} : { now: options.now })
     });
 
     return {
@@ -171,6 +350,87 @@ function verifierOutput(
         : "One or more verifier commands failed",
     commands: commandResults
   };
+}
+
+function policyCommandResult(
+  command: CommandVerifierInput,
+  evidenceResult: StoreCommandVerifierEvidenceResult,
+  policyDecisionId: string,
+  approvalId?: string
+): RunTaskVerifierCommandResult {
+  return {
+    verifier: command.name,
+    exitCode: null,
+    timedOut: false,
+    evidenceId: evidenceResult.evidence.id,
+    policyDecisionId,
+    ...(approvalId === undefined ? {} : { approvalId })
+  };
+}
+
+function finalizeTask(input: {
+  runningTask: Task;
+  status: Task["status"];
+  output: JsonObject;
+  updatedAt: string;
+  database: ReturnType<typeof openRunsteadDatabase>;
+}): Task {
+  const finalTask: Task = {
+    ...input.runningTask,
+    status: input.status,
+    output: input.output,
+    updatedAt: input.updatedAt
+  };
+
+  appendEventAndProject(input.database, {
+    event: taskEvent(
+      `task.${input.status}`,
+      finalTask,
+      finalTask.output ?? {},
+      input.updatedAt
+    ),
+    projection: {
+      type: "task",
+      value: finalTask
+    }
+  });
+
+  return finalTask;
+}
+
+function shellVerifierAction(input: {
+  task: Task;
+  command: CommandVerifierInput;
+  index: number;
+  cwd: string;
+}): ActionEnvelope {
+  return {
+    actionId: verifierActionId(input),
+    actionType: "shell.exec",
+    resource: {
+      type: "repository",
+      path: input.cwd
+    },
+    context: {
+      cwd: input.cwd,
+      command: input.command.command
+    }
+  };
+}
+
+function verifierActionId(input: {
+  task: Task;
+  command: CommandVerifierInput;
+  index: number;
+}): string {
+  const hash = createHash("sha256").update(input.command.command).digest("hex");
+  const verifier = input.command.name.replace(/[^a-zA-Z0-9_]+/g, "_");
+
+  return `act_${input.task.id}_${input.index}_${verifier}_${hash.slice(0, 12)}`;
+}
+
+async function loadVerifierPolicy(root: string): Promise<PolicyProfile> {
+  return loadPolicyProfileFromFile(join(root, "policies", "repo-maintenance.yaml"));
 }
 
 function taskEvent(

@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -94,6 +94,7 @@ describe("runOnce", () => {
         },
         verifiers: ["command:test"]
       });
+      await allowVerifierCommand(workspace, nodeCommand("process.exit(0)"));
 
       const result = await runOnce({ cwd: workspace });
 
@@ -148,6 +149,7 @@ describe("runOnce", () => {
         },
         verifiers: ["command:test"]
       });
+      await allowVerifierCommand(workspace, nodeCommand("process.exit(5)"));
 
       const result = await runOnce({ cwd: workspace });
 
@@ -192,4 +194,34 @@ function configureTaskCommand(stateDb: string, task: Task): void {
 
 function nodeCommand(script: string): string {
   return `${JSON.stringify(process.execPath)} -e ${JSON.stringify(script)}`;
+}
+
+async function allowVerifierCommand(workspace: string, command: string): Promise<void> {
+  await writeFile(
+    join(workspace, ".runstead", "policies", "repo-maintenance.yaml"),
+    `id: policy_repo_maintenance_v1
+version: 1
+default_decision: require_approval
+default_risk: medium
+
+rules:
+  - id: allow_test_command
+    when:
+      action_type: shell.exec
+      command:
+        matches_any:
+          - '${escapeYamlSingleQuoted(`^${escapeRegex(command)}$`)}'
+    decision: allow
+    risk: low
+`,
+    "utf8"
+  );
+}
+
+function escapeRegex(value: string): string {
+  return value.replace(/[\\^$.*+?()[\]{}|]/g, "\\$&");
+}
+
+function escapeYamlSingleQuoted(value: string): string {
+  return value.replaceAll("'", "''");
 }

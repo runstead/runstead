@@ -37,6 +37,7 @@ export interface CommandVerifierArtifact {
   verifier: string;
   command: string;
   result: ShellCommandResult;
+  policy?: JsonObject;
 }
 
 export interface StoreCommandVerifierEvidenceResult {
@@ -89,6 +90,101 @@ export async function storeCommandVerifierEvidence(
     aggregateType: "evidence",
     aggregateId: evidence.id,
     payload: evidenceEventPayload(evidence, options.command.name, result),
+    createdAt
+  };
+
+  await mkdir(evidenceDir, { recursive: true });
+  await writeFile(artifactPath, artifactContents, "utf8");
+  appendEventAndProject(options.database, {
+    event,
+    projection: {
+      type: "evidence",
+      value: evidence
+    }
+  });
+
+  return {
+    evidence,
+    event,
+    artifact,
+    artifactPath
+  };
+}
+
+export interface StoreCommandVerifierPolicyEvidenceOptions {
+  cwd?: string;
+  runsteadRoot: string;
+  database: RunsteadDatabase;
+  task: Task;
+  command: CommandVerifierInput;
+  policyDecisionId: string;
+  decision: "deny" | "require_approval";
+  reason: string;
+  approvalId?: string;
+  now?: Date;
+}
+
+export async function storeCommandVerifierPolicyEvidence(
+  options: StoreCommandVerifierPolicyEvidenceOptions
+): Promise<StoreCommandVerifierEvidenceResult> {
+  const cwd = resolve(options.cwd ?? process.cwd());
+  const runsteadRoot = resolve(options.runsteadRoot);
+  const createdAt = (options.now ?? new Date()).toISOString();
+  const result: ShellCommandResult = {
+    command: options.command.command,
+    cwd,
+    exitCode: null,
+    signal: null,
+    durationMs: 0,
+    timedOut: false,
+    stdout: "",
+    stderr: "",
+    stdoutTruncated: false,
+    stderrTruncated: false
+  };
+  const artifact: CommandVerifierArtifact = {
+    schemaVersion: 1,
+    createdAt,
+    taskId: options.task.id,
+    goalId: options.task.goalId,
+    verifier: options.command.name,
+    command: options.command.command,
+    result,
+    policy: {
+      policyDecisionId: options.policyDecisionId,
+      decision: options.decision,
+      reason: options.reason,
+      ...(options.approvalId === undefined ? {} : { approvalId: options.approvalId })
+    }
+  };
+  const evidenceId = createRunsteadId("ev");
+  const evidenceDir = join(runsteadRoot, "evidence");
+  const artifactPath = join(
+    evidenceDir,
+    `verifier-${options.command.name}-${options.decision}-${evidenceId}.json`
+  );
+  const artifactContents = `${JSON.stringify(artifact, null, 2)}\n`;
+  const evidence: Evidence = {
+    id: evidenceId,
+    type: "policy_decision",
+    subjectType: "task",
+    subjectId: options.task.id,
+    uri: pathToFileURL(artifactPath).href,
+    hash: sha256(artifactContents),
+    summary: `${options.command.name}: ${options.decision} by policy`,
+    createdAt
+  };
+  const event: RunsteadEvent = {
+    eventId: createRunsteadId("evt"),
+    type: "evidence.recorded",
+    aggregateType: "evidence",
+    aggregateId: evidence.id,
+    payload: {
+      ...evidenceEventPayload(evidence, options.command.name, result),
+      policyDecisionId: options.policyDecisionId,
+      decision: options.decision,
+      ...(options.approvalId === undefined ? {} : { approvalId: options.approvalId })
+    },
     createdAt
   };
 
