@@ -79,6 +79,9 @@ export function createProgram(): Command {
         const result = await createGoal({ ...options, domain });
 
         console.log(`Created goal: ${result.goal.id} ${result.goal.title}`);
+        for (const item of result.generatedTasks) {
+          console.log(`Created task: ${item.id} ${item.type}`);
+        }
       }
     );
 

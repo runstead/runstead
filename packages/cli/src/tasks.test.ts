@@ -22,6 +22,12 @@ describe("task queries", () => {
         domain: "repo-maintenance",
         now: new Date("2026-05-14T03:00:00.000Z")
       });
+      const generatedTask = goal.generatedTasks[0];
+
+      if (generatedTask === undefined) {
+        throw new Error("Expected createGoal to generate run_local_verifiers task");
+      }
+
       const task: Task = {
         id: "task_list_show_001",
         goalId: goal.goal.id,
@@ -62,7 +68,7 @@ describe("task queries", () => {
         database.close();
       }
 
-      expect(listTasks({ cwd: workspace }).tasks).toEqual([task]);
+      expect(listTasks({ cwd: workspace }).tasks).toEqual([task, generatedTask]);
       expect(listTasks({ cwd: workspace, goalId: "goal_missing" }).tasks).toEqual([]);
       expect(showTask({ cwd: workspace, id: task.id }).task).toEqual(task);
     } finally {

@@ -1,7 +1,20 @@
 import { join, resolve } from "node:path";
 
-import { TaskSchema, type JsonObject, type Task } from "@runstead/core";
-import { openRunsteadDatabase } from "@runstead/state-sqlite";
+import {
+  createRunsteadId,
+  TaskSchema,
+  type Goal,
+  type JsonObject,
+  type RunsteadEvent,
+  type Task
+} from "@runstead/core";
+import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sqlite";
+
+import {
+  inspectLintCommand,
+  inspectTestCommand,
+  type PackageScriptCommandInspection
+} from "./repo-inspection.js";
 
 export interface ListTasksOptions {
   cwd?: string;
@@ -21,6 +34,96 @@ export interface ShowTaskOptions {
 export interface ShowTaskResult {
   task: Task;
   stateDb: string;
+}
+
+export interface BuildRunLocalVerifiersTaskOptions {
+  cwd?: string;
+  goal: Goal;
+  now?: Date;
+}
+
+export interface CreateRunLocalVerifiersTaskOptions extends BuildRunLocalVerifiersTaskOptions {
+  stateDb?: string;
+}
+
+export interface CreateTaskResult {
+  task: Task;
+  event: RunsteadEvent;
+  stateDb: string;
+}
+
+export async function buildRunLocalVerifiersTask(
+  options: BuildRunLocalVerifiersTaskOptions
+): Promise<{ task: Task; event: RunsteadEvent }> {
+  const cwd = resolve(options.cwd ?? process.cwd());
+  const createdAt = (options.now ?? new Date()).toISOString();
+  const [testCommand, lintCommand] = await Promise.all([
+    inspectTestCommand(cwd),
+    inspectLintCommand(cwd)
+  ]);
+  const commands = [
+    verifierCommand("test", testCommand),
+    verifierCommand("lint", lintCommand)
+  ].filter((command) => command !== undefined);
+  const task: Task = {
+    id: createRunsteadId("task"),
+    goalId: options.goal.id,
+    domain: options.goal.domain,
+    type: "run_local_verifiers",
+    status: "queued",
+    priority: "medium",
+    attempt: 0,
+    maxAttempts: 1,
+    input: {
+      repositoryPath: goalRepositoryPath(options.goal, cwd),
+      commands
+    },
+    verifiers: commands.map((command) => `command:${command.name}`),
+    createdAt,
+    updatedAt: createdAt
+  };
+  const event: RunsteadEvent = {
+    eventId: createRunsteadId("evt"),
+    type: "task.created",
+    aggregateType: "task",
+    aggregateId: task.id,
+    payload: {
+      goalId: task.goalId,
+      type: task.type,
+      commands
+    },
+    createdAt
+  };
+
+  return {
+    task,
+    event
+  };
+}
+
+export async function createRunLocalVerifiersTask(
+  options: CreateRunLocalVerifiersTaskOptions
+): Promise<CreateTaskResult> {
+  const stateDb = options.stateDb ?? resolveStateDb(options.cwd);
+  const generated = await buildRunLocalVerifiersTask(options);
+  const database = openRunsteadDatabase(stateDb);
+
+  try {
+    appendEventAndProject(database, {
+      event: generated.event,
+      projection: {
+        type: "task",
+        value: generated.task
+      }
+    });
+  } finally {
+    database.close();
+  }
+
+  return {
+    ...generated,
+    stateDb
+  };
 }
 
 export function listTasks(options: ListTasksOptions = {}): ListTasksResult {
@@ -95,6 +198,33 @@ export function showTask(options: ShowTaskOptions): ShowTaskResult {
 
 function resolveStateDb(cwd = process.cwd()): string {
   return join(resolve(cwd), ".runstead", "state.db");
+}
+
+interface LocalVerifierCommand {
+  name: "test" | "lint";
+  command: string;
+  rawScript: string;
+}
+
+function verifierCommand(
+  name: LocalVerifierCommand["name"],
+  inspection: PackageScriptCommandInspection
+): LocalVerifierCommand | undefined {
+  if (!inspection.detected || inspection.command === undefined) {
+    return undefined;
+  }
+
+  return {
+    name,
+    command: inspection.command,
+    rawScript: inspection.rawScript ?? ""
+  };
+}
+
+function goalRepositoryPath(goal: Goal, cwd: string): string {
+  const repositoryPath = goal.scope.repositoryPath;
+
+  return typeof repositoryPath === "string" ? repositoryPath : cwd;
 }
 
 interface TaskRow {

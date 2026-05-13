@@ -5,12 +5,14 @@ import {
   type Goal,
   GoalSchema,
   type JsonObject,
-  type RunsteadEvent
+  type RunsteadEvent,
+  type Task
 } from "@runstead/core";
 import { loadDomainPackBundleFromDir } from "@runstead/domain-packs";
 import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sqlite";
 
 import { inspectGitRepository } from "./repo-inspection.js";
+import { buildRunLocalVerifiersTask } from "./tasks.js";
 
 export interface CreateGoalOptions {
   cwd?: string;
@@ -23,6 +25,8 @@ export interface CreateGoalOptions {
 export interface CreateGoalResult {
   goal: Goal;
   event: RunsteadEvent;
+  generatedTasks: Task[];
+  generatedEvents: RunsteadEvent[];
   stateDb: string;
 }
 
@@ -68,7 +72,8 @@ export async function createGoal(
     );
   }
 
-  const now = (options.now ?? new Date()).toISOString();
+  const now = options.now ?? new Date();
+  const createdAt = now.toISOString();
   const git = await inspectGitRepository(cwd);
   const goal: Goal = {
     id: createRunsteadId("goal"),
@@ -83,8 +88,8 @@ export async function createGoal(
       acceptanceContracts: template.generated.acceptanceContracts
     }),
     policyRef: bundle.domain.defaultPolicy,
-    createdAt: now,
-    updatedAt: now
+    createdAt,
+    updatedAt: createdAt
   };
   const event: RunsteadEvent = {
     eventId: createRunsteadId("evt"),
@@ -97,8 +102,11 @@ export async function createGoal(
       templateId: template.id,
       repositoryPath: git.root ?? cwd
     },
-    createdAt: now
+    createdAt
   };
+  const generated = template.generated.recurringTasks.includes("run_local_verifiers")
+    ? [await buildRunLocalVerifiersTask({ cwd, goal, now })]
+    : [];
   const database = openRunsteadDatabase(stateDb);
 
   try {
@@ -109,6 +117,16 @@ export async function createGoal(
         value: goal
       }
     });
+
+    for (const item of generated) {
+      appendEventAndProject(database, {
+        event: item.event,
+        projection: {
+          type: "task",
+          value: item.task
+        }
+      });
+    }
   } finally {
     database.close();
   }
@@ -116,6 +134,8 @@ export async function createGoal(
   return {
     goal,
     event,
+    generatedTasks: generated.map((item) => item.task),
+    generatedEvents: generated.map((item) => item.event),
     stateDb
   };
 }

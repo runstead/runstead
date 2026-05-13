@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -13,6 +13,17 @@ describe("createGoal", () => {
     const workspace = await mkdtemp(join(tmpdir(), "runstead-goal-"));
 
     try {
+      await writeFile(
+        join(workspace, "package.json"),
+        JSON.stringify({
+          packageManager: "pnpm@11.1.1",
+          scripts: {
+            test: "vitest run",
+            lint: "eslint src"
+          }
+        }),
+        "utf8"
+      );
       await initRunstead({ cwd: workspace });
 
       const result = await createGoal({
@@ -58,6 +69,27 @@ describe("createGoal", () => {
           payload_json: string;
           created_at: string;
         };
+        const task = database
+          .prepare(
+            `
+            SELECT id, goal_id, type, status, input_json, verifiers_json
+            FROM tasks
+            WHERE goal_id = ?
+          `
+          )
+          .get(result.goal.id) as {
+          id: string;
+          goal_id: string;
+          type: string;
+          status: string;
+          input_json: string;
+          verifiers_json: string;
+        };
+        const generatedTask = result.generatedTasks[0];
+
+        if (generatedTask === undefined) {
+          throw new Error("Expected createGoal to generate run_local_verifiers task");
+        }
 
         expect(goal).toMatchObject({
           id: result.goal.id,
@@ -87,6 +119,31 @@ describe("createGoal", () => {
           templateId: "keep-ci-green",
           repositoryPath: workspace
         });
+        expect(task).toMatchObject({
+          id: generatedTask.id,
+          goal_id: result.goal.id,
+          type: "run_local_verifiers",
+          status: "queued"
+        });
+        expect(JSON.parse(task.input_json)).toEqual({
+          repositoryPath: workspace,
+          commands: [
+            {
+              name: "test",
+              command: "pnpm test",
+              rawScript: "vitest run"
+            },
+            {
+              name: "lint",
+              command: "pnpm run lint",
+              rawScript: "eslint src"
+            }
+          ]
+        });
+        expect(JSON.parse(task.verifiers_json)).toEqual([
+          "command:test",
+          "command:lint"
+        ]);
       } finally {
         database.close();
       }
