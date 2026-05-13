@@ -3,12 +3,16 @@ import { resolve } from "node:path";
 import type { Task } from "@runstead/core";
 
 import { listTasks } from "./tasks.js";
+import {
+  runTaskVerifiers,
+  type RunTaskVerifierCommandResult
+} from "./verifier-runner.js";
 
 export interface RunOnceOptions {
   cwd?: string;
 }
 
-export type RunOnceResult = RunOnceNoTaskResult | RunOnceSelectedTaskResult;
+export type RunOnceResult = RunOnceNoTaskResult | RunOnceExecutedTaskResult;
 
 export interface RunOnceNoTaskResult {
   cwd: string;
@@ -16,23 +20,28 @@ export interface RunOnceNoTaskResult {
   reason: "no_queued_task";
 }
 
-export interface RunOnceSelectedTaskResult {
+export interface RunOnceExecutedTaskResult {
   cwd: string;
-  ranTask: false;
-  reason: "task_selected";
+  ranTask: true;
   task: Task;
+  commandResults: RunTaskVerifierCommandResult[];
 }
 
-export function runOnce(options: RunOnceOptions = {}): RunOnceResult {
+export async function runOnce(options: RunOnceOptions = {}): Promise<RunOnceResult> {
   const cwd = resolve(options.cwd ?? process.cwd());
   const task = pickNextQueuedTask(cwd);
 
   if (task !== undefined) {
+    const result = await runTaskVerifiers({
+      cwd,
+      taskId: task.id
+    });
+
     return {
       cwd,
-      ranTask: false,
-      reason: "task_selected",
-      task
+      ranTask: true,
+      task: result.task,
+      commandResults: result.commandResults
     };
   }
 

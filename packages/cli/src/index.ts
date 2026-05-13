@@ -117,16 +117,15 @@ export function createProgram(): Command {
       }
 
       const { runOnce } = await import("./run.js");
-      const result = runOnce(options);
+      const result = await runOnce(options);
 
-      if (result.reason === "no_queued_task") {
+      if (!result.ranTask) {
         console.log("No queued task was found.");
         return;
       }
 
-      if (result.reason === "task_selected") {
-        console.log(`Selected task: ${result.task.id} ${result.task.type}`);
-      }
+      console.log(`Ran task: ${result.task.id} ${result.task.type}`);
+      console.log(`Status: ${result.task.status}`);
     });
 
   const goal = program.command("goal").description("Manage durable goals.");
