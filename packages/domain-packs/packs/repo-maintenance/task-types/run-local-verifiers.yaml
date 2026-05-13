@@ -1,0 +1,14 @@
+id: run_local_verifiers
+domain: repo-maintenance
+description: Run configured local verifier commands and store evidence.
+
+default_priority: medium
+max_attempts: 1
+
+verifiers:
+  required:
+    - command:test
+    - command:lint
+
+worker_routing:
+  preferred: shell

@@ -1,0 +1,41 @@
+id: policy_repo_maintenance_v1
+version: 1
+
+rules:
+  - id: allow_read_workspace
+    when:
+      action_type:
+        in:
+          - filesystem.read
+          - git.status
+          - git.diff
+    decision: allow
+    risk: low
+
+  - id: allow_verifier_commands
+    when:
+      action_type: shell.exec
+      command:
+        matches_any:
+          - "^pnpm test( .*)?$"
+          - "^pnpm lint( .*)?$"
+          - "^npm test( .*)?$"
+          - "^npm run lint( .*)?$"
+    decision: allow
+    risk: low
+    obligations:
+      - capture_output
+      - attach_as_evidence
+      - redact_secrets
+
+  - id: deny_destructive_shell
+    when:
+      action_type: shell.exec
+      command:
+        matches_any:
+          - ".*rm -rf.*"
+          - ".*sudo .*"
+          - ".*mkfs.*"
+          - ".*dd if=.*"
+    decision: deny
+    risk: critical

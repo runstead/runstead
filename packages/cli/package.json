@@ -1,0 +1,33 @@
+{
+  "name": "@runstead/cli",
+  "version": "0.0.0",
+  "description": "Runstead command-line interface.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "runstead": "./dist/index.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "rm -rf dist && tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "lint": "eslint \"src/**/*.ts\" --max-warnings=0",
+    "clean": "rm -rf dist coverage"
+  },
+  "dependencies": {
+    "@runstead/domain-packs": "workspace:*",
+    "@runstead/state-sqlite": "workspace:*",
+    "commander": "catalog:"
+  }
+}

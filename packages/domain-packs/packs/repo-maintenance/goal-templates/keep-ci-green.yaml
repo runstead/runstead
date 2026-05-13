@@ -1,0 +1,15 @@
+id: keep-ci-green
+domain: repo-maintenance
+title: Keep repository CI green
+description: >
+  Maintain repository test health by inspecting the repo, running local
+  verifiers, storing evidence, and keeping state recoverable.
+
+generated:
+  recurring_tasks:
+    - run_local_verifiers
+  policy_profile: repo-maintenance
+  acceptance_contracts:
+    - tests_pass
+    - lint_pass
+    - diff_scope_clean

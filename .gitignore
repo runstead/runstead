@@ -41,6 +41,12 @@ build/Release
 node_modules/
 jspm_packages/
 
+# Monorepo tooling
+.turbo/
+
+# Runstead local runtime state
+.runstead/
+
 # Snowpack dependency directory (https://snowpack.dev/)
 web_modules/
 
@@ -141,3 +147,6 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
+
+# Plan
+plan.md

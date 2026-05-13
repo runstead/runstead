@@ -1,0 +1,26 @@
+{
+  "name": "@runstead/state-sqlite",
+  "version": "0.0.0",
+  "description": "SQLite state store for Runstead.",
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "rm -rf dist && tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "lint": "eslint \"src/**/*.ts\" --max-warnings=0",
+    "clean": "rm -rf dist coverage"
+  }
+}
