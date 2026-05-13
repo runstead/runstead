@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { basename } from "node:path";
+import { basename, join } from "node:path";
 import { Command } from "commander";
 import { pathToFileURL } from "node:url";
 
@@ -329,6 +329,65 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     );
 
   const skill = program.command("skill").description("Manage skill packages.");
+
+  const skillCandidate = skill
+    .command("candidate")
+    .description("Manage skill candidates.");
+
+  skillCandidate
+    .command("create")
+    .description("Create a candidate skill package scaffold.")
+    .argument("<name>", "Skill package name in lowercase kebab-case")
+    .requiredOption("--description <text>", "Skill description")
+    .option("--dir <path>", "Skill package root directory")
+    .option("--domain <domain>", "Skill domain", "repo-maintenance")
+    .option("--trigger <trigger>", "Skill trigger", collectValues, [])
+    .option("--allowed-tool <tool>", "Allowed tool contract", collectValues, [])
+    .option("--denied-tool <tool>", "Denied tool contract", collectValues, [])
+    .option("--verifier-command <command>", "Verifier command", collectValues, [])
+    .option("--task <id>", "Provenance task id", collectValues, [])
+    .option("--scope-repo <repo>", "Scoped repository", collectValues, [])
+    .option("--author <id>", "Skill candidate author")
+    .action(
+      async (
+        name: string,
+        options: {
+          description: string;
+          dir?: string;
+          domain: string;
+          trigger: string[];
+          allowedTool: string[];
+          deniedTool: string[];
+          verifierCommand: string[];
+          task: string[];
+          scopeRepo: string[];
+          author?: string;
+        }
+      ) => {
+        const { createSkillCandidatePackage, formatSkillValidationReport } =
+          await import("@runstead/skills");
+        const result = await createSkillCandidatePackage({
+          root: options.dir ?? join(process.cwd(), "skills", name),
+          name,
+          domain: options.domain,
+          description: options.description,
+          triggers: options.trigger,
+          allowedTools: options.allowedTool,
+          deniedTools: options.deniedTool,
+          verifierCommands: options.verifierCommand,
+          provenanceTasks: options.task,
+          ...(options.scopeRepo.length === 0 ? {} : { scopeRepos: options.scopeRepo }),
+          ...(options.author === undefined ? {} : { author: options.author })
+        });
+
+        console.log(`Created skill candidate: ${result.root}`);
+        console.log(formatSkillValidationReport(result.validation));
+
+        if (!result.validation.valid) {
+          process.exitCode = 1;
+        }
+      }
+    );
 
   skill
     .command("validate")
