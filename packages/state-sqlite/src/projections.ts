@@ -6,7 +6,9 @@ import type {
   PolicyDecisionRecord,
   RepositoryRecord,
   RunsteadEvent,
-  Task
+  Task,
+  ToolCall,
+  WorkerRun
 } from "@runstead/core";
 import {
   ApprovalRequestSchema,
@@ -16,7 +18,9 @@ import {
   PolicyDecisionRecordSchema,
   RepositoryRecordSchema,
   RunsteadEventSchema,
-  TaskSchema
+  TaskSchema,
+  ToolCallSchema,
+  WorkerRunSchema
 } from "@runstead/core";
 
 import type { RunsteadDatabase } from "./index.js";
@@ -27,6 +31,8 @@ export type StateProjection =
   | { type: "evidence"; value: Evidence }
   | { type: "policyDecision"; value: PolicyDecisionRecord }
   | { type: "approval"; value: ApprovalRequest }
+  | { type: "workerRun"; value: WorkerRun }
+  | { type: "toolCall"; value: ToolCall }
   | { type: "memory"; value: MemoryRecord }
   | { type: "repository"; value: RepositoryRecord };
 
@@ -103,6 +109,12 @@ function upsertProjection(
       return;
     case "approval":
       upsertApproval(database, ApprovalRequestSchema.parse(projection.value));
+      return;
+    case "workerRun":
+      upsertWorkerRun(database, WorkerRunSchema.parse(projection.value));
+      return;
+    case "toolCall":
+      upsertToolCall(database, ToolCallSchema.parse(projection.value));
       return;
     case "memory":
       upsertMemoryRecord(database, MemoryRecordSchema.parse(projection.value));
@@ -335,6 +347,87 @@ function upsertApproval(database: RunsteadDatabase, approval: ApprovalRequest): 
       approval.decidedBy ?? null,
       approval.createdAt,
       approval.updatedAt
+    );
+}
+
+function upsertWorkerRun(database: RunsteadDatabase, workerRun: WorkerRun): void {
+  database
+    .prepare(
+      `
+      INSERT INTO worker_runs (
+        id,
+        task_id,
+        worker_type,
+        status,
+        enforcement_level,
+        checkpoint_before,
+        started_at,
+        ended_at,
+        output_json
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        task_id = excluded.task_id,
+        worker_type = excluded.worker_type,
+        status = excluded.status,
+        enforcement_level = excluded.enforcement_level,
+        checkpoint_before = excluded.checkpoint_before,
+        started_at = excluded.started_at,
+        ended_at = excluded.ended_at,
+        output_json = excluded.output_json
+    `
+    )
+    .run(
+      workerRun.id,
+      workerRun.taskId,
+      workerRun.workerType,
+      workerRun.status,
+      workerRun.enforcementLevel,
+      workerRun.checkpointBefore ?? null,
+      workerRun.startedAt,
+      workerRun.endedAt ?? null,
+      optionalJson(workerRun.output)
+    );
+}
+
+function upsertToolCall(database: RunsteadDatabase, toolCall: ToolCall): void {
+  database
+    .prepare(
+      `
+      INSERT INTO tool_calls (
+        id,
+        worker_run_id,
+        task_id,
+        action_type,
+        status,
+        policy_decision_id,
+        input_json,
+        output_json,
+        started_at,
+        ended_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        worker_run_id = excluded.worker_run_id,
+        task_id = excluded.task_id,
+        action_type = excluded.action_type,
+        status = excluded.status,
+        policy_decision_id = excluded.policy_decision_id,
+        input_json = excluded.input_json,
+        output_json = excluded.output_json,
+        started_at = excluded.started_at,
+        ended_at = excluded.ended_at
+    `
+    )
+    .run(
+      toolCall.id,
+      toolCall.workerRunId,
+      toolCall.taskId,
+      toolCall.actionType,
+      toolCall.status,
+      toolCall.policyDecisionId ?? null,
+      JSON.stringify(toolCall.input),
+      optionalJson(toolCall.output),
+      toolCall.startedAt,
+      toolCall.endedAt ?? null
     );
 }
 

@@ -25,6 +25,8 @@ describe("openRunsteadDatabase", () => {
           "evidence",
           "policy_decisions",
           "approvals",
+          "worker_runs",
+          "tool_calls",
           "memory_records",
           "repositories",
           "events"
@@ -230,6 +232,171 @@ describe("appendEventAndProject", () => {
         reason: "External write requires approval",
         requested_by: "runstead",
         expires_at: "2026-05-14T04:08:00.000Z"
+      });
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("appends events and updates worker run and tool call projections", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-state-"));
+
+    try {
+      const database = openRunsteadDatabase(join(workspace, "state.db"));
+
+      appendEventAndProject(database, {
+        event: {
+          eventId: "evt_goal_for_worker_001",
+          type: "goal.created",
+          aggregateType: "goal",
+          aggregateId: "goal_worker_001",
+          payload: { title: "Keep CI green" },
+          createdAt: "2026-05-14T03:09:00.000Z"
+        },
+        projection: {
+          type: "goal",
+          value: {
+            id: "goal_worker_001",
+            domain: "repo-maintenance",
+            title: "Keep CI green",
+            status: "active",
+            priority: "medium",
+            scope: {},
+            createdAt: "2026-05-14T03:09:00.000Z",
+            updatedAt: "2026-05-14T03:09:00.000Z"
+          }
+        }
+      });
+      appendEventAndProject(database, {
+        event: {
+          eventId: "evt_task_for_worker_001",
+          type: "task.created",
+          aggregateType: "task",
+          aggregateId: "task_worker_001",
+          payload: { goalId: "goal_worker_001" },
+          createdAt: "2026-05-14T03:09:01.000Z"
+        },
+        projection: {
+          type: "task",
+          value: {
+            id: "task_worker_001",
+            goalId: "goal_worker_001",
+            domain: "repo-maintenance",
+            type: "run_local_verifiers",
+            status: "running",
+            priority: "medium",
+            attempt: 1,
+            maxAttempts: 1,
+            input: {},
+            verifiers: ["command:test"],
+            createdAt: "2026-05-14T03:09:01.000Z",
+            updatedAt: "2026-05-14T03:09:01.000Z"
+          }
+        }
+      });
+      appendEventAndProject(database, {
+        event: {
+          eventId: "evt_worker_run_started_001",
+          type: "worker_run.started",
+          aggregateType: "worker_run",
+          aggregateId: "wr_001",
+          payload: { taskId: "task_worker_001" },
+          createdAt: "2026-05-14T03:10:00.000Z"
+        },
+        projection: {
+          type: "workerRun",
+          value: {
+            id: "wr_001",
+            taskId: "task_worker_001",
+            workerType: "shell_verifier",
+            status: "running",
+            enforcementLevel: "policy_enforced",
+            startedAt: "2026-05-14T03:10:00.000Z"
+          }
+        }
+      });
+      appendEventAndProject(database, {
+        event: {
+          eventId: "evt_tool_call_completed_001",
+          type: "tool_call.completed",
+          aggregateType: "tool_call",
+          aggregateId: "tc_001",
+          payload: { workerRunId: "wr_001" },
+          createdAt: "2026-05-14T03:10:05.000Z"
+        },
+        projection: {
+          type: "toolCall",
+          value: {
+            id: "tc_001",
+            workerRunId: "wr_001",
+            taskId: "task_worker_001",
+            actionType: "shell.exec",
+            status: "completed",
+            input: {
+              command: "pnpm test"
+            },
+            output: {
+              exitCode: 0
+            },
+            startedAt: "2026-05-14T03:10:00.000Z",
+            endedAt: "2026-05-14T03:10:05.000Z"
+          }
+        }
+      });
+
+      const workerRun = database
+        .prepare(
+          `
+          SELECT id, task_id, worker_type, status, enforcement_level, output_json
+          FROM worker_runs
+          WHERE id = ?
+        `
+        )
+        .get("wr_001") as {
+        id: string;
+        task_id: string;
+        worker_type: string;
+        status: string;
+        enforcement_level: string;
+        output_json: string | null;
+      };
+      const toolCall = database
+        .prepare(
+          `
+          SELECT id, worker_run_id, task_id, action_type, status, input_json,
+                 output_json
+          FROM tool_calls
+          WHERE id = ?
+        `
+        )
+        .get("tc_001") as {
+        id: string;
+        worker_run_id: string;
+        task_id: string;
+        action_type: string;
+        status: string;
+        input_json: string;
+        output_json: string;
+      };
+
+      database.close();
+
+      expect(workerRun).toEqual({
+        id: "wr_001",
+        task_id: "task_worker_001",
+        worker_type: "shell_verifier",
+        status: "running",
+        enforcement_level: "policy_enforced",
+        output_json: null
+      });
+      expect(toolCall).toEqual({
+        id: "tc_001",
+        worker_run_id: "wr_001",
+        task_id: "task_worker_001",
+        action_type: "shell.exec",
+        status: "completed",
+        input_json: JSON.stringify({ command: "pnpm test" }),
+        output_json: JSON.stringify({ exitCode: 0 })
       });
     } finally {
       await rm(workspace, { force: true, recursive: true });

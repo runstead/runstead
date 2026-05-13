@@ -5,7 +5,9 @@ import {
   GoalSchema,
   MemoryRecordSchema,
   PolicyDecisionRecordSchema,
-  RepositoryRecordSchema
+  RepositoryRecordSchema,
+  ToolCallSchema,
+  WorkerRunSchema
 } from "./models.js";
 
 describe("GoalSchema", () => {
@@ -67,6 +69,44 @@ describe("ApprovalRequestSchema", () => {
     });
 
     expect(request.status).toBe("pending");
+  });
+});
+
+describe("WorkerRunSchema", () => {
+  it("accepts a running shell verifier worker run", () => {
+    const workerRun = WorkerRunSchema.parse({
+      id: "wr_001",
+      taskId: "task_001",
+      workerType: "shell_verifier",
+      status: "running",
+      enforcementLevel: "policy_enforced",
+      startedAt: "2026-05-14T03:07:00.000Z"
+    });
+
+    expect(workerRun.enforcementLevel).toBe("policy_enforced");
+  });
+});
+
+describe("ToolCallSchema", () => {
+  it("accepts a completed policy-governed tool call", () => {
+    const toolCall = ToolCallSchema.parse({
+      id: "tc_001",
+      workerRunId: "wr_001",
+      taskId: "task_001",
+      actionType: "shell.exec",
+      status: "completed",
+      policyDecisionId: "poldec_001",
+      input: {
+        command: "pnpm test"
+      },
+      output: {
+        exitCode: 0
+      },
+      startedAt: "2026-05-14T03:07:00.000Z",
+      endedAt: "2026-05-14T03:07:05.000Z"
+    });
+
+    expect(toolCall.status).toBe("completed");
   });
 });
 

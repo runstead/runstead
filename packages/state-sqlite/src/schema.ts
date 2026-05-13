@@ -70,6 +70,35 @@ CREATE TABLE IF NOT EXISTS approvals (
   updated_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS worker_runs (
+  id TEXT PRIMARY KEY,
+  task_id TEXT NOT NULL,
+  worker_type TEXT NOT NULL,
+  status TEXT NOT NULL,
+  enforcement_level TEXT NOT NULL,
+  checkpoint_before TEXT,
+  started_at TEXT NOT NULL,
+  ended_at TEXT,
+  output_json TEXT,
+  FOREIGN KEY(task_id) REFERENCES tasks(id)
+);
+
+CREATE TABLE IF NOT EXISTS tool_calls (
+  id TEXT PRIMARY KEY,
+  worker_run_id TEXT NOT NULL,
+  task_id TEXT NOT NULL,
+  action_type TEXT NOT NULL,
+  status TEXT NOT NULL,
+  policy_decision_id TEXT,
+  input_json TEXT NOT NULL,
+  output_json TEXT,
+  started_at TEXT NOT NULL,
+  ended_at TEXT,
+  FOREIGN KEY(worker_run_id) REFERENCES worker_runs(id),
+  FOREIGN KEY(task_id) REFERENCES tasks(id),
+  FOREIGN KEY(policy_decision_id) REFERENCES policy_decisions(id)
+);
+
 CREATE TABLE IF NOT EXISTS memory_records (
   id TEXT PRIMARY KEY,
   scope TEXT NOT NULL,

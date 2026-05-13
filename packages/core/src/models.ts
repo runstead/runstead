@@ -33,6 +33,24 @@ export const ApprovalStatusSchema = z.enum([
   "expired"
 ]);
 
+export const WorkerRunStatusSchema = z.enum([
+  "running",
+  "completed",
+  "failed",
+  "waiting_approval",
+  "blocked"
+]);
+
+export const ToolCallStatusSchema = z.enum([
+  "requested",
+  "allowed",
+  "approval_required",
+  "denied",
+  "running",
+  "completed",
+  "failed"
+]);
+
 export const MemoryTypeSchema = z.enum([
   "project_fact",
   "user_preference",
@@ -129,6 +147,37 @@ export const ApprovalRequestSchema = z.object({
 });
 
 export type ApprovalRequest = z.infer<typeof ApprovalRequestSchema>;
+
+export const WorkerRunSchema = z.object({
+  id: z.string().min(1),
+  taskId: z.string().min(1),
+  workerType: z.string().min(1),
+  status: WorkerRunStatusSchema,
+  enforcementLevel: z.string().min(1),
+  checkpointBefore: z.string().min(1).optional(),
+  startedAt: z.string().min(1),
+  endedAt: z.string().min(1).optional(),
+  output: JsonObjectSchema.optional()
+});
+
+export type WorkerRun = z.infer<typeof WorkerRunSchema>;
+export type WorkerRunStatus = z.infer<typeof WorkerRunStatusSchema>;
+
+export const ToolCallSchema = z.object({
+  id: z.string().min(1),
+  workerRunId: z.string().min(1),
+  taskId: z.string().min(1),
+  actionType: z.string().min(1),
+  status: ToolCallStatusSchema,
+  policyDecisionId: z.string().min(1).optional(),
+  input: JsonObjectSchema,
+  output: JsonObjectSchema.optional(),
+  startedAt: z.string().min(1),
+  endedAt: z.string().min(1).optional()
+});
+
+export type ToolCall = z.infer<typeof ToolCallSchema>;
+export type ToolCallStatus = z.infer<typeof ToolCallStatusSchema>;
 
 export const MemoryRecordSchema = z.object({
   id: z.string().min(1),
