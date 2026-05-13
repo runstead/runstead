@@ -334,6 +334,26 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
       process.stdout.write(result.log);
     });
 
+  const git = program.command("git").description("Git helpers for repo maintenance.");
+  const gitBranch = git.command("branch").description("Manage Runstead git branches.");
+
+  gitBranch
+    .command("create")
+    .description("Create a git branch without overwriting existing branches.")
+    .argument("<branch-name>", "Branch name")
+    .option("--cwd <path>", "Workspace directory")
+    .option("--base <ref>", "Base ref")
+    .action(async (branchName: string, options: { cwd?: string; base?: string }) => {
+      const { createGitBranch } = await import("./git-branch.js");
+      const result = await createGitBranch({
+        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+        branchName,
+        ...(options.base === undefined ? {} : { baseRef: options.base })
+      });
+
+      console.log(`Created branch: ${result.branchName}`);
+    });
+
   const policy = program.command("policy").description("Evaluate policies.");
 
   policy
