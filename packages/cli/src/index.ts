@@ -160,6 +160,36 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
       }
     });
 
+  program
+    .command("daemon")
+    .description("Run the local Runstead daemon loop.")
+    .option("--cwd <path>", "Workspace directory")
+    .option("--once", "Run one daemon tick and exit")
+    .option("--max-ticks <number>", "Stop after this many ticks")
+    .option("--interval-ms <number>", "Delay between ticks", "30000")
+    .action(
+      async (options: {
+        cwd?: string;
+        once?: boolean;
+        maxTicks?: string;
+        intervalMs: string;
+      }) => {
+        const { formatDaemonReport, runDaemon } = await import("./daemon.js");
+        const maxTicks =
+          options.once === true
+            ? 1
+            : parseOptionalInteger(options.maxTicks, "--max-ticks");
+        const intervalMs = parseRequiredInteger(options.intervalMs, "--interval-ms");
+        const result = await runDaemon({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          ...(maxTicks === undefined ? {} : { maxTicks }),
+          intervalMs
+        });
+
+        console.log(formatDaemonReport(result));
+      }
+    );
+
   const audit = program.command("audit").description("Export audit data.");
 
   audit
@@ -782,6 +812,16 @@ function parseOptionalInteger(
 
   if (!Number.isInteger(parsed)) {
     throw new Error(`${optionName} must be an integer`);
+  }
+
+  return parsed;
+}
+
+function parseRequiredInteger(value: string, optionName: string): number {
+  const parsed = parseOptionalInteger(value, optionName);
+
+  if (parsed === undefined) {
+    throw new Error(`${optionName} is required`);
   }
 
   return parsed;
