@@ -117,6 +117,12 @@ export async function inspectTestCommand(
   return inspectPackageScriptCommand(cwd, "test");
 }
 
+export async function inspectLintCommand(
+  cwd = process.cwd()
+): Promise<PackageScriptCommandInspection> {
+  return inspectPackageScriptCommand(cwd, "lint");
+}
+
 interface GitCommandResult {
   ok: boolean;
   stdout: string;

@@ -8,6 +8,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   inspectGitRepository,
+  inspectLintCommand,
   inspectPackageManager,
   inspectTestCommand
 } from "./repo-inspection.js";
@@ -194,6 +195,55 @@ describe("inspectTestCommand", () => {
       expect(inspection).toMatchObject({
         detected: false,
         scriptName: "test",
+        packageJsonPath: join(workspace, "package.json")
+      });
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+});
+
+describe("inspectLintCommand", () => {
+  it("detects a package lint script", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-lint-command-"));
+
+    try {
+      await writeFile(
+        join(workspace, "package.json"),
+        JSON.stringify({
+          packageManager: "pnpm@11.1.1",
+          scripts: {
+            lint: "eslint src"
+          }
+        }),
+        "utf8"
+      );
+
+      const inspection = await inspectLintCommand(workspace);
+
+      expect(inspection).toMatchObject({
+        detected: true,
+        scriptName: "lint",
+        command: "pnpm run lint",
+        rawScript: "eslint src",
+        packageJsonPath: join(workspace, "package.json")
+      });
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("returns undetected when package.json has no lint script", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-lint-command-"));
+
+    try {
+      await writeFile(join(workspace, "package.json"), "{}", "utf8");
+
+      const inspection = await inspectLintCommand(workspace);
+
+      expect(inspection).toMatchObject({
+        detected: false,
+        scriptName: "lint",
         packageJsonPath: join(workspace, "package.json")
       });
     } finally {
