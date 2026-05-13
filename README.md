@@ -7,6 +7,18 @@ Runstead turns them into tasks, dispatches worker agents, guards actions with
 policy, verifies outputs with evidence, records audit logs, and resumes after
 failures.
 
+The first supported product path is **repo-maintenance**: create a long-running
+goal, run governed local verifiers, capture evidence, request approvals for
+unknown actions, and export an audit trail.
+
+```bash
+runstead init --create-default-goal
+runstead run --once
+runstead status
+runstead audit export
+runstead report weekly --print
+```
+
 ## Setup
 
 This repository is a pnpm workspace monorepo targeting Node.js 24 LTS.
@@ -37,3 +49,7 @@ pnpm build
 - Store evidence
 - Audit state transitions
 - Resume after crashes
+
+Other domain packs, memory, skill packaging, dashboard, GitHub App mode, RBAC,
+webhooks, and team-policy overlays are available as experimental surfaces while
+the repo-maintenance control loop remains the primary MVP.

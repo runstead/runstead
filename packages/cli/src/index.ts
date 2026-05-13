@@ -236,7 +236,9 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
       console.log(formatSchedulerReport(result));
     });
 
-  const webhook = program.command("webhook").description("Run webhook receivers.");
+  const webhook = program
+    .command("webhook")
+    .description("Run webhook receivers. Experimental.");
 
   webhook
     .command("serve")
@@ -284,7 +286,9 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
       }
     );
 
-  const dashboard = program.command("dashboard").description("Build dashboards.");
+  const dashboard = program
+    .command("dashboard")
+    .description("Build dashboards. Experimental.");
 
   dashboard
     .command("build")
@@ -302,7 +306,9 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
       console.log(`Dashboard data: ${result.dataPath}`);
     });
 
-  const rbac = program.command("rbac").description("Manage local RBAC.");
+  const rbac = program
+    .command("rbac")
+    .description("Manage local RBAC. Experimental.");
 
   rbac
     .command("init")
@@ -372,7 +378,7 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
 
   const teamPolicy = program
     .command("team-policy")
-    .description("Manage team policy overlays.");
+    .description("Manage team policy overlays. Experimental.");
 
   teamPolicy
     .command("init")
@@ -468,7 +474,9 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
       }
     });
 
-  const memory = program.command("memory").description("Manage governed memory.");
+  const memory = program
+    .command("memory")
+    .description("Manage governed memory. Experimental.");
 
   memory
     .command("quarantine")
@@ -612,7 +620,9 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
       }
     );
 
-  const skill = program.command("skill").description("Manage skill packages.");
+  const skill = program
+    .command("skill")
+    .description("Manage skill packages. Experimental.");
 
   const skillCandidate = skill
     .command("candidate")
@@ -792,7 +802,9 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
       console.log(`Tags: ${result.repository.tags.join(", ") || "none"}`);
     });
 
-  const domain = program.command("domain").description("Manage domain packs.");
+  const domain = program
+    .command("domain")
+    .description("Manage domain packs. Experimental.");
 
   domain
     .command("create")
@@ -1141,7 +1153,9 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     );
 
   const github = program.command("github").description("GitHub integration.");
-  const githubApp = github.command("app").description("Use GitHub App mode.");
+  const githubApp = github
+    .command("app")
+    .description("Use GitHub App mode. Experimental.");
   const githubRun = github.command("run").description("Inspect GitHub workflow runs.");
 
   githubApp
