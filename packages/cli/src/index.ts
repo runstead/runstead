@@ -190,6 +190,27 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
       }
     );
 
+  const webhook = program.command("webhook").description("Run webhook receivers.");
+
+  webhook
+    .command("serve")
+    .description("Serve the GitHub webhook endpoint.")
+    .option("--host <host>", "Host to bind", "127.0.0.1")
+    .option("--port <number>", "Port to bind", "8787")
+    .option("--secret <secret>", "GitHub webhook secret")
+    .action(async (options: { host: string; port: string; secret?: string }) => {
+      const { createWebhookServer } = await import("./webhook-server.js");
+      const port = parseRequiredInteger(options.port, "--port");
+      const server = createWebhookServer({
+        ...(options.secret === undefined ? {} : { secret: options.secret })
+      });
+
+      server.listen(port, options.host, () => {
+        console.log(`Runstead webhook server listening on ${options.host}:${port}`);
+        console.log("GitHub endpoint: /webhooks/github");
+      });
+    });
+
   const audit = program.command("audit").description("Export audit data.");
 
   audit
