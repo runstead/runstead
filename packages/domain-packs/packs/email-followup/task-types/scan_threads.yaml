@@ -1,0 +1,16 @@
+id: scan_threads
+domain: email-followup
+description: Identify threads that may need a follow-up draft.
+
+default_priority: medium
+max_attempts: 1
+
+verifiers:
+  required:
+    - mailbox:read_only
+    - thread:followup_reason_recorded
+
+worker_routing:
+  preferred: shell
+  fallback:
+    - codex_cli

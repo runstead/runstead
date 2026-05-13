@@ -1,0 +1,17 @@
+id: draft-pending-followups
+domain: email-followup
+title: Draft pending follow-ups
+description: >
+  Review pending email threads, prepare follow-up drafts, verify recipients, and
+  never send messages automatically.
+
+generated:
+  recurring_tasks:
+    - scan_threads
+    - draft_followup
+  policy_profile: email-followup-draft-only
+  acceptance_contracts:
+    - draft_preview_attached
+    - recipients_checked
+    - send_not_performed
+    - user_approval_required_to_send

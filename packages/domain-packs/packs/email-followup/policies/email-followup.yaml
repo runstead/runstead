@@ -1,0 +1,42 @@
+id: policy_email_followup_draft_only_v1
+version: 1
+
+rules:
+  - id: allow_reading_mailbox_threads
+    when:
+      action_type:
+        in:
+          - email.read
+          - email.thread.search
+    decision: allow
+    risk: medium
+    obligations:
+      - treat_email_body_as_untrusted
+      - record_thread_id
+
+  - id: allow_draft_creation_only
+    when:
+      action_type: email.draft.create
+    decision: allow
+    risk: medium
+    obligations:
+      - attach_draft_preview
+      - record_recipients
+      - mark_draft_only
+
+  - id: deny_email_send
+    when:
+      action_type:
+        in:
+          - email.send
+          - email.reply.send
+    decision: deny
+    risk: critical
+
+  - id: deny_external_send_side_effect
+    when:
+      side_effects:
+        contains_any:
+          - send_message_external
+    decision: deny
+    risk: critical

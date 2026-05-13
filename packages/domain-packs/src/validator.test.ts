@@ -50,6 +50,26 @@ describe("validateDomainPackDir", () => {
     ]);
   });
 
+  it("validates the experimental email-followup draft-only pack", async () => {
+    const packRoot = fileURLToPath(new URL("../packs/email-followup", import.meta.url));
+
+    const result = await validateDomainPackDir(packRoot);
+
+    expect(result.valid).toBe(true);
+    expect(result.issues).toEqual([]);
+    expect(result.domain?.id).toBe("email-followup");
+    expect(result.goalTemplates.map((template) => template.id)).toEqual([
+      "draft-pending-followups"
+    ]);
+    expect(result.taskTypes.map((taskType) => taskType.id)).toEqual([
+      "scan_threads",
+      "draft_followup"
+    ]);
+    expect(result.goalTemplates[0]?.generated.acceptanceContracts).toContain(
+      "send_not_performed"
+    );
+  });
+
   it("reports missing and mismatched pack references", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "runstead-domain-pack-"));
 

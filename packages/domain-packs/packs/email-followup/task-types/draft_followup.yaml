@@ -1,0 +1,17 @@
+id: draft_followup
+domain: email-followup
+description: Create a follow-up draft without sending it.
+
+default_priority: high
+max_attempts: 1
+
+verifiers:
+  required:
+    - draft:preview_attached
+    - draft:recipients_checked
+    - draft:send_not_performed
+
+worker_routing:
+  preferred: codex_cli
+  fallback:
+    - shell

@@ -1,0 +1,43 @@
+id: email-followup
+version: 0.1.0
+name: Email Follow-up
+description: Draft follow-up email responses with recipient checks and no sending.
+
+scope:
+  resource_types:
+    - mailbox
+    - email_thread
+    - contact
+    - draft
+
+goal_templates:
+  - draft-pending-followups
+
+task_types:
+  - scan_threads
+  - draft_followup
+
+default_policy: policies/email-followup.yaml
+
+default_verifiers:
+  - recipient_check
+  - draft_preview
+  - send_block
+
+required_tools:
+  - email_read
+  - email_draft
+
+supported_workers:
+  - shell
+  - codex_cli
+
+security:
+  untrusted_inputs:
+    - email_body
+    - email_attachment_text
+    - sender_display_name
+  protected_paths:
+    - ".env"
+    - ".env.*"
+    - "**/secrets/**"

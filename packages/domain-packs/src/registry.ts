@@ -4,6 +4,7 @@ import { join, resolve } from "node:path";
 
 import type { DomainPack } from "./domain-pack.js";
 import { loadDomainPackFromFile } from "./domain-pack.js";
+import { getEmailFollowupPackDir } from "./email-followup.js";
 import { getResearchMonitorPackDir } from "./research-monitor.js";
 import { getRepoMaintenancePackDir } from "./repo-maintenance.js";
 
@@ -35,7 +36,8 @@ export type ResolveDomainPackOptions = ListDomainPacksOptions;
 
 const BUILT_IN_DOMAIN_PACK_ROOTS = [
   getRepoMaintenancePackDir(),
-  getResearchMonitorPackDir()
+  getResearchMonitorPackDir(),
+  getEmailFollowupPackDir()
 ];
 
 export async function listDomainPacks(

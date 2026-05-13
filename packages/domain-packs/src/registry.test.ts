@@ -11,6 +11,7 @@ describe("domain pack registry", () => {
     expect(registry.issues).toEqual([]);
     expect(registry.entries.map((entry) => entry.id)).toContain("repo-maintenance");
     expect(registry.entries.map((entry) => entry.id)).toContain("research-monitor");
+    expect(registry.entries.map((entry) => entry.id)).toContain("email-followup");
     expect(
       registry.entries.find((entry) => entry.id === "repo-maintenance")?.source
     ).toBe("built_in");
@@ -33,6 +34,10 @@ describe("domain pack registry", () => {
         }),
         expect.objectContaining({
           id: "research-monitor",
+          source: "workspace"
+        }),
+        expect.objectContaining({
+          id: "email-followup",
           source: "workspace"
         })
       ])
