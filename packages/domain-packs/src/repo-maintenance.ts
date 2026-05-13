@@ -9,11 +9,11 @@ export const repoMaintenancePack = {
   description:
     "Keep software repositories healthy with governed AI workers and verifier-first evidence.",
   goalTemplates: ["keep-ci-green"],
-  taskTypes: ["repo_inspect", "run_local_verifiers"],
+  taskTypes: ["repo_inspect", "run_local_verifiers", "ci_repair"],
   defaultPolicy: "policies/repo-maintenance.yaml",
   defaultVerifiers: ["command", "git_diff_scope"],
-  requiredTools: ["filesystem", "shell", "git"],
-  supportedWorkers: ["shell"]
+  requiredTools: ["filesystem", "shell", "git", "github"],
+  supportedWorkers: ["shell", "claude_code", "codex_cli"]
 } satisfies DomainPack;
 
 export const repoMaintenanceDomainYaml = `id: repo-maintenance
@@ -25,6 +25,8 @@ scope:
   resource_types:
     - repository
     - branch
+    - pull_request
+    - workflow_run
 
 goal_templates:
   - keep-ci-green
@@ -32,6 +34,7 @@ goal_templates:
 task_types:
   - repo_inspect
   - run_local_verifiers
+  - ci_repair
 
 default_policy: policies/repo-maintenance.yaml
 
@@ -43,9 +46,12 @@ required_tools:
   - filesystem
   - shell
   - git
+  - github
 
 supported_workers:
   - shell
+  - claude_code
+  - codex_cli
 
 security:
   untrusted_inputs:

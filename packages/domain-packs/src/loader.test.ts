@@ -25,7 +25,8 @@ describe("loadDomainPackBundleFromDir", () => {
     ]);
     expect(bundle.taskTypes.map((taskType) => taskType.id)).toEqual([
       "repo_inspect",
-      "run_local_verifiers"
+      "run_local_verifiers",
+      "ci_repair"
     ]);
   });
 });

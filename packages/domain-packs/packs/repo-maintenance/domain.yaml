@@ -16,6 +16,7 @@ goal_templates:
 task_types:
   - repo_inspect
   - run_local_verifiers
+  - ci_repair
 
 default_policy: policies/repo-maintenance.yaml
 
@@ -27,9 +28,12 @@ required_tools:
   - filesystem
   - shell
   - git
+  - github
 
 supported_workers:
   - shell
+  - claude_code
+  - codex_cli
 
 security:
   untrusted_inputs:

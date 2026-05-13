@@ -1,6 +1,6 @@
 import { constants } from "node:fs";
-import { access } from "node:fs/promises";
-import { join, resolve, sep } from "node:path";
+import { access, readdir } from "node:fs/promises";
+import { basename, join, resolve, sep } from "node:path";
 
 import type { DomainPack } from "./domain-pack.js";
 import { loadDomainPackFromFile } from "./domain-pack.js";
@@ -101,7 +101,30 @@ export async function validateDomainPackDir(
         path: taskTypePath,
         issues
       });
+      assertDeclaredWorkerRouting({
+        taskType,
+        supportedWorkers: domain.supportedWorkers,
+        path: taskTypePath,
+        issues
+      });
     }
+
+    await collectUnregisteredYamlDocuments({
+      root: resolvedRoot,
+      directory: "goal-templates",
+      registeredIds: domain.goalTemplates,
+      codePrefix: "goal_template",
+      label: "goal template",
+      issues
+    });
+    await collectUnregisteredYamlDocuments({
+      root: resolvedRoot,
+      directory: "task-types",
+      registeredIds: domain.taskTypes,
+      codePrefix: "task_type",
+      label: "task type",
+      issues
+    });
 
     await assertFileExists({
       path: join(resolvedRoot, domain.defaultPolicy),
@@ -316,6 +339,67 @@ function collectDuplicateReferences(
     }
 
     seen.add(reference);
+  }
+}
+
+function assertDeclaredWorkerRouting(input: {
+  taskType: TaskType;
+  supportedWorkers: string[];
+  path: string;
+  issues: DomainPackValidationIssue[];
+}): void {
+  const supported = new Set(input.supportedWorkers);
+  const routedWorkers = [
+    input.taskType.workerRouting.preferred,
+    ...(input.taskType.workerRouting.fallback ?? [])
+  ];
+
+  for (const worker of routedWorkers) {
+    if (!supported.has(worker)) {
+      input.issues.push({
+        severity: "error",
+        code: "task_type_worker_undeclared",
+        message: `Task type ${input.taskType.id} routes to undeclared worker: ${worker}`,
+        path: input.path
+      });
+    }
+  }
+}
+
+async function collectUnregisteredYamlDocuments(input: {
+  root: string;
+  directory: string;
+  registeredIds: string[];
+  codePrefix: string;
+  label: string;
+  issues: DomainPackValidationIssue[];
+}): Promise<void> {
+  const directoryPath = join(input.root, input.directory);
+  const registered = new Set(input.registeredIds);
+
+  let entries: string[];
+
+  try {
+    entries = await readdir(directoryPath);
+  } catch {
+    return;
+  }
+
+  for (const entry of entries) {
+    if (!entry.endsWith(".yaml")) {
+      continue;
+    }
+
+    const id = basename(entry, ".yaml");
+
+    if (!registered.has(id)) {
+      input.issues.push({
+        severity: "warning",
+        code: `${input.codePrefix}_unregistered_yaml`,
+        message: `Unregistered ${input.label} yaml is not referenced from domain.yaml: ${id}`,
+        path: join(directoryPath, entry)
+      });
+    }
   }
 }
 

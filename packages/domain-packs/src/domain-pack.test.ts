@@ -23,7 +23,7 @@ describe("repo-maintenance pack", () => {
     expect(pack).toMatchObject({
       id: "repo-maintenance",
       goalTemplates: ["keep-ci-green"],
-      taskTypes: ["repo_inspect", "run_local_verifiers"],
+      taskTypes: ["repo_inspect", "run_local_verifiers", "ci_repair"],
       defaultPolicy: "policies/repo-maintenance.yaml"
     });
     expect(pack.security?.protectedPaths).toContain(".env");

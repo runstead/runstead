@@ -11,6 +11,7 @@ verifiers:
     - command:local_verifiers
 
 worker_routing:
-  preferred: wrapped-worker
+  preferred: codex_cli
   fallback:
+    - claude_code
     - shell

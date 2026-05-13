@@ -6,8 +6,8 @@ and contracts, not runtime state.
 The first built-in domain pack is `repo-maintenance`. It starts with:
 
 - `keep-ci-green` goal template
-- `repo_inspect` and `run_local_verifiers` task types
-- shell worker routing
+- `repo_inspect`, `run_local_verifiers`, and `ci_repair` task types
+- shell plus wrapped coding-agent worker routing
 - command and diff-scope verifier defaults
 - protected-path security defaults
 
@@ -152,6 +152,8 @@ The validator checks that:
 - Manifest references resolve to files inside the pack.
 - Goal templates and task types declare the same domain id as the pack.
 - Referenced template and task ids match file names.
+- Extra task type YAML files that are not registered in `domain.yaml` are warned.
+- Task type worker routing must point at workers declared in `supported_workers`.
 - The default policy file exists.
 
 List discoverable packs with:

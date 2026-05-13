@@ -26,7 +26,8 @@ describe("validateDomainPackDir", () => {
     ]);
     expect(result.taskTypes.map((taskType) => taskType.id)).toEqual([
       "repo_inspect",
-      "run_local_verifiers"
+      "run_local_verifiers",
+      "ci_repair"
     ]);
     expect(formatDomainPackValidationResult(result)).toContain("Status: valid");
   });
@@ -141,6 +142,86 @@ describe("validateDomainPackDir", () => {
           "task_type_id_mismatch",
           "task_type_domain_mismatch",
           "default_policy_missing"
+        ])
+      );
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("reports unregistered task yaml and undeclared worker routing", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-domain-pack-"));
+
+    try {
+      await mkdir(join(workspace, "policies"), { recursive: true });
+      await mkdir(join(workspace, "task-types"), { recursive: true });
+      await writeFile(
+        join(workspace, "domain.yaml"),
+        [
+          "id: custom-pack",
+          "version: 0.1.0",
+          "name: Custom Pack",
+          "description: Invalid worker routing test pack.",
+          "goal_templates: []",
+          "task_types:",
+          "  - registered_task",
+          "default_policy: policies/default.yaml",
+          "default_verifiers:",
+          "  - command",
+          "required_tools:",
+          "  - shell",
+          "supported_workers:",
+          "  - shell"
+        ].join("\n"),
+        "utf8"
+      );
+      await writeFile(join(workspace, "policies", "default.yaml"), "rules: []\n", "utf8");
+      await writeFile(
+        join(workspace, "task-types", "registered_task.yaml"),
+        [
+          "id: registered_task",
+          "domain: custom-pack",
+          "description: Registered task with bad worker.",
+          "default_priority: medium",
+          "max_attempts: 1",
+          "verifiers:",
+          "  required:",
+          "    - command:test",
+          "worker_routing:",
+          "  preferred: codex_cli"
+        ].join("\n"),
+        "utf8"
+      );
+      await writeFile(
+        join(workspace, "task-types", "extra_task.yaml"),
+        [
+          "id: extra_task",
+          "domain: custom-pack",
+          "description: Unregistered task.",
+          "default_priority: medium",
+          "max_attempts: 1",
+          "verifiers:",
+          "  required:",
+          "    - command:test",
+          "worker_routing:",
+          "  preferred: shell"
+        ].join("\n"),
+        "utf8"
+      );
+
+      const result = await validateDomainPackDir(workspace);
+
+      expect(result.valid).toBe(false);
+      expect(result.issues).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            severity: "error",
+            code: "task_type_worker_undeclared"
+          }),
+          expect.objectContaining({
+            severity: "warning",
+            code: "task_type_unregistered_yaml"
+          })
         ])
       );
     } finally {
