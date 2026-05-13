@@ -3,8 +3,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import type { Task } from "@runstead/core";
+import { openRunsteadDatabase } from "@runstead/state-sqlite";
 import { describe, expect, it } from "vitest";
 
+import { decideApproval, showApproval } from "./approvals.js";
 import { initRunstead } from "./init.js";
 import {
   formatCiRepairOrchestratorReport,
@@ -19,7 +21,7 @@ import type {
 import type { WorkerProcessRunner } from "./wrapped-worker.js";
 
 describe("runCiRepairOrchestrator", () => {
-  it("creates a repair task, branch, worker checkpoint, diff check, verifier, and PR", async () => {
+  it("pauses PR creation for approval and resumes after approval", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "runstead-ci-orchestrator-"));
     const now = new Date("2026-05-14T12:00:00.000Z");
     const githubCalls: string[][] = [];
@@ -30,7 +32,7 @@ describe("runCiRepairOrchestrator", () => {
     try {
       await initRunstead({ cwd: workspace, createDefaultGoal: true });
 
-      const result = await runCiRepairOrchestrator({
+      const first = await runCiRepairOrchestrator({
         cwd: workspace,
         runId: "123",
         worker: "codex_cli",
@@ -45,24 +47,101 @@ describe("runCiRepairOrchestrator", () => {
         now
       });
 
-      expect(result.ciRepair.workflowRun.runId).toBe("123");
-      expect(result.branchName).toMatch(/^runstead\/task_/);
-      expect(result.workerResult.checkpointBefore?.id).toMatch(/^chk_/);
-      expect(result.diffScope).toMatchObject({
+      expect(first.status).toBe("waiting_approval");
+      expect(first.ciRepair.workflowRun.runId).toBe("123");
+      expect(first.branchName).toMatch(/^runstead\/task_/);
+      expect(first.workerResult?.checkpointBefore?.id).toMatch(/^chk_/);
+      expect(first.diffScope).toMatchObject({
         passed: true,
         changedFiles: ["src/fix.ts"]
       });
-      expect(result.verifierResult.task.status).toBe("completed");
-      expect(result.pullRequest.url).toBe("https://github.example/pr/1");
-      expect(gitCalls).toContainEqual(["switch", "-c", result.branchName, "main"]);
-      expect(githubCalls.some((args) => args[0] === "pr" && args[1] === "create"))
-        .toBe(true);
-      expect(verifierCalls).toHaveLength(1);
-      expect(verifierCalls[0]?.taskId).toBe(result.ciRepair.task.id);
-      expect(workerCalls[0]).toContain("Repair GitHub Actions run 123.");
-      expect(formatCiRepairOrchestratorReport(result)).toContain(
-        `Branch: ${result.branchName}`
+      expect(first.verifierResult?.task.status).toBe("waiting_approval");
+      expect(first.pullRequest).toBeUndefined();
+      expect(first.approval?.id).toMatch(/^appr_/);
+      expect(gitCalls).toContainEqual(["switch", "-c", first.branchName, "main"]);
+      expect(githubCalls.some((args) => args[0] === "pr" && args[1] === "create")).toBe(
+        false
       );
+      expect(verifierCalls).toHaveLength(1);
+      expect(verifierCalls[0]?.taskId).toBe(first.ciRepair.task.id);
+      expect(workerCalls[0]).toContain("Repair GitHub Actions run 123.");
+      expect(formatCiRepairOrchestratorReport(first)).toContain(
+        `waiting approval ${first.approval?.id}`
+      );
+
+      const database = openRunsteadDatabase(join(workspace, ".runstead", "state.db"));
+
+      try {
+        const toolCalls = database
+          .prepare("SELECT action_type, status FROM tool_calls ORDER BY started_at, id")
+          .all() as { action_type: string; status: string }[];
+
+        expect(toolCalls).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              action_type: "git.branch.create",
+              status: "completed"
+            }),
+            expect.objectContaining({
+              action_type: "checkpoint.create",
+              status: "completed"
+            }),
+            expect.objectContaining({
+              action_type: "worker.external.start",
+              status: "completed"
+            }),
+            expect.objectContaining({
+              action_type: "git.diff",
+              status: "completed"
+            }),
+            expect.objectContaining({
+              action_type: "github.pr.create",
+              status: "approval_required"
+            })
+          ])
+        );
+      } finally {
+        database.close();
+      }
+
+      if (first.approval === undefined) {
+        throw new Error("Expected PR approval request");
+      }
+
+      decideApproval({
+        cwd: workspace,
+        id: first.approval.id,
+        decision: "approved",
+        decidedBy: "alice",
+        now: new Date("2026-05-14T12:01:00.000Z")
+      });
+
+      const second = await runCiRepairOrchestrator({
+        cwd: workspace,
+        runId: "123",
+        worker: "codex_cli",
+        base: "main",
+        allowedPaths: ["src/**"],
+        deniedPaths: [".env"],
+        verifierCommands: [{ name: "test", command: "pnpm test" }],
+        githubRunner: githubRunner(githubCalls),
+        gitRunner: gitRunner(gitCalls, { diffNameOnly: "src/fix.ts\n" }),
+        workerRunner: workerRunner(workerCalls),
+        verifierRunner: verifierRunner(verifierCalls),
+        now: new Date("2026-05-14T12:02:00.000Z")
+      });
+
+      expect(second.status).toBe("completed");
+      expect(second.pullRequest?.url).toBe("https://github.example/pr/1");
+      expect(githubCalls.some((args) => args[0] === "pr" && args[1] === "create")).toBe(
+        true
+      );
+      expect(
+        gitCalls.filter((args) => args[0] === "switch" && args[1] === "-c")
+      ).toHaveLength(1);
+      expect(
+        showApproval({ cwd: workspace, id: first.approval.id }).approval.status
+      ).toBe("expired");
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }
@@ -139,10 +218,7 @@ function githubRunner(calls: string[][]): GitHubCliRunner {
   };
 }
 
-function gitRunner(
-  calls: string[][],
-  output: { diffNameOnly: string }
-): GitRunner {
+function gitRunner(calls: string[][], output: { diffNameOnly: string }): GitRunner {
   return (args) => {
     calls.push(args);
 
@@ -168,7 +244,11 @@ function gitRunner(
       case "reset --hard abc123":
         return Promise.resolve({ stdout: "", stderr: "", exitCode: 0 });
       default:
-        return Promise.resolve({ stdout: "", stderr: "unexpected git call", exitCode: 1 });
+        return Promise.resolve({
+          stdout: "",
+          stderr: "unexpected git call",
+          exitCode: 1
+        });
     }
   };
 }
