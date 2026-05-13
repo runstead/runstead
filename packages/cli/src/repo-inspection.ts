@@ -24,6 +24,15 @@ export interface PackageManagerInspection {
   lockfilePath?: string;
 }
 
+export interface PackageScriptCommandInspection {
+  detected: boolean;
+  scriptName: string;
+  cwd: string;
+  command?: string;
+  rawScript?: string;
+  packageJsonPath?: string;
+}
+
 export async function inspectGitRepository(
   cwd = process.cwd()
 ): Promise<GitInspection> {
@@ -102,6 +111,12 @@ export async function inspectPackageManager(
   return result;
 }
 
+export async function inspectTestCommand(
+  cwd = process.cwd()
+): Promise<PackageScriptCommandInspection> {
+  return inspectPackageScriptCommand(cwd, "test");
+}
+
 interface GitCommandResult {
   ok: boolean;
   stdout: string;
@@ -140,6 +155,95 @@ async function readPackageManagerFromPackageJson(
     return parsePackageManagerName(parsed.packageManager);
   } catch {
     return undefined;
+  }
+}
+
+async function inspectPackageScriptCommand(
+  cwd: string,
+  scriptName: string
+): Promise<PackageScriptCommandInspection> {
+  const workspace = resolve(cwd);
+  const packageJsonPath = join(workspace, "package.json");
+  const rawScript = await readPackageScript(packageJsonPath, scriptName);
+
+  if (rawScript === undefined || isPlaceholderTestScript(scriptName, rawScript)) {
+    const result: PackageScriptCommandInspection = {
+      detected: false,
+      scriptName,
+      cwd: workspace
+    };
+
+    if (await exists(packageJsonPath)) {
+      result.packageJsonPath = packageJsonPath;
+    }
+
+    return result;
+  }
+
+  const packageManager = await inspectPackageManager(workspace);
+
+  return {
+    detected: true,
+    scriptName,
+    cwd: workspace,
+    command: formatPackageScriptCommand(
+      packageManager.packageManager ?? "npm",
+      scriptName
+    ),
+    rawScript,
+    packageJsonPath
+  };
+}
+
+async function readPackageScript(
+  packageJsonPath: string,
+  scriptName: string
+): Promise<string | undefined> {
+  try {
+    const raw = await readFile(packageJsonPath, "utf8");
+    const parsed = JSON.parse(raw) as { scripts?: Record<string, unknown> };
+    const script = parsed.scripts?.[scriptName];
+
+    return typeof script === "string" ? script : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function isPlaceholderTestScript(scriptName: string, rawScript: string): boolean {
+  return (
+    scriptName === "test" &&
+    rawScript.includes("Error: no test specified") &&
+    rawScript.includes("exit 1")
+  );
+}
+
+function formatPackageScriptCommand(
+  packageManager: PackageManager,
+  scriptName: string
+): string {
+  if (scriptName === "test") {
+    switch (packageManager) {
+      case "pnpm":
+        return "pnpm test";
+      case "npm":
+        return "npm test";
+      case "yarn":
+        return "yarn test";
+      case "bun":
+        return "bun test";
+    }
+  }
+
+  switch (packageManager) {
+    case "pnpm":
+      return `pnpm run ${scriptName}`;
+    case "npm":
+      return `npm run ${scriptName}`;
+    case "yarn":
+      return `yarn ${scriptName}`;
+    case "bun":
+      return `bun run ${scriptName}`;
   }
 }
 

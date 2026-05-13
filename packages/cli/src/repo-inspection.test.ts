@@ -6,7 +6,11 @@ import { promisify } from "node:util";
 
 import { describe, expect, it } from "vitest";
 
-import { inspectGitRepository, inspectPackageManager } from "./repo-inspection.js";
+import {
+  inspectGitRepository,
+  inspectPackageManager,
+  inspectTestCommand
+} from "./repo-inspection.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -116,6 +120,81 @@ describe("inspectPackageManager", () => {
       expect(inspection).toEqual({
         detected: false,
         cwd: workspace
+      });
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+});
+
+describe("inspectTestCommand", () => {
+  it("detects a real package test script", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-test-command-"));
+
+    try {
+      await writeFile(
+        join(workspace, "package.json"),
+        JSON.stringify({
+          packageManager: "pnpm@11.1.1",
+          scripts: {
+            test: "vitest run"
+          }
+        }),
+        "utf8"
+      );
+
+      const inspection = await inspectTestCommand(workspace);
+
+      expect(inspection).toMatchObject({
+        detected: true,
+        scriptName: "test",
+        command: "pnpm test",
+        rawScript: "vitest run",
+        packageJsonPath: join(workspace, "package.json")
+      });
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("ignores the default npm placeholder test script", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-test-command-"));
+
+    try {
+      await writeFile(
+        join(workspace, "package.json"),
+        JSON.stringify({
+          scripts: {
+            test: 'echo "Error: no test specified" && exit 1'
+          }
+        }),
+        "utf8"
+      );
+
+      const inspection = await inspectTestCommand(workspace);
+
+      expect(inspection).toMatchObject({
+        detected: false,
+        scriptName: "test",
+        packageJsonPath: join(workspace, "package.json")
+      });
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("returns undetected when package.json has no test script", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-test-command-"));
+
+    try {
+      await writeFile(join(workspace, "package.json"), "{}", "utf8");
+
+      const inspection = await inspectTestCommand(workspace);
+
+      expect(inspection).toMatchObject({
+        detected: false,
+        scriptName: "test",
+        packageJsonPath: join(workspace, "package.json")
       });
     } finally {
       await rm(workspace, { force: true, recursive: true });
