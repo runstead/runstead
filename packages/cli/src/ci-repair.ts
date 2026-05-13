@@ -20,11 +20,13 @@ import {
 } from "./github-actions.js";
 import { listGoals } from "./goals.js";
 import { requireRunsteadStateDbSync } from "./runstead-root.js";
+import type { CommandVerifierInput } from "./verifier-evidence.js";
 
 export interface CreateCiRepairTaskOptions {
   cwd?: string;
   runId: string;
   runner?: GitHubCliRunner;
+  verifierCommands?: CommandVerifierInput[];
   now?: Date;
 }
 
@@ -95,9 +97,16 @@ export async function createCiRepairTaskFromWorkflowRun(
         classifyFailure: true,
         runLocalVerifiers: true,
         createPullRequestWithEvidence: true
-      }
+      },
+      ...(options.verifierCommands === undefined
+        ? {}
+        : { commands: options.verifierCommands })
     },
-    verifiers: ["evidence:github_workflow_run", "command:local_verifiers"],
+    verifiers: [
+      "evidence:github_workflow_run",
+      ...(options.verifierCommands ?? []).map((command) => `command:${command.name}`),
+      ...(options.verifierCommands === undefined ? ["command:local_verifiers"] : [])
+    ],
     createdAt,
     updatedAt: createdAt
   };

@@ -1305,6 +1305,54 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
       console.log(formatCiRepairTaskReport(result));
     });
 
+  githubRun
+    .command("orchestrate-repair")
+    .description("Run the CI repair branch, worker, verifier, and PR loop.")
+    .argument("<run-id>", "GitHub Actions workflow run id")
+    .option("--cwd <path>", "Workspace directory")
+    .option("--worker <worker>", "Worker to run: codex_cli or claude_code", "codex_cli")
+    .option("--base <ref>", "PR base branch")
+    .option("--draft", "Create a draft pull request")
+    .option("--allowed <pattern>", "Allowed changed path pattern", collectValues, [])
+    .option("--denied <pattern>", "Denied changed path pattern", collectValues, [])
+    .requiredOption(
+      "--verifier <name=command>",
+      "Verifier command to run after repair",
+      collectValues,
+      []
+    )
+    .action(
+      async (
+        runId: string,
+        options: {
+          cwd?: string;
+          worker: string;
+          base?: string;
+          draft?: boolean;
+          allowed: string[];
+          denied: string[];
+          verifier: string[];
+        }
+      ) => {
+        const {
+          formatCiRepairOrchestratorReport,
+          runCiRepairOrchestrator
+        } = await import("./ci-repair-orchestrator.js");
+        const result = await runCiRepairOrchestrator({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          runId,
+          worker: parseWrappedWorkerKind(options.worker),
+          ...(options.base === undefined ? {} : { base: options.base }),
+          draft: options.draft === true,
+          allowedPaths: options.allowed,
+          deniedPaths: options.denied,
+          verifierCommands: options.verifier.map(parseVerifierCommandOption)
+        });
+
+        console.log(formatCiRepairOrchestratorReport(result));
+      }
+    );
+
   const githubPr = github.command("pr").description("Create GitHub pull requests.");
 
   githubPr
@@ -1405,6 +1453,27 @@ function evidenceSummariesFromCli(values: string[]) {
     type: "manual",
     summary
   }));
+}
+
+function parseWrappedWorkerKind(value: string): "codex_cli" | "claude_code" {
+  if (value === "codex_cli" || value === "claude_code") {
+    return value;
+  }
+
+  throw new Error("--worker must be codex_cli or claude_code");
+}
+
+function parseVerifierCommandOption(value: string): { name: string; command: string } {
+  const separator = value.indexOf("=");
+
+  if (separator <= 0 || separator === value.length - 1) {
+    throw new Error("--verifier must use name=command");
+  }
+
+  return {
+    name: value.slice(0, separator).trim(),
+    command: value.slice(separator + 1).trim()
+  };
 }
 
 function parseOptionalFloat(
