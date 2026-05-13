@@ -23,6 +23,12 @@ export interface GetWorkflowRunStatusOptions {
   runner?: GitHubCliRunner;
 }
 
+export interface FetchWorkflowRunLogOptions {
+  cwd?: string;
+  runId: string;
+  runner?: GitHubCliRunner;
+}
+
 export interface GitHubWorkflowRunStatus {
   runId: string;
   databaseId?: number;
@@ -34,6 +40,12 @@ export interface GitHubWorkflowRunStatus {
   headBranch?: string;
   headSha?: string;
   url?: string;
+}
+
+export interface GitHubWorkflowRunLog {
+  runId: string;
+  log: string;
+  byteLength: number;
 }
 
 const WorkflowRunStatusSchema = z.object({
@@ -108,6 +120,28 @@ export function formatWorkflowRunStatus(status: GitHubWorkflowRunStatus): string
     ...(status.headSha === undefined ? [] : [`SHA: ${status.headSha}`]),
     ...(status.url === undefined ? [] : [`URL: ${status.url}`])
   ].join("\n");
+}
+
+export async function fetchGitHubWorkflowRunLog(
+  options: FetchWorkflowRunLogOptions
+): Promise<GitHubWorkflowRunLog> {
+  const cwd = resolve(options.cwd ?? process.cwd());
+  const result = await (options.runner ?? runGh)(
+    ["run", "view", options.runId, "--log"],
+    { cwd }
+  );
+
+  if (result.exitCode !== 0) {
+    throw new Error(
+      `gh run view --log failed with exit ${result.exitCode}: ${result.stderr}`
+    );
+  }
+
+  return {
+    runId: options.runId,
+    log: result.stdout,
+    byteLength: Buffer.byteLength(result.stdout)
+  };
 }
 
 async function runGh(

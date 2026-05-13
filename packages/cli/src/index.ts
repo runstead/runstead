@@ -319,6 +319,21 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
       console.log(formatWorkflowRunStatus(result));
     });
 
+  githubRun
+    .command("logs")
+    .description("Print GitHub workflow run logs.")
+    .argument("<run-id>", "GitHub Actions workflow run id")
+    .option("--cwd <path>", "Workspace directory")
+    .action(async (runId: string, options: { cwd?: string }) => {
+      const { fetchGitHubWorkflowRunLog } = await import("./github-actions.js");
+      const result = await fetchGitHubWorkflowRunLog({
+        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+        runId
+      });
+
+      process.stdout.write(result.log);
+    });
+
   const policy = program.command("policy").description("Evaluate policies.");
 
   policy

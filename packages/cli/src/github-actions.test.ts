@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  fetchGitHubWorkflowRunLog,
   formatWorkflowRunStatus,
   getGitHubWorkflowRunStatus,
   type GitHubCliRunner
@@ -71,5 +72,36 @@ describe("getGitHubWorkflowRunStatus", () => {
         headBranch: "main"
       })
     ).toContain("Status: completed");
+  });
+
+  it("fetches workflow run logs through gh", async () => {
+    const calls: { args: string[]; cwd: string }[] = [];
+    const runner: GitHubCliRunner = (args, options) => {
+      calls.push({ args, cwd: options.cwd });
+
+      return Promise.resolve({
+        stdout: "build\tstep\tfailing test\n",
+        stderr: "",
+        exitCode: 0
+      });
+    };
+
+    await expect(
+      fetchGitHubWorkflowRunLog({
+        cwd: "/repo",
+        runId: "123",
+        runner
+      })
+    ).resolves.toEqual({
+      runId: "123",
+      log: "build\tstep\tfailing test\n",
+      byteLength: 24
+    });
+    expect(calls).toEqual([
+      {
+        cwd: "/repo",
+        args: ["run", "view", "123", "--log"]
+      }
+    ]);
   });
 });
