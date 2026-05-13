@@ -42,6 +42,25 @@ export function createProgram(): Command {
       console.log(`Domain: ${status.domain ?? "unknown"}`);
     });
 
+  program
+    .command("doctor")
+    .description("Check local Runstead state and scaffold health.")
+    .option("--cwd <path>", "Workspace directory")
+    .action(async (options: { cwd?: string }) => {
+      const { doctorRunstead } = await import("./doctor.js");
+      const result = await doctorRunstead(options);
+
+      console.log(`Runstead doctor for ${result.root}`);
+
+      for (const check of result.checks) {
+        console.log(`[${check.status}] ${check.label}: ${check.message}`);
+      }
+
+      if (!result.ok) {
+        process.exitCode = 1;
+      }
+    });
+
   return program;
 }
 
