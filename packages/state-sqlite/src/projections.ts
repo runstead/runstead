@@ -2,6 +2,7 @@ import type {
   ApprovalRequest,
   Evidence,
   Goal,
+  MemoryRecord,
   PolicyDecisionRecord,
   RunsteadEvent,
   Task
@@ -10,6 +11,7 @@ import {
   ApprovalRequestSchema,
   EvidenceSchema,
   GoalSchema,
+  MemoryRecordSchema,
   PolicyDecisionRecordSchema,
   RunsteadEventSchema,
   TaskSchema
@@ -22,7 +24,8 @@ export type StateProjection =
   | { type: "task"; value: Task }
   | { type: "evidence"; value: Evidence }
   | { type: "policyDecision"; value: PolicyDecisionRecord }
-  | { type: "approval"; value: ApprovalRequest };
+  | { type: "approval"; value: ApprovalRequest }
+  | { type: "memory"; value: MemoryRecord };
 
 export interface AppendEventAndProjectInput {
   event: RunsteadEvent;
@@ -97,6 +100,9 @@ function upsertProjection(
       return;
     case "approval":
       upsertApproval(database, ApprovalRequestSchema.parse(projection.value));
+      return;
+    case "memory":
+      upsertMemoryRecord(database, MemoryRecordSchema.parse(projection.value));
       return;
   }
 }
@@ -323,6 +329,53 @@ function upsertApproval(database: RunsteadDatabase, approval: ApprovalRequest): 
       approval.decidedBy ?? null,
       approval.createdAt,
       approval.updatedAt
+    );
+}
+
+function upsertMemoryRecord(database: RunsteadDatabase, memory: MemoryRecord): void {
+  database
+    .prepare(
+      `
+      INSERT INTO memory_records (
+        id,
+        scope,
+        type,
+        status,
+        confidence,
+        content,
+        source_refs_json,
+        provenance_json,
+        created_at,
+        updated_at,
+        expires_at,
+        conflicts_with_json
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        scope = excluded.scope,
+        type = excluded.type,
+        status = excluded.status,
+        confidence = excluded.confidence,
+        content = excluded.content,
+        source_refs_json = excluded.source_refs_json,
+        provenance_json = excluded.provenance_json,
+        updated_at = excluded.updated_at,
+        expires_at = excluded.expires_at,
+        conflicts_with_json = excluded.conflicts_with_json
+    `
+    )
+    .run(
+      memory.id,
+      memory.scope,
+      memory.type,
+      memory.status,
+      memory.confidence,
+      memory.content,
+      JSON.stringify(memory.sourceRefs),
+      JSON.stringify(memory.provenance),
+      memory.createdAt,
+      memory.updatedAt,
+      memory.expiresAt ?? null,
+      JSON.stringify(memory.conflictsWith)
     );
 }
 

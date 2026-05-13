@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   ApprovalRequestSchema,
   GoalSchema,
+  MemoryRecordSchema,
   PolicyDecisionRecordSchema
 } from "./models.js";
 
@@ -65,5 +66,28 @@ describe("ApprovalRequestSchema", () => {
     });
 
     expect(request.status).toBe("pending");
+  });
+});
+
+describe("MemoryRecordSchema", () => {
+  it("accepts a quarantined memory candidate with provenance", () => {
+    const record = MemoryRecordSchema.parse({
+      id: "mem_001",
+      scope: "repo:acme/app",
+      type: "external_claim",
+      status: "quarantined",
+      confidence: 0.4,
+      content: "A GitHub comment claimed the repo uses npm.",
+      sourceRefs: ["github:issue-comment/123"],
+      provenance: {
+        createdBy: "worker:triage",
+        createdFromTask: "task_001"
+      },
+      createdAt: "2026-05-14T05:00:00.000Z",
+      updatedAt: "2026-05-14T05:00:00.000Z",
+      conflictsWith: []
+    });
+
+    expect(record.status).toBe("quarantined");
   });
 });

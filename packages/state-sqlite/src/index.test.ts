@@ -25,6 +25,7 @@ describe("openRunsteadDatabase", () => {
           "evidence",
           "policy_decisions",
           "approvals",
+          "memory_records",
           "events"
         ])
       );
@@ -228,6 +229,76 @@ describe("appendEventAndProject", () => {
         reason: "External write requires approval",
         requested_by: "runstead",
         expires_at: "2026-05-14T04:08:00.000Z"
+      });
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("appends an event and updates a memory projection", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-state-"));
+
+    try {
+      const database = openRunsteadDatabase(join(workspace, "state.db"));
+
+      appendEventAndProject(database, {
+        event: {
+          eventId: "evt_memory_quarantined_001",
+          type: "memory.candidate_quarantined",
+          aggregateType: "memory",
+          aggregateId: "mem_001",
+          payload: {
+            scope: "repo:acme/app",
+            type: "external_claim"
+          },
+          createdAt: "2026-05-14T05:00:00.000Z"
+        },
+        projection: {
+          type: "memory",
+          value: {
+            id: "mem_001",
+            scope: "repo:acme/app",
+            type: "external_claim",
+            status: "quarantined",
+            confidence: 0.4,
+            content: "A GitHub comment claimed the repo uses npm.",
+            sourceRefs: ["github:issue-comment/123"],
+            provenance: {
+              createdBy: "worker:triage"
+            },
+            createdAt: "2026-05-14T05:00:00.000Z",
+            updatedAt: "2026-05-14T05:00:00.000Z",
+            conflictsWith: []
+          }
+        }
+      });
+
+      const memory = database
+        .prepare(
+          `
+          SELECT id, scope, type, status, confidence, source_refs_json
+          FROM memory_records
+          WHERE id = ?
+        `
+        )
+        .get("mem_001") as {
+        id: string;
+        scope: string;
+        type: string;
+        status: string;
+        confidence: number;
+        source_refs_json: string;
+      };
+
+      database.close();
+
+      expect(memory).toEqual({
+        id: "mem_001",
+        scope: "repo:acme/app",
+        type: "external_claim",
+        status: "quarantined",
+        confidence: 0.4,
+        source_refs_json: JSON.stringify(["github:issue-comment/123"])
       });
     } finally {
       await rm(workspace, { force: true, recursive: true });

@@ -184,6 +184,49 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
       }
     });
 
+  const memory = program.command("memory").description("Manage governed memory.");
+
+  memory
+    .command("quarantine")
+    .description("Record a memory candidate in quarantine.")
+    .requiredOption("--scope <scope>", "Memory scope, for example repo:acme/app")
+    .requiredOption("--type <type>", "Memory type")
+    .requiredOption("--content <text>", "Memory candidate content")
+    .option("--cwd <path>", "Workspace directory")
+    .option("--source <ref>", "Source/provenance reference", collectValues, [])
+    .option("--confidence <number>", "Confidence score from 0 to 1")
+    .option("--created-by <id>", "Creator id")
+    .option("--task <id>", "Source task id")
+    .action(
+      async (options: {
+        cwd?: string;
+        scope: string;
+        type: string;
+        content: string;
+        source: string[];
+        confidence?: string;
+        createdBy?: string;
+        task?: string;
+      }) => {
+        const { quarantineMemoryCandidate } = await import("./memory.js");
+        const confidence = parseOptionalFloat(options.confidence, "--confidence");
+        const result = quarantineMemoryCandidate({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          scope: options.scope,
+          type: options.type,
+          content: options.content,
+          sourceRefs: options.source,
+          ...(confidence === undefined ? {} : { confidence }),
+          ...(options.createdBy === undefined ? {} : { createdBy: options.createdBy }),
+          ...(options.task === undefined ? {} : { taskId: options.task })
+        });
+
+        console.log(`Quarantined memory: ${result.memory.id}`);
+        console.log(`Scope: ${result.memory.scope}`);
+        console.log(`Type: ${result.memory.type}`);
+      }
+    );
+
   const goal = program.command("goal").description("Manage durable goals.");
 
   goal
@@ -491,6 +534,23 @@ function evidenceSummariesFromCli(values: string[]) {
     type: "manual",
     summary
   }));
+}
+
+function parseOptionalFloat(
+  value: string | undefined,
+  optionName: string
+): number | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  const parsed = Number.parseFloat(value);
+
+  if (!Number.isFinite(parsed)) {
+    throw new Error(`${optionName} must be a number`);
+  }
+
+  return parsed;
 }
 
 const entrypoint = process.argv[1] ? pathToFileURL(process.argv[1]).href : undefined;

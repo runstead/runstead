@@ -8,7 +8,8 @@ export type RunsteadIdPrefix =
   | "poldec"
   | "wrun"
   | "tool"
-  | "appr";
+  | "appr"
+  | "mem";
 
 export function createRunsteadId(prefix: RunsteadIdPrefix): string {
   return `${prefix}_${randomUUID().replaceAll("-", "")}`;

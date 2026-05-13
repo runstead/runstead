@@ -33,6 +33,21 @@ export const ApprovalStatusSchema = z.enum([
   "expired"
 ]);
 
+export const MemoryTypeSchema = z.enum([
+  "project_fact",
+  "user_preference",
+  "task_observation",
+  "external_claim",
+  "policy_fact"
+]);
+
+export const MemoryStatusSchema = z.enum([
+  "quarantined",
+  "verified",
+  "rejected",
+  "expired"
+]);
+
 export const GoalSchema = z.object({
   id: z.string().min(1),
   domain: z.string().min(1),
@@ -112,6 +127,25 @@ export const ApprovalRequestSchema = z.object({
 });
 
 export type ApprovalRequest = z.infer<typeof ApprovalRequestSchema>;
+
+export const MemoryRecordSchema = z.object({
+  id: z.string().min(1),
+  scope: z.string().min(1),
+  type: MemoryTypeSchema,
+  status: MemoryStatusSchema,
+  confidence: z.number().min(0).max(1),
+  content: z.string().min(1),
+  sourceRefs: z.array(z.string().min(1)),
+  provenance: JsonObjectSchema,
+  createdAt: z.string().min(1),
+  updatedAt: z.string().min(1),
+  expiresAt: z.string().min(1).optional(),
+  conflictsWith: z.array(z.string().min(1))
+});
+
+export type MemoryRecord = z.infer<typeof MemoryRecordSchema>;
+export type MemoryType = z.infer<typeof MemoryTypeSchema>;
+export type MemoryStatus = z.infer<typeof MemoryStatusSchema>;
 
 export const RunsteadEventSchema = z.object({
   eventId: z.string().min(1),

@@ -70,6 +70,21 @@ CREATE TABLE IF NOT EXISTS approvals (
   updated_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS memory_records (
+  id TEXT PRIMARY KEY,
+  scope TEXT NOT NULL,
+  type TEXT NOT NULL,
+  status TEXT NOT NULL,
+  confidence REAL NOT NULL,
+  content TEXT NOT NULL,
+  source_refs_json TEXT NOT NULL,
+  provenance_json TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  expires_at TEXT,
+  conflicts_with_json TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS events (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   event_id TEXT UNIQUE NOT NULL,
