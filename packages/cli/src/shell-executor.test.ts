@@ -11,6 +11,7 @@ describe("runShellCommand", () => {
     expect(result.exitCode).toBe(0);
     expect(result.signal).toBeNull();
     expect(result.durationMs).toBeGreaterThanOrEqual(0);
+    expect(result.timedOut).toBe(false);
   });
 
   it("returns the exit code from a failing command", async () => {
@@ -20,5 +21,16 @@ describe("runShellCommand", () => {
 
     expect(result.exitCode).toBe(7);
     expect(result.signal).toBeNull();
+    expect(result.timedOut).toBe(false);
+  });
+
+  it("marks commands that exceed the timeout", async () => {
+    const result = await runShellCommand({
+      command: `${JSON.stringify(process.execPath)} -e "setTimeout(() => {}, 1000)"`,
+      timeoutMs: 50
+    });
+
+    expect(result.exitCode).toBeNull();
+    expect(result.timedOut).toBe(true);
   });
 });

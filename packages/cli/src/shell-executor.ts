@@ -6,6 +6,7 @@ export interface ShellCommandInput {
   command: string;
   cwd?: string;
   env?: Record<string, string | undefined>;
+  timeoutMs?: number;
 }
 
 export interface ShellCommandResult {
@@ -14,13 +15,19 @@ export interface ShellCommandResult {
   exitCode: number | null;
   signal: NodeJS.Signals | null;
   durationMs: number;
+  timedOut: boolean;
 }
 
 export function runShellCommand(input: ShellCommandInput): Promise<ShellCommandResult> {
+  if (input.timeoutMs !== undefined && input.timeoutMs <= 0) {
+    return Promise.reject(new Error("timeoutMs must be greater than 0"));
+  }
+
   const cwd = resolve(input.cwd ?? process.cwd());
   const startedAt = performance.now();
 
   return new Promise((resolveResult, reject) => {
+    let timedOut = false;
     const child = spawn(input.command, {
       cwd,
       env: {
@@ -31,15 +38,35 @@ export function runShellCommand(input: ShellCommandInput): Promise<ShellCommandR
       stdio: "ignore",
       windowsHide: true
     });
+    const timeout =
+      input.timeoutMs === undefined
+        ? undefined
+        : setTimeout(() => {
+            timedOut = true;
+            child.kill("SIGTERM");
+          }, input.timeoutMs);
 
-    child.once("error", reject);
+    timeout?.unref();
+
+    child.once("error", (error) => {
+      if (timeout !== undefined) {
+        clearTimeout(timeout);
+      }
+
+      reject(error);
+    });
     child.once("close", (exitCode, signal) => {
+      if (timeout !== undefined) {
+        clearTimeout(timeout);
+      }
+
       resolveResult({
         command: input.command,
         cwd,
         exitCode,
         signal,
-        durationMs: Math.round(performance.now() - startedAt)
+        durationMs: Math.round(performance.now() - startedAt),
+        timedOut
       });
     });
   });
