@@ -1,0 +1,121 @@
+import type { Goal, Task } from "@runstead/core";
+import { describe, expect, it } from "vitest";
+
+import {
+  buildWrappedWorkerPrompt,
+  startWrappedWorker,
+  workerCommand,
+  type WorkerProcessRunner
+} from "./wrapped-worker.js";
+
+const goal: Goal = {
+  id: "goal_repo_001",
+  domain: "repo-maintenance",
+  title: "Stabilize CI",
+  status: "active",
+  priority: "high",
+  scope: {
+    repository: "acme/widgets"
+  },
+  createdAt: "2026-05-14T00:00:00.000Z",
+  updatedAt: "2026-05-14T00:00:00.000Z"
+};
+
+const task: Task = {
+  id: "task_ci_001",
+  goalId: goal.id,
+  domain: "repo-maintenance",
+  type: "fix_ci_failure",
+  status: "queued",
+  priority: "high",
+  attempt: 0,
+  maxAttempts: 2,
+  input: {
+    workflowRunId: "123"
+  },
+  verifiers: ["command:test"],
+  createdAt: "2026-05-14T00:01:00.000Z",
+  updatedAt: "2026-05-14T00:01:00.000Z"
+};
+
+describe("buildWrappedWorkerPrompt", () => {
+  it("builds a constrained prompt with policy and verifier requirements", () => {
+    const prompt = buildWrappedWorkerPrompt({
+      worker: "claude_code",
+      goal,
+      task,
+      workspace: "/repo",
+      evidenceDir: "/repo/.runstead/evidence",
+      policySummary: "repo-maintenance policy",
+      allowedScope: ["src/**", "packages/**"],
+      deniedActions: ["modify .github/workflows/**"],
+      approvalRequired: ["dependency changes"],
+      instructions: ["Keep the diff small."]
+    });
+
+    expect(prompt).toContain("You are a Runstead worker.");
+    expect(prompt).toContain("Stabilize CI (goal_repo_001)");
+    expect(prompt).toContain("fix_ci_failure (task_ci_001)");
+    expect(prompt).toContain("- src/**");
+    expect(prompt).toContain("- modify .github/workflows/**");
+    expect(prompt).toContain("- command:test");
+    expect(prompt).toContain("repo-maintenance policy");
+    expect(prompt).toContain("Completion requires Runstead verifier success.");
+    expect(prompt).toContain('"needs_approval": false');
+    expect(prompt).toContain("- Keep the diff small.");
+  });
+});
+
+describe("workerCommand", () => {
+  it("maps worker kinds to their CLI invocations", () => {
+    expect(workerCommand("claude_code", "prompt")).toEqual({
+      command: "claude",
+      args: ["-p", "prompt"]
+    });
+    expect(workerCommand("codex_cli", "prompt")).toEqual({
+      command: "codex",
+      args: ["exec", "prompt"]
+    });
+  });
+});
+
+describe("startWrappedWorker", () => {
+  it("starts the selected worker through an injectable process runner", async () => {
+    const calls: { command: string; args: string[]; cwd: string }[] = [];
+    const runner: WorkerProcessRunner = (command, args, options) => {
+      calls.push({ command, args, cwd: options.cwd });
+
+      return Promise.resolve({
+        stdout: '{"summary":"done"}',
+        stderr: "",
+        exitCode: 0
+      });
+    };
+
+    const result = await startWrappedWorker({
+      worker: "codex_cli",
+      goal,
+      task,
+      workspace: "/repo",
+      evidenceDir: "/repo/.runstead/evidence",
+      runner
+    });
+
+    expect(result).toMatchObject({
+      worker: "codex_cli",
+      command: "codex",
+      stdout: '{"summary":"done"}',
+      stderr: "",
+      exitCode: 0
+    });
+    expect(result.args[0]).toBe("exec");
+    expect(result.args[1]).toBe(result.prompt);
+    expect(calls).toEqual([
+      {
+        command: "codex",
+        args: ["exec", result.prompt],
+        cwd: "/repo"
+      }
+    ]);
+  });
+});
