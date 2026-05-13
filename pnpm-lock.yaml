@@ -96,7 +96,11 @@ importers:
         specifier: 'catalog:'
         version: 4.4.3
 
-  packages/state-sqlite: {}
+  packages/state-sqlite:
+    dependencies:
+      '@runstead/core':
+        specifier: workspace:*
+        version: link:../core
 
   packages/testkit: {}
 

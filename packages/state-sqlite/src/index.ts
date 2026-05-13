@@ -34,4 +34,5 @@ export function migrateRunsteadDatabase(database: RunsteadDatabase): void {
   database.exec(createSchemaSql);
 }
 
+export * from "./projections.js";
 export { createSchemaSql };

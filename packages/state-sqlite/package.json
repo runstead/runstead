@@ -22,5 +22,8 @@
     "test": "vitest run",
     "lint": "eslint \"src/**/*.ts\" --max-warnings=0",
     "clean": "rm -rf dist coverage"
+  },
+  "dependencies": {
+    "@runstead/core": "workspace:*"
   }
 }
