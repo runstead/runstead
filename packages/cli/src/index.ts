@@ -61,6 +61,27 @@ export function createProgram(): Command {
       }
     });
 
+  const goal = program.command("goal").description("Manage durable goals.");
+
+  goal
+    .command("create")
+    .description("Create a goal from a domain pack template.")
+    .argument("[domain]", "Domain pack id", "repo-maintenance")
+    .option("--cwd <path>", "Workspace directory")
+    .option("--template <id>", "Goal template id")
+    .option("--title <title>", "Override goal title")
+    .action(
+      async (
+        domain: string,
+        options: { cwd?: string; template?: string; title?: string }
+      ) => {
+        const { createGoal } = await import("./goals.js");
+        const result = await createGoal({ ...options, domain });
+
+        console.log(`Created goal: ${result.goal.id} ${result.goal.title}`);
+      }
+    );
+
   return program;
 }
 
