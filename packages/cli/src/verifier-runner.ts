@@ -9,7 +9,11 @@ import {
 } from "@runstead/core";
 import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sqlite";
 
-import { requestApproval } from "./approvals.js";
+import {
+  expireApprovalGrant,
+  findApprovedApprovalForAction,
+  requestApproval
+} from "./approvals.js";
 import { loadPolicyProfileFromFile } from "./policy-loader.js";
 import type { ActionEnvelope, PolicyProfile } from "./policy.js";
 import { recordPolicyDecision } from "./policy-log.js";
@@ -119,6 +123,14 @@ export async function runTaskVerifiers(
         result: preflight.policyResult,
         ...(options.now === undefined ? {} : { now: options.now })
       });
+      const approvedGrant =
+        preflight.status === "approval_required"
+          ? findApprovedApprovalForAction({
+              database,
+              actionId: preflight.action.actionId,
+              ...(options.now === undefined ? {} : { now: options.now })
+            })
+          : undefined;
 
       if (preflight.status === "denied") {
         const evidenceResult = await storeCommandVerifierPolicyEvidence({
@@ -170,7 +182,7 @@ export async function runTaskVerifiers(
         };
       }
 
-      if (preflight.status === "approval_required") {
+      if (preflight.status === "approval_required" && approvedGrant === undefined) {
         const approval = requestApproval({
           database,
           policyDecision: recordedPolicy.decision,
@@ -248,7 +260,8 @@ export async function runTaskVerifiers(
         exitCode: evidenceResult.artifact.result.exitCode,
         timedOut: evidenceResult.artifact.result.timedOut,
         evidenceId: evidenceResult.evidence.id,
-        policyDecisionId: recordedPolicy.decision.id
+        policyDecisionId: recordedPolicy.decision.id,
+        ...(approvedGrant === undefined ? {} : { approvalId: approvedGrant.id })
       });
       finishToolCall({
         database,
@@ -258,10 +271,23 @@ export async function runTaskVerifiers(
         output: {
           evidenceId: evidenceResult.evidence.id,
           exitCode: evidenceResult.artifact.result.exitCode,
-          timedOut: evidenceResult.artifact.result.timedOut
+          timedOut: evidenceResult.artifact.result.timedOut,
+          ...(approvedGrant === undefined
+            ? {}
+            : {
+                approvalId: approvedGrant.id,
+                approvalGrant: "used"
+              })
         },
         ...(options.now === undefined ? {} : { now: options.now })
       });
+      if (approvedGrant !== undefined) {
+        expireApprovalGrant({
+          database,
+          approval: approvedGrant,
+          ...(options.now === undefined ? {} : { now: options.now })
+        });
+      }
     }
 
     const passed =

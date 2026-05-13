@@ -4,7 +4,9 @@ import {
   type ApprovalRequest,
   type JsonObject,
   type PolicyDecisionRecord,
-  type RunsteadEvent
+  type RunsteadEvent,
+  type Task,
+  TaskSchema
 } from "@runstead/core";
 import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sqlite";
 
@@ -49,6 +51,18 @@ export interface DecideApprovalResult {
   event: RunsteadEvent;
   previousStatus: ApprovalRequest["status"];
   stateDb: string;
+}
+
+export interface FindApprovedApprovalOptions {
+  database: ReturnType<typeof openRunsteadDatabase>;
+  actionId: string;
+  now?: Date;
+}
+
+export interface ExpireApprovalGrantOptions {
+  database: ReturnType<typeof openRunsteadDatabase>;
+  approval: ApprovalRequest;
+  now?: Date;
 }
 
 export function requestApproval(options: RequestApprovalOptions): ApprovalRequest {
@@ -182,6 +196,7 @@ export function decideApproval(options: DecideApprovalOptions): DecideApprovalRe
         value: approval
       }
     });
+    updateTaskForApprovalDecision(database, approval);
   } finally {
     database.close();
   }
@@ -192,6 +207,63 @@ export function decideApproval(options: DecideApprovalOptions): DecideApprovalRe
     previousStatus: current.approval.status,
     stateDb: current.stateDb
   };
+}
+
+export function findApprovedApprovalForAction(
+  options: FindApprovedApprovalOptions
+): ApprovalRequest | undefined {
+  const row = options.database
+    .prepare(
+      `
+      SELECT id, policy_decision_id, action_id, status, risk, reason,
+             requested_by, expires_at, decided_at, decided_by,
+             created_at, updated_at
+      FROM approvals
+      WHERE action_id = ? AND status = 'approved'
+      ORDER BY decided_at ASC, created_at ASC, id ASC
+      LIMIT 1
+    `
+    )
+    .get(options.actionId) as ApprovalRow | undefined;
+
+  if (row === undefined) {
+    return undefined;
+  }
+
+  const approval = rowToApproval(row);
+  const now = options.now ?? new Date();
+
+  if (approval.expiresAt !== undefined && Date.parse(approval.expiresAt) <= now.getTime()) {
+    return undefined;
+  }
+
+  return approval;
+}
+
+export function expireApprovalGrant(
+  options: ExpireApprovalGrantOptions
+): ApprovalRequest {
+  const expiredAt = (options.now ?? new Date()).toISOString();
+  const approval: ApprovalRequest = {
+    ...options.approval,
+    status: "expired",
+    updatedAt: expiredAt
+  };
+
+  appendEventAndProject(options.database, {
+    event: approvalEvent(
+      "approval.expired",
+      approval,
+      approvalPayload(approval),
+      expiredAt
+    ),
+    projection: {
+      type: "approval",
+      value: approval
+    }
+  });
+
+  return approval;
 }
 
 function approvalEvent(
@@ -223,6 +295,73 @@ function approvalPayload(approval: ApprovalRequest): JsonObject {
   };
 }
 
+function updateTaskForApprovalDecision(
+  database: ReturnType<typeof openRunsteadDatabase>,
+  approval: ApprovalRequest
+): void {
+  const task = taskForApproval(database, approval);
+
+  if (task === undefined || task.status !== "waiting_approval") {
+    return;
+  }
+
+  const updatedTask: Task = {
+    ...task,
+    status: approval.status === "approved" ? "queued" : "blocked",
+    output: {
+      ...(task.output ?? {}),
+      approval: {
+        id: approval.id,
+        status: approval.status,
+        decidedAt: approval.decidedAt,
+        decidedBy: approval.decidedBy
+      }
+    },
+    updatedAt: approval.updatedAt
+  };
+
+  appendEventAndProject(database, {
+    event: {
+      eventId: createRunsteadId("evt"),
+      type: approval.status === "approved" ? "task.requeued" : "task.blocked",
+      aggregateType: "task",
+      aggregateId: updatedTask.id,
+      payload: {
+        approvalId: approval.id,
+        approvalStatus: approval.status,
+        previousStatus: task.status
+      },
+      createdAt: approval.updatedAt
+    },
+    projection: {
+      type: "task",
+      value: updatedTask
+    }
+  });
+}
+
+function taskForApproval(
+  database: ReturnType<typeof openRunsteadDatabase>,
+  approval: ApprovalRequest
+): Task | undefined {
+  const row = database
+    .prepare(
+      `
+      SELECT t.id, t.goal_id, t.domain, t.type, t.status, t.priority, t.attempt,
+             t.max_attempts, t.input_json, t.output_json, t.verifiers_json,
+             t.created_at, t.updated_at
+      FROM tool_calls tc
+      JOIN tasks t ON t.id = tc.task_id
+      WHERE tc.policy_decision_id = ?
+      ORDER BY tc.started_at DESC, tc.id ASC
+      LIMIT 1
+    `
+    )
+    .get(approval.policyDecisionId) as TaskRow | undefined;
+
+  return row === undefined ? undefined : rowToTask(row);
+}
+
 interface ApprovalRow {
   id: string;
   policy_decision_id: string;
@@ -234,6 +373,22 @@ interface ApprovalRow {
   expires_at: string | null;
   decided_at: string | null;
   decided_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+interface TaskRow {
+  id: string;
+  goal_id: string;
+  domain: string;
+  type: string;
+  status: string;
+  priority: string;
+  attempt: number;
+  max_attempts: number;
+  input_json: string;
+  output_json: string | null;
+  verifiers_json: string;
   created_at: string;
   updated_at: string;
 }
@@ -250,6 +405,26 @@ function rowToApproval(row: ApprovalRow): ApprovalRequest {
     ...(row.expires_at === null ? {} : { expiresAt: row.expires_at }),
     ...(row.decided_at === null ? {} : { decidedAt: row.decided_at }),
     ...(row.decided_by === null ? {} : { decidedBy: row.decided_by }),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  });
+}
+
+function rowToTask(row: TaskRow): Task {
+  return TaskSchema.parse({
+    id: row.id,
+    goalId: row.goal_id,
+    domain: row.domain,
+    type: row.type,
+    status: row.status,
+    priority: row.priority,
+    attempt: row.attempt,
+    maxAttempts: row.max_attempts,
+    input: JSON.parse(row.input_json) as JsonObject,
+    ...(row.output_json === null
+      ? {}
+      : { output: JSON.parse(row.output_json) as JsonObject }),
+    verifiers: JSON.parse(row.verifiers_json) as string[],
     createdAt: row.created_at,
     updatedAt: row.updated_at
   });

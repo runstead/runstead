@@ -6,8 +6,10 @@ import type { Task } from "@runstead/core";
 import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sqlite";
 import { describe, expect, it } from "vitest";
 
+import { decideApproval, showApproval } from "./approvals.js";
 import { createGoal } from "./goals.js";
 import { initRunstead } from "./init.js";
+import { showTask } from "./tasks.js";
 import { runTaskVerifiers } from "./verifier-runner.js";
 
 describe("runTaskVerifiers", () => {
@@ -209,6 +211,53 @@ describe("runTaskVerifiers", () => {
       } finally {
         database.close();
       }
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("uses approved verifier approvals once on retry", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-verifier-approved-"));
+
+    try {
+      const task = await createTaskWithRawCommand(
+        workspace,
+        nodeCommand("process.exit(0)")
+      );
+      const waiting = await runTaskVerifiers({
+        cwd: workspace,
+        taskId: task.id,
+        now: new Date("2026-05-14T06:56:00.000Z")
+      });
+      const approvalId = waiting.commandResults[0]?.approvalId;
+
+      if (approvalId === undefined) {
+        throw new Error("Expected approval id");
+      }
+
+      decideApproval({
+        cwd: workspace,
+        id: approvalId,
+        decision: "approved",
+        decidedBy: "alice",
+        now: new Date("2026-05-14T06:57:00.000Z")
+      });
+      expect(showTask({ cwd: workspace, id: task.id }).task.status).toBe("queued");
+
+      const completed = await runTaskVerifiers({
+        cwd: workspace,
+        taskId: task.id,
+        now: new Date("2026-05-14T06:58:00.000Z")
+      });
+
+      expect(completed.task.status).toBe("completed");
+      expect(completed.commandResults[0]).toMatchObject({
+        exitCode: 0,
+        approvalId
+      });
+      expect(showApproval({ cwd: workspace, id: approvalId }).approval.status).toBe(
+        "expired"
+      );
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }
