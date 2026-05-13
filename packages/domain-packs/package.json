@@ -25,6 +25,7 @@
     "clean": "rm -rf dist coverage"
   },
   "dependencies": {
+    "yaml": "catalog:",
     "zod": "catalog:"
   }
 }

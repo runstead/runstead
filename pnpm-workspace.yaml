@@ -16,6 +16,7 @@ catalog:
   typescript: 6.0.3
   typescript-eslint: 8.59.3
   vitest: 4.1.6
+  yaml: 2.9.0
   zod: 4.4.3
 
 allowBuilds:
