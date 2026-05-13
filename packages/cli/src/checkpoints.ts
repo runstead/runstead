@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
-import { mkdir, writeFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { dirname, isAbsolute, join, normalize, resolve, sep } from "node:path";
 import { promisify } from "node:util";
 
 import { createRunsteadId } from "@runstead/core";
@@ -14,6 +14,8 @@ export interface WorkspaceCheckpoint {
   metadataPath: string;
   statusPath: string;
   patchPath: string;
+  untrackedDir: string;
+  untrackedFiles: string[];
   head?: string;
   createdAt: string;
 }
@@ -30,6 +32,26 @@ export type GitCheckpointRunner = (
   options: { cwd: string }
 ) => Promise<{ stdout: string; stderr: string; exitCode: number }>;
 
+export interface ReadWorkspaceCheckpointOptions {
+  workspace: string;
+  checkpointDir: string;
+  checkpointId: string;
+}
+
+export interface RestoreWorkspaceCheckpointOptions
+  extends ReadWorkspaceCheckpointOptions {
+  runner?: GitCheckpointRunner;
+  allowHeadMismatch?: boolean;
+}
+
+export interface RestoreWorkspaceCheckpointResult {
+  checkpoint: WorkspaceCheckpoint;
+  currentHead?: string;
+  restoredTrackedPatch: boolean;
+  restoredUntrackedFiles: string[];
+  removedUntrackedFiles: string[];
+}
+
 export async function createWorkspaceCheckpoint(
   options: CreateWorkspaceCheckpointOptions
 ): Promise<WorkspaceCheckpoint> {
@@ -40,12 +62,20 @@ export async function createWorkspaceCheckpoint(
   const metadataPath = join(checkpointDir, `${id}.json`);
   const statusPath = join(checkpointDir, `${id}.status.txt`);
   const patchPath = join(checkpointDir, `${id}.patch`);
+  const untrackedDir = join(checkpointDir, `${id}.untracked`);
   const runner = options.runner ?? runGit;
-  const [head, status, patch] = await Promise.all([
+  const [head, status, patch, untracked] = await Promise.all([
     runner(["rev-parse", "HEAD"], { cwd: workspace }),
     runner(["status", "--short"], { cwd: workspace }),
-    runner(["diff", "--binary", "HEAD"], { cwd: workspace })
+    runner(["diff", "--binary", "HEAD"], { cwd: workspace }),
+    runner(["ls-files", "--others", "--exclude-standard", "-z"], {
+      cwd: workspace
+    })
   ]);
+  const untrackedFiles =
+    untracked.exitCode === 0
+      ? parseNulPaths(untracked.stdout).filter(isSafeRelativePath)
+      : [];
   const checkpoint: WorkspaceCheckpoint = {
     id,
     workspace,
@@ -53,11 +83,14 @@ export async function createWorkspaceCheckpoint(
     metadataPath,
     statusPath,
     patchPath,
+    untrackedDir,
+    untrackedFiles,
     ...(head.exitCode === 0 ? { head: head.stdout.trim() } : {}),
     createdAt
   };
 
   await mkdir(checkpointDir, { recursive: true });
+  await copyUntrackedSnapshot(workspace, untrackedDir, untrackedFiles);
   await writeFile(statusPath, status.stdout, "utf8");
   await writeFile(patchPath, patch.stdout, "utf8");
   await writeFile(
@@ -69,9 +102,11 @@ export async function createWorkspaceCheckpoint(
           headExitCode: head.exitCode,
           statusExitCode: status.exitCode,
           diffExitCode: patch.exitCode,
+          untrackedExitCode: untracked.exitCode,
           headStderr: head.stderr,
           statusStderr: status.stderr,
-          diffStderr: patch.stderr
+          diffStderr: patch.stderr,
+          untrackedStderr: untracked.stderr
         }
       },
       null,
@@ -81,6 +116,138 @@ export async function createWorkspaceCheckpoint(
   );
 
   return checkpoint;
+}
+
+export async function readWorkspaceCheckpoint(
+  options: ReadWorkspaceCheckpointOptions
+): Promise<WorkspaceCheckpoint> {
+  const workspace = resolve(options.workspace);
+  const checkpointDir = resolve(options.checkpointDir);
+  const metadataPath = join(checkpointDir, `${options.checkpointId}.json`);
+  const raw = JSON.parse(await readFile(metadataPath, "utf8")) as Record<
+    string,
+    unknown
+  >;
+  const id = stringField(raw, "id", options.checkpointId);
+  const statusPath = stringField(
+    raw,
+    "statusPath",
+    join(checkpointDir, `${id}.status.txt`)
+  );
+  const patchPath = stringField(
+    raw,
+    "patchPath",
+    join(checkpointDir, `${id}.patch`)
+  );
+  const untrackedDir = stringField(
+    raw,
+    "untrackedDir",
+    join(checkpointDir, `${id}.untracked`)
+  );
+  const head = optionalStringField(raw, "head");
+
+  return {
+    id,
+    workspace,
+    checkpointDir,
+    metadataPath,
+    statusPath,
+    patchPath,
+    untrackedDir,
+    untrackedFiles: stringArrayField(raw, "untrackedFiles").filter(isSafeRelativePath),
+    ...(head === undefined ? {} : { head }),
+    createdAt: stringField(raw, "createdAt", "")
+  };
+}
+
+export async function restoreWorkspaceCheckpoint(
+  options: RestoreWorkspaceCheckpointOptions
+): Promise<RestoreWorkspaceCheckpointResult> {
+  const workspace = resolve(options.workspace);
+  const checkpoint = await readWorkspaceCheckpoint(options);
+  const runner = options.runner ?? runGit;
+
+  if (checkpoint.head === undefined || checkpoint.head.length === 0) {
+    throw new Error(`Checkpoint ${checkpoint.id} does not include a git HEAD`);
+  }
+
+  const currentHead = await runner(["rev-parse", "HEAD"], { cwd: workspace });
+  if (currentHead.exitCode !== 0) {
+    throw new Error(
+      `git rev-parse HEAD failed with exit ${currentHead.exitCode}: ${currentHead.stderr}`
+    );
+  }
+
+  const currentHeadSha = currentHead.stdout.trim();
+  if (currentHeadSha !== checkpoint.head && options.allowHeadMismatch !== true) {
+    throw new Error(
+      `Checkpoint ${checkpoint.id} was created at ${checkpoint.head}, current HEAD is ${currentHeadSha}`
+    );
+  }
+
+  const reset = await runner(["reset", "--hard", checkpoint.head], {
+    cwd: workspace
+  });
+  if (reset.exitCode !== 0) {
+    throw new Error(`git reset --hard failed with exit ${reset.exitCode}: ${reset.stderr}`);
+  }
+
+  const untracked = await runner(["ls-files", "--others", "--exclude-standard", "-z"], {
+    cwd: workspace
+  });
+  if (untracked.exitCode !== 0) {
+    throw new Error(
+      `git ls-files --others failed with exit ${untracked.exitCode}: ${untracked.stderr}`
+    );
+  }
+
+  const removedUntrackedFiles = parseNulPaths(untracked.stdout)
+    .filter(isSafeRelativePath)
+    .filter((path) => !isRunsteadStatePath(path));
+
+  await Promise.all(
+    removedUntrackedFiles.map((path) =>
+      rm(join(workspace, path), { force: true, recursive: true })
+    )
+  );
+  await copyUntrackedSnapshot(
+    checkpoint.untrackedDir,
+    workspace,
+    checkpoint.untrackedFiles
+  );
+
+  const patch = await readFile(checkpoint.patchPath, "utf8");
+  const restoredTrackedPatch = patch.trim().length > 0;
+
+  if (restoredTrackedPatch) {
+    const apply = await runner(
+      ["apply", "--whitespace=nowarn", checkpoint.patchPath],
+      { cwd: workspace }
+    );
+    if (apply.exitCode !== 0) {
+      throw new Error(`git apply failed with exit ${apply.exitCode}: ${apply.stderr}`);
+    }
+  }
+
+  return {
+    checkpoint,
+    currentHead: currentHeadSha,
+    restoredTrackedPatch,
+    restoredUntrackedFiles: checkpoint.untrackedFiles,
+    removedUntrackedFiles
+  };
+}
+
+export function formatWorkspaceCheckpointRestoreReport(
+  result: RestoreWorkspaceCheckpointResult
+): string {
+  return [
+    `Checkpoint: ${result.checkpoint.id}`,
+    `HEAD: ${result.currentHead ?? "unknown"} -> ${result.checkpoint.head ?? "unknown"}`,
+    `Tracked patch restored: ${result.restoredTrackedPatch ? "yes" : "no"}`,
+    `Untracked files restored: ${result.restoredUntrackedFiles.length}`,
+    `Untracked files removed: ${result.removedUntrackedFiles.length}`
+  ].join("\n");
 }
 
 async function runGit(
@@ -131,4 +298,67 @@ function commandOutput(error: unknown, key: "stdout" | "stderr"): string {
   }
 
   return "";
+}
+
+async function copyUntrackedSnapshot(
+  sourceRoot: string,
+  destinationRoot: string,
+  files: string[]
+): Promise<void> {
+  await Promise.all(
+    files.map(async (path) => {
+      const source = join(sourceRoot, path);
+      const destination = join(destinationRoot, path);
+
+      await mkdir(dirname(destination), { recursive: true });
+      await cp(source, destination, { force: true, recursive: true });
+    })
+  );
+}
+
+function parseNulPaths(stdout: string): string[] {
+  return stdout
+    .split("\0")
+    .map((path) => path.trim())
+    .filter((path) => path.length > 0);
+}
+
+function isSafeRelativePath(path: string): boolean {
+  const normalized = normalize(path);
+
+  return (
+    path.length > 0 &&
+    !isAbsolute(path) &&
+    normalized !== ".." &&
+    !normalized.startsWith(`..${sep}`)
+  );
+}
+
+function isRunsteadStatePath(path: string): boolean {
+  const normalized = normalize(path);
+
+  return normalized === ".runstead" || normalized.startsWith(`.runstead${sep}`);
+}
+
+function stringField(
+  value: Record<string, unknown>,
+  key: string,
+  fallback: string
+): string {
+  return typeof value[key] === "string" ? value[key] : fallback;
+}
+
+function optionalStringField(
+  value: Record<string, unknown>,
+  key: string
+): string | undefined {
+  return typeof value[key] === "string" ? value[key] : undefined;
+}
+
+function stringArrayField(value: Record<string, unknown>, key: string): string[] {
+  const items = value[key];
+
+  return Array.isArray(items)
+    ? items.filter((item): item is string => typeof item === "string")
+    : [];
 }

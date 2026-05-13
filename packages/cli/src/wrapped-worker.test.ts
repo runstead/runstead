@@ -162,7 +162,8 @@ describe("startWrappedWorker", () => {
       expect(gitCalls).toEqual([
         ["rev-parse", "HEAD"],
         ["status", "--short"],
-        ["diff", "--binary", "HEAD"]
+        ["diff", "--binary", "HEAD"],
+        ["ls-files", "--others", "--exclude-standard", "-z"]
       ]);
     } finally {
       await rm(workspace, { force: true, recursive: true });

@@ -126,6 +126,41 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
       }
     });
 
+  const checkpoint = program
+    .command("checkpoint")
+    .description("Manage workspace checkpoints and rollback.");
+
+  checkpoint
+    .command("restore")
+    .description("Restore workspace files from a checkpoint.")
+    .argument("<id>", "Checkpoint id")
+    .option("--cwd <path>", "Workspace directory")
+    .option(
+      "--allow-head-mismatch",
+      "Restore even when the current HEAD differs from the checkpoint HEAD"
+    )
+    .action(
+      async (
+        id: string,
+        options: { cwd?: string; allowHeadMismatch?: boolean }
+      ) => {
+        const {
+          formatWorkspaceCheckpointRestoreReport,
+          restoreWorkspaceCheckpoint
+        } = await import("./checkpoints.js");
+        const { requireRunsteadRoot } = await import("./runstead-root.js");
+        const resolved = await requireRunsteadRoot(options.cwd);
+        const result = await restoreWorkspaceCheckpoint({
+          workspace: resolved.cwd,
+          checkpointDir: join(resolved.root, "checkpoints"),
+          checkpointId: id,
+          allowHeadMismatch: options.allowHeadMismatch === true
+        });
+
+        console.log(formatWorkspaceCheckpointRestoreReport(result));
+      }
+    );
+
   program
     .command("migrate")
     .description("Migrate legacy .team state into .runstead.")
