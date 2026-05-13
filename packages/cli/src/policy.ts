@@ -108,11 +108,26 @@ export const DEFAULT_DANGEROUS_SHELL_COMMAND_PATTERNS = [
   ".*dd if=.*"
 ];
 
+export const DEFAULT_DEPENDENCY_CHANGE_ACTION_TYPES = [
+  "package.install",
+  "package.update"
+];
+
+export const DEFAULT_DEPENDENCY_CHANGE_PATHS = [
+  "package.json",
+  "package-lock.json",
+  "pnpm-lock.yaml",
+  "requirements.txt",
+  "poetry.lock"
+];
+
 export interface CreateRepoMaintenanceMinimumPolicyOptions {
   protectedPaths: string[];
   verifierCommandPatterns?: string[];
   externalWriteSideEffects?: string[];
   dangerousShellCommandPatterns?: string[];
+  dependencyChangeActionTypes?: string[];
+  dependencyChangePaths?: string[];
   id?: string;
 }
 
@@ -149,6 +164,14 @@ export function createRepoMaintenanceMinimumPolicy(
     rules: [
       ...createProtectedPathDenyPolicy(options.protectedPaths).rules,
       ...createDangerousShellDenyPolicy(options.dangerousShellCommandPatterns).rules,
+      ...createDependencyChangeApprovalPolicy({
+        ...(options.dependencyChangeActionTypes === undefined
+          ? {}
+          : { actionTypes: options.dependencyChangeActionTypes }),
+        ...(options.dependencyChangePaths === undefined
+          ? {}
+          : { paths: options.dependencyChangePaths })
+      }).rules,
       ...createVerifierCommandAllowPolicy(options.verifierCommandPatterns).rules,
       ...createExternalWriteApprovalPolicy(options.externalWriteSideEffects).rules
     ]
@@ -173,6 +196,34 @@ export function createDangerousShellDenyPolicy(
         },
         decision: "deny",
         risk: "critical"
+      }
+    ]
+  };
+}
+
+export interface CreateDependencyChangeApprovalPolicyOptions {
+  actionTypes?: string[];
+  paths?: string[];
+  id?: string;
+}
+
+export function createDependencyChangeApprovalPolicy(
+  options: CreateDependencyChangeApprovalPolicyOptions = {}
+): PolicyProfile {
+  return {
+    id: options.id ?? "policy_dependency_change_approval_v1",
+    version: 1,
+    rules: [
+      {
+        id: "require_approval_dependency_change",
+        when: {
+          actionType: options.actionTypes ?? DEFAULT_DEPENDENCY_CHANGE_ACTION_TYPES,
+          path: {
+            matchesAny: options.paths ?? DEFAULT_DEPENDENCY_CHANGE_PATHS
+          }
+        },
+        decision: "require_approval",
+        risk: "high"
       }
     ]
   };

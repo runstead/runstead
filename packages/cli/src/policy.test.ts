@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
   VERIFIER_COMMAND_OBLIGATIONS,
   createDangerousShellDenyPolicy,
+  createDependencyChangeApprovalPolicy,
   createExternalWriteApprovalPolicy,
   createProtectedPathDenyPolicy,
   createRepoMaintenanceMinimumPolicy,
@@ -21,6 +22,7 @@ const protectedPathPolicy = createProtectedPathDenyPolicy([
 const verifierCommandPolicy = createVerifierCommandAllowPolicy();
 const externalWritePolicy = createExternalWriteApprovalPolicy();
 const dangerousShellPolicy = createDangerousShellDenyPolicy();
+const dependencyChangePolicy = createDependencyChangeApprovalPolicy();
 const minimumPolicy = createRepoMaintenanceMinimumPolicy({
   protectedPaths: [".env", ".env.*", "**/secrets/**", "infra/prod/**"]
 });
@@ -288,6 +290,50 @@ describe("evaluatePolicy dangerous shell rules", () => {
       decision: "deny",
       risk: "critical",
       ruleId: "deny_destructive_shell"
+    });
+  });
+});
+
+describe("evaluatePolicy dependency change rules", () => {
+  it("requires approval for dependency installs that touch package manifests", () => {
+    const result = evaluatePolicy({
+      policy: dependencyChangePolicy,
+      action: {
+        actionId: "act_package_install",
+        actionType: "package.install",
+        resource: {
+          type: "file",
+          path: "package.json"
+        }
+      }
+    });
+
+    expect(result).toMatchObject({
+      actionId: "act_package_install",
+      decision: "require_approval",
+      risk: "high",
+      ruleId: "require_approval_dependency_change",
+      matchedPath: "package.json"
+    });
+  });
+
+  it("lets protected path deny outrank dependency approval", () => {
+    const result = evaluatePolicy({
+      policy: minimumPolicy,
+      action: {
+        actionId: "act_package_secret",
+        actionType: "package.update",
+        resource: {
+          type: "file",
+          path: ".env"
+        }
+      }
+    });
+
+    expect(result).toMatchObject({
+      decision: "deny",
+      risk: "critical",
+      ruleId: "deny_protected_paths"
     });
   });
 });

@@ -1,0 +1,11 @@
+action:
+  action_id: act_fixture_dependency_change
+  action_type: package.install
+  resource:
+    type: file
+    path: pnpm-lock.yaml
+
+expected:
+  decision: require_approval
+  risk: high
+  rule_id: require_approval_dependency_change
