@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -87,6 +87,54 @@ describe("recordPolicyDecision", () => {
         expect(JSON.parse(event.payload_json)).toMatchObject({
           actionId: "act_external_write",
           policyId: policy.id,
+          decision: "require_approval"
+        });
+      } finally {
+        database.close();
+      }
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("stores policy decisions in legacy .team state by default", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-policy-team-"));
+    const policy = createExternalWriteApprovalPolicy();
+    const action = {
+      actionId: "act_external_write_team",
+      actionType: "github.pr.create",
+      context: {
+        sideEffects: ["github_pr_create"]
+      }
+    };
+    const result = evaluatePolicy({ policy, action });
+
+    try {
+      await mkdir(join(workspace, ".team"), { recursive: true });
+      await writeFile(join(workspace, ".team", "config.yaml"), "version: 1\n");
+
+      const recorded = recordPolicyDecision({
+        cwd: workspace,
+        policyId: policy.id,
+        action,
+        result,
+        now: new Date("2026-05-14T03:08:00.000Z")
+      });
+      const database = openRunsteadDatabase(join(workspace, ".team", "state.db"));
+
+      try {
+        const decision = database
+          .prepare("SELECT action_id, policy_id, decision FROM policy_decisions")
+          .get() as {
+          action_id: string;
+          policy_id: string;
+          decision: string;
+        };
+
+        expect(recorded.stateDb).toBe(join(workspace, ".team", "state.db"));
+        expect(decision).toEqual({
+          action_id: "act_external_write_team",
+          policy_id: policy.id,
           decision: "require_approval"
         });
       } finally {
