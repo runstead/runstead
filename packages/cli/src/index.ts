@@ -160,6 +160,29 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
       }
     });
 
+  const audit = program.command("audit").description("Export audit data.");
+
+  audit
+    .command("export")
+    .description("Export the append-only event log as JSONL.")
+    .option("--cwd <path>", "Workspace directory")
+    .option("--output <path>", "Write JSONL to a file instead of stdout")
+    .action(async (options: { cwd?: string; output?: string }) => {
+      const { exportAuditLog } = await import("./audit-export.js");
+      const result = await exportAuditLog({
+        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+        ...(options.output === undefined ? {} : { outputPath: options.output })
+      });
+
+      if (result.outputPath === undefined) {
+        process.stdout.write(result.contents);
+        return;
+      }
+
+      console.log(`Exported audit log: ${result.outputPath}`);
+      console.log(`Events: ${result.entries.length}`);
+    });
+
   const report = program.command("report").description("Generate reports.");
 
   report
