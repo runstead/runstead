@@ -1,15 +1,12 @@
 {
-  "name": "@runstead/cli",
+  "name": "@runstead/skills",
   "version": "0.0.0",
-  "description": "Runstead command-line interface.",
+  "description": "Skill package validation helpers for Runstead.",
   "license": "MIT",
   "type": "module",
+  "sideEffects": false,
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "bin": {
-    "runstead": "./dist/index.js",
-    "team": "./dist/index.js"
-  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -27,11 +24,6 @@
     "clean": "rm -rf dist coverage"
   },
   "dependencies": {
-    "@runstead/core": "workspace:*",
-    "@runstead/domain-packs": "workspace:*",
-    "@runstead/skills": "workspace:*",
-    "@runstead/state-sqlite": "workspace:*",
-    "commander": "catalog:",
     "yaml": "catalog:",
     "zod": "catalog:"
   }

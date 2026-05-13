@@ -328,6 +328,24 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
       }
     );
 
+  const skill = program.command("skill").description("Manage skill packages.");
+
+  skill
+    .command("validate")
+    .description("Validate a Runstead skill package directory.")
+    .argument("<path>", "Skill package directory")
+    .action(async (path: string) => {
+      const { formatSkillValidationReport, validateSkillPackageDir } =
+        await import("@runstead/skills");
+      const result = await validateSkillPackageDir(path);
+
+      console.log(formatSkillValidationReport(result));
+
+      if (!result.valid) {
+        process.exitCode = 1;
+      }
+    });
+
   const goal = program.command("goal").description("Manage durable goals.");
 
   goal
