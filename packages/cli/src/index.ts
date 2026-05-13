@@ -211,6 +211,24 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
       });
     });
 
+  const dashboard = program.command("dashboard").description("Build dashboards.");
+
+  dashboard
+    .command("build")
+    .description("Build the local static dashboard.")
+    .option("--cwd <path>", "Workspace directory")
+    .option("--output <path>", "Dashboard output directory")
+    .action(async (options: { cwd?: string; output?: string }) => {
+      const { buildDashboard } = await import("./dashboard.js");
+      const result = await buildDashboard({
+        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+        ...(options.output === undefined ? {} : { outputDir: options.output })
+      });
+
+      console.log(`Dashboard HTML: ${result.htmlPath}`);
+      console.log(`Dashboard data: ${result.dataPath}`);
+    });
+
   const audit = program.command("audit").description("Export audit data.");
 
   audit
