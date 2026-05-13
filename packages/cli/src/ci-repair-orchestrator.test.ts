@@ -7,6 +7,7 @@ import { openRunsteadDatabase } from "@runstead/state-sqlite";
 import { describe, expect, it } from "vitest";
 
 import { decideApproval, showApproval } from "./approvals.js";
+import { exportAuditLog } from "./audit-export.js";
 import { initRunstead } from "./init.js";
 import {
   formatCiRepairOrchestratorReport,
@@ -111,6 +112,36 @@ describe("runCiRepairOrchestrator", () => {
       } finally {
         database.close();
       }
+      const auditLog = await exportAuditLog({ cwd: workspace });
+      const requestedActions = auditLog.entries
+        .filter((entry) => entry.type === "tool_call.requested")
+        .map((entry) =>
+          typeof entry.payload === "object" &&
+          entry.payload !== null &&
+          "actionType" in entry.payload
+            ? entry.payload.actionType
+            : undefined
+        );
+
+      expect(auditLog.entries.map((entry) => entry.type)).toEqual(
+        expect.arrayContaining([
+          "worker_run.started",
+          "tool_call.requested",
+          "policy.decision_recorded",
+          "approval.requested"
+        ])
+      );
+      expect(requestedActions).toEqual(
+        expect.arrayContaining([
+          "github.run.read",
+          "github.run.log.read",
+          "git.branch.create",
+          "checkpoint.create",
+          "worker.external.start",
+          "git.diff",
+          "github.pr.create"
+        ])
+      );
 
       if (first.approval === undefined) {
         throw new Error("Expected PR approval request");
