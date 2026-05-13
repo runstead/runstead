@@ -11,7 +11,7 @@ export interface WithRunsteadManagerLockOptions {
 
 export async function withRunsteadManagerLock<T>(
   options: WithRunsteadManagerLockOptions,
-  callback: (lock: ManagerLock) => Promise<T>
+  callback: (lock: ManagerLock) => T | Promise<T>
 ): Promise<T> {
   const cwd = resolve(options.cwd ?? process.cwd());
   const root = requireRunsteadRootSync(cwd).root;

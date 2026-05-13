@@ -301,7 +301,7 @@ function updateTaskForApprovalDecision(
 ): void {
   const task = taskForApproval(database, approval);
 
-  if (task === undefined || task.status !== "waiting_approval") {
+  if (task?.status !== "waiting_approval") {
     return;
   }
 

@@ -200,13 +200,13 @@ describe("runTaskVerifiers", () => {
 
         expect(commandResult).toMatchObject({
           verifier: "test",
-          exitCode: null,
-          approvalId: expect.stringMatching(/^appr_/)
+          exitCode: null
         });
+        expect(commandResult.approvalId).toMatch(/^appr_/);
         expect(approval).toMatchObject({
-          status: "pending",
-          action_id: expect.stringMatching(/^act_/)
+          status: "pending"
         });
+        expect(approval.action_id).toMatch(/^act_/);
         expect(toolCall.status).toBe("approval_required");
       } finally {
         database.close();

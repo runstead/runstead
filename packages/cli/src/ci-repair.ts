@@ -6,7 +6,6 @@ import { pathToFileURL } from "node:url";
 import {
   createRunsteadId,
   type Evidence,
-  type JsonObject,
   type RunsteadEvent,
   type Task
 } from "@runstead/core";

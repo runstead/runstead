@@ -63,9 +63,7 @@ export function findInterruptedTasks(
 export function resumeInterruptedTasks(
   options: ResumeInterruptedTasksOptions = {}
 ): Promise<ResumeInterruptedTasksResult> {
-  return withRunsteadManagerLock(options, async () =>
-    resumeInterruptedTasksUnlocked(options)
-  );
+  return withRunsteadManagerLock(options, () => resumeInterruptedTasksUnlocked(options));
 }
 
 function resumeInterruptedTasksUnlocked(

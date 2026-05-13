@@ -90,7 +90,7 @@ export async function runTaskVerifiers(
         value: runningTask
       }
     });
-    let workerRun = startWorkerRun({
+    const workerRun = startWorkerRun({
       database,
       task: runningTask,
       workerType: "shell_verifier",
