@@ -1,14 +1,19 @@
 #!/usr/bin/env node
+import { basename } from "node:path";
 import { Command } from "commander";
 import { pathToFileURL } from "node:url";
 
 import { getRunsteadStatus } from "./status.js";
 
-export function createProgram(): Command {
+export interface CreateProgramOptions {
+  entrypoint?: string;
+}
+
+export function createProgram(options: CreateProgramOptions = {}): Command {
   const program = new Command();
 
   program
-    .name("runstead")
+    .name(inferProgramName(options.entrypoint ?? process.argv[1]))
     .description("Control plane for long-running autonomous work agents.")
     .version("0.0.0");
 
@@ -316,8 +321,16 @@ export function createProgram(): Command {
   return program;
 }
 
+export function inferProgramName(entrypoint?: string): "runstead" | "team" {
+  return entrypoint !== undefined && basename(entrypoint) === "team"
+    ? "team"
+    : "runstead";
+}
+
 const entrypoint = process.argv[1] ? pathToFileURL(process.argv[1]).href : undefined;
 
 if (entrypoint === import.meta.url) {
-  await createProgram().parseAsync(process.argv);
+  await createProgram({
+    ...(process.argv[1] === undefined ? {} : { entrypoint: process.argv[1] })
+  }).parseAsync(process.argv);
 }
