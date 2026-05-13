@@ -405,6 +405,22 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
       }
     });
 
+  skill
+    .command("test")
+    .description("Validate and run a skill package test script.")
+    .argument("<path>", "Skill package directory")
+    .action(async (path: string) => {
+      const { formatSkillTestReport, runSkillPackageTests } =
+        await import("@runstead/skills");
+      const result = await runSkillPackageTests(path);
+
+      console.log(formatSkillTestReport(result));
+
+      if (!result.passed) {
+        process.exitCode = 1;
+      }
+    });
+
   const goal = program.command("goal").description("Manage durable goals.");
 
   goal
