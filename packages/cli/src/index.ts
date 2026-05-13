@@ -194,6 +194,40 @@ export function createProgram(): Command {
       console.log(`Verifiers: ${result.task.verifiers.join(", ")}`);
     });
 
+  const verifier = program.command("verifier").description("Run verifiers.");
+
+  verifier
+    .command("run")
+    .description("Run verifier commands for a task.")
+    .argument("<task-id>", "Task id")
+    .option("--cwd <path>", "Workspace directory")
+    .option("--timeout-ms <ms>", "Per-command timeout in milliseconds")
+    .action(async (taskId: string, options: { cwd?: string; timeoutMs?: string }) => {
+      const { runTaskVerifiers } = await import("./verifier-runner.js");
+      const timeoutMs =
+        options.timeoutMs === undefined
+          ? undefined
+          : Number.parseInt(options.timeoutMs, 10);
+
+      if (timeoutMs !== undefined && (!Number.isFinite(timeoutMs) || timeoutMs <= 0)) {
+        throw new Error("--timeout-ms must be a positive integer");
+      }
+
+      const result = await runTaskVerifiers({
+        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+        taskId,
+        ...(timeoutMs === undefined ? {} : { timeoutMs })
+      });
+
+      console.log(`Task: ${result.task.id}`);
+      console.log(`Status: ${result.task.status}`);
+      for (const command of result.commandResults) {
+        console.log(
+          `${command.verifier}: exit=${command.exitCode ?? "unknown"} evidence=${command.evidenceId}`
+        );
+      }
+    });
+
   return program;
 }
 
