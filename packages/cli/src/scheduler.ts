@@ -1,4 +1,4 @@
-import { join, resolve } from "node:path";
+import { resolve } from "node:path";
 
 import {
   type Goal,
@@ -9,7 +9,7 @@ import {
 import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sqlite";
 
 import { listGoals } from "./goals.js";
-import { resolveRunsteadRootSync } from "./runstead-root.js";
+import { requireRunsteadStateDbSync } from "./runstead-root.js";
 import { buildRunLocalVerifiersTask, listTasks } from "./tasks.js";
 
 export const DEFAULT_SCHEDULER_INTERVAL_MS = 24 * 60 * 60 * 1000;
@@ -51,8 +51,7 @@ export async function scheduleDueTasks(
   options: ScheduleDueTasksOptions = {}
 ): Promise<ScheduleDueTasksResult> {
   const cwd = resolve(options.cwd ?? process.cwd());
-  const root = resolveRunsteadRootSync(cwd).root;
-  const stateDb = join(root, "state.db");
+  const stateDb = requireRunsteadStateDbSync(cwd).stateDb;
   const now = options.now ?? new Date();
   const defaultIntervalMs = options.defaultIntervalMs ?? DEFAULT_SCHEDULER_INTERVAL_MS;
 

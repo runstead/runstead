@@ -1,4 +1,4 @@
-import { join, resolve } from "node:path";
+import { resolve } from "node:path";
 
 import {
   createRunsteadId,
@@ -9,7 +9,7 @@ import {
 import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sqlite";
 
 import type { ActionEnvelope, PolicyEvaluationResult } from "./policy.js";
-import { resolveRunsteadRootSync } from "./runstead-root.js";
+import { requireRunsteadStateDbSync } from "./runstead-root.js";
 
 export interface RecordPolicyDecisionOptions {
   cwd?: string;
@@ -30,8 +30,7 @@ export function recordPolicyDecision(
   options: RecordPolicyDecisionOptions
 ): RecordPolicyDecisionResult {
   const cwd = resolve(options.cwd ?? process.cwd());
-  const stateDb =
-    options.stateDb ?? join(resolveRunsteadRootSync(cwd).root, "state.db");
+  const stateDb = options.stateDb ?? requireRunsteadStateDbSync(cwd).stateDb;
   const createdAt = (options.now ?? new Date()).toISOString();
   const decision: PolicyDecisionRecord = {
     id: createRunsteadId("poldec"),

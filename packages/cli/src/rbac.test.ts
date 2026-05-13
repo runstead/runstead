@@ -19,6 +19,7 @@ describe("rbac", () => {
         "version: 1\ndomain: repo-maintenance\n",
         "utf8"
       );
+      openRunsteadDatabase(join(root, "state.db")).close();
 
       const initialized = await initRbac({
         cwd: workspace,

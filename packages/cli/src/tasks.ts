@@ -1,4 +1,4 @@
-import { join, resolve } from "node:path";
+import { resolve } from "node:path";
 
 import {
   createRunsteadId,
@@ -15,7 +15,7 @@ import {
   inspectTestCommand,
   type PackageScriptCommandInspection
 } from "./repo-inspection.js";
-import { resolveRunsteadRootSync } from "./runstead-root.js";
+import { requireRunsteadStateDbSync } from "./runstead-root.js";
 
 export interface ListTasksOptions {
   cwd?: string;
@@ -258,7 +258,7 @@ export function claimTask(options: ClaimTaskOptions): ClaimTaskResult {
 }
 
 function resolveStateDb(cwd = process.cwd()): string {
-  return join(resolveRunsteadRootSync(cwd).root, "state.db");
+  return requireRunsteadStateDbSync(cwd).stateDb;
 }
 
 interface LocalVerifierCommand {

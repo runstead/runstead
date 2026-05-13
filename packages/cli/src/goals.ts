@@ -13,7 +13,10 @@ import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sql
 
 import { inspectGitRepository } from "./repo-inspection.js";
 import { resolveRepositoryReference } from "./repositories.js";
-import { resolveRunsteadRoot, resolveRunsteadRootSync } from "./runstead-root.js";
+import {
+  requireRunsteadStateDb,
+  requireRunsteadStateDbSync
+} from "./runstead-root.js";
 import { buildRunLocalVerifiersTask } from "./tasks.js";
 
 export interface CreateGoalOptions {
@@ -56,8 +59,9 @@ export async function createGoal(
   options: CreateGoalOptions
 ): Promise<CreateGoalResult> {
   const cwd = resolve(options.cwd ?? process.cwd());
-  const root = (await resolveRunsteadRoot(cwd)).root;
-  const stateDb = join(root, "state.db");
+  const resolvedState = await requireRunsteadStateDb(cwd);
+  const root = resolvedState.root;
+  const stateDb = resolvedState.stateDb;
   const registeredRepository =
     options.repository === undefined
       ? undefined
@@ -239,7 +243,7 @@ function goalScope(input: {
 }
 
 function resolveStateDb(cwd = process.cwd()): string {
-  return join(resolveRunsteadRootSync(cwd).root, "state.db");
+  return requireRunsteadStateDbSync(cwd).stateDb;
 }
 
 interface GoalRow {

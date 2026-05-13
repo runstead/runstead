@@ -8,7 +8,7 @@ import {
   type RunsteadDatabase
 } from "@runstead/state-sqlite";
 
-import { resolveRunsteadRoot } from "./runstead-root.js";
+import { requireRunsteadStateDb } from "./runstead-root.js";
 
 export interface BuildDashboardOptions {
   cwd?: string;
@@ -93,15 +93,10 @@ export async function buildDashboard(
   options: BuildDashboardOptions = {}
 ): Promise<BuildDashboardResult> {
   const cwd = resolve(options.cwd ?? process.cwd());
-  const resolvedRoot = await resolveRunsteadRoot(cwd);
-
-  if (resolvedRoot.source === "missing") {
-    throw new Error(`Runstead is not initialized at ${resolvedRoot.root}`);
-  }
-
-  const root = resolvedRoot.root;
+  const resolvedState = await requireRunsteadStateDb(cwd);
+  const root = resolvedState.root;
   const generatedAt = (options.now ?? new Date()).toISOString();
-  const stateDb = join(root, "state.db");
+  const stateDb = resolvedState.stateDb;
   const outputDir =
     options.outputDir === undefined
       ? join(root, "dashboard")

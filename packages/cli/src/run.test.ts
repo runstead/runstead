@@ -11,10 +11,24 @@ import { initRunstead } from "./init.js";
 import { formatRunOnceReport, runOnce, runOnceExitCode } from "./run.js";
 
 describe("runOnce", () => {
+  it("throws before creating state in an uninitialized workspace", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-run-"));
+
+    try {
+      await expect(runOnce({ cwd: workspace })).rejects.toThrow(
+        `Runstead is not initialized at ${join(workspace, ".runstead")}`
+      );
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
   it("returns no queued task when none exists", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "runstead-run-"));
 
     try {
+      await initRunstead({ cwd: workspace });
+
       const result = await runOnce({ cwd: workspace });
 
       expect(result).toEqual({

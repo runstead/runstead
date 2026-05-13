@@ -1,5 +1,5 @@
 import { realpath } from "node:fs/promises";
-import { basename, join, resolve } from "node:path";
+import { basename, resolve } from "node:path";
 
 import {
   createRunsteadId,
@@ -13,7 +13,10 @@ import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sql
 
 import { inspectGitHubRepository } from "./github.js";
 import { inspectGitRepository } from "./repo-inspection.js";
-import { resolveRunsteadRoot, resolveRunsteadRootSync } from "./runstead-root.js";
+import {
+  requireRunsteadStateDb,
+  requireRunsteadStateDbSync
+} from "./runstead-root.js";
 
 export interface RegisterRepositoryOptions {
   cwd?: string;
@@ -56,8 +59,7 @@ export async function registerRepository(
   options: RegisterRepositoryOptions = {}
 ): Promise<RegisterRepositoryResult> {
   const controlCwd = resolve(options.cwd ?? process.cwd());
-  const root = (await resolveRunsteadRoot(controlCwd)).root;
-  const stateDb = join(root, "state.db");
+  const stateDb = (await requireRunsteadStateDb(controlCwd)).stateDb;
   const requestedPath = resolve(controlCwd, options.path ?? ".");
   const git = await inspectGitRepository(requestedPath);
   const localPath = git.root ?? (await normalizePath(requestedPath));
@@ -212,7 +214,7 @@ export function resolveRepositoryReference(
 }
 
 function resolveStateDb(cwd = process.cwd()): string {
-  return join(resolveRunsteadRootSync(cwd).root, "state.db");
+  return requireRunsteadStateDbSync(cwd).stateDb;
 }
 
 async function normalizePath(path: string): Promise<string> {

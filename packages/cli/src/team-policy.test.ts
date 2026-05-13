@@ -25,6 +25,7 @@ describe("team policy", () => {
         "version: 1\ndomain: repo-maintenance\n",
         "utf8"
       );
+      openRunsteadDatabase(join(root, "state.db")).close();
 
       const initialized = await initTeamPolicy({ cwd: workspace });
       const compiled = await compileTeamPolicy({

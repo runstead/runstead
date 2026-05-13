@@ -9,6 +9,7 @@ import {
   registerRepository,
   showRepository
 } from "./repositories.js";
+import { initRunstead } from "./init.js";
 
 describe("registerRepository", () => {
   it("registers, lists, shows, and updates repositories by path", async () => {
@@ -17,6 +18,7 @@ describe("registerRepository", () => {
 
     try {
       await mkdir(repositoryPath);
+      await initRunstead({ cwd: workspace });
 
       const registered = await registerRepository({
         cwd: workspace,

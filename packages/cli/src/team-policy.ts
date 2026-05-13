@@ -15,7 +15,11 @@ import {
   DEFAULT_VERIFIER_COMMAND_PATTERNS,
   type PolicyProfile
 } from "./policy.js";
-import { resolveRunsteadRoot, resolveRunsteadRootSync } from "./runstead-root.js";
+import {
+  requireRunsteadRoot,
+  requireRunsteadRootSync,
+  requireRunsteadStateDbSync
+} from "./runstead-root.js";
 
 export interface InitTeamPolicyOptions {
   cwd?: string;
@@ -164,7 +168,7 @@ export async function compileTeamPolicy(
     },
     createdAt: compiledAt
   };
-  const stateDb = join(root, "state.db");
+  const stateDb = requireRunsteadStateDbSync(options.cwd ?? process.cwd()).stateDb;
   const database = openRunsteadDatabase(stateDb);
 
   await mkdir(dirname(outputPath), { recursive: true });
@@ -276,21 +280,13 @@ function formatActionType(actionType: string | string[]): string | { in: string[
 }
 
 function resolveTeamPolicyPath(cwd = process.cwd()): string {
-  const root = resolveRunsteadRootSync(cwd);
-
-  if (root.source === "missing") {
-    throw new Error(`Runstead is not initialized at ${root.root}`);
-  }
+  const root = requireRunsteadRootSync(cwd);
 
   return join(root.root, "team-policy.yaml");
 }
 
 async function resolveInitializedRoot(cwd = process.cwd()): Promise<string> {
-  const root = await resolveRunsteadRoot(resolve(cwd));
-
-  if (root.source === "missing") {
-    throw new Error(`Runstead is not initialized at ${root.root}`);
-  }
+  const root = await requireRunsteadRoot(resolve(cwd));
 
   return root.root;
 }

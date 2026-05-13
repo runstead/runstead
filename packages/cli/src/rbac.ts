@@ -7,7 +7,11 @@ import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sql
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import { z } from "zod";
 
-import { resolveRunsteadRoot, resolveRunsteadRootSync } from "./runstead-root.js";
+import {
+  requireRunsteadRoot,
+  requireRunsteadRootSync,
+  requireRunsteadStateDbSync
+} from "./runstead-root.js";
 
 export type RbacDecision = "allow" | "deny";
 
@@ -154,7 +158,7 @@ export async function grantRole(options: GrantRoleOptions): Promise<GrantRoleRes
     },
     createdAt: grantedAt
   };
-  const stateDb = join(root, "state.db");
+  const stateDb = requireRunsteadStateDbSync(options.cwd ?? process.cwd()).stateDb;
   const database = openRunsteadDatabase(stateDb);
 
   try {
@@ -253,21 +257,13 @@ async function writeRbacPolicy(path: string, policy: RbacPolicy): Promise<void> 
 }
 
 function resolveRbacPath(cwd = process.cwd()): string {
-  const root = resolveRunsteadRootSync(cwd);
-
-  if (root.source === "missing") {
-    throw new Error(`Runstead is not initialized at ${root.root}`);
-  }
+  const root = requireRunsteadRootSync(cwd);
 
   return join(root.root, "rbac.yaml");
 }
 
 async function resolveInitializedRoot(cwd = process.cwd()): Promise<string> {
-  const root = await resolveRunsteadRoot(resolve(cwd));
-
-  if (root.source === "missing") {
-    throw new Error(`Runstead is not initialized at ${root.root}`);
-  }
+  const root = await requireRunsteadRoot(resolve(cwd));
 
   return root.root;
 }

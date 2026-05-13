@@ -6,7 +6,7 @@ import { pathToFileURL } from "node:url";
 import { createRunsteadId, type JsonObject, type RunsteadEvent } from "@runstead/core";
 import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sqlite";
 
-import { resolveRunsteadRoot } from "./runstead-root.js";
+import { requireRunsteadStateDb } from "./runstead-root.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -106,11 +106,7 @@ export async function generateWeeklyReport(
   options: GenerateWeeklyReportOptions = {}
 ): Promise<WeeklyReportResult> {
   const cwd = resolve(options.cwd ?? process.cwd());
-  const resolvedRoot = await resolveRunsteadRoot(cwd);
-
-  if (resolvedRoot.source === "missing") {
-    throw new Error(`Runstead is not initialized at ${resolvedRoot.root}`);
-  }
+  const resolvedState = await requireRunsteadStateDb(cwd);
 
   const generatedAt = options.now ?? new Date();
   const isoWeek =
@@ -122,8 +118,8 @@ export async function generateWeeklyReport(
   const periodEndDate = new Date(periodStartDate.getTime() + DAY_MS * 7);
   const periodStart = periodStartDate.toISOString();
   const periodEnd = periodEndDate.toISOString();
-  const stateDb = join(resolvedRoot.root, "state.db");
-  const reportPath = join(resolvedRoot.root, "reports", `weekly-${week}.md`);
+  const stateDb = resolvedState.stateDb;
+  const reportPath = join(resolvedState.root, "reports", `weekly-${week}.md`);
   const database = openRunsteadDatabase(stateDb);
 
   try {
@@ -151,12 +147,12 @@ export async function generateWeeklyReport(
       createdAt: generatedAt.toISOString()
     };
 
-    await mkdir(join(resolvedRoot.root, "reports"), { recursive: true });
+    await mkdir(join(resolvedState.root, "reports"), { recursive: true });
     await writeFile(reportPath, markdown, "utf8");
     appendEventAndProject(database, { event });
 
     return {
-      root: resolvedRoot.root,
+      root: resolvedState.root,
       stateDb,
       week,
       periodStart,

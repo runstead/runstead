@@ -34,6 +34,7 @@ describe("github app mode", () => {
         "version: 1\ndomain: repo-maintenance\n",
         "utf8"
       );
+      openRunsteadDatabase(join(root, "state.db")).close();
       await writeFile(keyPath, privateKeyPem, "utf8");
 
       const configured = await initGitHubAppMode({

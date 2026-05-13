@@ -1,9 +1,9 @@
 import { mkdir, writeFile } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 
 import { openRunsteadDatabase } from "@runstead/state-sqlite";
 
-import { resolveRunsteadRootSync } from "./runstead-root.js";
+import { requireRunsteadStateDbSync } from "./runstead-root.js";
 
 export interface ExportAuditLogOptions {
   cwd?: string;
@@ -42,13 +42,8 @@ export async function exportAuditLog(
   options: ExportAuditLogOptions = {}
 ): Promise<ExportAuditLogResult> {
   const cwd = resolve(options.cwd ?? process.cwd());
-  const resolvedRoot = resolveRunsteadRootSync(cwd);
-
-  if (resolvedRoot.source === "missing") {
-    throw new Error(`Runstead is not initialized at ${resolvedRoot.root}`);
-  }
-
-  const stateDb = join(resolvedRoot.root, "state.db");
+  const resolvedState = requireRunsteadStateDbSync(cwd);
+  const stateDb = resolvedState.stateDb;
   const database = openRunsteadDatabase(stateDb);
 
   try {
@@ -66,7 +61,7 @@ export async function exportAuditLog(
     }
 
     return {
-      root: resolvedRoot.root,
+      root: resolvedState.root,
       stateDb,
       entries,
       contents,

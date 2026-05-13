@@ -1,5 +1,5 @@
 import { accessSync, constants } from "node:fs";
-import { isAbsolute, join, relative, resolve } from "node:path";
+import { isAbsolute, relative, resolve } from "node:path";
 
 import {
   createRunsteadId,
@@ -15,7 +15,7 @@ import {
   type RunsteadDatabase
 } from "@runstead/state-sqlite";
 
-import { resolveRunsteadRootSync } from "./runstead-root.js";
+import { requireRunsteadStateDbSync } from "./runstead-root.js";
 
 export interface QuarantineMemoryCandidateOptions {
   cwd?: string;
@@ -81,11 +81,7 @@ export function quarantineMemoryCandidate(
   options: QuarantineMemoryCandidateOptions
 ): QuarantineMemoryCandidateResult {
   const cwd = resolve(options.cwd ?? process.cwd());
-  const resolvedRoot = resolveRunsteadRootSync(cwd);
-
-  if (resolvedRoot.source === "missing") {
-    throw new Error(`Runstead is not initialized at ${resolvedRoot.root}`);
-  }
+  const resolvedState = requireRunsteadStateDbSync(cwd);
 
   const createdAt = (options.now ?? new Date()).toISOString();
   const memory = MemoryRecordSchema.parse({
@@ -112,7 +108,7 @@ export function quarantineMemoryCandidate(
     payload: memoryEventPayload(memory),
     createdAt
   };
-  const stateDb = join(resolvedRoot.root, "state.db");
+  const stateDb = resolvedState.stateDb;
   const database = openRunsteadDatabase(stateDb);
 
   try {
@@ -138,11 +134,7 @@ export function recordProjectFact(
   options: RecordProjectFactOptions
 ): RecordProjectFactResult {
   const cwd = resolve(options.cwd ?? process.cwd());
-  const resolvedRoot = resolveRunsteadRootSync(cwd);
-
-  if (resolvedRoot.source === "missing") {
-    throw new Error(`Runstead is not initialized at ${resolvedRoot.root}`);
-  }
+  const resolvedState = requireRunsteadStateDbSync(cwd);
 
   validateProjectFactSources(cwd, options.sourceRefs);
 
@@ -171,7 +163,7 @@ export function recordProjectFact(
     payload: memoryEventPayload(memory),
     createdAt
   };
-  const stateDb = join(resolvedRoot.root, "state.db");
+  const stateDb = resolvedState.stateDb;
   const database = openRunsteadDatabase(stateDb);
 
   try {
@@ -197,13 +189,9 @@ export function listProjectFacts(
   options: ListProjectFactsOptions = {}
 ): ListProjectFactsResult {
   const cwd = resolve(options.cwd ?? process.cwd());
-  const resolvedRoot = resolveRunsteadRootSync(cwd);
+  const resolvedState = requireRunsteadStateDbSync(cwd);
 
-  if (resolvedRoot.source === "missing") {
-    throw new Error(`Runstead is not initialized at ${resolvedRoot.root}`);
-  }
-
-  const stateDb = join(resolvedRoot.root, "state.db");
+  const stateDb = resolvedState.stateDb;
   const database = openRunsteadDatabase(stateDb);
 
   try {
@@ -220,11 +208,7 @@ export function retrieveProjectFacts(
   options: RetrieveProjectFactsOptions = {}
 ): RetrieveProjectFactsResult {
   const cwd = resolve(options.cwd ?? process.cwd());
-  const resolvedRoot = resolveRunsteadRootSync(cwd);
-
-  if (resolvedRoot.source === "missing") {
-    throw new Error(`Runstead is not initialized at ${resolvedRoot.root}`);
-  }
+  const resolvedState = requireRunsteadStateDbSync(cwd);
 
   const limit = options.limit ?? 10;
 
@@ -232,7 +216,7 @@ export function retrieveProjectFacts(
     throw new Error("Project fact retrieval limit must be a positive integer");
   }
 
-  const stateDb = join(resolvedRoot.root, "state.db");
+  const stateDb = resolvedState.stateDb;
   const database = openRunsteadDatabase(stateDb);
 
   try {

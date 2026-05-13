@@ -112,6 +112,7 @@ describe("recordPolicyDecision", () => {
     try {
       await mkdir(join(workspace, ".team"), { recursive: true });
       await writeFile(join(workspace, ".team", "config.yaml"), "version: 1\n");
+      openRunsteadDatabase(join(workspace, ".team", "state.db")).close();
 
       const recorded = recordPolicyDecision({
         cwd: workspace,

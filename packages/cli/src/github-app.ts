@@ -8,7 +8,11 @@ import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sql
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import { z } from "zod";
 
-import { resolveRunsteadRoot, resolveRunsteadRootSync } from "./runstead-root.js";
+import {
+  requireRunsteadRoot,
+  requireRunsteadRootSync,
+  requireRunsteadStateDbSync
+} from "./runstead-root.js";
 
 export interface GitHubAppConfig {
   appId: string;
@@ -66,7 +70,7 @@ export async function initGitHubAppMode(
 ): Promise<InitGitHubAppModeResult> {
   const root = await resolveInitializedRoot(options.cwd);
   const path = join(root, "github-app.yaml");
-  const stateDb = join(root, "state.db");
+  const stateDb = requireRunsteadStateDbSync(options.cwd ?? process.cwd()).stateDb;
   const existing = await exists(path);
 
   if (existing && options.force !== true) {
@@ -143,7 +147,7 @@ export async function loadGitHubAppConfig(
 export async function createGitHubAppJwtFromConfig(
   options: CreateGitHubAppJwtFromConfigOptions = {}
 ): Promise<GitHubAppJwtResult> {
-  const root = resolveRunsteadRootSync(options.cwd).root;
+  const root = requireRunsteadRootSync(options.cwd).root;
   const config = await loadGitHubAppConfig(
     options.cwd === undefined ? {} : { cwd: options.cwd }
   );
@@ -213,21 +217,13 @@ function base64UrlJson(value: unknown): string {
 }
 
 function resolveGitHubAppConfigPath(cwd = process.cwd()): string {
-  const root = resolveRunsteadRootSync(cwd);
-
-  if (root.source === "missing") {
-    throw new Error(`Runstead is not initialized at ${root.root}`);
-  }
+  const root = requireRunsteadRootSync(cwd);
 
   return join(root.root, "github-app.yaml");
 }
 
 async function resolveInitializedRoot(cwd = process.cwd()): Promise<string> {
-  const root = await resolveRunsteadRoot(resolve(cwd));
-
-  if (root.source === "missing") {
-    throw new Error(`Runstead is not initialized at ${root.root}`);
-  }
+  const root = await requireRunsteadRoot(resolve(cwd));
 
   return root.root;
 }

@@ -1,5 +1,6 @@
 import { constants } from "node:fs";
 import { access, readFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 
 import { openRunsteadDatabase } from "@runstead/state-sqlite";
@@ -75,6 +76,16 @@ function readStateStatus(path: string): {
   tasks: RunsteadStatusTasks;
   latestEvidence?: RunsteadStatusEvidence;
 } {
+  if (!existsSync(path)) {
+    return {
+      goals: [],
+      tasks: {
+        total: 0,
+        byStatus: {}
+      }
+    };
+  }
+
   const database = openRunsteadDatabase(path);
 
   try {

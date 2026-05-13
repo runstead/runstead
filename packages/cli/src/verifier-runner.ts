@@ -1,4 +1,4 @@
-import { join, resolve } from "node:path";
+import { resolve } from "node:path";
 
 import {
   createRunsteadId,
@@ -8,7 +8,7 @@ import {
 } from "@runstead/core";
 import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sqlite";
 
-import { resolveRunsteadRootSync } from "./runstead-root.js";
+import { requireRunsteadStateDbSync } from "./runstead-root.js";
 import { claimTask } from "./tasks.js";
 import {
   storeCommandVerifierEvidence,
@@ -39,8 +39,9 @@ export async function runTaskVerifiers(
   options: RunTaskVerifiersOptions
 ): Promise<RunTaskVerifiersResult> {
   const cwd = resolve(options.cwd ?? process.cwd());
-  const root = resolveRunsteadRootSync(cwd).root;
-  const stateDb = join(root, "state.db");
+  const resolvedState = requireRunsteadStateDbSync(cwd);
+  const root = resolvedState.root;
+  const stateDb = resolvedState.stateDb;
   const createdAt = (options.now ?? new Date()).toISOString();
   const task = claimTask({
     cwd,
