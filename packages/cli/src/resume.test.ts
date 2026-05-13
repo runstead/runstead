@@ -117,6 +117,14 @@ describe("findInterruptedTasks", () => {
         ...task,
         status: "running",
         attempt: task.maxAttempts,
+        output: {
+          commands: [
+            {
+              verifier: "test",
+              evidenceId: "ev_existing"
+            }
+          ]
+        },
         updatedAt: "2026-05-14T07:21:00.000Z"
       };
       const database = openRunsteadDatabase(goal.stateDb);
@@ -162,7 +170,13 @@ describe("findInterruptedTasks", () => {
       expect(stored.output).toMatchObject({
         summary: "Max attempts reached during resume",
         attempt: task.maxAttempts,
-        maxAttempts: task.maxAttempts
+        maxAttempts: task.maxAttempts,
+        commands: [
+          {
+            verifier: "test",
+            evidenceId: "ev_existing"
+          }
+        ]
       });
     } finally {
       await rm(workspace, { force: true, recursive: true });

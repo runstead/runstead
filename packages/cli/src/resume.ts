@@ -74,12 +74,7 @@ export function resumeInterruptedTasks(
         const task: Task = {
           ...interrupted.task,
           status: "failed",
-          output: {
-            summary: "Max attempts reached during resume",
-            previousStatus: interrupted.task.status,
-            attempt: interrupted.task.attempt,
-            maxAttempts: interrupted.task.maxAttempts
-          },
+          output: resumeFailedOutput(interrupted.task),
           updatedAt: requeuedAt
         };
         const event = taskEvent("task.failed", task, task.output ?? {}, requeuedAt);
@@ -135,6 +130,16 @@ export function resumeInterruptedTasks(
     requeuedTasks,
     failedTasks,
     stateDb: detected.stateDb
+  };
+}
+
+function resumeFailedOutput(task: Task): JsonObject {
+  return {
+    ...(task.output ?? {}),
+    summary: "Max attempts reached during resume",
+    previousStatus: task.status,
+    attempt: task.attempt,
+    maxAttempts: task.maxAttempts
   };
 }
 
