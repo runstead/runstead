@@ -243,19 +243,46 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     .description("Serve the GitHub webhook endpoint.")
     .option("--host <host>", "Host to bind", "127.0.0.1")
     .option("--port <number>", "Port to bind", "8787")
+    .option("--cwd <path>", "Workspace directory")
     .option("--secret <secret>", "GitHub webhook secret")
-    .action(async (options: { host: string; port: string; secret?: string }) => {
-      const { createWebhookServer } = await import("./webhook-server.js");
-      const port = parseRequiredInteger(options.port, "--port");
-      const server = createWebhookServer({
-        ...(options.secret === undefined ? {} : { secret: options.secret })
-      });
+    .action(
+      async (options: {
+        host: string;
+        port: string;
+        cwd?: string;
+        secret?: string;
+      }) => {
+        const { createWebhookServer } = await import("./webhook-server.js");
+        const {
+          createCiRepairTaskFromWorkflowRun,
+          repairableWorkflowRunIdFromWebhook
+        } = await import("./ci-repair.js");
+        const port = parseRequiredInteger(options.port, "--port");
+        const server = createWebhookServer({
+          ...(options.secret === undefined ? {} : { secret: options.secret }),
+          handler: async (event) => {
+            const runId = repairableWorkflowRunIdFromWebhook(
+              event.event,
+              event.payload
+            );
 
-      server.listen(port, options.host, () => {
-        console.log(`Runstead webhook server listening on ${options.host}:${port}`);
-        console.log("GitHub endpoint: /webhooks/github");
-      });
-    });
+            if (runId !== undefined) {
+              await createCiRepairTaskFromWorkflowRun({
+                ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+                runId
+              });
+            }
+          }
+        });
+
+        server.listen(port, options.host, () => {
+          console.log(
+            `Runstead webhook server listening on ${options.host}:${port}`
+          );
+          console.log("GitHub endpoint: /webhooks/github");
+        });
+      }
+    );
 
   const dashboard = program.command("dashboard").description("Build dashboards.");
 

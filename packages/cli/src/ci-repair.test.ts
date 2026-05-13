@@ -7,7 +7,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   createCiRepairTaskFromWorkflowRun,
-  formatCiRepairTaskReport
+  formatCiRepairTaskReport,
+  repairableWorkflowRunIdFromWebhook
 } from "./ci-repair.js";
 import type { GitHubCliRunner } from "./github-actions.js";
 import { initRunstead } from "./init.js";
@@ -145,5 +146,28 @@ describe("createCiRepairTaskFromWorkflowRun", () => {
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }
+  });
+
+  it("extracts repairable workflow_run webhook ids", () => {
+    expect(
+      repairableWorkflowRunIdFromWebhook("workflow_run", {
+        action: "completed",
+        workflow_run: {
+          id: 456,
+          status: "completed",
+          conclusion: "failure"
+        }
+      })
+    ).toBe("456");
+    expect(
+      repairableWorkflowRunIdFromWebhook("workflow_run", {
+        action: "completed",
+        workflow_run: {
+          id: 456,
+          status: "completed",
+          conclusion: "success"
+        }
+      })
+    ).toBeUndefined();
   });
 });
