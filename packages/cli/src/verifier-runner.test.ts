@@ -145,6 +145,9 @@ describe("runTaskVerifiers", () => {
         const toolCall = database
           .prepare("SELECT status FROM tool_calls")
           .get() as { status: string };
+        const storedTask = database
+          .prepare("SELECT attempt FROM tasks WHERE id = ?")
+          .get(task.id) as { attempt: number };
 
         expect(result.task.status).toBe("blocked");
         expect(result.commandResults).toMatchObject([
@@ -159,6 +162,7 @@ describe("runTaskVerifiers", () => {
           rule_id: "deny_destructive_shell"
         });
         expect(toolCall.status).toBe("denied");
+        expect(storedTask.attempt).toBe(0);
       } finally {
         database.close();
       }
@@ -190,6 +194,9 @@ describe("runTaskVerifiers", () => {
         const toolCall = database
           .prepare("SELECT status FROM tool_calls")
           .get() as { status: string };
+        const storedTask = database
+          .prepare("SELECT attempt FROM tasks WHERE id = ?")
+          .get(task.id) as { attempt: number };
 
         expect(result.task.status).toBe("waiting_approval");
         const commandResult = result.commandResults[0];
@@ -208,6 +215,7 @@ describe("runTaskVerifiers", () => {
         });
         expect(approval.action_id).toMatch(/^act_/);
         expect(toolCall.status).toBe("approval_required");
+        expect(storedTask.attempt).toBe(0);
       } finally {
         database.close();
       }
@@ -251,6 +259,7 @@ describe("runTaskVerifiers", () => {
       });
 
       expect(completed.task.status).toBe("completed");
+      expect(completed.task.attempt).toBe(1);
       expect(completed.commandResults[0]).toMatchObject({
         exitCode: 0,
         approvalId

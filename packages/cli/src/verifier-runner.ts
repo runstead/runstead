@@ -71,7 +71,6 @@ export async function runTaskVerifiers(
   const runningTask: Task = {
     ...task,
     status: "running",
-    attempt: task.attempt + 1,
     updatedAt: createdAt
   };
   const commands = verifierCommandsFromTask(task);
@@ -90,6 +89,37 @@ export async function runTaskVerifiers(
         value: runningTask
       }
     });
+    let currentTask = runningTask;
+    let executionAttemptStarted = false;
+    const startExecutionAttempt = (): Task => {
+      if (executionAttemptStarted) {
+        return currentTask;
+      }
+
+      executionAttemptStarted = true;
+      currentTask = {
+        ...currentTask,
+        attempt: currentTask.attempt + 1,
+        updatedAt: createdAt
+      };
+      appendEventAndProject(database, {
+        event: taskEvent(
+          "task.execution_started",
+          currentTask,
+          {
+            previousAttempt: task.attempt,
+            attempt: currentTask.attempt
+          },
+          createdAt
+        ),
+        projection: {
+          type: "task",
+          value: currentTask
+        }
+      });
+
+      return currentTask;
+    };
     const workerRun = startWorkerRun({
       database,
       task: runningTask,
@@ -169,7 +199,7 @@ export async function runTaskVerifiers(
         });
 
         const finalTask = finalizeTask({
-          runningTask,
+          runningTask: currentTask,
           status: "blocked",
           output: verifierOutput(commandResults, false),
           updatedAt: createdAt,
@@ -232,7 +262,7 @@ export async function runTaskVerifiers(
         });
 
         const finalTask = finalizeTask({
-          runningTask,
+          runningTask: currentTask,
           status: "waiting_approval",
           output: verifierOutput(commandResults, false),
           updatedAt: createdAt,
@@ -245,11 +275,12 @@ export async function runTaskVerifiers(
         };
       }
 
+      currentTask = startExecutionAttempt();
       const evidenceResult = await storeCommandVerifierEvidence({
         cwd,
         runsteadRoot: root,
         database,
-        task: runningTask,
+        task: currentTask,
         command,
         ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
         ...(options.now === undefined ? {} : { now: options.now })
@@ -297,7 +328,7 @@ export async function runTaskVerifiers(
       );
     const output = verifierOutput(commandResults, passed);
     const finalTask: Task = {
-      ...runningTask,
+      ...currentTask,
       status: passed ? "completed" : "failed",
       output,
       updatedAt: createdAt
