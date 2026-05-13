@@ -74,7 +74,7 @@ export async function createWorkspaceCheckpoint(
   ]);
   const untrackedFiles =
     untracked.exitCode === 0
-      ? parseNulPaths(untracked.stdout).filter(isSafeRelativePath)
+      ? parseNulPaths(untracked.stdout).filter(isCheckpointSnapshotPath)
       : [];
   const checkpoint: WorkspaceCheckpoint = {
     id,
@@ -154,7 +154,9 @@ export async function readWorkspaceCheckpoint(
     statusPath,
     patchPath,
     untrackedDir,
-    untrackedFiles: stringArrayField(raw, "untrackedFiles").filter(isSafeRelativePath),
+    untrackedFiles: stringArrayField(raw, "untrackedFiles").filter(
+      isCheckpointSnapshotPath
+    ),
     ...(head === undefined ? {} : { head }),
     createdAt: stringField(raw, "createdAt", "")
   };
@@ -203,7 +205,7 @@ export async function restoreWorkspaceCheckpoint(
 
   const removedUntrackedFiles = parseNulPaths(untracked.stdout)
     .filter(isSafeRelativePath)
-    .filter((path) => !isRunsteadStatePath(path));
+    .filter((path) => !isCheckpointExcludedPath(path));
 
   await Promise.all(
     removedUntrackedFiles.map((path) =>
@@ -213,7 +215,7 @@ export async function restoreWorkspaceCheckpoint(
   await copyUntrackedSnapshot(
     checkpoint.untrackedDir,
     workspace,
-    checkpoint.untrackedFiles
+    checkpoint.untrackedFiles.filter(isCheckpointSnapshotPath)
   );
 
   const patch = await readFile(checkpoint.patchPath, "utf8");
@@ -233,7 +235,7 @@ export async function restoreWorkspaceCheckpoint(
     checkpoint,
     currentHead: currentHeadSha,
     restoredTrackedPatch,
-    restoredUntrackedFiles: checkpoint.untrackedFiles,
+    restoredUntrackedFiles: checkpoint.untrackedFiles.filter(isCheckpointSnapshotPath),
     removedUntrackedFiles
   };
 }
@@ -334,10 +336,23 @@ function isSafeRelativePath(path: string): boolean {
   );
 }
 
-function isRunsteadStatePath(path: string): boolean {
+function isCheckpointSnapshotPath(path: string): boolean {
+  return isSafeRelativePath(path) && !isCheckpointExcludedPath(path);
+}
+
+function isCheckpointExcludedPath(path: string): boolean {
   const normalized = normalize(path);
 
-  return normalized === ".runstead" || normalized.startsWith(`.runstead${sep}`);
+  return (
+    normalized === ".runstead" ||
+    normalized.startsWith(`.runstead${sep}`) ||
+    normalized === ".team" ||
+    normalized.startsWith(`.team${sep}`) ||
+    normalized === ".git" ||
+    normalized.startsWith(`.git${sep}`) ||
+    normalized === "node_modules" ||
+    normalized.startsWith(`node_modules${sep}`)
+  );
 }
 
 function stringField(
