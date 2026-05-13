@@ -6,6 +6,7 @@ import {
   MemoryRecordSchema,
   PolicyDecisionRecordSchema,
   RepositoryRecordSchema,
+  TaskSchema,
   ToolCallSchema,
   WorkerRunSchema
 } from "./models.js";
@@ -24,6 +25,27 @@ describe("GoalSchema", () => {
     });
 
     expect(goal.domain).toBe("repo-maintenance");
+  });
+});
+
+describe("TaskSchema", () => {
+  it("accepts tasks paused for approval", () => {
+    const task = TaskSchema.parse({
+      id: "task_approval_001",
+      goalId: "goal_001",
+      domain: "repo-maintenance",
+      type: "run_local_verifiers",
+      status: "waiting_approval",
+      priority: "medium",
+      attempt: 1,
+      maxAttempts: 1,
+      input: {},
+      verifiers: ["command:test"],
+      createdAt: "2026-05-14T03:00:00.000Z",
+      updatedAt: "2026-05-14T03:01:00.000Z"
+    });
+
+    expect(task.status).toBe("waiting_approval");
   });
 });
 

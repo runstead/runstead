@@ -949,6 +949,88 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
       console.log(`Verifiers: ${result.task.verifiers.join(", ")}`);
     });
 
+  const approval = program.command("approval").description("Manage approvals.");
+
+  approval
+    .command("list")
+    .description("List approval requests.")
+    .option("--cwd <path>", "Workspace directory")
+    .option("--status <status>", "Filter by approval status")
+    .action(async (options: { cwd?: string; status?: string }) => {
+      const { listApprovals } = await import("./approvals.js");
+      const status = parseApprovalStatus(options.status);
+      const result = listApprovals({
+        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+        ...(status === undefined ? {} : { status })
+      });
+
+      if (result.approvals.length === 0) {
+        console.log("No approvals found.");
+        return;
+      }
+
+      for (const item of result.approvals) {
+        console.log(
+          `${item.status.padEnd(8)} ${item.id} ${item.risk} ${item.actionId}: ${item.reason}`
+        );
+      }
+    });
+
+  approval
+    .command("show")
+    .description("Show an approval request.")
+    .argument("<id>", "Approval id")
+    .option("--cwd <path>", "Workspace directory")
+    .action(async (id: string, options: { cwd?: string }) => {
+      const { showApproval } = await import("./approvals.js");
+      const result = showApproval({ ...options, id });
+
+      console.log(`Approval: ${result.approval.id}`);
+      console.log(`Status: ${result.approval.status}`);
+      console.log(`Risk: ${result.approval.risk}`);
+      console.log(`Action: ${result.approval.actionId}`);
+      console.log(`Policy decision: ${result.approval.policyDecisionId}`);
+      console.log(`Reason: ${result.approval.reason}`);
+      console.log(`Requested by: ${result.approval.requestedBy ?? "unknown"}`);
+      console.log(`Decided by: ${result.approval.decidedBy ?? "none"}`);
+    });
+
+  approval
+    .command("approve")
+    .description("Approve a pending approval request.")
+    .argument("<id>", "Approval id")
+    .option("--cwd <path>", "Workspace directory")
+    .option("--decided-by <id>", "Approver id")
+    .action(async (id: string, options: { cwd?: string; decidedBy?: string }) => {
+      const { decideApproval } = await import("./approvals.js");
+      const result = decideApproval({
+        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+        id,
+        decision: "approved",
+        ...(options.decidedBy === undefined ? {} : { decidedBy: options.decidedBy })
+      });
+
+      console.log(`Approved: ${result.approval.id}`);
+    });
+
+  approval
+    .command("deny")
+    .description("Deny a pending approval request.")
+    .argument("<id>", "Approval id")
+    .option("--cwd <path>", "Workspace directory")
+    .option("--decided-by <id>", "Approver id")
+    .action(async (id: string, options: { cwd?: string; decidedBy?: string }) => {
+      const { decideApproval } = await import("./approvals.js");
+      const result = decideApproval({
+        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+        id,
+        decision: "denied",
+        ...(options.decidedBy === undefined ? {} : { decidedBy: options.decidedBy })
+      });
+
+      console.log(`Denied: ${result.approval.id}`);
+    });
+
   const verifier = program.command("verifier").description("Run verifiers.");
 
   verifier
@@ -1295,6 +1377,25 @@ function parseRepositoryStatus(
   }
 
   throw new Error("--status must be active or archived");
+}
+
+function parseApprovalStatus(
+  value: string | undefined
+): "pending" | "approved" | "denied" | "expired" | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (
+    value === "pending" ||
+    value === "approved" ||
+    value === "denied" ||
+    value === "expired"
+  ) {
+    return value;
+  }
+
+  throw new Error("--status must be pending, approved, denied, or expired");
 }
 
 const entrypoint = process.argv[1] ? pathToFileURL(process.argv[1]).href : undefined;
