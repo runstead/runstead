@@ -1,12 +1,15 @@
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 
 import type { Task } from "@runstead/core";
 import { openRunsteadDatabase } from "@runstead/state-sqlite";
 import { describe, expect, it } from "vitest";
 
-import { storeCommandVerifierEvidence } from "./verifier-evidence.js";
+import {
+  storeCommandVerifierEvidence,
+  storeCommandVerifierPolicyEvidence
+} from "./verifier-evidence.js";
 
 describe("storeCommandVerifierEvidence", () => {
   it("stores command output evidence and appends an event", async () => {
@@ -111,8 +114,72 @@ describe("storeCommandVerifierEvidence", () => {
       await rm(workspace, { force: true, recursive: true });
     }
   });
+
+  it("sanitizes verifier names before using them in artifact filenames", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-verifier-"));
+    const runsteadRoot = join(workspace, ".runstead");
+    const database = openRunsteadDatabase(join(runsteadRoot, "state.db"));
+    const task = verifierTask();
+
+    try {
+      const command = {
+        name: "../../evil/test:lint",
+        command: nodeCommand("process.exit(0);")
+      };
+      const commandEvidence = await storeCommandVerifierEvidence({
+        cwd: workspace,
+        runsteadRoot,
+        database,
+        task,
+        command,
+        now: new Date("2026-05-14T05:02:00.000Z")
+      });
+      const policyEvidence = await storeCommandVerifierPolicyEvidence({
+        cwd: workspace,
+        runsteadRoot,
+        database,
+        task,
+        command,
+        policyDecisionId: "poldec_unsafe_name",
+        decision: "require_approval",
+        reason: "No policy rule matched",
+        now: new Date("2026-05-14T05:03:00.000Z")
+      });
+      const artifact = JSON.parse(
+        await readFile(commandEvidence.artifactPath, "utf8")
+      ) as { verifier: string };
+
+      expect(basename(commandEvidence.artifactPath)).toMatch(
+        /^verifier-\.\._\.\._evil_test_lint-ev_/
+      );
+      expect(basename(policyEvidence.artifactPath)).toMatch(
+        /^verifier-\.\._\.\._evil_test_lint-require_approval-ev_/
+      );
+      expect(artifact.verifier).toBe(command.name);
+    } finally {
+      database.close();
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
 });
 
 function nodeCommand(script: string): string {
   return `${JSON.stringify(process.execPath)} -e ${JSON.stringify(script)}`;
+}
+
+function verifierTask(): Task {
+  return {
+    id: "task_verifier_evidence_001",
+    goalId: "goal_verifier_evidence_001",
+    domain: "repo-maintenance",
+    type: "run_local_verifiers",
+    status: "running",
+    priority: "medium",
+    attempt: 0,
+    maxAttempts: 1,
+    input: {},
+    verifiers: ["command:test"],
+    createdAt: "2026-05-14T05:00:00.000Z",
+    updatedAt: "2026-05-14T05:00:00.000Z"
+  };
 }

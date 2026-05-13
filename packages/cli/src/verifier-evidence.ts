@@ -69,9 +69,10 @@ export async function storeCommandVerifierEvidence(
   };
   const evidenceId = createRunsteadId("ev");
   const evidenceDir = join(runsteadRoot, "evidence");
+  const artifactName = sanitizeArtifactName(options.command.name);
   const artifactPath = join(
     evidenceDir,
-    `verifier-${options.command.name}-${evidenceId}.json`
+    `verifier-${artifactName}-${evidenceId}.json`
   );
   const artifactContents = `${JSON.stringify(artifact, null, 2)}\n`;
   const evidence: Evidence = {
@@ -159,9 +160,10 @@ export async function storeCommandVerifierPolicyEvidence(
   };
   const evidenceId = createRunsteadId("ev");
   const evidenceDir = join(runsteadRoot, "evidence");
+  const artifactName = sanitizeArtifactName(options.command.name);
   const artifactPath = join(
     evidenceDir,
-    `verifier-${options.command.name}-${options.decision}-${evidenceId}.json`
+    `verifier-${artifactName}-${options.decision}-${evidenceId}.json`
   );
   const artifactContents = `${JSON.stringify(artifact, null, 2)}\n`;
   const evidence: Evidence = {
@@ -241,4 +243,10 @@ function evidenceEventPayload(
 
 function sha256(contents: string): string {
   return createHash("sha256").update(contents).digest("hex");
+}
+
+function sanitizeArtifactName(value: string): string {
+  const sanitized = value.replace(/[^a-zA-Z0-9._-]+/g, "_");
+
+  return sanitized.length === 0 ? "unnamed" : sanitized;
 }
