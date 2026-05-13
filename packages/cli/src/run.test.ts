@@ -8,18 +8,23 @@ import { describe, expect, it } from "vitest";
 
 import { createGoal } from "./goals.js";
 import { initRunstead } from "./init.js";
-import { runOnce } from "./run.js";
+import { formatRunOnceReport, runOnce } from "./run.js";
 
 describe("runOnce", () => {
   it("returns no queued task when none exists", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "runstead-run-"));
 
     try {
-      await expect(runOnce({ cwd: workspace })).resolves.toEqual({
+      const result = await runOnce({ cwd: workspace });
+
+      expect(result).toEqual({
         cwd: workspace,
         ranTask: false,
         reason: "no_queued_task"
       });
+      expect(formatRunOnceReport(result)).toBe(
+        "Runstead run --once\nStatus: idle\nReason: no queued task"
+      );
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }
@@ -54,7 +59,9 @@ describe("runOnce", () => {
         verifiers: ["command:test"]
       });
 
-      await expect(runOnce({ cwd: workspace })).resolves.toMatchObject({
+      const result = await runOnce({ cwd: workspace });
+
+      expect(result).toMatchObject({
         cwd: workspace,
         ranTask: true,
         task: {
@@ -69,6 +76,8 @@ describe("runOnce", () => {
           }
         ]
       });
+      expect(formatRunOnceReport(result)).toContain(`Task: ${task.id}`);
+      expect(formatRunOnceReport(result)).toContain("test: exit=0 evidence=");
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }

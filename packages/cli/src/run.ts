@@ -57,3 +57,21 @@ export function pickNextQueuedTask(cwd = process.cwd()): Task | undefined {
     .tasks.filter((task) => task.status === "queued")
     .sort((left, right) => left.createdAt.localeCompare(right.createdAt))[0];
 }
+
+export function formatRunOnceReport(result: RunOnceResult): string {
+  if (!result.ranTask) {
+    return ["Runstead run --once", "Status: idle", "Reason: no queued task"].join("\n");
+  }
+
+  return [
+    "Runstead run --once",
+    `Task: ${result.task.id}`,
+    `Type: ${result.task.type}`,
+    `Status: ${result.task.status}`,
+    "Verifiers:",
+    ...result.commandResults.map(
+      (command) =>
+        `  ${command.verifier}: exit=${command.exitCode ?? "unknown"} evidence=${command.evidenceId}`
+    )
+  ].join("\n");
+}

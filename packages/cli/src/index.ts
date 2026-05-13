@@ -116,16 +116,10 @@ export function createProgram(): Command {
         throw new Error("Only --once is supported in v0.0.1");
       }
 
-      const { runOnce } = await import("./run.js");
+      const { formatRunOnceReport, runOnce } = await import("./run.js");
       const result = await runOnce(options);
 
-      if (!result.ranTask) {
-        console.log("No queued task was found.");
-        return;
-      }
-
-      console.log(`Ran task: ${result.task.id} ${result.task.type}`);
-      console.log(`Status: ${result.task.status}`);
+      console.log(formatRunOnceReport(result));
     });
 
   const goal = program.command("goal").description("Manage durable goals.");
