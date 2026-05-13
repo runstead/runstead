@@ -24,6 +24,7 @@ describe("openRunsteadDatabase", () => {
           "tasks",
           "evidence",
           "policy_decisions",
+          "approvals",
           "events"
         ])
       );
@@ -155,6 +156,78 @@ describe("appendEventAndProject", () => {
         risk: "high",
         rule_id: "require_approval_external_write",
         obligations_json: "[]"
+      });
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("appends an event and updates an approval projection", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-state-"));
+
+    try {
+      const database = openRunsteadDatabase(join(workspace, "state.db"));
+
+      appendEventAndProject(database, {
+        event: {
+          eventId: "evt_approval_requested_001",
+          type: "approval.requested",
+          aggregateType: "approval",
+          aggregateId: "appr_001",
+          payload: {
+            policyDecisionId: "poldec_001",
+            actionId: "act_001"
+          },
+          createdAt: "2026-05-14T03:08:00.000Z"
+        },
+        projection: {
+          type: "approval",
+          value: {
+            id: "appr_001",
+            policyDecisionId: "poldec_001",
+            actionId: "act_001",
+            status: "pending",
+            risk: "high",
+            reason: "External write requires approval",
+            requestedBy: "runstead",
+            expiresAt: "2026-05-14T04:08:00.000Z",
+            createdAt: "2026-05-14T03:08:00.000Z",
+            updatedAt: "2026-05-14T03:08:00.000Z"
+          }
+        }
+      });
+
+      const approval = database
+        .prepare(
+          `
+          SELECT id, policy_decision_id, action_id, status, risk, reason,
+                 requested_by, expires_at
+          FROM approvals
+          WHERE id = ?
+        `
+        )
+        .get("appr_001") as {
+        id: string;
+        policy_decision_id: string;
+        action_id: string;
+        status: string;
+        risk: string;
+        reason: string;
+        requested_by: string;
+        expires_at: string;
+      };
+
+      database.close();
+
+      expect(approval).toEqual({
+        id: "appr_001",
+        policy_decision_id: "poldec_001",
+        action_id: "act_001",
+        status: "pending",
+        risk: "high",
+        reason: "External write requires approval",
+        requested_by: "runstead",
+        expires_at: "2026-05-14T04:08:00.000Z"
       });
     } finally {
       await rm(workspace, { force: true, recursive: true });

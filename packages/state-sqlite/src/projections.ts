@@ -1,4 +1,5 @@
 import type {
+  ApprovalRequest,
   Evidence,
   Goal,
   PolicyDecisionRecord,
@@ -6,6 +7,7 @@ import type {
   Task
 } from "@runstead/core";
 import {
+  ApprovalRequestSchema,
   EvidenceSchema,
   GoalSchema,
   PolicyDecisionRecordSchema,
@@ -19,7 +21,8 @@ export type StateProjection =
   | { type: "goal"; value: Goal }
   | { type: "task"; value: Task }
   | { type: "evidence"; value: Evidence }
-  | { type: "policyDecision"; value: PolicyDecisionRecord };
+  | { type: "policyDecision"; value: PolicyDecisionRecord }
+  | { type: "approval"; value: ApprovalRequest };
 
 export interface AppendEventAndProjectInput {
   event: RunsteadEvent;
@@ -91,6 +94,9 @@ function upsertProjection(
         database,
         PolicyDecisionRecordSchema.parse(projection.value)
       );
+      return;
+    case "approval":
+      upsertApproval(database, ApprovalRequestSchema.parse(projection.value));
       return;
   }
 }
@@ -270,6 +276,53 @@ function upsertPolicyDecision(
       JSON.stringify(decision.action),
       JSON.stringify(decision.result),
       decision.createdAt
+    );
+}
+
+function upsertApproval(database: RunsteadDatabase, approval: ApprovalRequest): void {
+  database
+    .prepare(
+      `
+      INSERT INTO approvals (
+        id,
+        policy_decision_id,
+        action_id,
+        status,
+        risk,
+        reason,
+        requested_by,
+        expires_at,
+        decided_at,
+        decided_by,
+        created_at,
+        updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        policy_decision_id = excluded.policy_decision_id,
+        action_id = excluded.action_id,
+        status = excluded.status,
+        risk = excluded.risk,
+        reason = excluded.reason,
+        requested_by = excluded.requested_by,
+        expires_at = excluded.expires_at,
+        decided_at = excluded.decided_at,
+        decided_by = excluded.decided_by,
+        updated_at = excluded.updated_at
+    `
+    )
+    .run(
+      approval.id,
+      approval.policyDecisionId,
+      approval.actionId,
+      approval.status,
+      approval.risk,
+      approval.reason,
+      approval.requestedBy ?? null,
+      approval.expiresAt ?? null,
+      approval.decidedAt ?? null,
+      approval.decidedBy ?? null,
+      approval.createdAt,
+      approval.updatedAt
     );
 }
 

@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { GoalSchema, PolicyDecisionRecordSchema } from "./models.js";
+import {
+  ApprovalRequestSchema,
+  GoalSchema,
+  PolicyDecisionRecordSchema
+} from "./models.js";
 
 describe("GoalSchema", () => {
   it("accepts the minimal active goal shape", () => {
@@ -42,5 +46,24 @@ describe("PolicyDecisionRecordSchema", () => {
     });
 
     expect(record.policyId).toBe("policy_repo_maintenance_v1");
+  });
+});
+
+describe("ApprovalRequestSchema", () => {
+  it("accepts a pending approval request", () => {
+    const request = ApprovalRequestSchema.parse({
+      id: "appr_001",
+      policyDecisionId: "poldec_001",
+      actionId: "act_001",
+      status: "pending",
+      risk: "high",
+      reason: "External write requires approval",
+      requestedBy: "runstead",
+      expiresAt: "2026-05-14T04:06:00.000Z",
+      createdAt: "2026-05-14T03:06:00.000Z",
+      updatedAt: "2026-05-14T03:06:00.000Z"
+    });
+
+    expect(request.status).toBe("pending");
   });
 });

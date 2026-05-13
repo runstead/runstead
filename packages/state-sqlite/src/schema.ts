@@ -55,6 +55,21 @@ CREATE TABLE IF NOT EXISTS policy_decisions (
   created_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS approvals (
+  id TEXT PRIMARY KEY,
+  policy_decision_id TEXT NOT NULL,
+  action_id TEXT NOT NULL,
+  status TEXT NOT NULL,
+  risk TEXT NOT NULL,
+  reason TEXT NOT NULL,
+  requested_by TEXT,
+  expires_at TEXT,
+  decided_at TEXT,
+  decided_by TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS events (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   event_id TEXT UNIQUE NOT NULL,

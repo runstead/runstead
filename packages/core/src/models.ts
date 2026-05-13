@@ -26,6 +26,13 @@ export const PolicyDecisionValueSchema = z.enum(["allow", "deny", "require_appro
 
 export const PolicyRiskSchema = z.enum(["low", "medium", "high", "critical"]);
 
+export const ApprovalStatusSchema = z.enum([
+  "pending",
+  "approved",
+  "denied",
+  "expired"
+]);
+
 export const GoalSchema = z.object({
   id: z.string().min(1),
   domain: z.string().min(1),
@@ -88,6 +95,23 @@ export const PolicyDecisionRecordSchema = z.object({
 });
 
 export type PolicyDecisionRecord = z.infer<typeof PolicyDecisionRecordSchema>;
+
+export const ApprovalRequestSchema = z.object({
+  id: z.string().min(1),
+  policyDecisionId: z.string().min(1),
+  actionId: z.string().min(1),
+  status: ApprovalStatusSchema,
+  risk: PolicyRiskSchema,
+  reason: z.string().min(1),
+  requestedBy: z.string().min(1).optional(),
+  expiresAt: z.string().min(1).optional(),
+  decidedAt: z.string().min(1).optional(),
+  decidedBy: z.string().min(1).optional(),
+  createdAt: z.string().min(1),
+  updatedAt: z.string().min(1)
+});
+
+export type ApprovalRequest = z.infer<typeof ApprovalRequestSchema>;
 
 export const RunsteadEventSchema = z.object({
   eventId: z.string().min(1),
