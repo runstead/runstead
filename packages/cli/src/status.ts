@@ -1,8 +1,10 @@
 import { constants } from "node:fs";
 import { access, readFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 
 import { openRunsteadDatabase } from "@runstead/state-sqlite";
+
+import { resolveRunsteadRoot } from "./runstead-root.js";
 
 export interface RunsteadStatusGoal {
   id: string;
@@ -33,17 +35,18 @@ export interface RunsteadStatus {
 }
 
 export async function getRunsteadStatus(cwd = process.cwd()): Promise<RunsteadStatus> {
-  const root = join(resolve(cwd), ".runstead");
+  const resolvedRoot = await resolveRunsteadRoot(cwd);
+  const root = resolvedRoot.root;
   const configPath = join(root, "config.yaml");
 
-  try {
-    await access(configPath, constants.R_OK);
-  } catch {
+  if (resolvedRoot.source === "missing") {
     return {
       initialized: false,
       root
     };
   }
+
+  await access(configPath, constants.R_OK);
 
   const config = await readFile(configPath, "utf8");
   const domain = /^domain:\s*(?<domain>[^\n]+)$/m.exec(config)?.groups?.domain;

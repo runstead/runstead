@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -55,6 +55,33 @@ describe("getRunsteadStatus", () => {
       });
       expect(status.latestEvidence).toMatchObject({
         type: "repo_inspection"
+      });
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("reads legacy .team state when .runstead is missing", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-status-team-"));
+
+    try {
+      await mkdir(join(workspace, ".team"), { recursive: true });
+      await writeFile(
+        join(workspace, ".team", "config.yaml"),
+        "version: 1\ndomain: repo-maintenance\n"
+      );
+
+      const status = await getRunsteadStatus(workspace);
+
+      expect(status).toMatchObject({
+        initialized: true,
+        root: join(workspace, ".team"),
+        domain: "repo-maintenance",
+        goals: [],
+        tasks: {
+          total: 0,
+          byStatus: {}
+        }
       });
     } finally {
       await rm(workspace, { force: true, recursive: true });
