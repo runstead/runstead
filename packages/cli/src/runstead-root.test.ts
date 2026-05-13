@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { resolveRunsteadRoot } from "./runstead-root.js";
+import { resolveRunsteadRoot, resolveRunsteadRootSync } from "./runstead-root.js";
 
 describe("resolveRunsteadRoot", () => {
   it("prefers .runstead when both roots exist", async () => {
@@ -18,6 +18,11 @@ describe("resolveRunsteadRoot", () => {
       await writeFile(join(workspace, ".team", "config.yaml"), "version: 1\n");
 
       await expect(resolveRunsteadRoot(workspace)).resolves.toEqual({
+        cwd: workspace,
+        root: join(workspace, ".runstead"),
+        source: "runstead"
+      });
+      expect(resolveRunsteadRootSync(workspace)).toEqual({
         cwd: workspace,
         root: join(workspace, ".runstead"),
         source: "runstead"
@@ -36,6 +41,11 @@ describe("resolveRunsteadRoot", () => {
       await writeFile(join(workspace, ".team", "config.yaml"), "version: 1\n");
 
       await expect(resolveRunsteadRoot(workspace)).resolves.toEqual({
+        cwd: workspace,
+        root: join(workspace, ".team"),
+        source: "team"
+      });
+      expect(resolveRunsteadRootSync(workspace)).toEqual({
         cwd: workspace,
         root: join(workspace, ".team"),
         source: "team"

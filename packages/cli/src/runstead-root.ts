@@ -1,4 +1,4 @@
-import { constants } from "node:fs";
+import { accessSync, constants } from "node:fs";
 import { access } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
@@ -38,9 +38,48 @@ export async function resolveRunsteadRoot(
   };
 }
 
+export function resolveRunsteadRootSync(
+  cwd = process.cwd()
+): ResolveRunsteadRootResult {
+  const workspace = resolve(cwd);
+  const runsteadRoot = join(workspace, ".runstead");
+  const teamRoot = join(workspace, ".team");
+
+  if (hasReadableConfigSync(runsteadRoot)) {
+    return {
+      cwd: workspace,
+      root: runsteadRoot,
+      source: "runstead"
+    };
+  }
+
+  if (hasReadableConfigSync(teamRoot)) {
+    return {
+      cwd: workspace,
+      root: teamRoot,
+      source: "team"
+    };
+  }
+
+  return {
+    cwd: workspace,
+    root: runsteadRoot,
+    source: "missing"
+  };
+}
+
 async function hasReadableConfig(root: string): Promise<boolean> {
   try {
     await access(join(root, "config.yaml"), constants.R_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function hasReadableConfigSync(root: string): boolean {
+  try {
+    accessSync(join(root, "config.yaml"), constants.R_OK);
     return true;
   } catch {
     return false;
