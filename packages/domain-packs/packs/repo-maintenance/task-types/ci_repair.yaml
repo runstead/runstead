@@ -1,0 +1,16 @@
+id: ci_repair
+domain: repo-maintenance
+description: Repair a failed GitHub Actions workflow run using captured CI evidence.
+
+default_priority: high
+max_attempts: 1
+
+verifiers:
+  required:
+    - evidence:github_workflow_run
+    - command:local_verifiers
+
+worker_routing:
+  preferred: wrapped-worker
+  fallback:
+    - shell

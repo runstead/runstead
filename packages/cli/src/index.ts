@@ -1213,6 +1213,22 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
       process.stdout.write(result.log);
     });
 
+  githubRun
+    .command("repair")
+    .description("Create a CI repair task from a failed GitHub workflow run.")
+    .argument("<run-id>", "GitHub Actions workflow run id")
+    .option("--cwd <path>", "Workspace directory")
+    .action(async (runId: string, options: { cwd?: string }) => {
+      const { createCiRepairTaskFromWorkflowRun, formatCiRepairTaskReport } =
+        await import("./ci-repair.js");
+      const result = await createCiRepairTaskFromWorkflowRun({
+        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+        runId
+      });
+
+      console.log(formatCiRepairTaskReport(result));
+    });
+
   const githubPr = github.command("pr").description("Create GitHub pull requests.");
 
   githubPr
