@@ -7,6 +7,7 @@ import { openRunsteadDatabase } from "@runstead/state-sqlite";
 
 import { storeRepoInspectionEvidence } from "./inspection-evidence.js";
 import { DEFAULT_RBAC_YAML } from "./rbac.js";
+import { DEFAULT_TEAM_POLICY_YAML } from "./team-policy.js";
 
 export interface InitRunsteadOptions {
   cwd?: string;
@@ -128,6 +129,11 @@ export async function initRunstead(
     options.force
   );
   await writeIfMissing(join(root, "rbac.yaml"), DEFAULT_RBAC_YAML, options.force);
+  await writeIfMissing(
+    join(root, "team-policy.yaml"),
+    DEFAULT_TEAM_POLICY_YAML,
+    options.force
+  );
 
   const database = openRunsteadDatabase(stateDb);
 

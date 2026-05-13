@@ -35,6 +35,7 @@ describe("initRunstead", () => {
         "utf8"
       );
       const rbacPolicy = await readFile(join(result.root, "rbac.yaml"), "utf8");
+      const teamPolicy = await readFile(join(result.root, "team-policy.yaml"), "utf8");
       const database = await stat(result.stateDb);
       const evidenceFiles = await readdir(join(result.root, "evidence"));
 
@@ -42,6 +43,7 @@ describe("initRunstead", () => {
       expect(goalTemplate).toContain("id: keep-ci-green");
       expect(domainPolicy).toContain("id: policy_repo_maintenance_v1");
       expect(rbacPolicy).toContain("local-admin");
+      expect(teamPolicy).toContain("team_policy_repo_maintenance_v1");
       expect(database.isFile()).toBe(true);
       expect(evidenceFiles).toEqual([
         expect.stringMatching(/^repo-inspection-ev_[a-f0-9]+\.json$/)

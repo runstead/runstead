@@ -297,6 +297,57 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
       }
     });
 
+  const teamPolicy = program
+    .command("team-policy")
+    .description("Manage team policy overlays.");
+
+  teamPolicy
+    .command("init")
+    .description("Initialize the team policy source file.")
+    .option("--cwd <path>", "Workspace directory")
+    .option("--force", "Overwrite an existing team policy")
+    .action(async (options: { cwd?: string; force?: boolean }) => {
+      const { initTeamPolicy } = await import("./team-policy.js");
+      const result = await initTeamPolicy({
+        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+        ...(options.force === undefined ? {} : { force: options.force })
+      });
+
+      console.log(
+        `${result.overwritten ? "Overwrote" : "Initialized"} team policy: ${result.path}`
+      );
+    });
+
+  teamPolicy
+    .command("show")
+    .description("Show the team policy summary.")
+    .option("--cwd <path>", "Workspace directory")
+    .action(async (options: { cwd?: string }) => {
+      const { formatTeamPolicySummary, loadTeamPolicy } =
+        await import("./team-policy.js");
+      const policy = await loadTeamPolicy({
+        ...(options.cwd === undefined ? {} : { cwd: options.cwd })
+      });
+
+      console.log(formatTeamPolicySummary(policy));
+    });
+
+  teamPolicy
+    .command("compile")
+    .description("Compile the team policy into the Policy DSL.")
+    .option("--cwd <path>", "Workspace directory")
+    .option("--output <path>", "Compiled policy path")
+    .action(async (options: { cwd?: string; output?: string }) => {
+      const { compileTeamPolicy } = await import("./team-policy.js");
+      const result = await compileTeamPolicy({
+        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+        ...(options.output === undefined ? {} : { output: options.output })
+      });
+
+      console.log(`Compiled team policy: ${result.outputPath}`);
+      console.log(`Rules: ${result.policy.rules.length}`);
+    });
+
   const audit = program.command("audit").description("Export audit data.");
 
   audit
