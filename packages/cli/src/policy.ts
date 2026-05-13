@@ -45,6 +45,7 @@ export interface PolicyCondition {
   actionType?: string | string[];
   path?: PathMatcherCondition;
   command?: RegexMatcherCondition;
+  sideEffects?: SideEffectsCondition;
 }
 
 export interface PathMatcherCondition {
@@ -53,6 +54,10 @@ export interface PathMatcherCondition {
 
 export interface RegexMatcherCondition {
   matchesAny: string[];
+}
+
+export interface SideEffectsCondition {
+  containsAny: string[];
 }
 
 export interface PolicyEvaluationResult {
@@ -64,6 +69,7 @@ export interface PolicyEvaluationResult {
   obligations: string[];
   matchedPath?: string;
   matchedCommand?: string;
+  matchedSideEffect?: string;
 }
 
 export interface EvaluatePolicyOptions {
@@ -88,6 +94,20 @@ export const VERIFIER_COMMAND_OBLIGATIONS = [
   "redact_secrets"
 ];
 
+export const DEFAULT_EXTERNAL_WRITE_SIDE_EFFECTS = [
+  "network_write_external",
+  "send_message_external",
+  "git_push",
+  "github_pr_create"
+];
+
+export interface CreateRepoMaintenanceMinimumPolicyOptions {
+  protectedPaths: string[];
+  verifierCommandPatterns?: string[];
+  externalWriteSideEffects?: string[];
+  id?: string;
+}
+
 export function createProtectedPathDenyPolicy(
   protectedPaths: string[],
   id = "policy_protected_paths_v1"
@@ -106,6 +126,22 @@ export function createProtectedPathDenyPolicy(
         decision: "deny",
         risk: "critical"
       }
+    ]
+  };
+}
+
+export function createRepoMaintenanceMinimumPolicy(
+  options: CreateRepoMaintenanceMinimumPolicyOptions
+): PolicyProfile {
+  return {
+    id: options.id ?? "policy_repo_maintenance_minimum_v1",
+    version: 1,
+    defaultDecision: "require_approval",
+    defaultRisk: "medium",
+    rules: [
+      ...createProtectedPathDenyPolicy(options.protectedPaths).rules,
+      ...createVerifierCommandAllowPolicy(options.verifierCommandPatterns).rules,
+      ...createExternalWriteApprovalPolicy(options.externalWriteSideEffects).rules
     ]
   };
 }
@@ -136,22 +172,50 @@ export function createVerifierCommandAllowPolicy(
   };
 }
 
+export function createExternalWriteApprovalPolicy(
+  sideEffects = DEFAULT_EXTERNAL_WRITE_SIDE_EFFECTS,
+  id = "policy_external_write_approval_v1"
+): PolicyProfile {
+  return {
+    id,
+    version: 1,
+    rules: [
+      {
+        id: "require_approval_external_write",
+        when: {
+          sideEffects: {
+            containsAny: sideEffects
+          }
+        },
+        decision: "require_approval",
+        risk: "high"
+      }
+    ]
+  };
+}
+
 export function evaluatePolicy(options: EvaluatePolicyOptions): PolicyEvaluationResult {
-  for (const rule of options.policy.rules) {
+  const matches = options.policy.rules.flatMap((rule) => {
     const match = matchPolicyRule(rule, options.action);
 
-    if (match.matched) {
-      return {
-        actionId: options.action.actionId,
-        decision: rule.decision,
-        risk: rule.risk,
-        ruleId: rule.id,
-        reason: `Matched policy rule ${rule.id}`,
-        obligations: rule.obligations ?? [],
-        ...(match.path === undefined ? {} : { matchedPath: match.path }),
-        ...(match.command === undefined ? {} : { matchedCommand: match.command })
-      };
-    }
+    return match.matched ? [{ rule, match }] : [];
+  });
+  const selected = strongestPolicyMatch(matches);
+
+  if (selected !== undefined) {
+    const { rule, match } = selected;
+
+    return {
+      actionId: options.action.actionId,
+      decision: rule.decision,
+      risk: rule.risk,
+      ruleId: rule.id,
+      reason: `Matched policy rule ${rule.id}`,
+      obligations: rule.obligations ?? [],
+      ...(match.path === undefined ? {} : { matchedPath: match.path }),
+      ...(match.command === undefined ? {} : { matchedCommand: match.command }),
+      ...(match.sideEffect === undefined ? {} : { matchedSideEffect: match.sideEffect })
+    };
   }
 
   const defaultDecision = options.policy.defaultDecision ?? "allow";
@@ -165,10 +229,46 @@ export function evaluatePolicy(options: EvaluatePolicyOptions): PolicyEvaluation
   };
 }
 
-function matchPolicyRule(
-  rule: PolicyRule,
-  action: ActionEnvelope
-): { matched: boolean; path?: string; command?: string } {
+function strongestPolicyMatch(
+  matches: {
+    rule: PolicyRule;
+    match: PolicyRuleMatch;
+  }[]
+): { rule: PolicyRule; match: PolicyRuleMatch } | undefined {
+  return matches.reduce<{ rule: PolicyRule; match: PolicyRuleMatch } | undefined>(
+    (selected, candidate) => {
+      if (selected === undefined) {
+        return candidate;
+      }
+
+      return decisionRank(candidate.rule.decision) >
+        decisionRank(selected.rule.decision)
+        ? candidate
+        : selected;
+    },
+    undefined
+  );
+}
+
+function decisionRank(decision: PolicyDecision): number {
+  switch (decision) {
+    case "deny":
+      return 3;
+    case "require_approval":
+      return 2;
+    case "allow":
+      return 1;
+  }
+}
+
+interface PolicyRuleMatch {
+  matched: boolean;
+  path?: string;
+  command?: string;
+  sideEffect?: string;
+}
+
+function matchPolicyRule(rule: PolicyRule, action: ActionEnvelope): PolicyRuleMatch {
   if (!matchesActionType(rule.when.actionType, action.actionType)) {
     return { matched: false };
   }
@@ -185,10 +285,19 @@ function matchPolicyRule(
     return { matched: false };
   }
 
+  const sideEffectMatch = matchSideEffectsCondition(rule.when.sideEffects, action);
+
+  if (sideEffectMatch.required && !sideEffectMatch.matched) {
+    return { matched: false };
+  }
+
   return {
     matched: true,
     ...(pathMatch.path === undefined ? {} : { path: pathMatch.path }),
-    ...(commandMatch.command === undefined ? {} : { command: commandMatch.command })
+    ...(commandMatch.command === undefined ? {} : { command: commandMatch.command }),
+    ...(sideEffectMatch.sideEffect === undefined
+      ? {}
+      : { sideEffect: sideEffectMatch.sideEffect })
   };
 }
 
@@ -263,6 +372,36 @@ function matchCommandCondition(
       required: true,
       matched: true,
       command
+    };
+  }
+
+  return {
+    required: true,
+    matched: false
+  };
+}
+
+function matchSideEffectsCondition(
+  condition: SideEffectsCondition | undefined,
+  action: ActionEnvelope
+): { required: boolean; matched: boolean; sideEffect?: string } {
+  if (condition === undefined) {
+    return {
+      required: false,
+      matched: true
+    };
+  }
+
+  const sideEffects = action.context?.sideEffects ?? [];
+  const matchedSideEffect = sideEffects.find((sideEffect) =>
+    condition.containsAny.includes(sideEffect)
+  );
+
+  if (matchedSideEffect !== undefined) {
+    return {
+      required: true,
+      matched: true,
+      sideEffect: matchedSideEffect
     };
   }
 

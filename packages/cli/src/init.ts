@@ -66,8 +66,20 @@ rules:
           - ".env"
           - ".env.*"
           - "**/secrets/**"
+          - "infra/prod/**"
     decision: deny
     risk: critical
+
+  - id: require_approval_external_write
+    when:
+      side_effects:
+        contains_any:
+          - network_write_external
+          - send_message_external
+          - git_push
+          - github_pr_create
+    decision: require_approval
+    risk: high
 `;
 
 export async function initRunstead(

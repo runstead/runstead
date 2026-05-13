@@ -4,7 +4,9 @@ import { describe, expect, it } from "vitest";
 
 import {
   VERIFIER_COMMAND_OBLIGATIONS,
+  createExternalWriteApprovalPolicy,
   createProtectedPathDenyPolicy,
+  createRepoMaintenanceMinimumPolicy,
   createVerifierCommandAllowPolicy,
   evaluatePolicy
 } from "./policy.js";
@@ -16,6 +18,10 @@ const protectedPathPolicy = createProtectedPathDenyPolicy([
   "infra/prod/**"
 ]);
 const verifierCommandPolicy = createVerifierCommandAllowPolicy();
+const externalWritePolicy = createExternalWriteApprovalPolicy();
+const minimumPolicy = createRepoMaintenanceMinimumPolicy({
+  protectedPaths: [".env", ".env.*", "**/secrets/**", "infra/prod/**"]
+});
 
 describe("evaluatePolicy protected path rules", () => {
   it("denies a protected resource path", () => {
@@ -171,5 +177,73 @@ describe("evaluatePolicy verifier command rules", () => {
       risk: "medium"
     });
     expect(result.ruleId).toBeUndefined();
+  });
+});
+
+describe("evaluatePolicy external write rules", () => {
+  it("requires approval for external write side effects", () => {
+    const result = evaluatePolicy({
+      policy: externalWritePolicy,
+      action: {
+        actionId: "act_external_write",
+        actionType: "github.pr.create",
+        context: {
+          sideEffects: ["network_read", "github_pr_create"]
+        }
+      }
+    });
+
+    expect(result).toMatchObject({
+      actionId: "act_external_write",
+      decision: "require_approval",
+      risk: "high",
+      ruleId: "require_approval_external_write",
+      matchedSideEffect: "github_pr_create"
+    });
+  });
+
+  it("lets approval outrank verifier allow for external writes", () => {
+    const result = evaluatePolicy({
+      policy: minimumPolicy,
+      action: {
+        actionId: "act_verifier_with_push",
+        actionType: "shell.exec",
+        context: {
+          command: "pnpm test",
+          sideEffects: ["execute_process", "git_push"]
+        }
+      }
+    });
+
+    expect(result).toMatchObject({
+      decision: "require_approval",
+      risk: "high",
+      ruleId: "require_approval_external_write",
+      matchedSideEffect: "git_push"
+    });
+  });
+
+  it("lets deny outrank external write approval for protected paths", () => {
+    const result = evaluatePolicy({
+      policy: minimumPolicy,
+      action: {
+        actionId: "act_secret_push",
+        actionType: "filesystem.write",
+        resource: {
+          type: "file",
+          path: ".env"
+        },
+        context: {
+          sideEffects: ["git_push"]
+        }
+      }
+    });
+
+    expect(result).toMatchObject({
+      decision: "deny",
+      risk: "critical",
+      ruleId: "deny_protected_paths",
+      matchedPath: ".env"
+    });
   });
 });

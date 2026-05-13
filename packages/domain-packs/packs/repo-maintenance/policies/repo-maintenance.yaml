@@ -43,3 +43,25 @@ rules:
           - ".*dd if=.*"
     decision: deny
     risk: critical
+
+  - id: deny_secret_files
+    when:
+      path:
+        matches_any:
+          - ".env"
+          - ".env.*"
+          - "**/secrets/**"
+          - "infra/prod/**"
+    decision: deny
+    risk: critical
+
+  - id: require_approval_external_write
+    when:
+      side_effects:
+        contains_any:
+          - network_write_external
+          - send_message_external
+          - git_push
+          - github_pr_create
+    decision: require_approval
+    risk: high
