@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { openRunsteadDatabase } from "@runstead/state-sqlite";
 import { describe, expect, it } from "vitest";
 
-import { createGoal } from "./goals.js";
+import { createGoal, listGoals, showGoal } from "./goals.js";
 import { initRunstead } from "./init.js";
 
 describe("createGoal", () => {
@@ -90,6 +90,29 @@ describe("createGoal", () => {
       } finally {
         database.close();
       }
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("lists and shows persisted goals", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-goal-"));
+
+    try {
+      await initRunstead({ cwd: workspace });
+
+      const created = await createGoal({
+        cwd: workspace,
+        domain: "repo-maintenance",
+        title: "Custom CI health goal",
+        now: new Date("2026-05-14T02:00:00.000Z")
+      });
+      const listed = listGoals({ cwd: workspace });
+      const shown = showGoal({ cwd: workspace, id: created.goal.id });
+
+      expect(listed.goals).toEqual([created.goal]);
+      expect(shown.goal).toEqual(created.goal);
+      expect(shown.stateDb).toBe(created.stateDb);
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }

@@ -82,6 +82,42 @@ export function createProgram(): Command {
       }
     );
 
+  goal
+    .command("list")
+    .description("List goals.")
+    .option("--cwd <path>", "Workspace directory")
+    .action(async (options: { cwd?: string }) => {
+      const { listGoals } = await import("./goals.js");
+      const result = listGoals(options);
+
+      if (result.goals.length === 0) {
+        console.log("No goals found.");
+        return;
+      }
+
+      for (const item of result.goals) {
+        console.log(`${item.status.padEnd(9)} ${item.id} ${item.title}`);
+      }
+    });
+
+  goal
+    .command("show")
+    .description("Show a goal.")
+    .argument("<id>", "Goal id")
+    .option("--cwd <path>", "Workspace directory")
+    .action(async (id: string, options: { cwd?: string }) => {
+      const { showGoal } = await import("./goals.js");
+      const result = showGoal({ ...options, id });
+
+      console.log(`Goal: ${result.goal.id}`);
+      console.log(`Title: ${result.goal.title}`);
+      console.log(`Domain: ${result.goal.domain}`);
+      console.log(`Status: ${result.goal.status}`);
+      console.log(`Priority: ${result.goal.priority}`);
+      console.log(`Policy: ${result.goal.policyRef ?? "none"}`);
+      console.log(`Scope: ${JSON.stringify(result.goal.scope)}`);
+    });
+
   return program;
 }
 
