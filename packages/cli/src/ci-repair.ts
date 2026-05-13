@@ -47,6 +47,12 @@ const REPAIRABLE_CONCLUSIONS = new Set([
   "cancelled",
   "action_required"
 ]);
+const CI_LOG_EVIDENCE_METADATA = {
+  trust: "untrusted_external",
+  source: "github_actions_log",
+  redacted: true,
+  used_for_prompt: false
+};
 
 export async function createCiRepairTaskFromWorkflowRun(
   options: CreateCiRepairTaskOptions
@@ -68,6 +74,7 @@ export async function createCiRepairTaskFromWorkflowRun(
   ]);
 
   assertRepairableWorkflowRun(workflowRun);
+  const evidenceLog = redactGitHubWorkflowRunLog(log);
 
   const goal = listGoals({ cwd }).goals.find(
     (candidate) =>
@@ -92,6 +99,7 @@ export async function createCiRepairTaskFromWorkflowRun(
       runId: workflowRun.runId,
       workflowRun,
       logEvidenceType: "github_workflow_run",
+      logEvidenceMetadata: CI_LOG_EVIDENCE_METADATA,
       repairPlan: {
         fetchLog: true,
         classifyFailure: true,
@@ -115,8 +123,9 @@ export async function createCiRepairTaskFromWorkflowRun(
     createdAt,
     taskId: task.id,
     goalId: task.goalId,
+    metadata: CI_LOG_EVIDENCE_METADATA,
     workflowRun,
-    log
+    log: evidenceLog
   };
   const evidenceContents = `${JSON.stringify(evidenceArtifact, null, 2)}\n`;
   const evidenceId = createRunsteadId("ev");
@@ -132,7 +141,7 @@ export async function createCiRepairTaskFromWorkflowRun(
     subjectId: task.id,
     uri: pathToFileURL(evidencePath).href,
     hash: sha256(evidenceContents),
-    summary: workflowRunSummary(workflowRun, log),
+    summary: workflowRunSummary(workflowRun, evidenceLog),
     createdAt
   };
   const event: RunsteadEvent = {
@@ -161,7 +170,8 @@ export async function createCiRepairTaskFromWorkflowRun(
       taskId: task.id,
       uri: evidence.uri,
       hash: evidence.hash,
-      summary: evidence.summary
+      summary: evidence.summary,
+      metadata: CI_LOG_EVIDENCE_METADATA
     },
     createdAt
   };
@@ -197,7 +207,7 @@ export async function createCiRepairTaskFromWorkflowRun(
     evidence,
     evidencePath,
     workflowRun,
-    log
+    log: evidenceLog
   };
 }
 
@@ -276,6 +286,27 @@ function workflowRunSummary(
 
 function sha256(contents: string): string {
   return createHash("sha256").update(contents).digest("hex");
+}
+
+function redactGitHubWorkflowRunLog(log: GitHubWorkflowRunLog): GitHubWorkflowRunLog {
+  const redactedLog = redactSecretLikeValues(log.log);
+
+  return {
+    ...log,
+    log: redactedLog,
+    byteLength: Buffer.byteLength(redactedLog)
+  };
+}
+
+function redactSecretLikeValues(value: string): string {
+  return value
+    .replace(/github_pat_[A-Za-z0-9_]+/g, "[REDACTED_GITHUB_TOKEN]")
+    .replace(/gh[pousr]_[A-Za-z0-9_]+/g, "[REDACTED_GITHUB_TOKEN]")
+    .replace(/\b(Bearer\s+)[A-Za-z0-9._~+/-]+=*/gi, "$1[REDACTED]")
+    .replace(
+      /\b([A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|KEY)[A-Z0-9_]*)=([^\s]+)/gi,
+      "$1=[REDACTED]"
+    );
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

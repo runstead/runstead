@@ -76,9 +76,24 @@ describe("createCiRepairTaskFromWorkflowRun", () => {
           summary: string;
         };
         const artifact = JSON.parse(await readFile(result.evidencePath, "utf8")) as {
+          metadata: {
+            trust: string;
+            source: string;
+            redacted: boolean;
+            used_for_prompt: boolean;
+          };
           workflowRun: { conclusion: string };
           log: { log: string };
         };
+        const evidenceEvent = database
+          .prepare(
+            `
+            SELECT payload_json
+            FROM events
+            WHERE type = 'evidence.recorded' AND aggregate_id = ?
+          `
+          )
+          .get(result.evidence.id) as { payload_json: string };
 
         expect(task).toMatchObject({
           type: "ci_repair",
@@ -87,7 +102,13 @@ describe("createCiRepairTaskFromWorkflowRun", () => {
         });
         expect(JSON.parse(task.input_json)).toMatchObject({
           source: "github_actions",
-          runId: "123"
+          runId: "123",
+          logEvidenceMetadata: {
+            trust: "untrusted_external",
+            source: "github_actions_log",
+            redacted: true,
+            used_for_prompt: false
+          }
         });
         expect(evidence).toMatchObject({
           type: "github_workflow_run",
@@ -95,7 +116,21 @@ describe("createCiRepairTaskFromWorkflowRun", () => {
           summary: "Verify failure run 123 24 log bytes"
         });
         expect(artifact.workflowRun.conclusion).toBe("failure");
+        expect(artifact.metadata).toEqual({
+          trust: "untrusted_external",
+          source: "github_actions_log",
+          redacted: true,
+          used_for_prompt: false
+        });
         expect(artifact.log.log).toContain("failing test");
+        expect(JSON.parse(evidenceEvent.payload_json)).toMatchObject({
+          metadata: {
+            trust: "untrusted_external",
+            source: "github_actions_log",
+            redacted: true,
+            used_for_prompt: false
+          }
+        });
         expect(formatCiRepairTaskReport(result)).toContain(`Task: ${result.task.id}`);
         expect(calls.map((args) => args.slice(0, 3))).toEqual([
           ["run", "view", "123"],
@@ -104,6 +139,59 @@ describe("createCiRepairTaskFromWorkflowRun", () => {
       } finally {
         database.close();
       }
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("redacts secret-like strings before storing workflow log evidence", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-ci-repair-"));
+    const runner: GitHubCliRunner = (args) => {
+      if (args.includes("--log")) {
+        return Promise.resolve({
+          stdout: [
+            "AUTH_TOKEN=secret-value",
+            "curl -H 'Authorization: Bearer abc.def.ghi'",
+            "token ghp_abcdefghijklmnopqrstuvwxyz"
+          ].join("\n"),
+          stderr: "",
+          exitCode: 0
+        });
+      }
+
+      return Promise.resolve({
+        stdout: JSON.stringify({
+          databaseId: 123,
+          workflowName: "Verify",
+          status: "completed",
+          conclusion: "failure"
+        }),
+        stderr: "",
+        exitCode: 0
+      });
+    };
+
+    try {
+      await initRunstead({
+        cwd: workspace,
+        createDefaultGoal: true
+      });
+
+      const result = await createCiRepairTaskFromWorkflowRun({
+        cwd: workspace,
+        runId: "123",
+        runner,
+        now: new Date("2026-05-14T11:05:00.000Z")
+      });
+      const artifact = JSON.parse(await readFile(result.evidencePath, "utf8")) as {
+        log: { log: string };
+      };
+
+      expect(artifact.log.log).toContain("AUTH_TOKEN=[REDACTED]");
+      expect(artifact.log.log).toContain("Bearer [REDACTED]");
+      expect(artifact.log.log).toContain("[REDACTED_GITHUB_TOKEN]");
+      expect(artifact.log.log).not.toContain("secret-value");
+      expect(artifact.log.log).not.toContain("ghp_abcdefghijklmnopqrstuvwxyz");
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }
