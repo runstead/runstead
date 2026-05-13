@@ -36,6 +36,18 @@ export interface ShowTaskResult {
   stateDb: string;
 }
 
+export interface ClaimTaskOptions {
+  cwd?: string;
+  id: string;
+  now?: Date;
+}
+
+export interface ClaimTaskResult {
+  task: Task;
+  event: RunsteadEvent;
+  stateDb: string;
+}
+
 export interface BuildRunLocalVerifiersTaskOptions {
   cwd?: string;
   goal: Goal;
@@ -194,6 +206,54 @@ export function showTask(options: ShowTaskOptions): ShowTaskResult {
   } finally {
     database.close();
   }
+}
+
+export function claimTask(options: ClaimTaskOptions): ClaimTaskResult {
+  const current = showTask({
+    ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+    id: options.id
+  }).task;
+
+  if (current.status !== "queued") {
+    throw new Error(`Task ${options.id} is ${current.status}, expected queued`);
+  }
+
+  const stateDb = resolveStateDb(options.cwd);
+  const claimedAt = (options.now ?? new Date()).toISOString();
+  const task: Task = {
+    ...current,
+    status: "claimed",
+    updatedAt: claimedAt
+  };
+  const event: RunsteadEvent = {
+    eventId: createRunsteadId("evt"),
+    type: "task.claimed",
+    aggregateType: "task",
+    aggregateId: task.id,
+    payload: {
+      previousStatus: current.status
+    },
+    createdAt: claimedAt
+  };
+  const database = openRunsteadDatabase(stateDb);
+
+  try {
+    appendEventAndProject(database, {
+      event,
+      projection: {
+        type: "task",
+        value: task
+      }
+    });
+  } finally {
+    database.close();
+  }
+
+  return {
+    task,
+    event,
+    stateDb
+  };
 }
 
 function resolveStateDb(cwd = process.cwd()): string {

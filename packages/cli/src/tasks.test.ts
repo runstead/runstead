@@ -8,7 +8,7 @@ import { describe, expect, it } from "vitest";
 
 import { createGoal } from "./goals.js";
 import { initRunstead } from "./init.js";
-import { listTasks, showTask } from "./tasks.js";
+import { claimTask, listTasks, showTask } from "./tasks.js";
 
 describe("task queries", () => {
   it("lists and shows persisted tasks", async () => {
@@ -71,6 +71,43 @@ describe("task queries", () => {
       expect(listTasks({ cwd: workspace }).tasks).toEqual([task, generatedTask]);
       expect(listTasks({ cwd: workspace, goalId: "goal_missing" }).tasks).toEqual([]);
       expect(showTask({ cwd: workspace, id: task.id }).task).toEqual(task);
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("persists claimed task state", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-task-"));
+
+    try {
+      await initRunstead({ cwd: workspace });
+
+      const goal = await createGoal({
+        cwd: workspace,
+        domain: "repo-maintenance",
+        now: new Date("2026-05-14T03:10:00.000Z")
+      });
+      const task = goal.generatedTasks[0];
+
+      if (task === undefined) {
+        throw new Error("Expected createGoal to generate run_local_verifiers task");
+      }
+
+      const claimed = claimTask({
+        cwd: workspace,
+        id: task.id,
+        now: new Date("2026-05-14T03:11:00.000Z")
+      });
+      const stored = showTask({ cwd: workspace, id: task.id }).task;
+
+      expect(claimed.task.status).toBe("claimed");
+      expect(claimed.task.updatedAt).toBe("2026-05-14T03:11:00.000Z");
+      expect(stored.status).toBe("claimed");
+      expect(claimed.event).toMatchObject({
+        type: "task.claimed",
+        aggregateType: "task",
+        aggregateId: task.id
+      });
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }

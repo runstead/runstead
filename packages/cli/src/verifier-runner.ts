@@ -8,7 +8,7 @@ import {
 } from "@runstead/core";
 import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sqlite";
 
-import { showTask } from "./tasks.js";
+import { claimTask } from "./tasks.js";
 import {
   storeCommandVerifierEvidence,
   type CommandVerifierInput,
@@ -41,7 +41,11 @@ export async function runTaskVerifiers(
   const root = join(cwd, ".runstead");
   const stateDb = join(root, "state.db");
   const createdAt = (options.now ?? new Date()).toISOString();
-  const task = showTask({ cwd, id: options.taskId }).task;
+  const task = claimTask({
+    cwd,
+    id: options.taskId,
+    ...(options.now === undefined ? {} : { now: options.now })
+  }).task;
   const runningTask: Task = {
     ...task,
     status: "running",
