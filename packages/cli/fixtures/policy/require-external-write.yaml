@@ -1,0 +1,12 @@
+action:
+  action_id: act_fixture_external_write
+  action_type: github.pr.create
+  context:
+    side_effects:
+      - network_write_external
+      - github_pr_create
+
+expected:
+  decision: require_approval
+  risk: high
+  rule_id: require_approval_external_write

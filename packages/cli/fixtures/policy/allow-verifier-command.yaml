@@ -1,0 +1,13 @@
+action:
+  action_id: act_fixture_verifier
+  action_type: shell.exec
+  context:
+    command: pnpm run lint
+    side_effects:
+      - execute_process
+      - read_workspace
+
+expected:
+  decision: allow
+  risk: low
+  rule_id: allow_verifier_commands

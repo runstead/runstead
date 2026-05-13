@@ -1,0 +1,13 @@
+action:
+  action_id: act_fixture_verifier_with_push
+  action_type: shell.exec
+  context:
+    command: pnpm test
+    side_effects:
+      - execute_process
+      - git_push
+
+expected:
+  decision: require_approval
+  risk: high
+  rule_id: require_approval_external_write

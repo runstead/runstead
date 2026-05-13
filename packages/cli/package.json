@@ -29,6 +29,8 @@
     "@runstead/core": "workspace:*",
     "@runstead/domain-packs": "workspace:*",
     "@runstead/state-sqlite": "workspace:*",
-    "commander": "catalog:"
+    "commander": "catalog:",
+    "yaml": "catalog:",
+    "zod": "catalog:"
   }
 }

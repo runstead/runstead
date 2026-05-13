@@ -1,0 +1,11 @@
+action:
+  action_id: act_fixture_protected_path
+  action_type: filesystem.write
+  resource:
+    type: file
+    path: infra/prod/terraform.tfvars
+
+expected:
+  decision: deny
+  risk: critical
+  rule_id: deny_secret_files

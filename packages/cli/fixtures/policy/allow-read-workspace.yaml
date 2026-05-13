@@ -1,0 +1,11 @@
+action:
+  action_id: act_fixture_read_workspace
+  action_type: git.diff
+  context:
+    side_effects:
+      - read_workspace
+
+expected:
+  decision: allow
+  risk: low
+  rule_id: allow_read_workspace
