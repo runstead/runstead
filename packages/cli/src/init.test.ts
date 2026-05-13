@@ -14,9 +14,31 @@ describe("initRunstead", () => {
       await rm(workspace, { force: true, recursive: true });
       const result = await initRunstead({ cwd: workspace });
       const config = await readFile(join(result.root, "config.yaml"), "utf8");
+      const goalTemplate = await readFile(
+        join(
+          result.root,
+          "domains",
+          "repo-maintenance",
+          "goal-templates",
+          "keep-ci-green.yaml"
+        ),
+        "utf8"
+      );
+      const domainPolicy = await readFile(
+        join(
+          result.root,
+          "domains",
+          "repo-maintenance",
+          "policies",
+          "repo-maintenance.yaml"
+        ),
+        "utf8"
+      );
       const database = await stat(result.stateDb);
 
       expect(config).toContain("domain: repo-maintenance");
+      expect(goalTemplate).toContain("id: keep-ci-green");
+      expect(domainPolicy).toContain("id: policy_repo_maintenance_v1");
       expect(database.isFile()).toBe(true);
     } finally {
       await rm(workspace, { force: true, recursive: true });

@@ -1,3 +1,5 @@
+import { fileURLToPath } from "node:url";
+
 import type { DomainPack } from "./domain-pack.js";
 
 export const repoMaintenancePack = {
@@ -56,3 +58,7 @@ security:
     - "**/secrets/**"
     - "infra/prod/**"
 `;
+
+export function getRepoMaintenancePackDir(): string {
+  return fileURLToPath(new URL("../packs/repo-maintenance", import.meta.url));
+}

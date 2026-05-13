@@ -1,8 +1,8 @@
 import { constants } from "node:fs";
-import { access, mkdir, writeFile } from "node:fs/promises";
+import { access, copyFile, mkdir, readdir, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
-import { repoMaintenanceDomainYaml } from "@runstead/domain-packs";
+import { getRepoMaintenancePackDir } from "@runstead/domain-packs";
 import { openRunsteadDatabase } from "@runstead/state-sqlite";
 
 export interface InitRunsteadOptions {
@@ -64,13 +64,13 @@ export async function initRunstead(
   await mkdir(join(root, "checkpoints"), { recursive: true });
   await mkdir(join(root, "reports"), { recursive: true });
 
-  await writeIfMissing(join(root, "config.yaml"), DEFAULT_CONFIG, options.force);
-  await writeIfMissing(join(root, "events.jsonl"), "", options.force);
-  await writeIfMissing(
-    join(root, "domains", "repo-maintenance", "domain.yaml"),
-    repoMaintenanceDomainYaml,
+  await copyDirectoryIfMissing(
+    getRepoMaintenancePackDir(),
+    join(root, "domains", "repo-maintenance"),
     options.force
   );
+  await writeIfMissing(join(root, "config.yaml"), DEFAULT_CONFIG, options.force);
+  await writeIfMissing(join(root, "events.jsonl"), "", options.force);
   await writeIfMissing(
     join(root, "policies", "repo-maintenance.yaml"),
     DEFAULT_POLICY,
@@ -85,6 +85,50 @@ export async function initRunstead(
     domain: "repo-maintenance",
     stateDb
   };
+}
+
+async function copyDirectoryIfMissing(
+  source: string,
+  destination: string,
+  force = false
+): Promise<void> {
+  await mkdir(destination, { recursive: true });
+
+  const entries = await readdir(source, { withFileTypes: true });
+
+  await Promise.all(
+    entries.map(async (entry) => {
+      const sourcePath = join(source, entry.name);
+      const destinationPath = join(destination, entry.name);
+
+      if (entry.isDirectory()) {
+        await copyDirectoryIfMissing(sourcePath, destinationPath, force);
+        return;
+      }
+
+      if (!entry.isFile()) {
+        return;
+      }
+
+      await copyFileIfMissing(sourcePath, destinationPath, force);
+    })
+  );
+}
+
+async function copyFileIfMissing(
+  source: string,
+  destination: string,
+  force = false
+): Promise<void> {
+  try {
+    await copyFile(source, destination, force ? 0 : constants.COPYFILE_EXCL);
+  } catch (error) {
+    if (!force && isAlreadyExistsError(error)) {
+      return;
+    }
+
+    throw error;
+  }
 }
 
 async function writeIfMissing(
@@ -106,4 +150,12 @@ async function exists(path: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+function isAlreadyExistsError(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    "code" in error &&
+    (error as NodeJS.ErrnoException).code === "EEXIST"
+  );
 }
