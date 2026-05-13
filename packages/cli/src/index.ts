@@ -167,12 +167,14 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     .option("--once", "Run one daemon tick and exit")
     .option("--max-ticks <number>", "Stop after this many ticks")
     .option("--interval-ms <number>", "Delay between ticks", "30000")
+    .option("--no-scheduler", "Disable background scheduling before each tick")
     .action(
       async (options: {
         cwd?: string;
         once?: boolean;
         maxTicks?: string;
         intervalMs: string;
+        scheduler?: boolean;
       }) => {
         const { formatDaemonReport, runDaemon } = await import("./daemon.js");
         const maxTicks =
@@ -183,12 +185,41 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
         const result = await runDaemon({
           ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
           ...(maxTicks === undefined ? {} : { maxTicks }),
-          intervalMs
+          intervalMs,
+          schedulerEnabled: options.scheduler !== false
         });
 
         console.log(formatDaemonReport(result));
       }
     );
+
+  const scheduler = program
+    .command("scheduler")
+    .description("Manage background scheduling.");
+
+  scheduler
+    .command("tick")
+    .description("Schedule due recurring tasks once.")
+    .option("--cwd <path>", "Workspace directory")
+    .option(
+      "--interval-ms <number>",
+      "Default recurrence interval for goals without scheduler metadata",
+      "86400000"
+    )
+    .option("--now <iso>", "Override the current timestamp")
+    .action(async (options: { cwd?: string; intervalMs: string; now?: string }) => {
+      const { formatSchedulerReport, scheduleDueTasks } =
+        await import("./scheduler.js");
+      const result = await scheduleDueTasks({
+        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+        defaultIntervalMs: parseRequiredInteger(options.intervalMs, "--interval-ms"),
+        ...(options.now === undefined
+          ? {}
+          : { now: parseDateOption(options.now, "--now") })
+      });
+
+      console.log(formatSchedulerReport(result));
+    });
 
   const webhook = program.command("webhook").description("Run webhook receivers.");
 
@@ -1140,6 +1171,16 @@ function parseRequiredInteger(value: string, optionName: string): number {
 
   if (parsed === undefined) {
     throw new Error(`${optionName} is required`);
+  }
+
+  return parsed;
+}
+
+function parseDateOption(value: string, optionName: string): Date {
+  const parsed = new Date(value);
+
+  if (!Number.isFinite(parsed.getTime())) {
+    throw new Error(`${optionName} must be a valid date`);
   }
 
   return parsed;
