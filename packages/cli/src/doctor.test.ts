@@ -22,7 +22,6 @@ describe("doctorRunstead", () => {
       expect(result.checks.map((check) => check.id)).toEqual(
         expect.arrayContaining([
           "config",
-          "events",
           "domain-pack",
           "policy",
           "state-db"

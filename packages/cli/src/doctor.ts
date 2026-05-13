@@ -36,9 +36,6 @@ export async function doctorRunstead(
     await checkReadableFile("config", "config.yaml", join(root, "config.yaml"))
   );
   checks.push(
-    await checkReadableFile("events", "events.jsonl", join(root, "events.jsonl"))
-  );
-  checks.push(
     await checkReadableFile(
       "domain-pack",
       "repo-maintenance domain pack",

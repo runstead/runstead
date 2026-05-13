@@ -27,7 +27,7 @@ state:
   sqlite: state.db
 
 events:
-  mirror: events.jsonl
+  source: sqlite
 
 verifiers:
   test: null
@@ -124,7 +124,6 @@ export async function initRunstead(
     options.force
   );
   await writeIfMissing(join(root, "config.yaml"), DEFAULT_CONFIG, options.force);
-  await writeIfMissing(join(root, "events.jsonl"), "", options.force);
   await writeIfMissing(
     join(root, "policies", "repo-maintenance.yaml"),
     DEFAULT_POLICY,
