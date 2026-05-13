@@ -18,9 +18,13 @@ rules:
       command:
         matches_any:
           - "^pnpm test( .*)?$"
-          - "^pnpm lint( .*)?$"
+          - "^pnpm run lint( .*)?$"
           - "^npm test( .*)?$"
           - "^npm run lint( .*)?$"
+          - "^yarn test( .*)?$"
+          - "^yarn lint( .*)?$"
+          - "^bun test( .*)?$"
+          - "^bun run lint( .*)?$"
     decision: allow
     risk: low
     obligations:

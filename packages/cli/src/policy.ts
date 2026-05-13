@@ -28,6 +28,8 @@ export interface ActionContext {
 export interface PolicyProfile {
   id: string;
   version: number;
+  defaultDecision?: PolicyDecision;
+  defaultRisk?: PolicyRisk;
   rules: PolicyRule[];
 }
 
@@ -42,9 +44,14 @@ export interface PolicyRule {
 export interface PolicyCondition {
   actionType?: string | string[];
   path?: PathMatcherCondition;
+  command?: RegexMatcherCondition;
 }
 
 export interface PathMatcherCondition {
+  matchesAny: string[];
+}
+
+export interface RegexMatcherCondition {
   matchesAny: string[];
 }
 
@@ -56,12 +63,30 @@ export interface PolicyEvaluationResult {
   reason: string;
   obligations: string[];
   matchedPath?: string;
+  matchedCommand?: string;
 }
 
 export interface EvaluatePolicyOptions {
   policy: PolicyProfile;
   action: ActionEnvelope;
 }
+
+export const DEFAULT_VERIFIER_COMMAND_PATTERNS = [
+  "^pnpm test( .*)?$",
+  "^pnpm run lint( .*)?$",
+  "^npm test( .*)?$",
+  "^npm run lint( .*)?$",
+  "^yarn test( .*)?$",
+  "^yarn lint( .*)?$",
+  "^bun test( .*)?$",
+  "^bun run lint( .*)?$"
+];
+
+export const VERIFIER_COMMAND_OBLIGATIONS = [
+  "capture_output",
+  "attach_as_evidence",
+  "redact_secrets"
+];
 
 export function createProtectedPathDenyPolicy(
   protectedPaths: string[],
@@ -85,6 +110,32 @@ export function createProtectedPathDenyPolicy(
   };
 }
 
+export function createVerifierCommandAllowPolicy(
+  verifierCommandPatterns = DEFAULT_VERIFIER_COMMAND_PATTERNS,
+  id = "policy_verifier_commands_v1"
+): PolicyProfile {
+  return {
+    id,
+    version: 1,
+    defaultDecision: "require_approval",
+    defaultRisk: "medium",
+    rules: [
+      {
+        id: "allow_verifier_commands",
+        when: {
+          actionType: "shell.exec",
+          command: {
+            matchesAny: verifierCommandPatterns
+          }
+        },
+        decision: "allow",
+        risk: "low",
+        obligations: VERIFIER_COMMAND_OBLIGATIONS
+      }
+    ]
+  };
+}
+
 export function evaluatePolicy(options: EvaluatePolicyOptions): PolicyEvaluationResult {
   for (const rule of options.policy.rules) {
     const match = matchPolicyRule(rule, options.action);
@@ -97,15 +148,18 @@ export function evaluatePolicy(options: EvaluatePolicyOptions): PolicyEvaluation
         ruleId: rule.id,
         reason: `Matched policy rule ${rule.id}`,
         obligations: rule.obligations ?? [],
-        ...(match.path === undefined ? {} : { matchedPath: match.path })
+        ...(match.path === undefined ? {} : { matchedPath: match.path }),
+        ...(match.command === undefined ? {} : { matchedCommand: match.command })
       };
     }
   }
 
+  const defaultDecision = options.policy.defaultDecision ?? "allow";
+
   return {
     actionId: options.action.actionId,
-    decision: "allow",
-    risk: "low",
+    decision: defaultDecision,
+    risk: options.policy.defaultRisk ?? defaultRiskForDecision(defaultDecision),
     reason: "No policy rule matched",
     obligations: []
   };
@@ -114,7 +168,7 @@ export function evaluatePolicy(options: EvaluatePolicyOptions): PolicyEvaluation
 function matchPolicyRule(
   rule: PolicyRule,
   action: ActionEnvelope
-): { matched: boolean; path?: string } {
+): { matched: boolean; path?: string; command?: string } {
   if (!matchesActionType(rule.when.actionType, action.actionType)) {
     return { matched: false };
   }
@@ -125,9 +179,16 @@ function matchPolicyRule(
     return { matched: false };
   }
 
+  const commandMatch = matchCommandCondition(rule.when.command, action);
+
+  if (commandMatch.required && !commandMatch.matched) {
+    return { matched: false };
+  }
+
   return {
     matched: true,
-    ...(pathMatch.path === undefined ? {} : { path: pathMatch.path })
+    ...(pathMatch.path === undefined ? {} : { path: pathMatch.path }),
+    ...(commandMatch.command === undefined ? {} : { command: commandMatch.command })
   };
 }
 
@@ -169,6 +230,40 @@ function matchPathCondition(
         path: candidatePath.original
       };
     }
+  }
+
+  return {
+    required: true,
+    matched: false
+  };
+}
+
+function matchCommandCondition(
+  condition: RegexMatcherCondition | undefined,
+  action: ActionEnvelope
+): { required: boolean; matched: boolean; command?: string } {
+  if (condition === undefined) {
+    return {
+      required: false,
+      matched: true
+    };
+  }
+
+  const command = action.context?.command;
+
+  if (command === undefined) {
+    return {
+      required: true,
+      matched: false
+    };
+  }
+
+  if (condition.matchesAny.some((pattern) => new RegExp(pattern).test(command))) {
+    return {
+      required: true,
+      matched: true,
+      command
+    };
   }
 
   return {
@@ -267,4 +362,15 @@ function matchesSegment(pattern: string, path: string): boolean {
 
 function escapeRegex(value: string): string {
   return value.replace(/[|\\{}()[\]^$+?.]/g, "\\$&");
+}
+
+function defaultRiskForDecision(decision: PolicyDecision): PolicyRisk {
+  switch (decision) {
+    case "allow":
+      return "low";
+    case "require_approval":
+      return "medium";
+    case "deny":
+      return "critical";
+  }
 }

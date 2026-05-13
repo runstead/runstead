@@ -39,6 +39,26 @@ const DEFAULT_POLICY = `id: policy_repo_maintenance_v1
 version: 1
 
 rules:
+  - id: allow_verifier_commands
+    when:
+      action_type: shell.exec
+      command:
+        matches_any:
+          - "^pnpm test( .*)?$"
+          - "^pnpm run lint( .*)?$"
+          - "^npm test( .*)?$"
+          - "^npm run lint( .*)?$"
+          - "^yarn test( .*)?$"
+          - "^yarn lint( .*)?$"
+          - "^bun test( .*)?$"
+          - "^bun run lint( .*)?$"
+    decision: allow
+    risk: low
+    obligations:
+      - capture_output
+      - attach_as_evidence
+      - redact_secrets
+
   - id: deny_secret_files
     when:
       path:
