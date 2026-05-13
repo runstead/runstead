@@ -116,10 +116,15 @@ export function createProgram(): Command {
         throw new Error("Only --once is supported in v0.0.1");
       }
 
-      const { formatRunOnceReport, runOnce } = await import("./run.js");
+      const { formatRunOnceReport, runOnce, runOnceExitCode } =
+        await import("./run.js");
       const result = await runOnce(options);
+      const exitCode = runOnceExitCode(result);
 
       console.log(formatRunOnceReport(result));
+      if (exitCode !== 0) {
+        process.exitCode = exitCode;
+      }
     });
 
   const goal = program.command("goal").description("Manage durable goals.");

@@ -8,7 +8,7 @@ import { describe, expect, it } from "vitest";
 
 import { createGoal } from "./goals.js";
 import { initRunstead } from "./init.js";
-import { formatRunOnceReport, runOnce } from "./run.js";
+import { formatRunOnceReport, runOnce, runOnceExitCode } from "./run.js";
 
 describe("runOnce", () => {
   it("returns no queued task when none exists", async () => {
@@ -78,6 +78,51 @@ describe("runOnce", () => {
       });
       expect(formatRunOnceReport(result)).toContain(`Task: ${task.id}`);
       expect(formatRunOnceReport(result)).toContain("test: exit=0 evidence=");
+      expect(runOnceExitCode(result)).toBe(0);
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("returns a non-zero exit code for a failed task", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-run-"));
+
+    try {
+      await initRunstead({ cwd: workspace });
+      const goal = await createGoal({
+        cwd: workspace,
+        domain: "repo-maintenance",
+        now: new Date("2026-05-14T08:10:00.000Z")
+      });
+      const task = goal.generatedTasks[0];
+
+      if (task === undefined) {
+        throw new Error("Expected createGoal to generate run_local_verifiers task");
+      }
+
+      configureTaskCommand(goal.stateDb, {
+        ...task,
+        input: {
+          commands: [
+            {
+              name: "test",
+              command: nodeCommand("process.exit(5)")
+            }
+          ]
+        },
+        verifiers: ["command:test"]
+      });
+
+      const result = await runOnce({ cwd: workspace });
+
+      expect(result).toMatchObject({
+        ranTask: true,
+        task: {
+          id: task.id,
+          status: "failed"
+        }
+      });
+      expect(runOnceExitCode(result)).toBe(1);
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }

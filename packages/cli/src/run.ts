@@ -75,3 +75,7 @@ export function formatRunOnceReport(result: RunOnceResult): string {
     )
   ].join("\n");
 }
+
+export function runOnceExitCode(result: RunOnceResult): number {
+  return result.ranTask && result.task.status === "failed" ? 1 : 0;
+}
