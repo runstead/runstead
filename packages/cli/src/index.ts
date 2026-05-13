@@ -750,6 +750,23 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
       console.log(`Tags: ${result.repository.tags.join(", ") || "none"}`);
     });
 
+  const domain = program.command("domain").description("Manage domain packs.");
+
+  domain
+    .command("validate")
+    .description("Validate a domain pack directory.")
+    .argument("<path>", "Domain pack directory")
+    .action(async (path: string) => {
+      const { formatDomainPackValidationResult, validateDomainPackDir } =
+        await import("@runstead/domain-packs");
+      const result = await validateDomainPackDir(path);
+
+      console.log(formatDomainPackValidationResult(result));
+      if (!result.valid) {
+        process.exitCode = 1;
+      }
+    });
+
   const goal = program.command("goal").description("Manage durable goals.");
 
   goal

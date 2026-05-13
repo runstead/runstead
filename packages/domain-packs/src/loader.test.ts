@@ -23,5 +23,9 @@ describe("loadDomainPackBundleFromDir", () => {
       "lint_pass",
       "diff_scope_clean"
     ]);
+    expect(bundle.taskTypes.map((taskType) => taskType.id)).toEqual([
+      "repo_inspect",
+      "run_local_verifiers"
+    ]);
   });
 });

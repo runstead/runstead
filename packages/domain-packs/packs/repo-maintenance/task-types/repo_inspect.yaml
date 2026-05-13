@@ -1,0 +1,13 @@
+id: repo_inspect
+domain: repo-maintenance
+description: Inspect repository metadata, package scripts, and Git state.
+
+default_priority: medium
+max_attempts: 1
+
+verifiers:
+  required:
+    - evidence:repo_inspection
+
+worker_routing:
+  preferred: shell
