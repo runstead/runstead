@@ -4,6 +4,12 @@ import { promisify } from "node:util";
 
 import type { Goal, Task } from "@runstead/core";
 
+import {
+  createWorkspaceCheckpoint,
+  type GitCheckpointRunner,
+  type WorkspaceCheckpoint
+} from "./checkpoints.js";
+
 const execFileAsync = promisify(execFile);
 
 export type WrappedWorkerKind = "claude_code" | "codex_cli";
@@ -24,6 +30,8 @@ export interface WrappedWorkerPromptInput {
 
 export interface WrappedWorkerRunOptions extends WrappedWorkerPromptInput {
   runner?: WorkerProcessRunner;
+  checkpointDir?: string;
+  checkpointRunner?: GitCheckpointRunner;
   env?: Record<string, string>;
 }
 
@@ -44,6 +52,7 @@ export interface WrappedWorkerRunResult extends WorkerProcessResult {
   prompt: string;
   command: string;
   args: string[];
+  checkpointBefore?: WorkspaceCheckpoint;
 }
 
 export function buildWrappedWorkerPrompt(input: WrappedWorkerPromptInput): string {
@@ -112,6 +121,16 @@ export async function startWrappedWorker(
 ): Promise<WrappedWorkerRunResult> {
   const prompt = buildWrappedWorkerPrompt(options);
   const command = workerCommand(options.worker, prompt);
+  const checkpointBefore =
+    options.checkpointDir === undefined
+      ? undefined
+      : await createWorkspaceCheckpoint({
+          workspace: options.workspace,
+          checkpointDir: options.checkpointDir,
+          ...(options.checkpointRunner === undefined
+            ? {}
+            : { runner: options.checkpointRunner })
+        });
   const result = await (options.runner ?? runWorkerProcess)(
     command.command,
     command.args,
@@ -126,6 +145,7 @@ export async function startWrappedWorker(
     prompt,
     command: command.command,
     args: command.args,
+    ...(checkpointBefore === undefined ? {} : { checkpointBefore }),
     stdout: result.stdout,
     stderr: result.stderr,
     exitCode: result.exitCode

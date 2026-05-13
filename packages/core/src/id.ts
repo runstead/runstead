@@ -9,6 +9,7 @@ export type RunsteadIdPrefix =
   | "wrun"
   | "tool"
   | "appr"
+  | "chk"
   | "mem"
   | "retr"
   | "repo";

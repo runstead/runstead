@@ -1,3 +1,7 @@
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import type { Goal, Task } from "@runstead/core";
 import { describe, expect, it } from "vitest";
 
@@ -117,5 +121,51 @@ describe("startWrappedWorker", () => {
         cwd: "/repo"
       }
     ]);
+  });
+
+  it("creates a checkpoint before starting a wrapped worker", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-worker-"));
+    const checkpointDir = join(workspace, ".runstead", "checkpoints");
+    const gitCalls: string[][] = [];
+    const runner: WorkerProcessRunner = () =>
+      Promise.resolve({
+        stdout: '{"summary":"done"}',
+        stderr: "",
+        exitCode: 0
+      });
+
+    try {
+      const result = await startWrappedWorker({
+        worker: "codex_cli",
+        goal,
+        task,
+        workspace,
+        evidenceDir: join(workspace, ".runstead", "evidence"),
+        checkpointDir,
+        checkpointRunner: (args) => {
+          gitCalls.push(args);
+
+          return Promise.resolve({
+            stdout: args[0] === "rev-parse" ? "abc123\n" : "",
+            stderr: "",
+            exitCode: 0
+          });
+        },
+        runner
+      });
+
+      expect(result.checkpointBefore).toMatchObject({
+        workspace,
+        checkpointDir,
+        head: "abc123"
+      });
+      expect(gitCalls).toEqual([
+        ["rev-parse", "HEAD"],
+        ["status", "--short"],
+        ["diff", "--binary", "HEAD"]
+      ]);
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
   });
 });
