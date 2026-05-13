@@ -210,51 +210,84 @@ export function showTask(options: ShowTaskOptions): ShowTaskResult {
 }
 
 export function claimTask(options: ClaimTaskOptions): ClaimTaskResult {
-  const current = showTask({
-    ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-    id: options.id
-  }).task;
-
-  if (current.status !== "queued") {
-    throw new Error(`Task ${options.id} is ${current.status}, expected queued`);
-  }
-
   const stateDb = resolveStateDb(options.cwd);
   const claimedAt = (options.now ?? new Date()).toISOString();
-  const task: Task = {
-    ...current,
-    status: "claimed",
-    updatedAt: claimedAt
-  };
-  const event: RunsteadEvent = {
-    eventId: createRunsteadId("evt"),
-    type: "task.claimed",
-    aggregateType: "task",
-    aggregateId: task.id,
-    payload: {
-      previousStatus: current.status
-    },
-    createdAt: claimedAt
-  };
   const database = openRunsteadDatabase(stateDb);
+  let inTransaction = false;
 
   try {
-    appendEventAndProject(database, {
+    database.exec("BEGIN IMMEDIATE");
+    inTransaction = true;
+
+    const row = database
+      .prepare(
+        `
+        SELECT id, goal_id, domain, type, status, priority, attempt,
+               max_attempts, input_json, output_json, verifiers_json,
+               created_at, updated_at
+        FROM tasks
+        WHERE id = ?
+      `
+      )
+      .get(options.id) as TaskRow | undefined;
+
+    if (row === undefined) {
+      throw new Error(`Task not found: ${options.id}`);
+    }
+
+    const current = rowToTask(row);
+
+    if (current.status !== "queued") {
+      throw new Error(`Task ${options.id} is ${current.status}, expected queued`);
+    }
+
+    const task: Task = {
+      ...current,
+      status: "claimed",
+      updatedAt: claimedAt
+    };
+    const event: RunsteadEvent = {
+      eventId: createRunsteadId("evt"),
+      type: "task.claimed",
+      aggregateType: "task",
+      aggregateId: task.id,
+      payload: {
+        previousStatus: current.status
+      },
+      createdAt: claimedAt
+    };
+    const update = database
+      .prepare(
+        `
+        UPDATE tasks
+        SET status = ?, updated_at = ?
+        WHERE id = ? AND status = ?
+      `
+      )
+      .run(task.status, task.updatedAt, task.id, current.status) as { changes: number };
+
+    if (update.changes !== 1) {
+      throw new Error(`Task ${options.id} could not be claimed atomically`);
+    }
+
+    insertEvent(database, event);
+    database.exec("COMMIT");
+    inTransaction = false;
+
+    return {
+      task,
       event,
-      projection: {
-        type: "task",
-        value: task
-      }
-    });
+      stateDb
+    };
+  } catch (error) {
+    if (inTransaction) {
+      database.exec("ROLLBACK");
+    }
+
+    throw error;
   } finally {
     database.close();
   }
-
-  return {
-    task,
-    event,
-    stateDb
-  };
 }
 
 function resolveStateDb(cwd = process.cwd()): string {
@@ -322,4 +355,31 @@ function rowToTask(row: TaskRow): Task {
     createdAt: row.created_at,
     updatedAt: row.updated_at
   });
+}
+
+function insertEvent(
+  database: ReturnType<typeof openRunsteadDatabase>,
+  event: RunsteadEvent
+): void {
+  database
+    .prepare(
+      `
+      INSERT INTO events (
+        event_id,
+        type,
+        aggregate_type,
+        aggregate_id,
+        payload_json,
+        created_at
+      ) VALUES (?, ?, ?, ?, ?, ?)
+    `
+    )
+    .run(
+      event.eventId,
+      event.type,
+      event.aggregateType,
+      event.aggregateId,
+      JSON.stringify(event.payload),
+      event.createdAt
+    );
 }

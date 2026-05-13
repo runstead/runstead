@@ -108,6 +108,13 @@ describe("task queries", () => {
         aggregateType: "task",
         aggregateId: task.id
       });
+      expect(() =>
+        claimTask({
+          cwd: workspace,
+          id: task.id,
+          now: new Date("2026-05-14T03:12:00.000Z")
+        })
+      ).toThrow(`Task ${task.id} is claimed, expected queued`);
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }
