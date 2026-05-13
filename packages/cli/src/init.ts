@@ -6,6 +6,7 @@ import { getRepoMaintenancePackDir } from "@runstead/domain-packs";
 import { openRunsteadDatabase } from "@runstead/state-sqlite";
 
 import { storeRepoInspectionEvidence } from "./inspection-evidence.js";
+import { DEFAULT_RBAC_YAML } from "./rbac.js";
 
 export interface InitRunsteadOptions {
   cwd?: string;
@@ -126,6 +127,7 @@ export async function initRunstead(
     DEFAULT_POLICY,
     options.force
   );
+  await writeIfMissing(join(root, "rbac.yaml"), DEFAULT_RBAC_YAML, options.force);
 
   const database = openRunsteadDatabase(stateDb);
 
