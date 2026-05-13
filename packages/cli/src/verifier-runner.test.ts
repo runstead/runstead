@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { cp, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -78,6 +78,43 @@ describe("runTaskVerifiers", () => {
           timedOut: false
         }
       ]);
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("runs verifiers against a legacy .team workspace", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-verifier-team-"));
+
+    try {
+      const task = await createTaskWithCommand(workspace, "process.exit(0)");
+
+      await cp(join(workspace, ".runstead"), join(workspace, ".team"), {
+        recursive: true
+      });
+      await rm(join(workspace, ".runstead"), { force: true, recursive: true });
+
+      const result = await runTaskVerifiers({
+        cwd: workspace,
+        taskId: task.id,
+        now: new Date("2026-05-14T06:45:00.000Z")
+      });
+      const database = openRunsteadDatabase(join(workspace, ".team", "state.db"));
+
+      try {
+        const storedTask = database
+          .prepare("SELECT status FROM tasks WHERE id = ?")
+          .get(task.id) as { status: string };
+        const evidence = database
+          .prepare("SELECT uri FROM evidence WHERE subject_id = ?")
+          .get(task.id) as { uri: string };
+
+        expect(result.task.status).toBe("completed");
+        expect(storedTask.status).toBe("completed");
+        expect(evidence.uri).toContain("/.team/evidence/");
+      } finally {
+        database.close();
+      }
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }
