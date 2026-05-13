@@ -1,4 +1,4 @@
-import { rm } from "node:fs/promises";
+import { rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -6,7 +6,11 @@ import { openRunsteadDatabase } from "@runstead/state-sqlite";
 import { describe, expect, it } from "vitest";
 
 import { initRunstead } from "./init.js";
-import { quarantineMemoryCandidate } from "./memory.js";
+import {
+  listProjectFacts,
+  quarantineMemoryCandidate,
+  recordProjectFact
+} from "./memory.js";
 
 describe("quarantineMemoryCandidate", () => {
   it("stores unverified memory candidates in quarantine", async () => {
@@ -104,6 +108,90 @@ describe("quarantineMemoryCandidate", () => {
           confidence: 2
         })
       ).toThrow();
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+});
+
+describe("recordProjectFact", () => {
+  it("stores verified project facts from readable repo files", async () => {
+    const workspace = join(tmpdir(), `runstead-project-fact-${process.pid}`);
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      const initialized = await initRunstead({ cwd: workspace });
+      await writeFile(
+        join(workspace, "package.json"),
+        `${JSON.stringify({ packageManager: "pnpm@11.1.1" })}\n`,
+        "utf8"
+      );
+
+      const result = recordProjectFact({
+        cwd: workspace,
+        scope: "repo:acme/app",
+        content: "This repo uses pnpm.",
+        sourceRefs: ["file:package.json"],
+        createdBy: "worker:repo_inspector",
+        now: new Date("2026-05-14T06:00:00.000Z")
+      });
+      const facts = listProjectFacts({
+        cwd: workspace,
+        scope: "repo:acme/app"
+      }).facts;
+      const database = openRunsteadDatabase(initialized.stateDb);
+
+      try {
+        const event = database
+          .prepare(
+            `
+            SELECT type, aggregate_type, aggregate_id
+            FROM events
+            WHERE event_id = ?
+          `
+          )
+          .get(result.event.eventId) as {
+          type: string;
+          aggregate_type: string;
+          aggregate_id: string;
+        };
+
+        expect(result.memory).toMatchObject({
+          type: "project_fact",
+          status: "verified",
+          confidence: 0.95,
+          content: "This repo uses pnpm.",
+          sourceRefs: ["file:package.json"]
+        });
+        expect(facts).toEqual([result.memory]);
+        expect(event).toEqual({
+          type: "memory.project_fact_verified",
+          aggregate_type: "memory",
+          aggregate_id: result.memory.id
+        });
+      } finally {
+        database.close();
+      }
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("rejects project facts from non-file sources", async () => {
+    const workspace = join(tmpdir(), `runstead-project-fact-invalid-${process.pid}`);
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await initRunstead({ cwd: workspace });
+
+      expect(() =>
+        recordProjectFact({
+          cwd: workspace,
+          scope: "repo:acme/app",
+          content: "This repo uses pnpm.",
+          sourceRefs: ["github:issue/123"]
+        })
+      ).toThrow("file:");
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }

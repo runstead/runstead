@@ -227,6 +227,69 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
       }
     );
 
+  const memoryFact = memory.command("fact").description("Manage project facts.");
+
+  memoryFact
+    .command("add")
+    .description("Record a verified project fact from repo file sources.")
+    .requiredOption("--scope <scope>", "Memory scope, for example repo:acme/app")
+    .requiredOption("--content <text>", "Project fact content")
+    .requiredOption("--source <file-ref>", "Trusted file: source", collectValues, [])
+    .option("--cwd <path>", "Workspace directory")
+    .option("--confidence <number>", "Confidence score from 0 to 1")
+    .option("--created-by <id>", "Creator id")
+    .option("--task <id>", "Source task id")
+    .action(
+      async (options: {
+        cwd?: string;
+        scope: string;
+        content: string;
+        source: string[];
+        confidence?: string;
+        createdBy?: string;
+        task?: string;
+      }) => {
+        const { recordProjectFact } = await import("./memory.js");
+        const confidence = parseOptionalFloat(options.confidence, "--confidence");
+        const result = recordProjectFact({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          scope: options.scope,
+          content: options.content,
+          sourceRefs: options.source,
+          ...(confidence === undefined ? {} : { confidence }),
+          ...(options.createdBy === undefined ? {} : { createdBy: options.createdBy }),
+          ...(options.task === undefined ? {} : { taskId: options.task })
+        });
+
+        console.log(`Recorded project fact: ${result.memory.id}`);
+        console.log(`Scope: ${result.memory.scope}`);
+      }
+    );
+
+  memoryFact
+    .command("list")
+    .description("List verified project facts.")
+    .option("--cwd <path>", "Workspace directory")
+    .option("--scope <scope>", "Filter by memory scope")
+    .action(async (options: { cwd?: string; scope?: string }) => {
+      const { listProjectFacts } = await import("./memory.js");
+      const result = listProjectFacts({
+        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+        ...(options.scope === undefined ? {} : { scope: options.scope })
+      });
+
+      if (result.facts.length === 0) {
+        console.log("No project facts found.");
+        return;
+      }
+
+      for (const fact of result.facts) {
+        console.log(
+          `${fact.id} ${fact.scope} confidence=${fact.confidence}: ${fact.content}`
+        );
+      }
+    });
+
   const goal = program.command("goal").description("Manage durable goals.");
 
   goal
