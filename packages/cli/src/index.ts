@@ -88,6 +88,20 @@ export function createProgram(): Command {
       }
     });
 
+  program
+    .command("resume")
+    .description("Resume interrupted local work by requeueing interrupted tasks.")
+    .option("--cwd <path>", "Workspace directory")
+    .action(async (options: { cwd?: string }) => {
+      const { resumeInterruptedTasks } = await import("./resume.js");
+      const result = resumeInterruptedTasks(options);
+
+      console.log(`Requeued tasks: ${result.requeuedTasks.length}`);
+      for (const item of result.requeuedTasks) {
+        console.log(`${item.task.id}: ${item.previousStatus} -> ${item.task.status}`);
+      }
+    });
+
   const goal = program.command("goal").description("Manage durable goals.");
 
   goal
