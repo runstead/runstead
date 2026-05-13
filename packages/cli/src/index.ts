@@ -753,6 +753,42 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
   const domain = program.command("domain").description("Manage domain packs.");
 
   domain
+    .command("create")
+    .description("Create a starter custom domain pack.")
+    .argument("<id>", "Domain pack id")
+    .option("--output <path>", "Output directory")
+    .option("--name <name>", "Display name")
+    .option("--description <description>", "Description")
+    .option("--force", "Overwrite existing generated files")
+    .action(
+      async (
+        id: string,
+        options: {
+          output?: string;
+          name?: string;
+          description?: string;
+          force?: boolean;
+        }
+      ) => {
+        const { createDomainPackTemplate } = await import("@runstead/domain-packs");
+        const result = await createDomainPackTemplate({
+          id,
+          ...(options.output === undefined ? {} : { outputDir: options.output }),
+          ...(options.name === undefined ? {} : { name: options.name }),
+          ...(options.description === undefined
+            ? {}
+            : { description: options.description }),
+          ...(options.force === undefined ? {} : { force: options.force })
+        });
+
+        console.log(`Created domain pack: ${result.root}`);
+        for (const file of result.files) {
+          console.log(`Created file: ${file}`);
+        }
+      }
+    );
+
+  domain
     .command("list")
     .description("List discoverable domain packs.")
     .option("--cwd <path>", "Workspace directory")
