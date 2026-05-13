@@ -300,6 +300,25 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
       }
     });
 
+  const github = program.command("github").description("GitHub integration.");
+  const githubRun = github.command("run").description("Inspect GitHub workflow runs.");
+
+  githubRun
+    .command("status")
+    .description("Show GitHub workflow run status.")
+    .argument("<run-id>", "GitHub Actions workflow run id")
+    .option("--cwd <path>", "Workspace directory")
+    .action(async (runId: string, options: { cwd?: string }) => {
+      const { formatWorkflowRunStatus, getGitHubWorkflowRunStatus } =
+        await import("./github-actions.js");
+      const result = await getGitHubWorkflowRunStatus({
+        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+        runId
+      });
+
+      console.log(formatWorkflowRunStatus(result));
+    });
+
   const policy = program.command("policy").description("Evaluate policies.");
 
   policy
