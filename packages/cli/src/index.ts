@@ -119,8 +119,13 @@ export function createProgram(): Command {
       const { runOnce } = await import("./run.js");
       const result = runOnce(options);
 
-      if (!result.ranTask) {
-        console.log("No task was run.");
+      if (result.reason === "no_queued_task") {
+        console.log("No queued task was found.");
+        return;
+      }
+
+      if (result.reason === "task_selected") {
+        console.log(`Selected task: ${result.task.id} ${result.task.type}`);
       }
     });
 
