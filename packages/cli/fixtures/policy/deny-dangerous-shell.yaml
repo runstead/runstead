@@ -1,0 +1,12 @@
+action:
+  action_id: act_fixture_dangerous_shell
+  action_type: shell.exec
+  context:
+    command: pnpm test && rm -rf .runstead
+    side_effects:
+      - execute_process
+
+expected:
+  decision: deny
+  risk: critical
+  rule_id: deny_destructive_shell

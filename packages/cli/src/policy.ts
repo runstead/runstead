@@ -101,10 +101,18 @@ export const DEFAULT_EXTERNAL_WRITE_SIDE_EFFECTS = [
   "github_pr_create"
 ];
 
+export const DEFAULT_DANGEROUS_SHELL_COMMAND_PATTERNS = [
+  ".*rm -rf.*",
+  ".*sudo .*",
+  ".*mkfs.*",
+  ".*dd if=.*"
+];
+
 export interface CreateRepoMaintenanceMinimumPolicyOptions {
   protectedPaths: string[];
   verifierCommandPatterns?: string[];
   externalWriteSideEffects?: string[];
+  dangerousShellCommandPatterns?: string[];
   id?: string;
 }
 
@@ -140,8 +148,32 @@ export function createRepoMaintenanceMinimumPolicy(
     defaultRisk: "medium",
     rules: [
       ...createProtectedPathDenyPolicy(options.protectedPaths).rules,
+      ...createDangerousShellDenyPolicy(options.dangerousShellCommandPatterns).rules,
       ...createVerifierCommandAllowPolicy(options.verifierCommandPatterns).rules,
       ...createExternalWriteApprovalPolicy(options.externalWriteSideEffects).rules
+    ]
+  };
+}
+
+export function createDangerousShellDenyPolicy(
+  dangerousCommandPatterns = DEFAULT_DANGEROUS_SHELL_COMMAND_PATTERNS,
+  id = "policy_dangerous_shell_deny_v1"
+): PolicyProfile {
+  return {
+    id,
+    version: 1,
+    rules: [
+      {
+        id: "deny_destructive_shell",
+        when: {
+          actionType: "shell.exec",
+          command: {
+            matchesAny: dangerousCommandPatterns
+          }
+        },
+        decision: "deny",
+        risk: "critical"
+      }
     ]
   };
 }

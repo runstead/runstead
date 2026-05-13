@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   VERIFIER_COMMAND_OBLIGATIONS,
+  createDangerousShellDenyPolicy,
   createExternalWriteApprovalPolicy,
   createProtectedPathDenyPolicy,
   createRepoMaintenanceMinimumPolicy,
@@ -19,6 +20,7 @@ const protectedPathPolicy = createProtectedPathDenyPolicy([
 ]);
 const verifierCommandPolicy = createVerifierCommandAllowPolicy();
 const externalWritePolicy = createExternalWriteApprovalPolicy();
+const dangerousShellPolicy = createDangerousShellDenyPolicy();
 const minimumPolicy = createRepoMaintenanceMinimumPolicy({
   protectedPaths: [".env", ".env.*", "**/secrets/**", "infra/prod/**"]
 });
@@ -244,6 +246,48 @@ describe("evaluatePolicy external write rules", () => {
       risk: "critical",
       ruleId: "deny_protected_paths",
       matchedPath: ".env"
+    });
+  });
+});
+
+describe("evaluatePolicy dangerous shell rules", () => {
+  it("denies destructive shell commands", () => {
+    const result = evaluatePolicy({
+      policy: dangerousShellPolicy,
+      action: {
+        actionId: "act_rm_rf",
+        actionType: "shell.exec",
+        context: {
+          command: "rm -rf .runstead"
+        }
+      }
+    });
+
+    expect(result).toMatchObject({
+      actionId: "act_rm_rf",
+      decision: "deny",
+      risk: "critical",
+      ruleId: "deny_destructive_shell",
+      matchedCommand: "rm -rf .runstead"
+    });
+  });
+
+  it("lets dangerous shell deny outrank verifier allow", () => {
+    const result = evaluatePolicy({
+      policy: minimumPolicy,
+      action: {
+        actionId: "act_verifier_then_rm",
+        actionType: "shell.exec",
+        context: {
+          command: "pnpm test && rm -rf .runstead"
+        }
+      }
+    });
+
+    expect(result).toMatchObject({
+      decision: "deny",
+      risk: "critical",
+      ruleId: "deny_destructive_shell"
     });
   });
 });
