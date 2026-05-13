@@ -29,8 +29,15 @@ export interface RequeuedTask {
   previousStatus: Task["status"];
 }
 
+export interface ResumeFailedTask {
+  task: Task;
+  event: RunsteadEvent;
+  previousStatus: Task["status"];
+}
+
 export interface ResumeInterruptedTasksResult {
   requeuedTasks: RequeuedTask[];
+  failedTasks: ResumeFailedTask[];
   stateDb: string;
 }
 
@@ -59,9 +66,39 @@ export function resumeInterruptedTasks(
   const database = openRunsteadDatabase(detected.stateDb);
   const requeuedAt = (options.now ?? new Date()).toISOString();
   const requeuedTasks: RequeuedTask[] = [];
+  const failedTasks: ResumeFailedTask[] = [];
 
   try {
     for (const interrupted of detected.interruptedTasks) {
+      if (interrupted.task.attempt >= interrupted.task.maxAttempts) {
+        const task: Task = {
+          ...interrupted.task,
+          status: "failed",
+          output: {
+            summary: "Max attempts reached during resume",
+            previousStatus: interrupted.task.status,
+            attempt: interrupted.task.attempt,
+            maxAttempts: interrupted.task.maxAttempts
+          },
+          updatedAt: requeuedAt
+        };
+        const event = taskEvent("task.failed", task, task.output ?? {}, requeuedAt);
+
+        appendEventAndProject(database, {
+          event,
+          projection: {
+            type: "task",
+            value: task
+          }
+        });
+        failedTasks.push({
+          task,
+          event,
+          previousStatus: interrupted.task.status
+        });
+        continue;
+      }
+
       const task: Task = {
         ...interrupted.task,
         status: "queued",
@@ -96,6 +133,7 @@ export function resumeInterruptedTasks(
 
   return {
     requeuedTasks,
+    failedTasks,
     stateDb: detected.stateDb
   };
 }

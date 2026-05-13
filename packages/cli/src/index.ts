@@ -100,6 +100,10 @@ export function createProgram(): Command {
       for (const item of result.requeuedTasks) {
         console.log(`${item.task.id}: ${item.previousStatus} -> ${item.task.status}`);
       }
+      console.log(`Failed tasks: ${result.failedTasks.length}`);
+      for (const item of result.failedTasks) {
+        console.log(`${item.task.id}: ${item.previousStatus} -> ${item.task.status}`);
+      }
     });
 
   const goal = program.command("goal").description("Manage durable goals.");

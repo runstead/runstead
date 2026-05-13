@@ -2,6 +2,8 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import type { Task } from "@runstead/core";
+import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sqlite";
 import { describe, expect, it } from "vitest";
 
 import { createGoal } from "./goals.js";
@@ -79,6 +81,7 @@ describe("findInterruptedTasks", () => {
       const stored = showTask({ cwd: workspace, id: task.id }).task;
 
       expect(result.requeuedTasks).toHaveLength(1);
+      expect(result.failedTasks).toHaveLength(0);
       expect(result.requeuedTasks[0]).toMatchObject({
         task: {
           id: task.id,
@@ -88,6 +91,79 @@ describe("findInterruptedTasks", () => {
         previousStatus: "claimed"
       });
       expect(stored.status).toBe("queued");
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("fails interrupted tasks that reached max attempts", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-resume-"));
+
+    try {
+      await initRunstead({ cwd: workspace });
+
+      const goal = await createGoal({
+        cwd: workspace,
+        domain: "repo-maintenance",
+        now: new Date("2026-05-14T07:20:00.000Z")
+      });
+      const task = goal.generatedTasks[0];
+
+      if (task === undefined) {
+        throw new Error("Expected createGoal to generate run_local_verifiers task");
+      }
+
+      const runningTask: Task = {
+        ...task,
+        status: "running",
+        attempt: task.maxAttempts,
+        updatedAt: "2026-05-14T07:21:00.000Z"
+      };
+      const database = openRunsteadDatabase(goal.stateDb);
+
+      try {
+        appendEventAndProject(database, {
+          event: {
+            eventId: `evt_${task.id}_running`,
+            type: "task.started",
+            aggregateType: "task",
+            aggregateId: task.id,
+            payload: {
+              attempt: runningTask.attempt
+            },
+            createdAt: runningTask.updatedAt
+          },
+          projection: {
+            type: "task",
+            value: runningTask
+          }
+        });
+      } finally {
+        database.close();
+      }
+
+      const result = resumeInterruptedTasks({
+        cwd: workspace,
+        now: new Date("2026-05-14T07:22:00.000Z")
+      });
+      const stored = showTask({ cwd: workspace, id: task.id }).task;
+
+      expect(result.requeuedTasks).toHaveLength(0);
+      expect(result.failedTasks).toHaveLength(1);
+      expect(result.failedTasks[0]).toMatchObject({
+        task: {
+          id: task.id,
+          status: "failed",
+          updatedAt: "2026-05-14T07:22:00.000Z"
+        },
+        previousStatus: "running"
+      });
+      expect(stored.status).toBe("failed");
+      expect(stored.output).toMatchObject({
+        summary: "Max attempts reached during resume",
+        attempt: task.maxAttempts,
+        maxAttempts: task.maxAttempts
+      });
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }
