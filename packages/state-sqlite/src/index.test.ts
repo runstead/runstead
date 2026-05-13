@@ -26,6 +26,7 @@ describe("openRunsteadDatabase", () => {
           "policy_decisions",
           "approvals",
           "memory_records",
+          "repositories",
           "events"
         ])
       );
@@ -299,6 +300,75 @@ describe("appendEventAndProject", () => {
         status: "quarantined",
         confidence: 0.4,
         source_refs_json: JSON.stringify(["github:issue-comment/123"])
+      });
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("appends an event and updates a repository projection", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-state-"));
+
+    try {
+      const database = openRunsteadDatabase(join(workspace, "state.db"));
+
+      appendEventAndProject(database, {
+        event: {
+          eventId: "evt_repository_registered_001",
+          type: "repository.registered",
+          aggregateType: "repository",
+          aggregateId: "repo_001",
+          payload: {
+            alias: "acme/widgets",
+            localPath: "/work/widgets"
+          },
+          createdAt: "2026-05-14T05:30:00.000Z"
+        },
+        projection: {
+          type: "repository",
+          value: {
+            id: "repo_001",
+            alias: "acme/widgets",
+            localPath: "/work/widgets",
+            remoteUrl: "git@github.com:acme/widgets.git",
+            defaultBranch: "main",
+            status: "active",
+            tags: ["frontend"],
+            createdAt: "2026-05-14T05:30:00.000Z",
+            updatedAt: "2026-05-14T05:30:00.000Z"
+          }
+        }
+      });
+
+      const repository = database
+        .prepare(
+          `
+          SELECT id, alias, local_path, remote_url, default_branch, status,
+                 tags_json
+          FROM repositories
+          WHERE id = ?
+        `
+        )
+        .get("repo_001") as {
+        id: string;
+        alias: string;
+        local_path: string;
+        remote_url: string;
+        default_branch: string;
+        status: string;
+        tags_json: string;
+      };
+
+      database.close();
+
+      expect(repository).toEqual({
+        id: "repo_001",
+        alias: "acme/widgets",
+        local_path: "/work/widgets",
+        remote_url: "git@github.com:acme/widgets.git",
+        default_branch: "main",
+        status: "active",
+        tags_json: '["frontend"]'
       });
     } finally {
       await rm(workspace, { force: true, recursive: true });

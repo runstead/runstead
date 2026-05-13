@@ -1,4 +1,4 @@
-import { cp, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 
 import { createGoal, listGoals, showGoal } from "./goals.js";
 import { initRunstead } from "./init.js";
+import { registerRepository } from "./repositories.js";
 
 describe("createGoal", () => {
   it("creates a repo-maintenance goal from the installed domain pack", async () => {
@@ -147,6 +148,58 @@ describe("createGoal", () => {
       } finally {
         database.close();
       }
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("creates a goal against a registered repository", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-goal-repo-"));
+    const repositoryPath = join(workspace, "service");
+
+    try {
+      await mkdir(repositoryPath);
+      await writeFile(
+        join(repositoryPath, "package.json"),
+        JSON.stringify({
+          packageManager: "pnpm@11.1.1",
+          scripts: {
+            test: "vitest run"
+          }
+        }),
+        "utf8"
+      );
+      await initRunstead({ cwd: workspace });
+      const repository = await registerRepository({
+        cwd: workspace,
+        path: "service",
+        alias: "service-api",
+        now: new Date("2026-05-14T01:10:00.000Z")
+      });
+
+      const result = await createGoal({
+        cwd: workspace,
+        domain: "repo-maintenance",
+        repository: "service-api",
+        now: new Date("2026-05-14T01:11:00.000Z")
+      });
+
+      expect(result.goal.scope).toMatchObject({
+        repositoryId: repository.repository.id,
+        repositoryAlias: "service-api",
+        repositoryPath: repository.repository.localPath,
+        templateId: "keep-ci-green"
+      });
+      expect(result.generatedTasks[0]?.input).toEqual({
+        repositoryPath: repository.repository.localPath,
+        commands: [
+          {
+            name: "test",
+            command: "pnpm test",
+            rawScript: "vitest run"
+          }
+        ]
+      });
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }

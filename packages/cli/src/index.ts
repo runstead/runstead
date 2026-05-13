@@ -495,6 +495,93 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
       }
     });
 
+  const repo = program.command("repo").description("Manage registered repositories.");
+
+  repo
+    .command("add")
+    .description("Register a repository for multi-repo operation.")
+    .argument("[path]", "Repository path")
+    .option("--cwd <path>", "Runstead control workspace directory")
+    .option("--alias <alias>", "Stable repository alias")
+    .option("--remote-url <url>", "Override detected remote URL")
+    .option("--default-branch <branch>", "Override detected branch")
+    .option("--tags <list>", "Comma-separated tags")
+    .action(
+      async (
+        path: string | undefined,
+        options: {
+          cwd?: string;
+          alias?: string;
+          remoteUrl?: string;
+          defaultBranch?: string;
+          tags?: string;
+        }
+      ) => {
+        const { registerRepository } = await import("./repositories.js");
+        const result = await registerRepository({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          ...(path === undefined ? {} : { path }),
+          ...(options.alias === undefined ? {} : { alias: options.alias }),
+          ...(options.remoteUrl === undefined ? {} : { remoteUrl: options.remoteUrl }),
+          ...(options.defaultBranch === undefined
+            ? {}
+            : { defaultBranch: options.defaultBranch }),
+          ...(options.tags === undefined
+            ? {}
+            : { tags: parseCommaSeparatedList(options.tags) })
+        });
+
+        console.log(
+          `${result.created ? "Registered" : "Updated"} repository: ${result.repository.alias}`
+        );
+        console.log(`ID: ${result.repository.id}`);
+        console.log(`Path: ${result.repository.localPath}`);
+      }
+    );
+
+  repo
+    .command("list")
+    .description("List registered repositories.")
+    .option("--cwd <path>", "Runstead control workspace directory")
+    .option("--status <status>", "Filter by repository status")
+    .action(async (options: { cwd?: string; status?: string }) => {
+      const { listRepositories } = await import("./repositories.js");
+      const status = parseRepositoryStatus(options.status);
+      const result = listRepositories({
+        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+        ...(status === undefined ? {} : { status })
+      });
+
+      if (result.repositories.length === 0) {
+        console.log("No repositories found.");
+        return;
+      }
+
+      for (const item of result.repositories) {
+        console.log(
+          `${item.status.padEnd(8)} ${item.id} ${item.alias} ${item.localPath}`
+        );
+      }
+    });
+
+  repo
+    .command("show")
+    .description("Show a registered repository.")
+    .argument("<ref>", "Repository id, alias, or path")
+    .option("--cwd <path>", "Runstead control workspace directory")
+    .action(async (ref: string, options: { cwd?: string }) => {
+      const { showRepository } = await import("./repositories.js");
+      const result = showRepository({ ...options, ref });
+
+      console.log(`Repository: ${result.repository.id}`);
+      console.log(`Alias: ${result.repository.alias}`);
+      console.log(`Status: ${result.repository.status}`);
+      console.log(`Path: ${result.repository.localPath}`);
+      console.log(`Remote: ${result.repository.remoteUrl ?? "none"}`);
+      console.log(`Default branch: ${result.repository.defaultBranch ?? "unknown"}`);
+      console.log(`Tags: ${result.repository.tags.join(", ") || "none"}`);
+    });
+
   const goal = program.command("goal").description("Manage durable goals.");
 
   goal
@@ -504,13 +591,20 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     .option("--cwd <path>", "Workspace directory")
     .option("--template <id>", "Goal template id")
     .option("--title <title>", "Override goal title")
+    .option("--repo <ref>", "Registered repository id, alias, or path")
     .action(
       async (
         domain: string,
-        options: { cwd?: string; template?: string; title?: string }
+        options: { cwd?: string; template?: string; title?: string; repo?: string }
       ) => {
         const { createGoal } = await import("./goals.js");
-        const result = await createGoal({ ...options, domain });
+        const result = await createGoal({
+          domain,
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          ...(options.template === undefined ? {} : { template: options.template }),
+          ...(options.title === undefined ? {} : { title: options.title }),
+          ...(options.repo === undefined ? {} : { repository: options.repo })
+        });
 
         console.log(`Created goal: ${result.goal.id} ${result.goal.title}`);
         for (const item of result.generatedTasks) {
@@ -846,6 +940,31 @@ function parseRequiredInteger(value: string, optionName: string): number {
   }
 
   return parsed;
+}
+
+function parseCommaSeparatedList(value: string | undefined): string[] {
+  if (value === undefined) {
+    return [];
+  }
+
+  return value
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function parseRepositoryStatus(
+  value: string | undefined
+): "active" | "archived" | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (value === "active" || value === "archived") {
+    return value;
+  }
+
+  throw new Error("--status must be active or archived");
 }
 
 const entrypoint = process.argv[1] ? pathToFileURL(process.argv[1]).href : undefined;

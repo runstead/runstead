@@ -85,6 +85,18 @@ CREATE TABLE IF NOT EXISTS memory_records (
   conflicts_with_json TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS repositories (
+  id TEXT PRIMARY KEY,
+  alias TEXT UNIQUE NOT NULL,
+  local_path TEXT UNIQUE NOT NULL,
+  remote_url TEXT,
+  default_branch TEXT,
+  status TEXT NOT NULL,
+  tags_json TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS events (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   event_id TEXT UNIQUE NOT NULL,

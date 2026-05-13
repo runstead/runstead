@@ -4,6 +4,7 @@ import type {
   Goal,
   MemoryRecord,
   PolicyDecisionRecord,
+  RepositoryRecord,
   RunsteadEvent,
   Task
 } from "@runstead/core";
@@ -13,6 +14,7 @@ import {
   GoalSchema,
   MemoryRecordSchema,
   PolicyDecisionRecordSchema,
+  RepositoryRecordSchema,
   RunsteadEventSchema,
   TaskSchema
 } from "@runstead/core";
@@ -25,7 +27,8 @@ export type StateProjection =
   | { type: "evidence"; value: Evidence }
   | { type: "policyDecision"; value: PolicyDecisionRecord }
   | { type: "approval"; value: ApprovalRequest }
-  | { type: "memory"; value: MemoryRecord };
+  | { type: "memory"; value: MemoryRecord }
+  | { type: "repository"; value: RepositoryRecord };
 
 export interface AppendEventAndProjectInput {
   event: RunsteadEvent;
@@ -103,6 +106,9 @@ function upsertProjection(
       return;
     case "memory":
       upsertMemoryRecord(database, MemoryRecordSchema.parse(projection.value));
+      return;
+    case "repository":
+      upsertRepository(database, RepositoryRecordSchema.parse(projection.value));
       return;
   }
 }
@@ -376,6 +382,47 @@ function upsertMemoryRecord(database: RunsteadDatabase, memory: MemoryRecord): v
       memory.updatedAt,
       memory.expiresAt ?? null,
       JSON.stringify(memory.conflictsWith)
+    );
+}
+
+function upsertRepository(
+  database: RunsteadDatabase,
+  repository: RepositoryRecord
+): void {
+  database
+    .prepare(
+      `
+      INSERT INTO repositories (
+        id,
+        alias,
+        local_path,
+        remote_url,
+        default_branch,
+        status,
+        tags_json,
+        created_at,
+        updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        alias = excluded.alias,
+        local_path = excluded.local_path,
+        remote_url = excluded.remote_url,
+        default_branch = excluded.default_branch,
+        status = excluded.status,
+        tags_json = excluded.tags_json,
+        updated_at = excluded.updated_at
+    `
+    )
+    .run(
+      repository.id,
+      repository.alias,
+      repository.localPath,
+      repository.remoteUrl ?? null,
+      repository.defaultBranch ?? null,
+      repository.status,
+      JSON.stringify(repository.tags),
+      repository.createdAt,
+      repository.updatedAt
     );
 }
 

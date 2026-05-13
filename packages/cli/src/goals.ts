@@ -12,6 +12,7 @@ import { loadDomainPackBundleFromDir } from "@runstead/domain-packs";
 import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sqlite";
 
 import { inspectGitRepository } from "./repo-inspection.js";
+import { resolveRepositoryReference } from "./repositories.js";
 import { resolveRunsteadRoot, resolveRunsteadRootSync } from "./runstead-root.js";
 import { buildRunLocalVerifiersTask } from "./tasks.js";
 
@@ -20,6 +21,7 @@ export interface CreateGoalOptions {
   domain: string;
   template?: string;
   title?: string;
+  repository?: string;
   now?: Date;
 }
 
@@ -56,6 +58,13 @@ export async function createGoal(
   const cwd = resolve(options.cwd ?? process.cwd());
   const root = (await resolveRunsteadRoot(cwd)).root;
   const stateDb = join(root, "state.db");
+  const registeredRepository =
+    options.repository === undefined
+      ? undefined
+      : resolveRepositoryReference({
+          cwd,
+          ref: options.repository
+        }).repository;
   const bundle = await loadDomainPackBundleFromDir(
     join(root, "domains", options.domain)
   );
@@ -75,7 +84,9 @@ export async function createGoal(
 
   const now = options.now ?? new Date();
   const createdAt = now.toISOString();
-  const git = await inspectGitRepository(cwd);
+  const repositoryPath = registeredRepository?.localPath ?? cwd;
+  const git = await inspectGitRepository(repositoryPath);
+  const resolvedRepositoryPath = git.root ?? repositoryPath;
   const goal: Goal = {
     id: createRunsteadId("goal"),
     domain: bundle.domain.id,
@@ -83,7 +94,13 @@ export async function createGoal(
     status: "active",
     priority: "medium",
     scope: goalScope({
-      repositoryPath: git.root ?? cwd,
+      repositoryPath: resolvedRepositoryPath,
+      ...(registeredRepository === undefined
+        ? {}
+        : {
+            repositoryId: registeredRepository.id,
+            repositoryAlias: registeredRepository.alias
+          }),
       templateId: template.id,
       recurringTasks: template.generated.recurringTasks,
       acceptanceContracts: template.generated.acceptanceContracts
@@ -101,12 +118,18 @@ export async function createGoal(
       domain: goal.domain,
       title: goal.title,
       templateId: template.id,
-      repositoryPath: git.root ?? cwd
+      repositoryPath: resolvedRepositoryPath,
+      ...(registeredRepository === undefined
+        ? {}
+        : {
+            repositoryId: registeredRepository.id,
+            repositoryAlias: registeredRepository.alias
+          })
     },
     createdAt
   };
   const generated = template.generated.recurringTasks.includes("run_local_verifiers")
-    ? [await buildRunLocalVerifiersTask({ cwd, goal, now })]
+    ? [await buildRunLocalVerifiersTask({ cwd: resolvedRepositoryPath, goal, now })]
     : [];
   const database = openRunsteadDatabase(stateDb);
 
@@ -197,12 +220,18 @@ export function showGoal(options: ShowGoalOptions): ShowGoalResult {
 
 function goalScope(input: {
   repositoryPath: string;
+  repositoryId?: string;
+  repositoryAlias?: string;
   templateId: string;
   recurringTasks: string[];
   acceptanceContracts: string[];
 }): JsonObject {
   return {
     repositoryPath: input.repositoryPath,
+    ...(input.repositoryId === undefined ? {} : { repositoryId: input.repositoryId }),
+    ...(input.repositoryAlias === undefined
+      ? {}
+      : { repositoryAlias: input.repositoryAlias }),
     templateId: input.templateId,
     recurringTasks: input.recurringTasks,
     acceptanceContracts: input.acceptanceContracts

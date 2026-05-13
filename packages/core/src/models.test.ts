@@ -4,7 +4,8 @@ import {
   ApprovalRequestSchema,
   GoalSchema,
   MemoryRecordSchema,
-  PolicyDecisionRecordSchema
+  PolicyDecisionRecordSchema,
+  RepositoryRecordSchema
 } from "./models.js";
 
 describe("GoalSchema", () => {
@@ -89,5 +90,23 @@ describe("MemoryRecordSchema", () => {
     });
 
     expect(record.status).toBe("quarantined");
+  });
+});
+
+describe("RepositoryRecordSchema", () => {
+  it("accepts a registered repository record", () => {
+    const repository = RepositoryRecordSchema.parse({
+      id: "repo_001",
+      alias: "acme/widgets",
+      localPath: "/work/widgets",
+      remoteUrl: "git@github.com:acme/widgets.git",
+      defaultBranch: "main",
+      status: "active",
+      tags: ["frontend"],
+      createdAt: "2026-05-14T05:30:00.000Z",
+      updatedAt: "2026-05-14T05:30:00.000Z"
+    });
+
+    expect(repository.alias).toBe("acme/widgets");
   });
 });

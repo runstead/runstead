@@ -48,6 +48,8 @@ export const MemoryStatusSchema = z.enum([
   "expired"
 ]);
 
+export const RepositoryStatusSchema = z.enum(["active", "archived"]);
+
 export const GoalSchema = z.object({
   id: z.string().min(1),
   domain: z.string().min(1),
@@ -146,6 +148,21 @@ export const MemoryRecordSchema = z.object({
 export type MemoryRecord = z.infer<typeof MemoryRecordSchema>;
 export type MemoryType = z.infer<typeof MemoryTypeSchema>;
 export type MemoryStatus = z.infer<typeof MemoryStatusSchema>;
+
+export const RepositoryRecordSchema = z.object({
+  id: z.string().min(1),
+  alias: z.string().min(1),
+  localPath: z.string().min(1),
+  remoteUrl: z.string().min(1).optional(),
+  defaultBranch: z.string().min(1).optional(),
+  status: RepositoryStatusSchema,
+  tags: z.array(z.string().min(1)),
+  createdAt: z.string().min(1),
+  updatedAt: z.string().min(1)
+});
+
+export type RepositoryRecord = z.infer<typeof RepositoryRecordSchema>;
+export type RepositoryStatus = z.infer<typeof RepositoryStatusSchema>;
 
 export const RunsteadEventSchema = z.object({
   eventId: z.string().min(1),

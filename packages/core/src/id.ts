@@ -10,7 +10,8 @@ export type RunsteadIdPrefix =
   | "tool"
   | "appr"
   | "mem"
-  | "retr";
+  | "retr"
+  | "repo";
 
 export function createRunsteadId(prefix: RunsteadIdPrefix): string {
   return `${prefix}_${randomUUID().replaceAll("-", "")}`;
