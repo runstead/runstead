@@ -9,7 +9,8 @@ import { initRunstead } from "./init.js";
 import {
   listProjectFacts,
   quarantineMemoryCandidate,
-  recordProjectFact
+  recordProjectFact,
+  retrieveProjectFacts
 } from "./memory.js";
 
 describe("quarantineMemoryCandidate", () => {
@@ -192,6 +193,87 @@ describe("recordProjectFact", () => {
           sourceRefs: ["github:issue/123"]
         })
       ).toThrow("file:");
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+});
+
+describe("retrieveProjectFacts", () => {
+  it("audits project fact retrievals with result ids", async () => {
+    const workspace = join(tmpdir(), `runstead-memory-retrieval-${process.pid}`);
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      const initialized = await initRunstead({ cwd: workspace });
+      await writeFile(
+        join(workspace, "package.json"),
+        `${JSON.stringify({ packageManager: "pnpm@11.1.1" })}\n`,
+        "utf8"
+      );
+      await writeFile(
+        join(workspace, "tsconfig.json"),
+        `${JSON.stringify({ compilerOptions: { strict: true } })}\n`,
+        "utf8"
+      );
+
+      const pnpmFact = recordProjectFact({
+        cwd: workspace,
+        scope: "repo:acme/app",
+        content: "This repo uses pnpm.",
+        sourceRefs: ["file:package.json"],
+        now: new Date("2026-05-14T06:00:00.000Z")
+      }).memory;
+      recordProjectFact({
+        cwd: workspace,
+        scope: "repo:acme/app",
+        content: "This repo uses TypeScript strict mode.",
+        sourceRefs: ["file:tsconfig.json"],
+        now: new Date("2026-05-14T06:01:00.000Z")
+      });
+
+      const result = retrieveProjectFacts({
+        cwd: workspace,
+        scope: "repo:acme/app",
+        query: "pnpm",
+        limit: 1,
+        now: new Date("2026-05-14T06:02:00.000Z")
+      });
+      const database = openRunsteadDatabase(initialized.stateDb);
+
+      try {
+        const event = database
+          .prepare(
+            `
+            SELECT type, aggregate_type, aggregate_id, payload_json
+            FROM events
+            WHERE event_id = ?
+          `
+          )
+          .get(result.event.eventId) as {
+          type: string;
+          aggregate_type: string;
+          aggregate_id: string;
+          payload_json: string;
+        };
+
+        expect(result.facts).toEqual([pnpmFact]);
+        expect(event).toMatchObject({
+          type: "memory.retrieval_audited",
+          aggregate_type: "memory_retrieval",
+          aggregate_id: result.retrievalId
+        });
+        expect(JSON.parse(event.payload_json)).toMatchObject({
+          retrievalId: result.retrievalId,
+          scope: "repo:acme/app",
+          query: "pnpm",
+          limit: 1,
+          resultCount: 1,
+          resultIds: [pnpmFact.id]
+        });
+      } finally {
+        database.close();
+      }
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }

@@ -9,7 +9,11 @@ import {
   type MemoryRecord,
   type RunsteadEvent
 } from "@runstead/core";
-import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sqlite";
+import {
+  appendEventAndProject,
+  openRunsteadDatabase,
+  type RunsteadDatabase
+} from "@runstead/state-sqlite";
 
 import { resolveRunsteadRootSync } from "./runstead-root.js";
 
@@ -55,6 +59,21 @@ export interface ListProjectFactsOptions {
 
 export interface ListProjectFactsResult {
   facts: MemoryRecord[];
+  stateDb: string;
+}
+
+export interface RetrieveProjectFactsOptions {
+  cwd?: string;
+  scope?: string;
+  query?: string;
+  limit?: number;
+  now?: Date;
+}
+
+export interface RetrieveProjectFactsResult {
+  retrievalId: string;
+  facts: MemoryRecord[];
+  event: RunsteadEvent;
   stateDb: string;
 }
 
@@ -188,35 +207,62 @@ export function listProjectFacts(
   const database = openRunsteadDatabase(stateDb);
 
   try {
-    const rows =
-      options.scope === undefined
-        ? (database
-            .prepare(
-              `
-              SELECT id, scope, type, status, confidence, content,
-                     source_refs_json, provenance_json, created_at, updated_at,
-                     expires_at, conflicts_with_json
-              FROM memory_records
-              WHERE type = 'project_fact' AND status = 'verified'
-              ORDER BY created_at DESC, id ASC
-            `
-            )
-            .all() as unknown as MemoryRow[])
-        : (database
-            .prepare(
-              `
-              SELECT id, scope, type, status, confidence, content,
-                     source_refs_json, provenance_json, created_at, updated_at,
-                     expires_at, conflicts_with_json
-              FROM memory_records
-              WHERE type = 'project_fact' AND status = 'verified' AND scope = ?
-              ORDER BY created_at DESC, id ASC
-            `
-            )
-            .all(options.scope) as unknown as MemoryRow[]);
+    return {
+      facts: readProjectFacts(database, options.scope),
+      stateDb
+    };
+  } finally {
+    database.close();
+  }
+}
+
+export function retrieveProjectFacts(
+  options: RetrieveProjectFactsOptions = {}
+): RetrieveProjectFactsResult {
+  const cwd = resolve(options.cwd ?? process.cwd());
+  const resolvedRoot = resolveRunsteadRootSync(cwd);
+
+  if (resolvedRoot.source === "missing") {
+    throw new Error(`Runstead is not initialized at ${resolvedRoot.root}`);
+  }
+
+  const limit = options.limit ?? 10;
+
+  if (!Number.isInteger(limit) || limit <= 0) {
+    throw new Error("Project fact retrieval limit must be a positive integer");
+  }
+
+  const stateDb = join(resolvedRoot.root, "state.db");
+  const database = openRunsteadDatabase(stateDb);
+
+  try {
+    const facts = readProjectFacts(database, options.scope)
+      .filter((fact) => matchesFactQuery(fact, options.query))
+      .slice(0, limit);
+    const retrievalId = createRunsteadId("retr");
+    const createdAt = (options.now ?? new Date()).toISOString();
+    const event: RunsteadEvent = {
+      eventId: createRunsteadId("evt"),
+      type: "memory.retrieval_audited",
+      aggregateType: "memory_retrieval",
+      aggregateId: retrievalId,
+      payload: {
+        retrievalId,
+        scope: options.scope ?? null,
+        query: normalizedQuery(options.query),
+        limit,
+        resultCount: facts.length,
+        resultIds: facts.map((fact) => fact.id)
+      },
+      createdAt
+    };
+
+    appendEventAndProject(database, { event });
 
     return {
-      facts: rows.map(rowToMemory),
+      retrievalId,
+      facts,
+      event,
       stateDb
     };
   } finally {
@@ -273,6 +319,58 @@ function sourceRefPath(sourceRef: string): string {
   }
 
   return filePath;
+}
+
+function readProjectFacts(
+  database: RunsteadDatabase,
+  scope: string | undefined
+): MemoryRecord[] {
+  const rows =
+    scope === undefined
+      ? (database
+          .prepare(
+            `
+            SELECT id, scope, type, status, confidence, content,
+                   source_refs_json, provenance_json, created_at, updated_at,
+                   expires_at, conflicts_with_json
+            FROM memory_records
+            WHERE type = 'project_fact' AND status = 'verified'
+            ORDER BY created_at DESC, id ASC
+          `
+          )
+          .all() as unknown as MemoryRow[])
+      : (database
+          .prepare(
+            `
+            SELECT id, scope, type, status, confidence, content,
+                   source_refs_json, provenance_json, created_at, updated_at,
+                   expires_at, conflicts_with_json
+            FROM memory_records
+            WHERE type = 'project_fact' AND status = 'verified' AND scope = ?
+            ORDER BY created_at DESC, id ASC
+          `
+          )
+          .all(scope) as unknown as MemoryRow[]);
+
+  return rows.map(rowToMemory);
+}
+
+function matchesFactQuery(fact: MemoryRecord, query: string | undefined): boolean {
+  const normalized = normalizedQuery(query);
+
+  if (normalized === null) {
+    return true;
+  }
+
+  const haystack = [fact.content, ...fact.sourceRefs].join("\n").toLowerCase();
+
+  return haystack.includes(normalized);
+}
+
+function normalizedQuery(query: string | undefined): string | null {
+  const normalized = query?.trim().toLowerCase();
+
+  return normalized === undefined || normalized.length === 0 ? null : normalized;
 }
 
 interface MemoryRow {

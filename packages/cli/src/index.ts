@@ -290,6 +290,44 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
       }
     });
 
+  memoryFact
+    .command("search")
+    .description("Retrieve verified project facts and record a retrieval audit event.")
+    .option("--cwd <path>", "Workspace directory")
+    .option("--scope <scope>", "Filter by memory scope")
+    .option("--query <text>", "Search text")
+    .option("--limit <number>", "Maximum facts to return")
+    .action(
+      async (options: {
+        cwd?: string;
+        scope?: string;
+        query?: string;
+        limit?: string;
+      }) => {
+        const { retrieveProjectFacts } = await import("./memory.js");
+        const limit = parseOptionalInteger(options.limit, "--limit");
+        const result = retrieveProjectFacts({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          ...(options.scope === undefined ? {} : { scope: options.scope }),
+          ...(options.query === undefined ? {} : { query: options.query }),
+          ...(limit === undefined ? {} : { limit })
+        });
+
+        console.log(`Retrieval audit: ${result.retrievalId}`);
+
+        if (result.facts.length === 0) {
+          console.log("No project facts found.");
+          return;
+        }
+
+        for (const fact of result.facts) {
+          console.log(
+            `${fact.id} ${fact.scope} confidence=${fact.confidence}: ${fact.content}`
+          );
+        }
+      }
+    );
+
   const goal = program.command("goal").description("Manage durable goals.");
 
   goal
@@ -611,6 +649,23 @@ function parseOptionalFloat(
 
   if (!Number.isFinite(parsed)) {
     throw new Error(`${optionName} must be a number`);
+  }
+
+  return parsed;
+}
+
+function parseOptionalInteger(
+  value: string | undefined,
+  optionName: string
+): number | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  const parsed = Number.parseInt(value, 10);
+
+  if (!Number.isInteger(parsed)) {
+    throw new Error(`${optionName} must be an integer`);
   }
 
   return parsed;
