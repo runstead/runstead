@@ -753,6 +753,39 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
   const domain = program.command("domain").description("Manage domain packs.");
 
   domain
+    .command("list")
+    .description("List discoverable domain packs.")
+    .option("--cwd <path>", "Workspace directory")
+    .option("--root <path>", "Additional domain pack root", collectValues, [])
+    .option("--no-built-ins", "Exclude built-in domain packs")
+    .action(async (options: { cwd?: string; root: string[]; builtIns?: boolean }) => {
+      const { listDomainPacks } = await import("@runstead/domain-packs");
+      const roots = [...options.root];
+
+      if (options.cwd !== undefined) {
+        const { resolveRunsteadRootSync } = await import("./runstead-root.js");
+        roots.push(join(resolveRunsteadRootSync(options.cwd).root, "domains"));
+      }
+
+      const result = await listDomainPacks({
+        roots,
+        includeBuiltIns: options.builtIns !== false
+      });
+
+      if (result.entries.length === 0) {
+        console.log("No domain packs found.");
+      } else {
+        for (const entry of result.entries) {
+          console.log(`${entry.id.padEnd(24)} ${entry.source.padEnd(9)} ${entry.root}`);
+        }
+      }
+
+      for (const issue of result.issues) {
+        console.error(`WARN ${issue.root}: ${issue.message}`);
+      }
+    });
+
+  domain
     .command("validate")
     .description("Validate a domain pack directory.")
     .argument("<path>", "Domain pack directory")
