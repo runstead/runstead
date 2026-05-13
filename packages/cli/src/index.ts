@@ -160,6 +160,30 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
       }
     });
 
+  const report = program.command("report").description("Generate reports.");
+
+  report
+    .command("weekly")
+    .description("Generate a weekly Runstead maintenance report.")
+    .option("--cwd <path>", "Workspace directory")
+    .option("--week <YYYY-Www>", "ISO week to report, for example 2026-W20")
+    .option("--print", "Print the generated markdown")
+    .action(async (options: { cwd?: string; week?: string; print?: boolean }) => {
+      const { generateWeeklyReport } = await import("./weekly-report.js");
+      const result = await generateWeeklyReport({
+        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+        ...(options.week === undefined ? {} : { week: options.week })
+      });
+
+      console.log(`Generated weekly report: ${result.reportPath}`);
+      console.log(`Week: ${result.week}`);
+
+      if (options.print === true) {
+        console.log("");
+        console.log(result.markdown);
+      }
+    });
+
   const goal = program.command("goal").description("Manage durable goals.");
 
   goal
