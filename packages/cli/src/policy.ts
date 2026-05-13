@@ -301,7 +301,7 @@ export function evaluatePolicy(options: EvaluatePolicyOptions): PolicyEvaluation
     };
   }
 
-  const defaultDecision = options.policy.defaultDecision ?? "allow";
+  const defaultDecision = options.policy.defaultDecision ?? "require_approval";
 
   return {
     actionId: options.action.actionId,

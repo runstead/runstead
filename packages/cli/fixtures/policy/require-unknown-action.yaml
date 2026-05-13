@@ -1,0 +1,11 @@
+action:
+  action_id: act_fixture_unknown_shell
+  action_type: shell.exec
+  context:
+    command: node scripts/custom-maintenance.js
+    side_effects:
+      - execute_process
+
+expected:
+  decision: require_approval
+  risk: medium

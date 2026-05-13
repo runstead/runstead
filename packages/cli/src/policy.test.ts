@@ -103,7 +103,7 @@ describe("evaluatePolicy protected path rules", () => {
     expect(result.decision).toBe("deny");
   });
 
-  it("allows non-protected workspace paths", () => {
+  it("requires approval for non-protected workspace paths by default", () => {
     const result = evaluatePolicy({
       policy: protectedPathPolicy,
       action: {
@@ -118,8 +118,8 @@ describe("evaluatePolicy protected path rules", () => {
 
     expect(result).toMatchObject({
       actionId: "act_src_write",
-      decision: "allow",
-      risk: "low"
+      decision: "require_approval",
+      risk: "medium"
     });
   });
 });

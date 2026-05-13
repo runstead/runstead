@@ -42,6 +42,7 @@ describe("initRunstead", () => {
       expect(config).toContain("domain: repo-maintenance");
       expect(goalTemplate).toContain("id: keep-ci-green");
       expect(domainPolicy).toContain("id: policy_repo_maintenance_v1");
+      expect(domainPolicy).toContain("default_decision: require_approval");
       expect(rbacPolicy).toContain("local-admin");
       expect(teamPolicy).toContain("team_policy_repo_maintenance_v1");
       expect(database.isFile()).toBe(true);

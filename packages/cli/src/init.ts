@@ -39,6 +39,8 @@ workers:
 
 const DEFAULT_POLICY = `id: policy_repo_maintenance_v1
 version: 1
+default_decision: require_approval
+default_risk: medium
 
 rules:
   - id: allow_verifier_commands
