@@ -527,6 +527,10 @@ function matchesPathPattern(path: string, pattern: string): boolean {
   return matchesSegments(patternSegments, pathSegments);
 }
 
+export function matchesPolicyPathPattern(path: string, pattern: string): boolean {
+  return matchesPathPattern(path, pattern);
+}
+
 function pathSegmentsFrom(path: string): string[] {
   const normalized = normalizePolicyPath(path, undefined);
 

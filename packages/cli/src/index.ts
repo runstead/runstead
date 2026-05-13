@@ -300,6 +300,39 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
       }
     });
 
+  verifier
+    .command("diff-scope")
+    .description("Verify changed files stay within the configured diff scope.")
+    .option("--cwd <path>", "Workspace directory")
+    .option("--base <ref>", "Base ref")
+    .option("--head <ref>", "Head ref", "HEAD")
+    .option("--allowed <pattern>", "Allowed path pattern", collectValues, [])
+    .option("--denied <pattern>", "Denied path pattern", collectValues, [])
+    .action(
+      async (options: {
+        cwd?: string;
+        base?: string;
+        head?: string;
+        allowed: string[];
+        denied: string[];
+      }) => {
+        const { formatGitDiffScopeReport, verifyGitDiffScope } =
+          await import("./diff-scope-verifier.js");
+        const result = await verifyGitDiffScope({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          ...(options.base === undefined ? {} : { baseRef: options.base }),
+          ...(options.head === undefined ? {} : { headRef: options.head }),
+          allowedPaths: options.allowed,
+          deniedPaths: options.denied
+        });
+
+        console.log(formatGitDiffScopeReport(result));
+        if (!result.passed) {
+          process.exitCode = 1;
+        }
+      }
+    );
+
   const github = program.command("github").description("GitHub integration.");
   const githubRun = github.command("run").description("Inspect GitHub workflow runs.");
 
