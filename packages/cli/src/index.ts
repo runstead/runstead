@@ -140,14 +140,9 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
       "Restore even when the current HEAD differs from the checkpoint HEAD"
     )
     .action(
-      async (
-        id: string,
-        options: { cwd?: string; allowHeadMismatch?: boolean }
-      ) => {
-        const {
-          formatWorkspaceCheckpointRestoreReport,
-          restoreWorkspaceCheckpoint
-        } = await import("./checkpoints.js");
+      async (id: string, options: { cwd?: string; allowHeadMismatch?: boolean }) => {
+        const { formatWorkspaceCheckpointRestoreReport, restoreWorkspaceCheckpoint } =
+          await import("./checkpoints.js");
         const { requireRunsteadRoot } = await import("./runstead-root.js");
         const resolved = await requireRunsteadRoot(options.cwd);
         const result = await restoreWorkspaceCheckpoint({
@@ -313,9 +308,7 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
         });
 
         server.listen(port, options.host, () => {
-          console.log(
-            `Runstead webhook server listening on ${options.host}:${port}`
-          );
+          console.log(`Runstead webhook server listening on ${options.host}:${port}`);
           console.log("GitHub endpoint: /webhooks/github");
         });
       }
@@ -341,9 +334,7 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
       console.log(`Dashboard data: ${result.dataPath}`);
     });
 
-  const rbac = program
-    .command("rbac")
-    .description("Manage local RBAC. Experimental.");
+  const rbac = program.command("rbac").description("Manage local RBAC. Experimental.");
 
   rbac
     .command("init")
@@ -1334,10 +1325,8 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
           verifier: string[];
         }
       ) => {
-        const {
-          formatCiRepairOrchestratorReport,
-          runCiRepairOrchestrator
-        } = await import("./ci-repair-orchestrator.js");
+        const { formatCiRepairOrchestratorReport, runCiRepairOrchestrator } =
+          await import("./ci-repair-orchestrator.js");
         const result = await runCiRepairOrchestrator({
           ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
           runId,

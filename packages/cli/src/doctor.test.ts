@@ -20,12 +20,7 @@ describe("doctorRunstead", () => {
 
       expect(result.ok).toBe(true);
       expect(result.checks.map((check) => check.id)).toEqual(
-        expect.arrayContaining([
-          "config",
-          "domain-pack",
-          "policy",
-          "state-db"
-        ])
+        expect.arrayContaining(["config", "domain-pack", "policy", "state-db"])
       );
       expect(result.checks.every((check) => check.status === "pass")).toBe(true);
     } finally {

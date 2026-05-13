@@ -175,7 +175,11 @@ describe("validateDomainPackDir", () => {
         ].join("\n"),
         "utf8"
       );
-      await writeFile(join(workspace, "policies", "default.yaml"), "rules: []\n", "utf8");
+      await writeFile(
+        join(workspace, "policies", "default.yaml"),
+        "rules: []\n",
+        "utf8"
+      );
       await writeFile(
         join(workspace, "task-types", "registered_task.yaml"),
         [

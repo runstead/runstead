@@ -13,10 +13,7 @@ import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sql
 
 import { inspectGitHubRepository } from "./github.js";
 import { inspectGitRepository } from "./repo-inspection.js";
-import {
-  requireRunsteadStateDb,
-  requireRunsteadStateDbSync
-} from "./runstead-root.js";
+import { requireRunsteadStateDb, requireRunsteadStateDbSync } from "./runstead-root.js";
 
 export interface RegisterRepositoryOptions {
   cwd?: string;

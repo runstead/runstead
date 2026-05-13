@@ -81,7 +81,12 @@ export function requestApproval(options: RequestApprovalOptions): ApprovalReques
   });
 
   appendEventAndProject(options.database, {
-    event: approvalEvent("approval.requested", approval, approvalPayload(approval), createdAt),
+    event: approvalEvent(
+      "approval.requested",
+      approval,
+      approvalPayload(approval),
+      createdAt
+    ),
     projection: {
       type: "approval",
       value: approval
@@ -91,9 +96,7 @@ export function requestApproval(options: RequestApprovalOptions): ApprovalReques
   return approval;
 }
 
-export function listApprovals(
-  options: ListApprovalsOptions = {}
-): ListApprovalsResult {
+export function listApprovals(options: ListApprovalsOptions = {}): ListApprovalsResult {
   const stateDb = requireRunsteadStateDbSync(options.cwd).stateDb;
   const database = openRunsteadDatabase(stateDb);
 
@@ -233,7 +236,10 @@ export function findApprovedApprovalForAction(
   const approval = rowToApproval(row);
   const now = options.now ?? new Date();
 
-  if (approval.expiresAt !== undefined && Date.parse(approval.expiresAt) <= now.getTime()) {
+  if (
+    approval.expiresAt !== undefined &&
+    Date.parse(approval.expiresAt) <= now.getTime()
+  ) {
     return undefined;
   }
 

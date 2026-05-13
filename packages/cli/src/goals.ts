@@ -13,10 +13,7 @@ import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sql
 
 import { inspectGitRepository } from "./repo-inspection.js";
 import { resolveRepositoryReference } from "./repositories.js";
-import {
-  requireRunsteadStateDb,
-  requireRunsteadStateDbSync
-} from "./runstead-root.js";
+import { requireRunsteadStateDb, requireRunsteadStateDbSync } from "./runstead-root.js";
 import { buildRunLocalVerifiersTask } from "./tasks.js";
 
 export interface CreateGoalOptions {

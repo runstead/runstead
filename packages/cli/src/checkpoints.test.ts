@@ -24,7 +24,11 @@ describe("createWorkspaceCheckpoint", () => {
         case "status --short":
           return Promise.resolve({ stdout: "?? notes.txt\n", stderr: "", exitCode: 0 });
         case "diff --binary HEAD":
-          return Promise.resolve({ stdout: "diff --git a/a b/a\n", stderr: "", exitCode: 0 });
+          return Promise.resolve({
+            stdout: "diff --git a/a b/a\n",
+            stderr: "",
+            exitCode: 0
+          });
         case "ls-files --others --exclude-standard -z":
           return Promise.resolve({
             stdout:
@@ -61,14 +65,25 @@ describe("createWorkspaceCheckpoint", () => {
         head: "abc123",
         untrackedFiles: ["notes.txt", "nested/log.txt"]
       });
-      await expect(readFile(join(checkpoint.untrackedDir, "notes.txt"), "utf8"))
-        .resolves.toBe("before");
-      await expect(readFile(join(checkpoint.untrackedDir, "nested", "log.txt"), "utf8"))
-        .resolves.toBe("log");
-      await expect(access(join(checkpoint.untrackedDir, ".runstead"))).rejects.toThrow();
+      await expect(
+        readFile(join(checkpoint.untrackedDir, "notes.txt"), "utf8")
+      ).resolves.toBe("before");
+      await expect(
+        readFile(join(checkpoint.untrackedDir, "nested", "log.txt"), "utf8")
+      ).resolves.toBe("log");
+      await expect(
+        access(join(checkpoint.untrackedDir, ".runstead"))
+      ).rejects.toThrow();
       await expect(access(join(checkpoint.untrackedDir, ".team"))).rejects.toThrow();
-      await expect(access(join(checkpoint.untrackedDir, "node_modules"))).rejects.toThrow();
-      expect(calls).toContainEqual(["ls-files", "--others", "--exclude-standard", "-z"]);
+      await expect(
+        access(join(checkpoint.untrackedDir, "node_modules"))
+      ).rejects.toThrow();
+      expect(calls).toContainEqual([
+        "ls-files",
+        "--others",
+        "--exclude-standard",
+        "-z"
+      ]);
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }
@@ -86,7 +101,11 @@ describe("restoreWorkspaceCheckpoint", () => {
         case "status --short":
           return Promise.resolve({ stdout: "?? notes.txt\n", stderr: "", exitCode: 0 });
         case "diff --binary HEAD":
-          return Promise.resolve({ stdout: "diff --git a/a b/a\n", stderr: "", exitCode: 0 });
+          return Promise.resolve({
+            stdout: "diff --git a/a b/a\n",
+            stderr: "",
+            exitCode: 0
+          });
         case "ls-files --others --exclude-standard -z":
           return Promise.resolve({ stdout: "notes.txt\0", stderr: "", exitCode: 0 });
         default:
@@ -154,10 +173,12 @@ describe("restoreWorkspaceCheckpoint", () => {
         "before"
       );
       await expect(access(join(workspace, "new.txt"))).rejects.toThrow();
-      await expect(readFile(join(workspace, ".runstead", "state.db"), "utf8"))
-        .resolves.toBe("keep");
-      await expect(readFile(join(workspace, ".team", "state.db"), "utf8"))
-        .resolves.toBe("keep legacy");
+      await expect(
+        readFile(join(workspace, ".runstead", "state.db"), "utf8")
+      ).resolves.toBe("keep");
+      await expect(
+        readFile(join(workspace, ".team", "state.db"), "utf8")
+      ).resolves.toBe("keep legacy");
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }

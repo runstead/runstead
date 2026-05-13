@@ -142,9 +142,9 @@ describe("runTaskVerifiers", () => {
         const policyDecision = database
           .prepare("SELECT decision, rule_id FROM policy_decisions")
           .get() as { decision: string; rule_id: string };
-        const toolCall = database
-          .prepare("SELECT status FROM tool_calls")
-          .get() as { status: string };
+        const toolCall = database.prepare("SELECT status FROM tool_calls").get() as {
+          status: string;
+        };
         const storedTask = database
           .prepare("SELECT attempt FROM tasks WHERE id = ?")
           .get(task.id) as { attempt: number };
@@ -191,9 +191,9 @@ describe("runTaskVerifiers", () => {
         const approval = database
           .prepare("SELECT status, action_id FROM approvals")
           .get() as { status: string; action_id: string };
-        const toolCall = database
-          .prepare("SELECT status FROM tool_calls")
-          .get() as { status: string };
+        const toolCall = database.prepare("SELECT status FROM tool_calls").get() as {
+          status: string;
+        };
         const storedTask = database
           .prepare("SELECT attempt FROM tasks WHERE id = ?")
           .get(task.id) as { attempt: number };

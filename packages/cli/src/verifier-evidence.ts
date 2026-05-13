@@ -70,10 +70,7 @@ export async function storeCommandVerifierEvidence(
   const evidenceId = createRunsteadId("ev");
   const evidenceDir = join(runsteadRoot, "evidence");
   const artifactName = sanitizeArtifactName(options.command.name);
-  const artifactPath = join(
-    evidenceDir,
-    `verifier-${artifactName}-${evidenceId}.json`
-  );
+  const artifactPath = join(evidenceDir, `verifier-${artifactName}-${evidenceId}.json`);
   const artifactContents = `${JSON.stringify(artifact, null, 2)}\n`;
   const evidence: Evidence = {
     id: evidenceId,

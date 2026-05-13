@@ -38,8 +38,7 @@ export interface ReadWorkspaceCheckpointOptions {
   checkpointId: string;
 }
 
-export interface RestoreWorkspaceCheckpointOptions
-  extends ReadWorkspaceCheckpointOptions {
+export interface RestoreWorkspaceCheckpointOptions extends ReadWorkspaceCheckpointOptions {
   runner?: GitCheckpointRunner;
   allowHeadMismatch?: boolean;
 }
@@ -134,11 +133,7 @@ export async function readWorkspaceCheckpoint(
     "statusPath",
     join(checkpointDir, `${id}.status.txt`)
   );
-  const patchPath = stringField(
-    raw,
-    "patchPath",
-    join(checkpointDir, `${id}.patch`)
-  );
+  const patchPath = stringField(raw, "patchPath", join(checkpointDir, `${id}.patch`));
   const untrackedDir = stringField(
     raw,
     "untrackedDir",
@@ -191,7 +186,9 @@ export async function restoreWorkspaceCheckpoint(
     cwd: workspace
   });
   if (reset.exitCode !== 0) {
-    throw new Error(`git reset --hard failed with exit ${reset.exitCode}: ${reset.stderr}`);
+    throw new Error(
+      `git reset --hard failed with exit ${reset.exitCode}: ${reset.stderr}`
+    );
   }
 
   const untracked = await runner(["ls-files", "--others", "--exclude-standard", "-z"], {
@@ -222,10 +219,9 @@ export async function restoreWorkspaceCheckpoint(
   const restoredTrackedPatch = patch.trim().length > 0;
 
   if (restoredTrackedPatch) {
-    const apply = await runner(
-      ["apply", "--whitespace=nowarn", checkpoint.patchPath],
-      { cwd: workspace }
-    );
+    const apply = await runner(["apply", "--whitespace=nowarn", checkpoint.patchPath], {
+      cwd: workspace
+    });
     if (apply.exitCode !== 0) {
       throw new Error(`git apply failed with exit ${apply.exitCode}: ${apply.stderr}`);
     }
