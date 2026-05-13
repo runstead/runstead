@@ -4,6 +4,7 @@ import { join, resolve } from "node:path";
 
 import type { DomainPack } from "./domain-pack.js";
 import { loadDomainPackFromFile } from "./domain-pack.js";
+import { getResearchMonitorPackDir } from "./research-monitor.js";
 import { getRepoMaintenancePackDir } from "./repo-maintenance.js";
 
 export type DomainPackRegistrySource = "built_in" | "workspace" | "path";
@@ -32,7 +33,10 @@ export interface ListDomainPacksResult {
 
 export type ResolveDomainPackOptions = ListDomainPacksOptions;
 
-const BUILT_IN_DOMAIN_PACK_ROOTS = [getRepoMaintenancePackDir()];
+const BUILT_IN_DOMAIN_PACK_ROOTS = [
+  getRepoMaintenancePackDir(),
+  getResearchMonitorPackDir()
+];
 
 export async function listDomainPacks(
   options: ListDomainPacksOptions = {}

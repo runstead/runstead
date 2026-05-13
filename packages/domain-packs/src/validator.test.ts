@@ -31,6 +31,25 @@ describe("validateDomainPackDir", () => {
     expect(formatDomainPackValidationResult(result)).toContain("Status: valid");
   });
 
+  it("validates the experimental research-monitor pack", async () => {
+    const packRoot = fileURLToPath(
+      new URL("../packs/research-monitor", import.meta.url)
+    );
+
+    const result = await validateDomainPackDir(packRoot);
+
+    expect(result.valid).toBe(true);
+    expect(result.issues).toEqual([]);
+    expect(result.domain?.id).toBe("research-monitor");
+    expect(result.goalTemplates.map((template) => template.id)).toEqual([
+      "weekly-research-digest"
+    ]);
+    expect(result.taskTypes.map((taskType) => taskType.id)).toEqual([
+      "scan_sources",
+      "summarize_findings"
+    ]);
+  });
+
   it("reports missing and mismatched pack references", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "runstead-domain-pack-"));
 

@@ -1,0 +1,35 @@
+id: policy_research_monitor_v1
+version: 1
+
+rules:
+  - id: allow_source_reading
+    when:
+      action_type:
+        in:
+          - network.read
+          - filesystem.read
+    decision: allow
+    risk: low
+    obligations:
+      - record_source_url
+      - capture_retrieval_time
+
+  - id: require_citations_for_research_claims
+    when:
+      action_type: research.summarize
+    decision: allow
+    risk: medium
+    obligations:
+      - cite_sources
+      - mark_uncertain_claims
+      - check_contradictions
+
+  - id: require_approval_for_external_publish
+    when:
+      side_effects:
+        contains_any:
+          - network_write_external
+          - send_message_external
+          - publish_report
+    decision: require_approval
+    risk: high

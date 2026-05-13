@@ -1,0 +1,17 @@
+id: weekly-research-digest
+domain: research-monitor
+title: Weekly research digest
+description: >
+  Monitor a research topic, collect fresh sources, summarize changes, and
+  produce a cited digest without publishing externally.
+
+generated:
+  recurring_tasks:
+    - scan_sources
+    - summarize_findings
+  policy_profile: research-monitor
+  acceptance_contracts:
+    - sources_are_cited
+    - source_freshness_checked
+    - contradictions_reviewed
+    - external_publish_not_performed

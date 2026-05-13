@@ -1,0 +1,17 @@
+id: summarize_findings
+domain: research-monitor
+description: Write a cited digest from collected source material.
+
+default_priority: medium
+max_attempts: 1
+
+verifiers:
+  required:
+    - citation:source_linked
+    - citation:no_uncited_claims
+    - contradiction_check:completed
+
+worker_routing:
+  preferred: codex_cli
+  fallback:
+    - shell

@@ -10,6 +10,7 @@ describe("domain pack registry", () => {
 
     expect(registry.issues).toEqual([]);
     expect(registry.entries.map((entry) => entry.id)).toContain("repo-maintenance");
+    expect(registry.entries.map((entry) => entry.id)).toContain("research-monitor");
     expect(
       registry.entries.find((entry) => entry.id === "repo-maintenance")?.source
     ).toBe("built_in");
@@ -24,12 +25,18 @@ describe("domain pack registry", () => {
     });
 
     expect(registry.issues).toEqual([]);
-    expect(registry.entries).toEqual([
-      expect.objectContaining({
-        id: "repo-maintenance",
-        source: "workspace"
-      })
-    ]);
+    expect(registry.entries).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "repo-maintenance",
+          source: "workspace"
+        }),
+        expect.objectContaining({
+          id: "research-monitor",
+          source: "workspace"
+        })
+      ])
+    );
   });
 
   it("resolves domain pack refs by id and path", async () => {

@@ -1,0 +1,16 @@
+id: scan_sources
+domain: research-monitor
+description: Collect fresh source references for a monitored topic.
+
+default_priority: medium
+max_attempts: 2
+
+verifiers:
+  required:
+    - source:url_recorded
+    - source:freshness_checked
+
+worker_routing:
+  preferred: shell
+  fallback:
+    - codex_cli

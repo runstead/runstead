@@ -1,0 +1,43 @@
+id: research-monitor
+version: 0.1.0
+name: Research Monitor
+description: Track sources over time and produce cited research digests.
+
+scope:
+  resource_types:
+    - topic
+    - source
+    - citation
+    - digest
+
+goal_templates:
+  - weekly-research-digest
+
+task_types:
+  - scan_sources
+  - summarize_findings
+
+default_policy: policies/research-monitor.yaml
+
+default_verifiers:
+  - citation_check
+  - source_freshness
+  - contradiction_check
+
+required_tools:
+  - filesystem
+  - network_read
+
+supported_workers:
+  - shell
+  - codex_cli
+
+security:
+  untrusted_inputs:
+    - webpage_content
+    - pdf_text
+    - search_result_snippet
+  protected_paths:
+    - ".env"
+    - ".env.*"
+    - "**/secrets/**"
