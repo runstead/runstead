@@ -1,6 +1,8 @@
 import { constants } from "node:fs";
 import { access, stat } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
+
+import { resolveRunsteadRoot } from "./runstead-root.js";
 
 export type DoctorCheckStatus = "pass" | "fail";
 
@@ -26,8 +28,8 @@ const REQUIRED_TABLES = ["goals", "tasks", "evidence", "events"];
 export async function doctorRunstead(
   options: DoctorRunsteadOptions = {}
 ): Promise<DoctorResult> {
-  const cwd = resolve(options.cwd ?? process.cwd());
-  const root = join(cwd, ".runstead");
+  const resolvedRoot = await resolveRunsteadRoot(options.cwd);
+  const root = resolvedRoot.root;
   const checks: DoctorCheck[] = [];
 
   checks.push(

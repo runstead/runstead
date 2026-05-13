@@ -1,4 +1,4 @@
-import { mkdir, rm } from "node:fs/promises";
+import { cp, mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -50,6 +50,27 @@ describe("doctorRunstead", () => {
       expect(result.checks.find((check) => check.id === "state-db")?.status).toBe(
         "fail"
       );
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("passes for a legacy .team workspace", async () => {
+    const workspace = join(tmpdir(), `runstead-doctor-team-${process.pid}`);
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await mkdir(workspace, { recursive: true });
+      await initRunstead({ cwd: workspace });
+      await cp(join(workspace, ".runstead"), join(workspace, ".team"), {
+        recursive: true
+      });
+      await rm(join(workspace, ".runstead"), { force: true, recursive: true });
+
+      const result = await doctorRunstead({ cwd: workspace });
+
+      expect(result.ok).toBe(true);
+      expect(result.root).toBe(join(workspace, ".team"));
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }
