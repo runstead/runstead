@@ -64,7 +64,7 @@ export async function getGitHubWorkflowRunStatus(
   options: GetWorkflowRunStatusOptions
 ): Promise<GitHubWorkflowRunStatus> {
   const cwd = resolve(options.cwd ?? process.cwd());
-  const result = await (options.runner ?? runGh)(
+  const result = await (options.runner ?? runGitHubCli)(
     [
       "run",
       "view",
@@ -126,7 +126,7 @@ export async function fetchGitHubWorkflowRunLog(
   options: FetchWorkflowRunLogOptions
 ): Promise<GitHubWorkflowRunLog> {
   const cwd = resolve(options.cwd ?? process.cwd());
-  const result = await (options.runner ?? runGh)(
+  const result = await (options.runner ?? runGitHubCli)(
     ["run", "view", options.runId, "--log"],
     { cwd }
   );
@@ -144,7 +144,7 @@ export async function fetchGitHubWorkflowRunLog(
   };
 }
 
-async function runGh(
+export async function runGitHubCli(
   args: string[],
   options: { cwd: string }
 ): Promise<GitHubCliCommandResult> {

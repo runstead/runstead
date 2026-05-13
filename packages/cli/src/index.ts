@@ -334,6 +334,49 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
       process.stdout.write(result.log);
     });
 
+  const githubPr = github.command("pr").description("Create GitHub pull requests.");
+
+  githubPr
+    .command("create")
+    .description("Create a GitHub pull request with Runstead evidence.")
+    .requiredOption("--title <title>", "Pull request title")
+    .requiredOption("--base <ref>", "Base branch")
+    .requiredOption("--head <ref>", "Head branch")
+    .option("--cwd <path>", "Workspace directory")
+    .option("--body <body>", "Pull request body")
+    .option("--draft", "Create a draft pull request")
+    .option("--task <id>", "Runstead task id")
+    .option("--goal <id>", "Runstead goal id")
+    .option("--evidence <summary>", "Evidence summary", collectValues, [])
+    .action(
+      async (options: {
+        cwd?: string;
+        title: string;
+        base: string;
+        head: string;
+        body?: string;
+        draft?: boolean;
+        task?: string;
+        goal?: string;
+        evidence: string[];
+      }) => {
+        const { createGitHubPullRequest } = await import("./github-pr.js");
+        const result = await createGitHubPullRequest({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          title: options.title,
+          base: options.base,
+          head: options.head,
+          ...(options.body === undefined ? {} : { body: options.body }),
+          ...(options.draft === undefined ? {} : { draft: options.draft }),
+          ...(options.task === undefined ? {} : { taskId: options.task }),
+          ...(options.goal === undefined ? {} : { goalId: options.goal }),
+          evidence: evidenceSummariesFromCli(options.evidence)
+        });
+
+        console.log(`Created PR: ${result.url ?? result.stdout.trim()}`);
+      }
+    );
+
   const git = program.command("git").description("Git helpers for repo maintenance.");
   const gitBranch = git.command("branch").description("Manage Runstead git branches.");
 
@@ -379,6 +422,18 @@ export function inferProgramName(entrypoint?: string): "runstead" | "team" {
   return entrypoint !== undefined && basename(entrypoint) === "team"
     ? "team"
     : "runstead";
+}
+
+function collectValues(value: string, previous: string[]): string[] {
+  return [...previous, value];
+}
+
+function evidenceSummariesFromCli(values: string[]) {
+  return values.map((summary, index) => ({
+    id: `cli_evidence_${index + 1}`,
+    type: "manual",
+    summary
+  }));
 }
 
 const entrypoint = process.argv[1] ? pathToFileURL(process.argv[1]).href : undefined;
