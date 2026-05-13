@@ -17,9 +17,15 @@ describe("tool contract registry", () => {
         "filesystem.write",
         "git.status",
         "git.diff",
+        "git.branch.create",
+        "github.run.read",
+        "github.run.log.read",
         "package.install",
         "package.update",
-        "github.pr.create"
+        "github.pr.create",
+        "worker.external.start",
+        "checkpoint.create",
+        "checkpoint.restore"
       ])
     );
   });

@@ -49,6 +49,30 @@ const TOOL_CONTRACTS: ToolContract[] = [
     policyRequired: true
   },
   {
+    actionType: "git.branch.create",
+    tool: "git",
+    resourceTypes: ["branch", "repository"],
+    sideEffects: ["write_workspace"],
+    evidenceRequired: true,
+    policyRequired: true
+  },
+  {
+    actionType: "github.run.read",
+    tool: "github",
+    resourceTypes: ["workflow_run"],
+    sideEffects: ["network_read_external"],
+    evidenceRequired: true,
+    policyRequired: true
+  },
+  {
+    actionType: "github.run.log.read",
+    tool: "github",
+    resourceTypes: ["workflow_run"],
+    sideEffects: ["network_read_external"],
+    evidenceRequired: true,
+    policyRequired: true
+  },
+  {
     actionType: "package.install",
     tool: "package-manager",
     resourceTypes: ["package_manifest", "lockfile"],
@@ -69,6 +93,30 @@ const TOOL_CONTRACTS: ToolContract[] = [
     tool: "github",
     resourceTypes: ["pull_request"],
     sideEffects: ["network_write_external", "github_pr_create"],
+    evidenceRequired: true,
+    policyRequired: true
+  },
+  {
+    actionType: "worker.external.start",
+    tool: "worker",
+    resourceTypes: ["process", "repository"],
+    sideEffects: ["execute_process", "write_workspace"],
+    evidenceRequired: true,
+    policyRequired: true
+  },
+  {
+    actionType: "checkpoint.create",
+    tool: "checkpoint",
+    resourceTypes: ["repository"],
+    sideEffects: ["read_workspace"],
+    evidenceRequired: true,
+    policyRequired: true
+  },
+  {
+    actionType: "checkpoint.restore",
+    tool: "checkpoint",
+    resourceTypes: ["repository"],
+    sideEffects: ["write_workspace"],
     evidenceRequired: true,
     policyRequired: true
   }
