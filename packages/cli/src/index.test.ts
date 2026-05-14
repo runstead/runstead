@@ -38,6 +38,16 @@ describe("cli entrypoint", () => {
     expect(repo?.commands.map((command) => command.name())).toContain("archive");
   });
 
+  it("exposes RBAC actor selection on repository commands", () => {
+    const repo = createProgram().commands.find((command) => command.name() === "repo");
+
+    for (const commandName of ["add", "list", "show", "archive"]) {
+      const command = repo?.commands.find((item) => item.name() === commandName);
+
+      expect(command?.options.map((option) => option.long)).toContain("--actor");
+    }
+  });
+
   it("exposes RBAC actor selection on daemon management", () => {
     const daemon = createProgram().commands.find(
       (command) => command.name() === "daemon"

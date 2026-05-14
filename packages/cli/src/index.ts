@@ -831,6 +831,7 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     .option("--remote-url <url>", "Override detected remote URL")
     .option("--default-branch <branch>", "Override detected branch")
     .option("--tags <list>", "Comma-separated tags")
+    .option("--actor <id>", "RBAC subject for repository management", "local-admin")
     .action(
       async (
         path: string | undefined,
@@ -840,8 +841,16 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
           remoteUrl?: string;
           defaultBranch?: string;
           tags?: string;
+          actor: string;
         }
       ) => {
+        await requireRbacPermission({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          actor: options.actor,
+          permission: "repo.manage",
+          action: "manage repositories"
+        });
+
         const { registerRepository } = await import("./repositories.js");
         const result = await registerRepository({
           ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
@@ -869,7 +878,15 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     .description("List registered repositories.")
     .option("--cwd <path>", "Runstead control workspace directory")
     .option("--status <status>", "Filter by repository status")
-    .action(async (options: { cwd?: string; status?: string }) => {
+    .option("--actor <id>", "RBAC subject for repository access", "local-admin")
+    .action(async (options: { cwd?: string; status?: string; actor: string }) => {
+      await requireRbacPermission({
+        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+        actor: options.actor,
+        permission: "repo.read",
+        action: "list repositories"
+      });
+
       const { listRepositories } = await import("./repositories.js");
       const status = parseRepositoryStatus(options.status);
       const result = listRepositories({
@@ -894,7 +911,15 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     .description("Show a registered repository.")
     .argument("<ref>", "Repository id, alias, or path")
     .option("--cwd <path>", "Runstead control workspace directory")
-    .action(async (ref: string, options: { cwd?: string }) => {
+    .option("--actor <id>", "RBAC subject for repository access", "local-admin")
+    .action(async (ref: string, options: { cwd?: string; actor: string }) => {
+      await requireRbacPermission({
+        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+        actor: options.actor,
+        permission: "repo.read",
+        action: "inspect repositories"
+      });
+
       const { showRepository } = await import("./repositories.js");
       const result = showRepository({ ...options, ref });
 
@@ -912,7 +937,15 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     .description("Archive a registered repository without deleting audit history.")
     .argument("<ref>", "Repository id, alias, or path")
     .option("--cwd <path>", "Runstead control workspace directory")
-    .action(async (ref: string, options: { cwd?: string }) => {
+    .option("--actor <id>", "RBAC subject for repository management", "local-admin")
+    .action(async (ref: string, options: { cwd?: string; actor: string }) => {
+      await requireRbacPermission({
+        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+        actor: options.actor,
+        permission: "repo.manage",
+        action: "manage repositories"
+      });
+
       const { archiveRepository } = await import("./repositories.js");
       const result = archiveRepository({ ...options, ref });
 
@@ -1663,6 +1696,26 @@ function parseRequiredInteger(value: string, optionName: string): number {
   }
 
   return parsed;
+}
+
+async function requireRbacPermission(options: {
+  cwd?: string;
+  actor: string;
+  permission: string;
+  action: string;
+}): Promise<void> {
+  const { checkPermission } = await import("./rbac.js");
+  const result = await checkPermission({
+    ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+    subject: options.actor,
+    permission: options.permission
+  });
+
+  if (result.decision !== "allow") {
+    throw new Error(
+      `Subject ${options.actor} cannot ${options.action}: ${result.reason}`
+    );
+  }
 }
 
 function parseDateOption(value: string, optionName: string): Date {
