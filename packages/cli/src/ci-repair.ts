@@ -88,11 +88,11 @@ export async function createCiRepairTaskFromWorkflowRun(
   options: CreateCiRepairTaskOptions
 ): Promise<CreateCiRepairTaskResult> {
   return withRunsteadManagerLock(options, () =>
-    createGovernedCiRepairTaskFromWorkflowRun(options)
+    createCiRepairTaskFromWorkflowRunUnlocked(options)
   );
 }
 
-async function createGovernedCiRepairTaskFromWorkflowRun(
+export async function createCiRepairTaskFromWorkflowRunUnlocked(
   options: CreateCiRepairTaskOptions
 ): Promise<CreateCiRepairTaskResult> {
   const cwd = resolve(options.cwd ?? process.cwd());

@@ -15,7 +15,7 @@ import {
 } from "@runstead/state-sqlite";
 
 import {
-  createCiRepairTaskFromWorkflowRun,
+  createCiRepairTaskFromWorkflowRunUnlocked,
   type CreateCiRepairTaskResult
 } from "./ci-repair.js";
 import {
@@ -61,6 +61,7 @@ import {
   type GitDiffRunner,
   type GitDiffScopeVerification
 } from "./diff-scope-verifier.js";
+import { withRunsteadManagerLock } from "./manager-lock.js";
 import {
   startWrappedWorker,
   type WorkerProcessRunner,
@@ -109,6 +110,19 @@ export async function runCiRepairOrchestrator(
   options: RunCiRepairOrchestratorOptions
 ): Promise<RunCiRepairOrchestratorResult> {
   const cwd = resolve(options.cwd ?? process.cwd());
+
+  return withRunsteadManagerLock({ cwd }, () =>
+    runCiRepairOrchestratorUnlocked({
+      ...options,
+      cwd
+    })
+  );
+}
+
+async function runCiRepairOrchestratorUnlocked(
+  options: RunCiRepairOrchestratorOptions
+): Promise<RunCiRepairOrchestratorResult> {
+  const cwd = resolve(options.cwd ?? process.cwd());
   const root = requireRunsteadRootSync(cwd).root;
   const resumedTask = findPullRequestResumeTask({ cwd, runId: options.runId });
 
@@ -134,7 +148,7 @@ export async function runCiRepairOrchestrator(
   const policy = await loadPolicyProfileFromFile(
     join(root, "policies", "repo-maintenance.yaml")
   );
-  const ciRepair = await createCiRepairTaskFromWorkflowRun({
+  const ciRepair = await createCiRepairTaskFromWorkflowRunUnlocked({
     cwd,
     runId: options.runId,
     verifierCommands: options.verifierCommands,

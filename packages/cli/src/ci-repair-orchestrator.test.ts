@@ -2,7 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import type { Task } from "@runstead/core";
+import { acquireManagerLock, type Task } from "@runstead/core";
 import { openRunsteadDatabase } from "@runstead/state-sqlite";
 import { describe, expect, it } from "vitest";
 
@@ -317,6 +317,45 @@ describe("runCiRepairOrchestrator", () => {
           now: new Date("2026-05-14T12:02:00.000Z")
         })
       ).rejects.toThrow("already has a running CI repair orchestrator");
+
+      expect(gitCalls).toEqual([]);
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("refuses to orchestrate while another manager holds the workspace lock", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-ci-lock-"));
+    const gitCalls: string[][] = [];
+
+    try {
+      const initialized = await initRunstead({
+        cwd: workspace,
+        createDefaultGoal: true
+      });
+      const lock = await acquireManagerLock({
+        lockPath: join(initialized.root, "manager.lock"),
+        ownerId: "test-manager"
+      });
+
+      try {
+        await expect(
+          runCiRepairOrchestrator({
+            cwd: workspace,
+            runId: "123",
+            worker: "codex_cli",
+            base: "main",
+            verifierCommands: [{ name: "test", command: "pnpm test" }],
+            githubRunner: githubRunner([]),
+            gitRunner: gitRunner(gitCalls, { diffNameOnly: "src/fix.ts\n" }),
+            workerRunner: workerRunner([]),
+            verifierRunner: verifierRunner([]),
+            now: new Date("2026-05-14T12:02:00.000Z")
+          })
+        ).rejects.toThrow("Runstead manager lock is already held");
+      } finally {
+        await lock.release();
+      }
 
       expect(gitCalls).toEqual([]);
     } finally {
