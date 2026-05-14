@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { acquireManagerLock, type Task } from "@runstead/core";
+import { openRunsteadDatabase } from "@runstead/state-sqlite";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -62,6 +63,79 @@ describe("runDaemon", () => {
         maxTicks: 0
       })
     ).rejects.toThrow("maxTicks");
+  });
+
+  it("records daemon ticks when audit is enabled", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-daemon-audit-"));
+    const scheduler: DaemonScheduler = (options) =>
+      Promise.resolve({
+        cwd: options.cwd ?? "",
+        stateDb: join(workspace, ".runstead", "state.db"),
+        scheduledTasks: [],
+        skippedTasks: []
+      });
+    const runner: DaemonRunner = (options) =>
+      Promise.resolve({
+        cwd: options.cwd ?? "",
+        ranTask: false,
+        reason: "no_queued_task"
+      });
+
+    try {
+      const initialized = await initRunstead({ cwd: workspace });
+      const result = await runDaemon({
+        cwd: workspace,
+        intervalMs: 0,
+        maxTicks: 1,
+        scheduler,
+        runner,
+        audit: true,
+        now: new Date("2026-05-14T09:00:00.000Z")
+      });
+      const event = result.ticks[0]?.event;
+
+      if (event === undefined) {
+        throw new Error("Expected daemon tick audit event");
+      }
+
+      const database = openRunsteadDatabase(initialized.stateDb);
+
+      try {
+        const row = database
+          .prepare(
+            `
+            SELECT type, aggregate_type, aggregate_id, payload_json, created_at
+            FROM events
+            WHERE event_id = ?
+          `
+          )
+          .get(event.eventId) as {
+          type: string;
+          aggregate_type: string;
+          aggregate_id: string;
+          payload_json: string;
+          created_at: string;
+        };
+
+        expect(row).toMatchObject({
+          type: "daemon.tick",
+          aggregate_type: "daemon",
+          aggregate_id: workspace,
+          created_at: "2026-05-14T09:00:00.000Z"
+        });
+        expect(JSON.parse(row.payload_json)).toMatchObject({
+          tick: 1,
+          scheduledTasks: 0,
+          skippedTasks: 0,
+          ranTask: false,
+          reason: "no_queued_task"
+        });
+      } finally {
+        database.close();
+      }
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
   });
 
   it("includes ci repair orchestration details in the report", () => {

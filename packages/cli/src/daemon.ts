@@ -1,5 +1,8 @@
 import { resolve } from "node:path";
 
+import { createRunsteadId, type JsonObject, type RunsteadEvent } from "@runstead/core";
+import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sqlite";
+
 import {
   runOnce,
   runOnceUnlocked,
@@ -13,6 +16,7 @@ import {
   type ScheduleDueTasksOptions,
   type ScheduleDueTasksResult
 } from "./scheduler.js";
+import { requireRunsteadStateDbSync } from "./runstead-root.js";
 
 export interface RunDaemonOptions {
   cwd?: string;
@@ -21,6 +25,8 @@ export interface RunDaemonOptions {
   runner?: DaemonRunner;
   scheduler?: DaemonScheduler;
   schedulerEnabled?: boolean;
+  audit?: boolean;
+  now?: Date;
 }
 
 export type DaemonRunner = (options: RunOnceOptions) => Promise<RunOnceResult>;
@@ -32,6 +38,7 @@ export interface DaemonTick {
   tick: number;
   scheduled?: ScheduleDueTasksResult;
   result: RunOnceResult;
+  event?: RunsteadEvent;
 }
 
 export interface RunDaemonResult {
@@ -57,6 +64,7 @@ export async function runDaemon(
       runDaemonLoop({
         ...options,
         cwd,
+        audit: options.audit ?? true,
         scheduler: (schedulerOptions) =>
           scheduleDueTasksUnlocked({
             ...schedulerOptions,
@@ -87,11 +95,23 @@ async function runDaemonLoop(options: RunDaemonOptions): Promise<RunDaemonResult
     const scheduled =
       options.schedulerEnabled === false ? undefined : await scheduler({ cwd });
     const result = await runner({ cwd });
+    const tickNumber = ticks.length + 1;
+    const event =
+      options.audit === true
+        ? recordDaemonTickEvent({
+            cwd,
+            tick: tickNumber,
+            result,
+            ...(scheduled === undefined ? {} : { scheduled }),
+            ...(options.now === undefined ? {} : { now: options.now })
+          })
+        : undefined;
 
     ticks.push({
-      tick: ticks.length + 1,
+      tick: tickNumber,
       ...(scheduled === undefined ? {} : { scheduled }),
-      result
+      result,
+      ...(event === undefined ? {} : { event })
     });
 
     if (maxTicks !== undefined && ticks.length >= maxTicks) {
@@ -128,6 +148,75 @@ function assertDaemonTiming(input: {
   ) {
     throw new Error("Daemon maxTicks must be a positive integer");
   }
+}
+
+function recordDaemonTickEvent(input: {
+  cwd: string;
+  tick: number;
+  scheduled?: ScheduleDueTasksResult;
+  result: RunOnceResult;
+  now?: Date;
+}): RunsteadEvent {
+  const stateDb = requireRunsteadStateDbSync(input.cwd).stateDb;
+  const event: RunsteadEvent = {
+    eventId: createRunsteadId("evt"),
+    type: "daemon.tick",
+    aggregateType: "daemon",
+    aggregateId: input.cwd,
+    payload: daemonTickPayload(input),
+    createdAt: (input.now ?? new Date()).toISOString()
+  };
+  const database = openRunsteadDatabase(stateDb);
+
+  try {
+    appendEventAndProject(database, { event });
+  } finally {
+    database.close();
+  }
+
+  return event;
+}
+
+function daemonTickPayload(input: {
+  tick: number;
+  scheduled?: ScheduleDueTasksResult;
+  result: RunOnceResult;
+}): JsonObject {
+  if (!input.result.ranTask) {
+    return {
+      tick: input.tick,
+      scheduledTasks: input.scheduled?.scheduledTasks.length ?? 0,
+      skippedTasks: input.scheduled?.skippedTasks.length ?? 0,
+      ranTask: false,
+      reason: input.result.reason
+    };
+  }
+
+  return {
+    tick: input.tick,
+    scheduledTasks: input.scheduled?.scheduledTasks.length ?? 0,
+    skippedTasks: input.scheduled?.skippedTasks.length ?? 0,
+    ranTask: true,
+    taskId: input.result.task.id,
+    taskType: input.result.task.type,
+    taskStatus: input.result.task.status,
+    ...(input.result.ciRepairResult === undefined
+      ? {}
+      : {
+          ciRepairStatus: input.result.ciRepairResult.status,
+          branchName: input.result.ciRepairResult.branchName,
+          ...(input.result.ciRepairResult.approval === undefined
+            ? {}
+            : { approvalId: input.result.ciRepairResult.approval.id }),
+          ...(input.result.ciRepairResult.pullRequest === undefined
+            ? {}
+            : {
+                pullRequest:
+                  input.result.ciRepairResult.pullRequest.url ??
+                  input.result.ciRepairResult.pullRequest.head
+              })
+        })
+  };
 }
 
 export function formatDaemonReport(result: RunDaemonResult): string {
