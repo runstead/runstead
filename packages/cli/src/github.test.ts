@@ -1,12 +1,16 @@
 import { execFile } from "node:child_process";
-import { mkdtemp, rm } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 
 import { describe, expect, it } from "vitest";
 
-import { inspectGitHubRepository, parseGitHubRemoteUrl } from "./github.js";
+import {
+  DEFAULT_GITHUB_REPOSITORY_GIT_MAX_OUTPUT_BYTES,
+  inspectGitHubRepository,
+  parseGitHubRemoteUrl
+} from "./github.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -58,6 +62,35 @@ describe("inspectGitHubRepository", () => {
         }
       });
     } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("bounds git remote lookup with a timeout", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-github-timeout-"));
+    const bin = join(workspace, "bin");
+    const originalPath = process.env.PATH;
+
+    try {
+      await mkdir(bin, { recursive: true });
+      const fakeGitPath = join(bin, "git");
+      await writeFile(fakeGitPath, "#!/usr/bin/env sh\nsleep 2\n", "utf8");
+      await chmod(fakeGitPath, 0o755);
+      process.env.PATH = `${bin}:${originalPath ?? ""}`;
+
+      await expect(
+        inspectGitHubRepository({
+          cwd: workspace,
+          gitMaxOutputBytes: DEFAULT_GITHUB_REPOSITORY_GIT_MAX_OUTPUT_BYTES,
+          gitTimeoutMs: 25
+        })
+      ).resolves.toEqual({
+        detected: false,
+        cwd: workspace,
+        remote: "origin"
+      });
+    } finally {
+      process.env.PATH = originalPath;
       await rm(workspace, { force: true, recursive: true });
     }
   });

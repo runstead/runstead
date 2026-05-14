@@ -4,6 +4,9 @@ import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
 
+export const DEFAULT_GITHUB_REPOSITORY_GIT_TIMEOUT_MS = 30_000;
+export const DEFAULT_GITHUB_REPOSITORY_GIT_MAX_OUTPUT_BYTES = 1024 * 1024;
+
 export interface GitHubRepositoryRef {
   owner: string;
   repo: string;
@@ -21,6 +24,8 @@ export interface GitHubRepositoryInspection {
 export interface InspectGitHubRepositoryOptions {
   cwd?: string;
   remote?: string;
+  gitTimeoutMs?: number;
+  gitMaxOutputBytes?: number;
 }
 
 export async function inspectGitHubRepository(
@@ -28,7 +33,11 @@ export async function inspectGitHubRepository(
 ): Promise<GitHubRepositoryInspection> {
   const cwd = resolve(options.cwd ?? process.cwd());
   const remote = options.remote ?? "origin";
-  const remoteUrl = await readGitRemoteUrl(cwd, remote);
+  const remoteUrl = await readGitRemoteUrl(cwd, remote, {
+    maxOutputBytes:
+      options.gitMaxOutputBytes ?? DEFAULT_GITHUB_REPOSITORY_GIT_MAX_OUTPUT_BYTES,
+    timeoutMs: options.gitTimeoutMs ?? DEFAULT_GITHUB_REPOSITORY_GIT_TIMEOUT_MS
+  });
 
   if (remoteUrl === undefined) {
     return {
@@ -67,7 +76,8 @@ export function parseGitHubRemoteUrl(
 
 async function readGitRemoteUrl(
   cwd: string,
-  remote: string
+  remote: string,
+  options: { maxOutputBytes: number; timeoutMs: number }
 ): Promise<string | undefined> {
   try {
     const result = await execFileAsync(
@@ -75,6 +85,8 @@ async function readGitRemoteUrl(
       ["config", "--get", `remote.${remote}.url`],
       {
         cwd,
+        maxBuffer: options.maxOutputBytes,
+        timeout: options.timeoutMs,
         windowsHide: true
       }
     );
