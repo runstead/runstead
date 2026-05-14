@@ -70,6 +70,7 @@ export function parsePolicyProfileYaml(input: unknown): PolicyProfile {
   const parsed = PolicyProfileYamlSchema.parse(input);
 
   assertUniquePolicyRuleIds(parsed.rules.map((rule) => rule.id));
+  assertValidCommandMatchers(parsed.rules);
 
   return {
     id: parsed.id,
@@ -105,6 +106,23 @@ export function parsePolicyProfileYaml(input: unknown): PolicyProfile {
   };
 }
 
+function assertValidCommandMatchers(
+  rules: z.infer<typeof PolicyProfileYamlSchema>["rules"]
+): void {
+  for (const rule of rules) {
+    for (const pattern of rule.when.command?.matches_any ?? []) {
+      try {
+        new RegExp(pattern);
+      } catch (error) {
+        throw new Error(
+          `Invalid command matcher regex in policy rule ${rule.id}: ${pattern} (${errorMessage(error)})`,
+          { cause: error }
+        );
+      }
+    }
+  }
+}
+
 function assertUniquePolicyRuleIds(ruleIds: string[]): void {
   const seen = new Set<string>();
 
@@ -115,6 +133,10 @@ function assertUniquePolicyRuleIds(ruleIds: string[]): void {
 
     seen.add(ruleId);
   }
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 export function parseActionEnvelopeYaml(input: unknown): ActionEnvelope {

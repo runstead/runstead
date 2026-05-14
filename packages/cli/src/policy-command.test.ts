@@ -74,4 +74,26 @@ context:
       })
     ).toThrow("Duplicate policy rule id: repeat");
   });
+
+  it("rejects invalid command matcher regexes at load time", () => {
+    expect(() =>
+      parsePolicyProfileYaml({
+        id: "policy_invalid_regex",
+        version: 1,
+        rules: [
+          {
+            id: "bad_command_matcher",
+            when: {
+              action_type: "shell.exec",
+              command: {
+                matches_any: ["["]
+              }
+            },
+            decision: "allow",
+            risk: "low"
+          }
+        ]
+      })
+    ).toThrow("Invalid command matcher regex in policy rule bad_command_matcher");
+  });
 });
