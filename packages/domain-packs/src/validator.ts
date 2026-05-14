@@ -1,6 +1,9 @@
 import { constants } from "node:fs";
-import { access, readdir } from "node:fs/promises";
+import { access, readdir, readFile } from "node:fs/promises";
 import { basename, join, resolve, sep } from "node:path";
+
+import { parse as parseYaml } from "yaml";
+import { z } from "zod";
 
 import type { DomainPack } from "./domain-pack.js";
 import { loadDomainPackFromFile } from "./domain-pack.js";
@@ -26,6 +29,27 @@ export interface DomainPackValidationResult {
   goalTemplates: GoalTemplate[];
   taskTypes: TaskType[];
 }
+
+const DomainPackPolicyDecisionSchema = z.enum(["allow", "deny", "require_approval"]);
+const DomainPackPolicyRiskSchema = z.enum(["low", "medium", "high", "critical"]);
+const DomainPackPolicyRuleSchema = z
+  .object({
+    id: z.string().min(1),
+    when: z.record(z.string(), z.unknown()).optional(),
+    decision: DomainPackPolicyDecisionSchema,
+    risk: DomainPackPolicyRiskSchema.optional(),
+    obligations: z.array(z.string().min(1)).optional()
+  })
+  .passthrough();
+const DomainPackPolicyYamlSchema = z
+  .object({
+    id: z.string().min(1),
+    version: z.number().int().positive(),
+    default_decision: DomainPackPolicyDecisionSchema.optional(),
+    default_risk: DomainPackPolicyRiskSchema.optional(),
+    rules: z.array(DomainPackPolicyRuleSchema)
+  })
+  .passthrough();
 
 export async function validateDomainPackDir(
   root: string
@@ -132,11 +156,10 @@ export async function validateDomainPackDir(
       issues
     });
 
-    await assertFileExists({
+    await assertDefaultPolicy({
       path: join(resolvedRoot, domain.defaultPolicy),
       root: resolvedRoot,
-      code: "default_policy_missing",
-      message: `Default policy file is missing: ${domain.defaultPolicy}`,
+      referencedPath: domain.defaultPolicy,
       issues
     });
   }
@@ -271,11 +294,10 @@ function referencePath(input: {
   return join(input.root, input.directory, `${input.id}.yaml`);
 }
 
-async function assertFileExists(input: {
+async function assertDefaultPolicy(input: {
   path: string;
   root: string;
-  code: string;
-  message: string;
+  referencedPath: string;
   issues: DomainPackValidationIssue[];
 }): Promise<void> {
   const resolvedPath = resolve(input.path);
@@ -293,9 +315,21 @@ async function assertFileExists(input: {
   if (!(await fileExists(resolvedPath))) {
     input.issues.push({
       severity: "error",
-      code: input.code,
-      message: input.message,
+      code: "default_policy_missing",
+      message: `Default policy file is missing: ${input.referencedPath}`,
       path: resolvedPath
+    });
+    return;
+  }
+
+  try {
+    DomainPackPolicyYamlSchema.parse(parseYaml(await readFile(resolvedPath, "utf8")));
+  } catch (error) {
+    input.issues.push({
+      severity: "error",
+      code: "default_policy_invalid",
+      message: errorMessage(error),
+      path: relativeToRoot(input.root, resolvedPath)
     });
   }
 }
