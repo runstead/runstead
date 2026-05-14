@@ -6,6 +6,7 @@ import type { Goal, Task } from "@runstead/core";
 import { describe, expect, it } from "vitest";
 
 import {
+  buildWrappedWorkerGovernanceManifest,
   buildWrappedWorkerPrompt,
   startWrappedWorker,
   workerCommand,
@@ -63,10 +64,41 @@ describe("buildWrappedWorkerPrompt", () => {
     expect(prompt).toContain("- src/**");
     expect(prompt).toContain("- modify .github/workflows/**");
     expect(prompt).toContain("- command:test");
+    expect(prompt).toContain("Runstead governance manifest:");
+    expect(prompt).toContain('"enforcement": "policy_enforced"');
+    expect(prompt).toContain('"allowedScope":');
     expect(prompt).toContain("repo-maintenance policy");
     expect(prompt).toContain("Completion requires Runstead verifier success.");
     expect(prompt).toContain('"needs_approval": false');
     expect(prompt).toContain("- Keep the diff small.");
+  });
+
+  it("builds a machine-readable governance manifest", () => {
+    expect(
+      buildWrappedWorkerGovernanceManifest({
+        worker: "codex_cli",
+        goal,
+        task,
+        workspace: "/repo",
+        evidenceDir: "/repo/.runstead/evidence",
+        allowedScope: ["src/**"],
+        deniedActions: [".env"],
+        approvalRequired: ["external writes"],
+        verifierContract: ["test: pnpm test"]
+      })
+    ).toEqual({
+      worker: "codex_cli",
+      taskId: "task_ci_001",
+      goalId: "goal_repo_001",
+      domain: "repo-maintenance",
+      workspace: "/repo",
+      evidenceDir: "/repo/.runstead/evidence",
+      enforcement: "policy_enforced",
+      allowedScope: ["src/**"],
+      deniedActions: [".env"],
+      approvalRequired: ["external writes"],
+      verifierContract: ["test: pnpm test"]
+    });
   });
 });
 
@@ -114,6 +146,11 @@ describe("startWrappedWorker", () => {
     });
     expect(result.args[0]).toBe("exec");
     expect(result.args[1]).toBe(result.prompt);
+    expect(result.governance).toMatchObject({
+      worker: "codex_cli",
+      taskId: "task_ci_001",
+      enforcement: "policy_enforced"
+    });
     expect(calls).toEqual([
       {
         command: "codex",

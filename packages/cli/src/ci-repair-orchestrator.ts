@@ -1572,6 +1572,7 @@ function workerOutput(workerResult: WrappedWorkerRunResult): JsonObject {
     worker: workerResult.worker,
     command: workerResult.command,
     args: workerResult.args,
+    governance: workerResult.governance,
     exitCode: workerResult.exitCode,
     stdout: workerResult.stdout,
     stderr: workerResult.stderr,

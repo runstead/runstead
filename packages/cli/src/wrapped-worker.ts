@@ -28,6 +28,20 @@ export interface WrappedWorkerPromptInput {
   instructions?: string[];
 }
 
+export interface WrappedWorkerGovernanceManifest {
+  worker: WrappedWorkerKind;
+  taskId: string;
+  goalId: string;
+  domain: string;
+  workspace: string;
+  evidenceDir: string;
+  enforcement: "policy_enforced";
+  allowedScope: string[];
+  deniedActions: string[];
+  approvalRequired: string[];
+  verifierContract: string[];
+}
+
 export interface WrappedWorkerRunOptions extends WrappedWorkerPromptInput {
   runner?: WorkerProcessRunner;
   checkpointDir?: string;
@@ -53,10 +67,13 @@ export interface WrappedWorkerRunResult extends WorkerProcessResult {
   prompt: string;
   command: string;
   args: string[];
+  governance: WrappedWorkerGovernanceManifest;
   checkpointBefore?: WorkspaceCheckpoint;
 }
 
 export function buildWrappedWorkerPrompt(input: WrappedWorkerPromptInput): string {
+  const governance = buildWrappedWorkerGovernanceManifest(input);
+
   return [
     "You are a Runstead worker.",
     "",
@@ -76,16 +93,19 @@ export function buildWrappedWorkerPrompt(input: WrappedWorkerPromptInput): strin
     input.evidenceDir,
     "",
     "Allowed scope:",
-    bulletList(input.allowedScope ?? ["repository working tree"]),
+    bulletList(governance.allowedScope),
     "",
     "Denied actions:",
-    bulletList(input.deniedActions ?? ["modify protected paths", "access secrets"]),
+    bulletList(governance.deniedActions),
     "",
     "Approval required for:",
-    bulletList(input.approvalRequired ?? ["dependency changes", "external writes"]),
+    bulletList(governance.approvalRequired),
     "",
     "Verifier contract:",
-    bulletList(input.verifierContract ?? input.task.verifiers),
+    bulletList(governance.verifierContract),
+    "",
+    "Runstead governance manifest:",
+    JSON.stringify(governance, null, 2),
     "",
     ...(input.policySummary === undefined
       ? []
@@ -117,10 +137,32 @@ export function buildWrappedWorkerPrompt(input: WrappedWorkerPromptInput): strin
   ].join("\n");
 }
 
+export function buildWrappedWorkerGovernanceManifest(
+  input: WrappedWorkerPromptInput
+): WrappedWorkerGovernanceManifest {
+  return {
+    worker: input.worker,
+    taskId: input.task.id,
+    goalId: input.goal.id,
+    domain: input.goal.domain,
+    workspace: input.workspace,
+    evidenceDir: input.evidenceDir,
+    enforcement: "policy_enforced",
+    allowedScope: input.allowedScope ?? ["repository working tree"],
+    deniedActions: input.deniedActions ?? ["modify protected paths", "access secrets"],
+    approvalRequired: input.approvalRequired ?? [
+      "dependency changes",
+      "external writes"
+    ],
+    verifierContract: input.verifierContract ?? input.task.verifiers
+  };
+}
+
 export async function startWrappedWorker(
   options: WrappedWorkerRunOptions
 ): Promise<WrappedWorkerRunResult> {
   const prompt = buildWrappedWorkerPrompt(options);
+  const governance = buildWrappedWorkerGovernanceManifest(options);
   const command = workerCommand(options.worker, prompt);
   const checkpointBefore =
     options.checkpointBefore ??
@@ -147,6 +189,7 @@ export async function startWrappedWorker(
     prompt,
     command: command.command,
     args: command.args,
+    governance,
     ...(checkpointBefore === undefined ? {} : { checkpointBefore }),
     stdout: result.stdout,
     stderr: result.stderr,
