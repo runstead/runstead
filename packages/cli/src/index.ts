@@ -301,7 +301,8 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
 
         if (options.status === true) {
           const status = await readDaemonStatus({
-            ...(options.cwd === undefined ? {} : { cwd: options.cwd })
+            ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+            staleAfterMs: parseRequiredInteger(options.intervalMs, "--interval-ms") * 2
           });
           console.log(formatDaemonStatus(status));
           return;

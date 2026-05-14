@@ -65,6 +65,8 @@ export interface DaemonHeartbeatStatus {
   taskType?: string;
   taskStatus?: string;
   eventId?: string;
+  ageMs?: number;
+  stale?: boolean;
 }
 
 export async function runDaemon(
@@ -170,11 +172,31 @@ async function runDaemonLoop(options: RunDaemonOptions): Promise<RunDaemonResult
 export async function readDaemonStatus(
   options: {
     cwd?: string;
+    staleAfterMs?: number;
+    now?: Date;
   } = {}
 ): Promise<DaemonHeartbeatStatus> {
   const path = await daemonStatusPath(resolve(options.cwd ?? process.cwd()));
+  const status = JSON.parse(await readFile(path, "utf8")) as DaemonHeartbeatStatus;
 
-  return JSON.parse(await readFile(path, "utf8")) as DaemonHeartbeatStatus;
+  if (options.staleAfterMs === undefined) {
+    return status;
+  }
+
+  if (!Number.isFinite(options.staleAfterMs) || options.staleAfterMs < 0) {
+    throw new Error("Daemon staleAfterMs must be a non-negative number");
+  }
+
+  const ageMs = Math.max(
+    0,
+    (options.now ?? new Date()).getTime() - Date.parse(status.updatedAt)
+  );
+
+  return {
+    ...status,
+    ageMs,
+    stale: ageMs > options.staleAfterMs
+  };
 }
 
 export function formatDaemonStatus(status: DaemonHeartbeatStatus): string {
@@ -185,6 +207,13 @@ export function formatDaemonStatus(status: DaemonHeartbeatStatus): string {
     `Pid: ${status.pid}`,
     `Tick: ${status.tick}`,
     `Interval: ${status.intervalMs}ms`,
+    ...(status.stale === undefined
+      ? []
+      : [
+          `Health: ${status.stale ? "stale" : "healthy"}${
+            status.ageMs === undefined ? "" : ` age=${status.ageMs}ms`
+          }`
+        ]),
     `Scheduled: ${status.scheduledTasks}`,
     `Skipped: ${status.skippedTasks}`,
     status.ranTask

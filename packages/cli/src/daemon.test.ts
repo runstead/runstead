@@ -188,6 +188,50 @@ describe("runDaemon", () => {
     }
   });
 
+  it("marks stale daemon heartbeat status", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-daemon-stale-"));
+    const scheduler: DaemonScheduler = (options) =>
+      Promise.resolve({
+        cwd: options.cwd ?? "",
+        stateDb: join(workspace, ".runstead", "state.db"),
+        scheduledTasks: [],
+        skippedTasks: []
+      });
+    const runner: DaemonRunner = (options) =>
+      Promise.resolve({
+        cwd: options.cwd ?? "",
+        ranTask: false,
+        reason: "no_queued_task"
+      });
+
+    try {
+      await initRunstead({ cwd: workspace });
+      await runDaemon({
+        cwd: workspace,
+        intervalMs: 0,
+        maxTicks: 1,
+        scheduler,
+        runner,
+        heartbeat: true,
+        now: new Date("2026-05-14T09:10:00.000Z")
+      });
+
+      const status = await readDaemonStatus({
+        cwd: workspace,
+        staleAfterMs: 1_000,
+        now: new Date("2026-05-14T09:10:02.000Z")
+      });
+
+      expect(status).toMatchObject({
+        stale: true,
+        ageMs: 2_000
+      });
+      expect(formatDaemonStatus(status)).toContain("Health: stale age=2000ms");
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
   it("includes ci repair orchestration details in the report", () => {
     const report = formatDaemonReport({
       cwd: "/repo",

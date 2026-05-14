@@ -21,6 +21,9 @@ Inspect the last heartbeat:
 runstead daemon --status
 ```
 
+Status output marks the heartbeat stale when its timestamp is older than twice
+the `--interval-ms` value used for the status command.
+
 `runstead dashboard build` also embeds the latest heartbeat in
 `dashboard/state.json` and the generated HTML dashboard.
 
