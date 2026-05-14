@@ -68,6 +68,7 @@ describe("runCiRepairOrchestrator", () => {
       );
       expect(verifierCalls).toHaveLength(1);
       expect(verifierCalls[0]?.taskId).toBe(first.ciRepair.task.id);
+      expect(verifierCalls[0]?.claim).toBe(false);
       expect(workerCalls[0]).toContain("Repair GitHub Actions run 123.");
       expect(formatCiRepairOrchestratorReport(first)).toContain(
         `waiting approval ${first.approval?.id}`
@@ -126,14 +127,30 @@ describe("runCiRepairOrchestrator", () => {
             : undefined
         );
 
+      const taskClaimedIndex = auditLog.entries.findIndex(
+        (entry) => entry.type === "task.claimed"
+      );
+      const branchCreateRequestIndex = auditLog.entries.findIndex(
+        (entry) =>
+          entry.type === "tool_call.requested" &&
+          typeof entry.payload === "object" &&
+          entry.payload !== null &&
+          "actionType" in entry.payload &&
+          entry.payload.actionType === "git.branch.create"
+      );
+
       expect(auditLog.entries.map((entry) => entry.type)).toEqual(
         expect.arrayContaining([
+          "task.claimed",
           "worker_run.started",
           "tool_call.requested",
           "policy.decision_recorded",
           "approval.requested"
         ])
       );
+      expect(taskClaimedIndex).toBeGreaterThanOrEqual(0);
+      expect(branchCreateRequestIndex).toBeGreaterThanOrEqual(0);
+      expect(taskClaimedIndex).toBeLessThan(branchCreateRequestIndex);
       expect(requestedActions).toEqual(
         expect.arrayContaining([
           "github.run.read",

@@ -25,7 +25,7 @@ import {
   startToolCall,
   startWorkerRun
 } from "./runtime-audit.js";
-import { claimTask } from "./tasks.js";
+import { claimTask, showTask } from "./tasks.js";
 import { preflightToolAction } from "./tool-proxy.js";
 import {
   storeCommandVerifierEvidence,
@@ -38,6 +38,7 @@ export interface RunTaskVerifiersOptions {
   cwd?: string;
   taskId: string;
   timeoutMs?: number;
+  claim?: boolean;
   now?: Date;
 }
 
@@ -77,11 +78,12 @@ export async function runTaskVerifiersUnlocked(
   const stateDb = resolvedState.stateDb;
   const createdAt = (options.now ?? new Date()).toISOString();
   const policy = await loadVerifierPolicy(root);
-  const task = claimTask({
+  const task = loadVerifierTask({
     cwd,
-    id: options.taskId,
+    taskId: options.taskId,
+    ...(options.claim === undefined ? {} : { claim: options.claim }),
     ...(options.now === undefined ? {} : { now: options.now })
-  }).task;
+  });
   const runningTask: Task = {
     ...task,
     status: "running",
@@ -379,6 +381,31 @@ export async function runTaskVerifiersUnlocked(
   } finally {
     database.close();
   }
+}
+
+function loadVerifierTask(input: {
+  cwd: string;
+  taskId: string;
+  claim?: boolean;
+  now?: Date;
+}): Task {
+  if (input.claim === false) {
+    const task = showTask({ cwd: input.cwd, id: input.taskId }).task;
+
+    if (task.status !== "claimed" && task.status !== "running") {
+      throw new Error(
+        `Task ${input.taskId} is ${task.status}, expected claimed or running`
+      );
+    }
+
+    return task;
+  }
+
+  return claimTask({
+    cwd: input.cwd,
+    id: input.taskId,
+    ...(input.now === undefined ? {} : { now: input.now })
+  }).task;
 }
 
 function verifierCommandsFromTask(task: Task): CommandVerifierInput[] {

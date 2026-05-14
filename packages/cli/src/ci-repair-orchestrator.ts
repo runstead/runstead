@@ -49,7 +49,7 @@ import { loadPolicyProfileFromFile } from "./policy-loader.js";
 import type { ActionEnvelope, PolicyProfile } from "./policy.js";
 import { requireRunsteadRootSync } from "./runstead-root.js";
 import { finishWorkerRun, startWorkerRun } from "./runtime-audit.js";
-import { listTasks } from "./tasks.js";
+import { claimTask, listTasks } from "./tasks.js";
 import {
   runTaskVerifiersUnlocked,
   type RunTaskVerifiersOptions,
@@ -148,7 +148,7 @@ export async function runCiRepairOrchestratorUnlocked(
   const policy = await loadPolicyProfileFromFile(
     join(root, "policies", "repo-maintenance.yaml")
   );
-  const ciRepair = await createCiRepairTaskFromWorkflowRunUnlocked({
+  const queuedCiRepair = await createCiRepairTaskFromWorkflowRunUnlocked({
     cwd,
     runId: options.runId,
     verifierCommands: options.verifierCommands,
@@ -157,12 +157,20 @@ export async function runCiRepairOrchestratorUnlocked(
     ...(options.now === undefined ? {} : { now: options.now })
   });
 
-  if (ciRepair.task.status !== "queued") {
+  if (queuedCiRepair.task.status !== "queued") {
     throw new Error(
-      `CI repair task ${ciRepair.task.id} is ${ciRepair.task.status}, expected queued`
+      `CI repair task ${queuedCiRepair.task.id} is ${queuedCiRepair.task.status}, expected queued`
     );
   }
 
+  const ciRepair: CreateCiRepairTaskResult = {
+    ...queuedCiRepair,
+    task: claimTask({
+      cwd,
+      id: queuedCiRepair.task.id,
+      ...(options.now === undefined ? {} : { now: options.now })
+    }).task
+  };
   const goal = showGoal({ cwd, id: ciRepair.task.goalId }).goal;
   const base = options.base ?? ciRepair.workflowRun.headBranch ?? "main";
   const branchName = buildRunsteadBranchName({
@@ -405,6 +413,7 @@ export async function runCiRepairOrchestratorUnlocked(
         {
           cwd,
           taskId: ciRepair.task.id,
+          claim: false,
           ...(options.now === undefined ? {} : { now: options.now })
         }
       );
