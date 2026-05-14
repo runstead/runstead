@@ -11,6 +11,7 @@ verifier and CI repair flows:
 - approval request model and reusable approval grants
 - tool contract registry
 - shell verifier guard
+- governed filesystem read/write proxy
 - governed GitHub, git, checkpoint, and wrapped-worker actions in CI repair
 - ordered audit timelines for replaying governed task lifecycles
 
