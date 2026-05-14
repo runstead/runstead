@@ -30,6 +30,7 @@ describe("doctorRunstead", () => {
           "rbac-policy",
           "team-policy",
           "github-app-config",
+          "daemon-dir",
           "state-db"
         ])
       );
@@ -128,6 +129,29 @@ describe("doctorRunstead", () => {
       expect(result.checks.find((check) => check.id === "state-db")).toMatchObject({
         status: "fail",
         message: "missing tables: tool_calls"
+      });
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("fails when the daemon status directory is missing", async () => {
+    const workspace = join(tmpdir(), `runstead-doctor-daemon-${process.pid}`);
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await mkdir(workspace, { recursive: true });
+      await initRunstead({ cwd: workspace });
+      await rm(join(workspace, ".runstead", "daemon"), {
+        force: true,
+        recursive: true
+      });
+
+      const result = await doctorRunstead({ cwd: workspace });
+
+      expect(result.ok).toBe(false);
+      expect(result.checks.find((check) => check.id === "daemon-dir")).toMatchObject({
+        status: "fail"
       });
     } finally {
       await rm(workspace, { force: true, recursive: true });

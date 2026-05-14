@@ -73,6 +73,9 @@ export async function doctorRunstead(
     )
   );
   checks.push(
+    await checkDirectory("daemon-dir", "daemon status directory", join(root, "daemon"))
+  );
+  checks.push(
     await checkDirectory("reports-dir", "reports directory", join(root, "reports"))
   );
   checks.push(await checkStateDatabase(join(root, "state.db")));
