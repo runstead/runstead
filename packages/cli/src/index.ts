@@ -140,7 +140,9 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
 
   checkpoint
     .command("restore")
-    .description("Restore workspace files from a checkpoint.")
+    .description(
+      "Restore workspace files from a checkpoint. Unmanaged helper; governed restores run through CI repair rollback."
+    )
     .argument("<id>", "Checkpoint id")
     .option("--cwd <path>", "Workspace directory")
     .option(
@@ -1508,7 +1510,9 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
 
   verifier
     .command("diff-scope")
-    .description("Verify changed files stay within the configured diff scope.")
+    .description(
+      "Verify changed files stay within the configured diff scope. Unmanaged helper; governed checks run through CI repair."
+    )
     .option("--cwd <path>", "Workspace directory")
     .option("--base <ref>", "Base ref")
     .option("--head <ref>", "Head ref", "HEAD")
@@ -1692,7 +1696,9 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
 
   githubRun
     .command("status")
-    .description("Show GitHub workflow run status.")
+    .description(
+      "Show GitHub workflow run status. Unmanaged helper; governed reads run through CI repair intake."
+    )
     .argument("<run-id>", "GitHub Actions workflow run id")
     .option("--cwd <path>", "Workspace directory")
     .option("--github-app", "Use configured GitHub App installation auth")
@@ -1730,7 +1736,9 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
 
   githubRun
     .command("logs")
-    .description("Print GitHub workflow run logs.")
+    .description(
+      "Print GitHub workflow run logs. Unmanaged helper; governed reads run through CI repair intake."
+    )
     .argument("<run-id>", "GitHub Actions workflow run id")
     .option("--cwd <path>", "Workspace directory")
     .option("--github-app", "Use configured GitHub App installation auth")
@@ -1868,7 +1876,9 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
 
   githubPr
     .command("create")
-    .description("Create a GitHub pull request with Runstead evidence.")
+    .description(
+      "Create a GitHub pull request with Runstead evidence. Unmanaged helper; governed PR creation runs through CI repair."
+    )
     .requiredOption("--title <title>", "Pull request title")
     .requiredOption("--base <ref>", "Base branch")
     .requiredOption("--head <ref>", "Head branch")
@@ -1927,7 +1937,9 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
 
   gitBranch
     .command("create")
-    .description("Create a git branch without overwriting existing branches.")
+    .description(
+      "Create a git branch without overwriting existing branches. Unmanaged helper; governed branch creation runs through CI repair."
+    )
     .argument("<branch-name>", "Branch name")
     .option("--cwd <path>", "Workspace directory")
     .option("--base <ref>", "Base ref")

@@ -243,4 +243,29 @@ describe("cli entrypoint", () => {
 
     expect(create?.options.map((option) => option.long)).toContain("--actor");
   });
+
+  it("labels ad-hoc side-effect helpers as unmanaged", () => {
+    const program = createProgram();
+    const checkpoint = program.commands.find(
+      (command) => command.name() === "checkpoint"
+    );
+    const verifier = program.commands.find((command) => command.name() === "verifier");
+    const github = program.commands.find((command) => command.name() === "github");
+    const git = program.commands.find((command) => command.name() === "git");
+    const githubRun = github?.commands.find((command) => command.name() === "run");
+    const githubPr = github?.commands.find((command) => command.name() === "pr");
+    const gitBranch = git?.commands.find((command) => command.name() === "branch");
+    const unmanagedCommands = [
+      checkpoint?.commands.find((command) => command.name() === "restore"),
+      verifier?.commands.find((command) => command.name() === "diff-scope"),
+      githubRun?.commands.find((command) => command.name() === "status"),
+      githubRun?.commands.find((command) => command.name() === "logs"),
+      githubPr?.commands.find((command) => command.name() === "create"),
+      gitBranch?.commands.find((command) => command.name() === "create")
+    ];
+
+    for (const command of unmanagedCommands) {
+      expect(command?.description()).toContain("Unmanaged helper");
+    }
+  });
 });
