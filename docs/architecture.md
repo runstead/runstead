@@ -3,15 +3,18 @@
 Runstead Core is domain-agnostic. It owns durable goals, tasks, events, and the
 state-machine contracts that let work be resumed, verified, and audited.
 
-The initial implementation keeps the package graph intentionally small:
+The current implementation keeps the package graph intentionally small:
 
 - `@runstead/core`: shared schemas, IDs, and control-plane contracts
 - `@runstead/state-sqlite`: SQLite schema and state-store adapter
 - `@runstead/domain-packs`: built-in `repo-maintenance` pack and validation
+- `@runstead/skills`: skill package contracts, candidate scaffolding, and tests
 - `@runstead/cli`: local command surface
 - `@runstead/testkit`: fixture and temporary workspace helpers
 
-The next package split should happen when M1 starts:
+Policy, tools, verifiers, evidence, and workers have concrete M1/M2
+implementations inside `@runstead/cli` while their interfaces harden. Split them
+out only when reuse across runtimes requires it:
 
 - `@runstead/policy`
 - `@runstead/tools`
