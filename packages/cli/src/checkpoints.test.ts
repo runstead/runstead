@@ -6,6 +6,8 @@ import { openRunsteadDatabase } from "@runstead/state-sqlite";
 import { describe, expect, it } from "vitest";
 
 import {
+  DEFAULT_CHECKPOINT_GIT_MAX_OUTPUT_BYTES,
+  DEFAULT_CHECKPOINT_GIT_TIMEOUT_MS,
   createWorkspaceCheckpoint,
   recordWorkspaceCheckpointRestoreEvent,
   restoreWorkspaceCheckpoint,
@@ -16,9 +18,14 @@ describe("createWorkspaceCheckpoint", () => {
   it("captures tracked diff metadata and untracked file snapshots", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "runstead-checkpoint-"));
     const checkpointDir = join(workspace, ".runstead", "checkpoints");
-    const calls: string[][] = [];
-    const runner: GitCheckpointRunner = (args) => {
-      calls.push(args);
+    const calls: {
+      args: string[];
+      cwd: string;
+      maxOutputBytes: number;
+      timeoutMs: number;
+    }[] = [];
+    const runner: GitCheckpointRunner = (args, options) => {
+      calls.push({ args, ...options });
 
       switch (args.join(" ")) {
         case "rev-parse HEAD":
@@ -80,12 +87,12 @@ describe("createWorkspaceCheckpoint", () => {
       await expect(
         access(join(checkpoint.untrackedDir, "node_modules"))
       ).rejects.toThrow();
-      expect(calls).toContainEqual([
-        "ls-files",
-        "--others",
-        "--exclude-standard",
-        "-z"
-      ]);
+      expect(calls).toContainEqual({
+        args: ["ls-files", "--others", "--exclude-standard", "-z"],
+        cwd: workspace,
+        maxOutputBytes: DEFAULT_CHECKPOINT_GIT_MAX_OUTPUT_BYTES,
+        timeoutMs: DEFAULT_CHECKPOINT_GIT_TIMEOUT_MS
+      });
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }

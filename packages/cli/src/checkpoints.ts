@@ -8,6 +8,9 @@ import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sql
 
 const execFileAsync = promisify(execFile);
 
+export const DEFAULT_CHECKPOINT_GIT_TIMEOUT_MS = 60_000;
+export const DEFAULT_CHECKPOINT_GIT_MAX_OUTPUT_BYTES = 1024 * 1024 * 20;
+
 export interface WorkspaceCheckpoint {
   id: string;
   workspace: string;
@@ -26,11 +29,13 @@ export interface CreateWorkspaceCheckpointOptions {
   checkpointDir: string;
   now?: Date;
   runner?: GitCheckpointRunner;
+  gitTimeoutMs?: number;
+  gitMaxOutputBytes?: number;
 }
 
 export type GitCheckpointRunner = (
   args: string[],
-  options: { cwd: string }
+  options: { cwd: string; maxOutputBytes: number; timeoutMs: number }
 ) => Promise<{ stdout: string; stderr: string; exitCode: number }>;
 
 export interface ReadWorkspaceCheckpointOptions {
@@ -42,6 +47,8 @@ export interface ReadWorkspaceCheckpointOptions {
 export interface RestoreWorkspaceCheckpointOptions extends ReadWorkspaceCheckpointOptions {
   runner?: GitCheckpointRunner;
   allowHeadMismatch?: boolean;
+  gitTimeoutMs?: number;
+  gitMaxOutputBytes?: number;
 }
 
 export interface RestoreWorkspaceCheckpointResult {
@@ -71,12 +78,14 @@ export async function createWorkspaceCheckpoint(
   const patchPath = join(checkpointDir, `${id}.patch`);
   const untrackedDir = join(checkpointDir, `${id}.untracked`);
   const runner = options.runner ?? runGit;
+  const gitOptions = checkpointGitOptions(options);
   const [head, status, patch, untracked] = await Promise.all([
-    runner(["rev-parse", "HEAD"], { cwd: workspace }),
-    runner(["status", "--short"], { cwd: workspace }),
-    runner(["diff", "--binary", "HEAD"], { cwd: workspace }),
+    runner(["rev-parse", "HEAD"], { cwd: workspace, ...gitOptions }),
+    runner(["status", "--short"], { cwd: workspace, ...gitOptions }),
+    runner(["diff", "--binary", "HEAD"], { cwd: workspace, ...gitOptions }),
     runner(["ls-files", "--others", "--exclude-standard", "-z"], {
-      cwd: workspace
+      cwd: workspace,
+      ...gitOptions
     })
   ]);
   const untrackedFiles =
@@ -171,12 +180,16 @@ export async function restoreWorkspaceCheckpoint(
   const workspace = resolve(options.workspace);
   const checkpoint = await readWorkspaceCheckpoint(options);
   const runner = options.runner ?? runGit;
+  const gitOptions = checkpointGitOptions(options);
 
   if (checkpoint.head === undefined || checkpoint.head.length === 0) {
     throw new Error(`Checkpoint ${checkpoint.id} does not include a git HEAD`);
   }
 
-  const currentHead = await runner(["rev-parse", "HEAD"], { cwd: workspace });
+  const currentHead = await runner(["rev-parse", "HEAD"], {
+    cwd: workspace,
+    ...gitOptions
+  });
   if (currentHead.exitCode !== 0) {
     throw new Error(
       `git rev-parse HEAD failed with exit ${currentHead.exitCode}: ${currentHead.stderr}`
@@ -191,7 +204,8 @@ export async function restoreWorkspaceCheckpoint(
   }
 
   const reset = await runner(["reset", "--hard", checkpoint.head], {
-    cwd: workspace
+    cwd: workspace,
+    ...gitOptions
   });
   if (reset.exitCode !== 0) {
     throw new Error(
@@ -200,7 +214,8 @@ export async function restoreWorkspaceCheckpoint(
   }
 
   const untracked = await runner(["ls-files", "--others", "--exclude-standard", "-z"], {
-    cwd: workspace
+    cwd: workspace,
+    ...gitOptions
   });
   if (untracked.exitCode !== 0) {
     throw new Error(
@@ -228,7 +243,8 @@ export async function restoreWorkspaceCheckpoint(
 
   if (restoredTrackedPatch) {
     const apply = await runner(["apply", "--whitespace=nowarn", checkpoint.patchPath], {
-      cwd: workspace
+      cwd: workspace,
+      ...gitOptions
     });
     if (apply.exitCode !== 0) {
       throw new Error(`git apply failed with exit ${apply.exitCode}: ${apply.stderr}`);
@@ -288,12 +304,13 @@ export function recordWorkspaceCheckpointRestoreEvent(
 
 async function runGit(
   args: string[],
-  options: { cwd: string }
+  options: { cwd: string; maxOutputBytes: number; timeoutMs: number }
 ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
   try {
     const result = await execFileAsync("git", args, {
       cwd: options.cwd,
-      maxBuffer: 1024 * 1024 * 20,
+      maxBuffer: options.maxOutputBytes,
+      timeout: options.timeoutMs,
       windowsHide: true
     });
 
@@ -309,6 +326,17 @@ async function runGit(
       exitCode: commandExitCode(error)
     };
   }
+}
+
+function checkpointGitOptions(options: {
+  gitMaxOutputBytes?: number;
+  gitTimeoutMs?: number;
+}): { maxOutputBytes: number; timeoutMs: number } {
+  return {
+    maxOutputBytes:
+      options.gitMaxOutputBytes ?? DEFAULT_CHECKPOINT_GIT_MAX_OUTPUT_BYTES,
+    timeoutMs: options.gitTimeoutMs ?? DEFAULT_CHECKPOINT_GIT_TIMEOUT_MS
+  };
 }
 
 function commandExitCode(error: unknown): number {
