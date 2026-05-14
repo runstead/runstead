@@ -1143,6 +1143,27 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
       }
     });
 
+  skill
+    .command("promote")
+    .description("Promote a candidate skill package after validation and tests pass.")
+    .argument("<path>", "Skill package directory")
+    .option("--promoted-by <id>", "Promoter identity", "local-admin")
+    .action(async (path: string, options: { promotedBy: string }) => {
+      const {
+        formatSkillTestReport,
+        formatSkillValidationReport,
+        promoteSkillPackage
+      } = await import("@runstead/skills");
+      const result = await promoteSkillPackage({
+        root: path,
+        promotedBy: options.promotedBy
+      });
+
+      console.log(`Promoted skill package: ${result.root}`);
+      console.log(formatSkillTestReport(result.test));
+      console.log(formatSkillValidationReport(result.validation));
+    });
+
   const repo = program.command("repo").description("Manage registered repositories.");
 
   repo

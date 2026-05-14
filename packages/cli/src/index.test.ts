@@ -238,6 +238,19 @@ describe("cli entrypoint", () => {
     }
   });
 
+  it("exposes skill promotion", () => {
+    const skill = createProgram().commands.find(
+      (command) => command.name() === "skill"
+    );
+
+    expect(skill?.commands.map((command) => command.name())).toContain("promote");
+    expect(
+      skill?.commands
+        .find((command) => command.name() === "promote")
+        ?.options.map((option) => option.long)
+    ).toContain("--promoted-by");
+  });
+
   it("exposes RBAC actor selection on GitHub App mode", () => {
     const github = createProgram().commands.find(
       (command) => command.name() === "github"
