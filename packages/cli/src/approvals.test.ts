@@ -58,7 +58,22 @@ describe("approvals", () => {
           id: approval.id,
           status: "pending",
           requestedBy: "worker:test",
-          actionId: "act_approval_test"
+          actionId: "act_approval_test",
+          expiresAt: "2026-05-15T10:01:00.000Z"
+        });
+        const event = database
+          .prepare(
+            `
+            SELECT payload_json
+            FROM events
+            WHERE type = 'approval.requested' AND aggregate_id = ?
+          `
+          )
+          .get(approval.id) as { payload_json: string } | undefined;
+
+        expect(JSON.parse(event?.payload_json ?? "{}")).toMatchObject({
+          approvalId: approval.id,
+          expiresAt: "2026-05-15T10:01:00.000Z"
         });
       } finally {
         database.close();

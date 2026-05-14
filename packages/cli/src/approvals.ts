@@ -66,8 +66,14 @@ export interface ExpireApprovalGrantOptions {
   now?: Date;
 }
 
+export const DEFAULT_APPROVAL_TTL_MS = 24 * 60 * 60 * 1000;
+
 export function requestApproval(options: RequestApprovalOptions): ApprovalRequest {
-  const createdAt = (options.now ?? new Date()).toISOString();
+  const now = options.now ?? new Date();
+  const createdAt = now.toISOString();
+  const expiresAt =
+    options.expiresAt ??
+    new Date(now.getTime() + DEFAULT_APPROVAL_TTL_MS).toISOString();
   const approval = ApprovalRequestSchema.parse({
     id: createRunsteadId("appr"),
     policyDecisionId: options.policyDecision.id,
@@ -76,7 +82,7 @@ export function requestApproval(options: RequestApprovalOptions): ApprovalReques
     risk: options.policyDecision.risk,
     reason: options.policyDecision.reason,
     requestedBy: options.requestedBy ?? "runstead",
-    ...(options.expiresAt === undefined ? {} : { expiresAt: options.expiresAt }),
+    expiresAt,
     createdAt,
     updatedAt: createdAt
   });
@@ -310,6 +316,7 @@ function approvalPayload(approval: ApprovalRequest): JsonObject {
     status: approval.status,
     risk: approval.risk,
     reason: approval.reason,
+    ...(approval.expiresAt === undefined ? {} : { expiresAt: approval.expiresAt }),
     ...(approval.decidedAt === undefined ? {} : { decidedAt: approval.decidedAt }),
     ...(approval.decidedBy === undefined ? {} : { decidedBy: approval.decidedBy })
   };

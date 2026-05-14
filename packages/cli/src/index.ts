@@ -1653,6 +1653,7 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
       console.log(`Policy decision: ${result.approval.policyDecisionId}`);
       console.log(`Reason: ${result.approval.reason}`);
       console.log(`Requested by: ${result.approval.requestedBy ?? "unknown"}`);
+      console.log(`Expires: ${result.approval.expiresAt ?? "none"}`);
       console.log(`Decided by: ${result.approval.decidedBy ?? "none"}`);
     });
 
