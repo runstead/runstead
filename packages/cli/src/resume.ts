@@ -1,8 +1,9 @@
-import type { Task } from "@runstead/core";
+import type { Task, WorkerRun } from "@runstead/core";
 import { createRunsteadId, type JsonObject, type RunsteadEvent } from "@runstead/core";
 import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sqlite";
 
 import { withRunsteadManagerLock } from "./manager-lock.js";
+import { finishWorkerRun } from "./runtime-audit.js";
 import { listTasks } from "./tasks.js";
 
 export interface InterruptedTask {
@@ -73,12 +74,19 @@ function resumeInterruptedTasksUnlocked(
 ): ResumeInterruptedTasksResult {
   const detected = findInterruptedTasks(options);
   const database = openRunsteadDatabase(detected.stateDb);
-  const requeuedAt = (options.now ?? new Date()).toISOString();
+  const resumedAt = options.now ?? new Date();
+  const requeuedAt = resumedAt.toISOString();
   const requeuedTasks: RequeuedTask[] = [];
   const failedTasks: ResumeFailedTask[] = [];
 
   try {
     for (const interrupted of detected.interruptedTasks) {
+      failRunningWorkerRuns({
+        database,
+        task: interrupted.task,
+        now: resumedAt
+      });
+
       if (interrupted.task.attempt >= interrupted.task.maxAttempts) {
         const task: Task = {
           ...interrupted.task,
@@ -149,6 +157,70 @@ function resumeFailedOutput(task: Task): JsonObject {
     previousStatus: task.status,
     attempt: task.attempt,
     maxAttempts: task.maxAttempts
+  };
+}
+
+function failRunningWorkerRuns(input: {
+  database: ReturnType<typeof openRunsteadDatabase>;
+  task: Task;
+  now: Date;
+}): WorkerRun[] {
+  const runningWorkerRuns = (
+    input.database
+      .prepare(
+        `
+        SELECT id, task_id, worker_type, status, enforcement_level,
+               checkpoint_before, started_at, ended_at, output_json
+        FROM worker_runs
+        WHERE task_id = ? AND status = 'running'
+        ORDER BY started_at ASC, id ASC
+      `
+      )
+      .all(input.task.id) as unknown as WorkerRunRow[]
+  ).map(rowToWorkerRun);
+
+  return runningWorkerRuns.map((workerRun) =>
+    finishWorkerRun({
+      database: input.database,
+      workerRun,
+      status: "failed",
+      output: {
+        ...(workerRun.output ?? {}),
+        summary: "Worker run interrupted during resume",
+        previousTaskStatus: input.task.status
+      },
+      now: input.now
+    })
+  );
+}
+
+interface WorkerRunRow {
+  id: string;
+  task_id: string;
+  worker_type: string;
+  status: WorkerRun["status"];
+  enforcement_level: string;
+  checkpoint_before: string | null;
+  started_at: string;
+  ended_at: string | null;
+  output_json: string | null;
+}
+
+function rowToWorkerRun(row: WorkerRunRow): WorkerRun {
+  return {
+    id: row.id,
+    taskId: row.task_id,
+    workerType: row.worker_type,
+    status: row.status,
+    enforcementLevel: row.enforcement_level,
+    ...(row.checkpoint_before === null
+      ? {}
+      : { checkpointBefore: row.checkpoint_before }),
+    startedAt: row.started_at,
+    ...(row.ended_at === null ? {} : { endedAt: row.ended_at }),
+    ...(row.output_json === null
+      ? {}
+      : { output: JSON.parse(row.output_json) as JsonObject })
   };
 }
 

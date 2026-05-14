@@ -9,6 +9,7 @@ import { describe, expect, it } from "vitest";
 import { createGoal } from "./goals.js";
 import { initRunstead } from "./init.js";
 import { findInterruptedTasks, resumeInterruptedTasks } from "./resume.js";
+import { startWorkerRun } from "./runtime-audit.js";
 import { claimTask, showTask } from "./tasks.js";
 
 describe("findInterruptedTasks", () => {
@@ -68,29 +69,60 @@ describe("findInterruptedTasks", () => {
         throw new Error("Expected createGoal to generate run_local_verifiers task");
       }
 
-      claimTask({
+      const claimedTask = claimTask({
         cwd: workspace,
         id: task.id,
         now: new Date("2026-05-14T07:11:00.000Z")
-      });
+      }).task;
+      const database = openRunsteadDatabase(goal.stateDb);
+
+      try {
+        startWorkerRun({
+          database,
+          task: claimedTask,
+          workerType: "shell_verifier",
+          enforcementLevel: "policy_enforced",
+          now: new Date("2026-05-14T07:11:30.000Z")
+        });
+      } finally {
+        database.close();
+      }
 
       const result = await resumeInterruptedTasks({
         cwd: workspace,
         now: new Date("2026-05-14T07:12:00.000Z")
       });
       const stored = showTask({ cwd: workspace, id: task.id }).task;
+      const resumedDatabase = openRunsteadDatabase(goal.stateDb);
 
-      expect(result.requeuedTasks).toHaveLength(1);
-      expect(result.failedTasks).toHaveLength(0);
-      expect(result.requeuedTasks[0]).toMatchObject({
-        task: {
-          id: task.id,
-          status: "queued",
-          updatedAt: "2026-05-14T07:12:00.000Z"
-        },
-        previousStatus: "claimed"
-      });
-      expect(stored.status).toBe("queued");
+      try {
+        const workerRun = resumedDatabase
+          .prepare("SELECT status, output_json FROM worker_runs WHERE task_id = ?")
+          .get(task.id) as { status: string; output_json: string };
+        const workerOutput = JSON.parse(workerRun.output_json) as {
+          summary?: string;
+          previousTaskStatus?: string;
+        };
+
+        expect(result.requeuedTasks).toHaveLength(1);
+        expect(result.failedTasks).toHaveLength(0);
+        expect(result.requeuedTasks[0]).toMatchObject({
+          task: {
+            id: task.id,
+            status: "queued",
+            updatedAt: "2026-05-14T07:12:00.000Z"
+          },
+          previousStatus: "claimed"
+        });
+        expect(stored.status).toBe("queued");
+        expect(workerRun.status).toBe("failed");
+        expect(workerOutput).toMatchObject({
+          summary: "Worker run interrupted during resume",
+          previousTaskStatus: "claimed"
+        });
+      } finally {
+        resumedDatabase.close();
+      }
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }
