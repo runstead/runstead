@@ -26,6 +26,7 @@ export interface QuarantineMemoryCandidateOptions {
   content: string;
   sourceRefs?: string[];
   confidence?: number;
+  expiresAt?: string;
   createdBy?: string;
   taskId?: string;
   now?: Date;
@@ -92,6 +93,10 @@ export function quarantineMemoryCandidate(
   const resolvedState = requireRunsteadStateDbSync(cwd);
 
   const createdAt = (options.now ?? new Date()).toISOString();
+  const expiresAt =
+    options.expiresAt === undefined
+      ? undefined
+      : validateMemoryTimestamp(options.expiresAt, "expiresAt");
   const memory = MemoryRecordSchema.parse({
     id: createRunsteadId("mem"),
     scope: options.scope,
@@ -106,6 +111,7 @@ export function quarantineMemoryCandidate(
     }),
     createdAt,
     updatedAt: createdAt,
+    ...(expiresAt === undefined ? {} : { expiresAt }),
     conflictsWith: []
   });
   const event: RunsteadEvent = {

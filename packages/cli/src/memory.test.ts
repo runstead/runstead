@@ -139,6 +139,45 @@ describe("quarantineMemoryCandidate", () => {
       await rm(workspace, { force: true, recursive: true });
     }
   });
+
+  it("records quarantined candidate expiry", async () => {
+    const workspace = join(tmpdir(), `runstead-memory-expiry-${process.pid}`);
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      const initialized = await initRunstead({ cwd: workspace });
+
+      const result = quarantineMemoryCandidate({
+        cwd: workspace,
+        scope: "repo:acme/app",
+        type: "external_claim",
+        content: "Temporary external claim.",
+        sourceRefs: ["github:issue/124"],
+        expiresAt: "2026-05-15T05:45:00.000Z",
+        now: new Date("2026-05-14T05:45:00.000Z")
+      });
+      const database = openRunsteadDatabase(initialized.stateDb);
+
+      try {
+        const row = database
+          .prepare("SELECT expires_at FROM memory_records WHERE id = ?")
+          .get(result.memory.id) as { expires_at: string | null };
+        const event = database
+          .prepare("SELECT payload_json FROM events WHERE event_id = ?")
+          .get(result.event.eventId) as { payload_json: string };
+
+        expect(result.memory.expiresAt).toBe("2026-05-15T05:45:00.000Z");
+        expect(row.expires_at).toBe("2026-05-15T05:45:00.000Z");
+        expect(JSON.parse(event.payload_json)).toMatchObject({
+          expiresAt: "2026-05-15T05:45:00.000Z"
+        });
+      } finally {
+        database.close();
+      }
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
 });
 
 describe("recordProjectFact", () => {
