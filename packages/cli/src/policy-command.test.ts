@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 import { formatPolicyTestReport, testPolicyAction } from "./policy-command.js";
+import { parsePolicyProfileYaml } from "./policy-loader.js";
 
 const policyPath = fileURLToPath(
   new URL(
@@ -45,5 +46,32 @@ context:
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }
+  });
+
+  it("rejects duplicate policy rule ids", () => {
+    expect(() =>
+      parsePolicyProfileYaml({
+        id: "policy_duplicate_rules",
+        version: 1,
+        rules: [
+          {
+            id: "repeat",
+            when: {
+              action_type: "filesystem.read"
+            },
+            decision: "allow",
+            risk: "low"
+          },
+          {
+            id: "repeat",
+            when: {
+              action_type: "filesystem.write"
+            },
+            decision: "deny",
+            risk: "critical"
+          }
+        ]
+      })
+    ).toThrow("Duplicate policy rule id: repeat");
   });
 });

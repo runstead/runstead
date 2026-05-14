@@ -69,6 +69,8 @@ export async function loadPolicyProfileFromFile(path: string): Promise<PolicyPro
 export function parsePolicyProfileYaml(input: unknown): PolicyProfile {
   const parsed = PolicyProfileYamlSchema.parse(input);
 
+  assertUniquePolicyRuleIds(parsed.rules.map((rule) => rule.id));
+
   return {
     id: parsed.id,
     version: parsed.version,
@@ -101,6 +103,18 @@ export function parsePolicyProfileYaml(input: unknown): PolicyProfile {
       ...(rule.obligations === undefined ? {} : { obligations: rule.obligations })
     }))
   };
+}
+
+function assertUniquePolicyRuleIds(ruleIds: string[]): void {
+  const seen = new Set<string>();
+
+  for (const ruleId of ruleIds) {
+    if (seen.has(ruleId)) {
+      throw new Error(`Duplicate policy rule id: ${ruleId}`);
+    }
+
+    seen.add(ruleId);
+  }
 }
 
 export function parseActionEnvelopeYaml(input: unknown): ActionEnvelope {
