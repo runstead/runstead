@@ -26,7 +26,18 @@ export interface DoctorRunsteadOptions {
   cwd?: string;
 }
 
-const REQUIRED_TABLES = ["goals", "tasks", "evidence", "events"];
+const REQUIRED_TABLES = [
+  "goals",
+  "tasks",
+  "evidence",
+  "policy_decisions",
+  "approvals",
+  "worker_runs",
+  "tool_calls",
+  "memory_records",
+  "repositories",
+  "events"
+];
 
 export async function doctorRunstead(
   options: DoctorRunsteadOptions = {}

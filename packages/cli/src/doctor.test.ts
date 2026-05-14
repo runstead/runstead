@@ -2,6 +2,7 @@ import { cp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { openRunsteadDatabase } from "@runstead/state-sqlite";
 import { describe, expect, it } from "vitest";
 
 import { doctorRunstead } from "./doctor.js";
@@ -100,6 +101,33 @@ describe("doctorRunstead", () => {
         result.checks.find((check) => check.id === "policy-validation")
       ).toMatchObject({
         status: "fail"
+      });
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("fails when a governance projection table is missing", async () => {
+    const workspace = join(tmpdir(), `runstead-doctor-state-schema-${process.pid}`);
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await mkdir(workspace, { recursive: true });
+      const initialized = await initRunstead({ cwd: workspace });
+      const database = openRunsteadDatabase(initialized.stateDb);
+
+      try {
+        database.exec("DROP TABLE tool_calls");
+      } finally {
+        database.close();
+      }
+
+      const result = await doctorRunstead({ cwd: workspace });
+
+      expect(result.ok).toBe(false);
+      expect(result.checks.find((check) => check.id === "state-db")).toMatchObject({
+        status: "fail",
+        message: "missing tables: tool_calls"
       });
     } finally {
       await rm(workspace, { force: true, recursive: true });
