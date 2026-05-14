@@ -38,6 +38,17 @@ describe("cli entrypoint", () => {
     expect(repo?.commands.map((command) => command.name())).toContain("archive");
   });
 
+  it("exposes RBAC actor selection on task execution commands", () => {
+    const run = createProgram().commands.find((command) => command.name() === "run");
+    const verifier = createProgram().commands.find(
+      (command) => command.name() === "verifier"
+    );
+    const verifierRun = verifier?.commands.find((command) => command.name() === "run");
+
+    expect(run?.options.map((option) => option.long)).toContain("--actor");
+    expect(verifierRun?.options.map((option) => option.long)).toContain("--actor");
+  });
+
   it("exposes RBAC actor selection on repository commands", () => {
     const repo = createProgram().commands.find((command) => command.name() === "repo");
 

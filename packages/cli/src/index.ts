@@ -189,10 +189,18 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     .description("Run local work.")
     .option("--once", "Run at most one task")
     .option("--cwd <path>", "Workspace directory")
-    .action(async (options: { once?: boolean; cwd?: string }) => {
+    .option("--actor <id>", "RBAC subject for task execution", "local-admin")
+    .action(async (options: { once?: boolean; cwd?: string; actor: string }) => {
       if (options.once !== true) {
         throw new Error("Only --once is supported in v0.0.1");
       }
+
+      await requireRbacPermission({
+        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+        actor: options.actor,
+        permission: "task.run",
+        action: "run tasks"
+      });
 
       const { formatRunOnceReport, runOnce, runOnceExitCode } =
         await import("./run.js");
@@ -1265,31 +1273,47 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     .argument("<task-id>", "Task id")
     .option("--cwd <path>", "Workspace directory")
     .option("--timeout-ms <ms>", "Per-command timeout in milliseconds")
-    .action(async (taskId: string, options: { cwd?: string; timeoutMs?: string }) => {
-      const { runTaskVerifiers } = await import("./verifier-runner.js");
-      const timeoutMs =
-        options.timeoutMs === undefined
-          ? undefined
-          : Number.parseInt(options.timeoutMs, 10);
+    .option("--actor <id>", "RBAC subject for verifier execution", "local-admin")
+    .action(
+      async (
+        taskId: string,
+        options: { cwd?: string; timeoutMs?: string; actor: string }
+      ) => {
+        await requireRbacPermission({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          actor: options.actor,
+          permission: "task.run",
+          action: "run verifiers"
+        });
 
-      if (timeoutMs !== undefined && (!Number.isFinite(timeoutMs) || timeoutMs <= 0)) {
-        throw new Error("--timeout-ms must be a positive integer");
+        const { runTaskVerifiers } = await import("./verifier-runner.js");
+        const timeoutMs =
+          options.timeoutMs === undefined
+            ? undefined
+            : Number.parseInt(options.timeoutMs, 10);
+
+        if (
+          timeoutMs !== undefined &&
+          (!Number.isFinite(timeoutMs) || timeoutMs <= 0)
+        ) {
+          throw new Error("--timeout-ms must be a positive integer");
+        }
+
+        const result = await runTaskVerifiers({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          taskId,
+          ...(timeoutMs === undefined ? {} : { timeoutMs })
+        });
+
+        console.log(`Task: ${result.task.id}`);
+        console.log(`Status: ${result.task.status}`);
+        for (const command of result.commandResults) {
+          console.log(
+            `${command.verifier}: exit=${command.exitCode ?? "unknown"} evidence=${command.evidenceId}`
+          );
+        }
       }
-
-      const result = await runTaskVerifiers({
-        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-        taskId,
-        ...(timeoutMs === undefined ? {} : { timeoutMs })
-      });
-
-      console.log(`Task: ${result.task.id}`);
-      console.log(`Status: ${result.task.status}`);
-      for (const command of result.commandResults) {
-        console.log(
-          `${command.verifier}: exit=${command.exitCode ?? "unknown"} evidence=${command.evidenceId}`
-        );
-      }
-    });
+    );
 
   verifier
     .command("diff-scope")
