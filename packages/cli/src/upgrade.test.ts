@@ -18,6 +18,10 @@ describe("upgradeRunsteadState", () => {
         force: true,
         recursive: true
       });
+      await rm(join(workspace, ".runstead", "daemon"), {
+        force: true,
+        recursive: true
+      });
       await rm(join(workspace, ".runstead", "rbac.yaml"), { force: true });
       await rm(
         join(
@@ -37,6 +41,9 @@ describe("upgradeRunsteadState", () => {
       expect(result.checks.every((check) => check.status === "pass")).toBe(true);
       await expect(
         access(join(workspace, ".runstead", "reports"))
+      ).resolves.toBeUndefined();
+      await expect(
+        access(join(workspace, ".runstead", "daemon"))
       ).resolves.toBeUndefined();
       await expect(
         access(join(workspace, ".runstead", "rbac.yaml"))
