@@ -7,33 +7,55 @@ import { validateSkillPackageDir } from "./validator.js";
 
 const execFileAsync = promisify(execFile);
 
+export const DEFAULT_SKILL_TEST_TIMEOUT_MS = 5 * 60 * 1000;
+export const DEFAULT_SKILL_TEST_MAX_OUTPUT_BYTES = 1024 * 1024 * 10;
+
+export interface RunSkillPackageTestsOptions {
+  timeoutMs?: number;
+  maxOutputBytes?: number;
+}
+
 export interface SkillTestResult {
   root: string;
   validation: SkillPackageValidationResult;
   command: string;
   args: string[];
+  timeoutMs: number;
+  maxOutputBytes: number;
   stdout: string;
   stderr: string;
   exitCode: number;
+  timedOut: boolean;
   passed: boolean;
 }
 
-export async function runSkillPackageTests(root: string): Promise<SkillTestResult> {
+export async function runSkillPackageTests(
+  root: string,
+  options: RunSkillPackageTestsOptions = {}
+): Promise<SkillTestResult> {
   const resolvedRoot = resolve(root);
   const validation = await validateSkillPackageDir(resolvedRoot);
   const command = "sh";
   const args = [join(resolvedRoot, "tests", "run.sh")];
-  const result = await runProcess(command, args, resolvedRoot);
+  const timeoutMs = options.timeoutMs ?? DEFAULT_SKILL_TEST_TIMEOUT_MS;
+  const maxOutputBytes = options.maxOutputBytes ?? DEFAULT_SKILL_TEST_MAX_OUTPUT_BYTES;
+  const result = await runProcess(command, args, resolvedRoot, {
+    maxOutputBytes,
+    timeoutMs
+  });
 
   return {
     root: resolvedRoot,
     validation,
     command,
     args,
+    timeoutMs,
+    maxOutputBytes,
     stdout: result.stdout,
     stderr: result.stderr,
     exitCode: result.exitCode,
-    passed: validation.valid && result.exitCode === 0
+    timedOut: result.timedOut,
+    passed: validation.valid && result.exitCode === 0 && !result.timedOut
   };
 }
 
@@ -42,7 +64,10 @@ export function formatSkillTestReport(result: SkillTestResult): string {
     `Skill package: ${result.root}`,
     `Validation: ${result.validation.valid ? "valid" : "invalid"}`,
     `Command: ${[result.command, ...result.args].join(" ")}`,
+    `Timeout: ${result.timeoutMs}ms`,
+    `Max output: ${result.maxOutputBytes} bytes`,
     `Exit code: ${result.exitCode}`,
+    `Timed out: ${result.timedOut ? "yes" : "no"}`,
     `Result: ${result.passed ? "passed" : "failed"}`,
     result.stdout.length === 0 ? "Stdout: <empty>" : `Stdout:\n${result.stdout}`,
     result.stderr.length === 0 ? "Stderr: <empty>" : `Stderr:\n${result.stderr}`
@@ -52,25 +77,34 @@ export function formatSkillTestReport(result: SkillTestResult): string {
 async function runProcess(
   command: string,
   args: string[],
-  cwd: string
-): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+  cwd: string,
+  options: { maxOutputBytes: number; timeoutMs: number }
+): Promise<{
+  stdout: string;
+  stderr: string;
+  exitCode: number;
+  timedOut: boolean;
+}> {
   try {
     const result = await execFileAsync(command, args, {
       cwd,
-      maxBuffer: 1024 * 1024 * 10,
+      maxBuffer: options.maxOutputBytes,
+      timeout: options.timeoutMs,
       windowsHide: true
     });
 
     return {
       stdout: result.stdout,
       stderr: result.stderr,
-      exitCode: 0
+      exitCode: 0,
+      timedOut: false
     };
   } catch (error) {
     return {
       stdout: commandOutput(error, "stdout"),
       stderr: commandOutput(error, "stderr"),
-      exitCode: commandExitCode(error)
+      exitCode: commandExitCode(error),
+      timedOut: commandTimedOut(error)
     };
   }
 }
@@ -98,4 +132,14 @@ function commandOutput(error: unknown, key: "stdout" | "stderr"): string {
   }
 
   return "";
+}
+
+function commandTimedOut(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) {
+    return false;
+  }
+
+  const record = error as Record<string, unknown>;
+
+  return record.killed === true && record.signal === "SIGTERM";
 }
