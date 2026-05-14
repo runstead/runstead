@@ -12,7 +12,7 @@ import {
 } from "@runstead/domain-packs";
 import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sqlite";
 
-import { requireRunsteadRoot, requireRunsteadStateDb } from "./runstead-root.js";
+import { requireRunsteadStateDb } from "./runstead-root.js";
 
 export interface InstallDomainPackOptions {
   cwd?: string;
@@ -20,6 +20,7 @@ export interface InstallDomainPackOptions {
   roots?: string[];
   includeBuiltIns?: boolean;
   force?: boolean;
+  now?: Date;
 }
 
 export interface InstallDomainPackResult {
@@ -30,6 +31,7 @@ export interface InstallDomainPackResult {
   manifestPath: string;
   installedFiles: string[];
   overwritten: boolean;
+  event: RunsteadEvent;
 }
 
 export interface UninstallDomainPackOptions {
@@ -77,7 +79,9 @@ const RUNSTEAD_CLI_VERSION = "0.0.0";
 export async function installDomainPack(
   options: InstallDomainPackOptions
 ): Promise<InstallDomainPackResult> {
-  const resolvedRoot = await requireRunsteadRoot(resolve(options.cwd ?? process.cwd()));
+  const resolvedRoot = await requireRunsteadStateDb(
+    resolve(options.cwd ?? process.cwd())
+  );
   const roots = [...(options.roots ?? [])];
   const entry = await resolveDomainPackRef(options.ref, {
     roots,
@@ -116,6 +120,22 @@ export async function installDomainPack(
 
   await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
 
+  const event = domainPackInstalledEvent({
+    id: entry.id,
+    destination: destinationRoot,
+    manifestPath,
+    manifest,
+    overwritten: existing,
+    createdAt: (options.now ?? new Date()).toISOString()
+  });
+  const database = openRunsteadDatabase(resolvedRoot.stateDb);
+
+  try {
+    appendEventAndProject(database, { event });
+  } finally {
+    database.close();
+  }
+
   return {
     id: entry.id,
     source: entry,
@@ -123,7 +143,8 @@ export async function installDomainPack(
     manifest,
     manifestPath,
     installedFiles,
-    overwritten: existing
+    overwritten: existing,
+    event
   };
 }
 
@@ -357,6 +378,31 @@ function domainPackUninstalledEvent(input: {
       activeGoals: input.activeGoals,
       activeTasks: input.activeTasks,
       forced: input.forced
+    },
+    createdAt: input.createdAt
+  };
+}
+
+function domainPackInstalledEvent(input: {
+  id: string;
+  destination: string;
+  manifestPath: string;
+  manifest: DomainPackManifest;
+  overwritten: boolean;
+  createdAt: string;
+}): RunsteadEvent {
+  return {
+    eventId: createRunsteadId("evt"),
+    type: "domain_pack.installed",
+    aggregateType: "domain_pack",
+    aggregateId: input.id,
+    payload: {
+      id: input.id,
+      destination: input.destination,
+      manifestPath: input.manifestPath,
+      version: input.manifest.domain.version,
+      files: input.manifest.files.length,
+      overwritten: input.overwritten
     },
     createdAt: input.createdAt
   };

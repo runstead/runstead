@@ -30,33 +30,69 @@ describe("installDomainPack", () => {
 
       const result = await installDomainPack({
         cwd: workspace,
-        ref: packRoot
+        ref: packRoot,
+        now: new Date("2026-05-14T11:00:00.000Z")
       });
       const installedRoot = join(workspace, ".runstead", "domains", "customer-ops");
       const manifest = JSON.parse(
         await readFile(join(installedRoot, "runstead-manifest.json"), "utf8")
       ) as { domain: { id: string }; files: { path: string }[] };
       const validation = await validateDomainPackDir(installedRoot);
+      const database = openRunsteadDatabase(join(workspace, ".runstead", "state.db"));
 
-      expect(result).toMatchObject({
-        id: "customer-ops",
-        destination: installedRoot,
-        overwritten: false
-      });
-      expect(result.installedFiles).toEqual(
-        expect.arrayContaining([
-          "domain.yaml",
-          "goal-templates/default-goal.yaml",
-          "task-types/manual_review.yaml",
-          "fixtures/manifest.yaml",
-          "fixtures/manual-review-smoke/README.md",
-          "evals/benchmark.yaml"
-        ])
-      );
-      expect(manifest.domain.id).toBe("customer-ops");
-      expect(manifest.files.map((file) => file.path)).toEqual(result.installedFiles);
-      expect(validation.valid).toBe(true);
-      await expect(access(join(installedRoot, "domain.yaml"))).resolves.toBeUndefined();
+      try {
+        const event = database
+          .prepare(
+            `
+            SELECT type, aggregate_type, aggregate_id, payload_json, created_at
+            FROM events
+            WHERE event_id = ?
+          `
+          )
+          .get(result.event.eventId) as {
+          type: string;
+          aggregate_type: string;
+          aggregate_id: string;
+          payload_json: string;
+          created_at: string;
+        };
+
+        expect(result).toMatchObject({
+          id: "customer-ops",
+          destination: installedRoot,
+          overwritten: false
+        });
+        expect(result.installedFiles).toEqual(
+          expect.arrayContaining([
+            "domain.yaml",
+            "goal-templates/default-goal.yaml",
+            "task-types/manual_review.yaml",
+            "fixtures/manifest.yaml",
+            "fixtures/manual-review-smoke/README.md",
+            "evals/benchmark.yaml"
+          ])
+        );
+        expect(manifest.domain.id).toBe("customer-ops");
+        expect(manifest.files.map((file) => file.path)).toEqual(result.installedFiles);
+        expect(validation.valid).toBe(true);
+        expect(event).toMatchObject({
+          type: "domain_pack.installed",
+          aggregate_type: "domain_pack",
+          aggregate_id: "customer-ops",
+          created_at: "2026-05-14T11:00:00.000Z"
+        });
+        expect(JSON.parse(event.payload_json)).toMatchObject({
+          id: "customer-ops",
+          version: "0.1.0",
+          files: result.installedFiles.length,
+          overwritten: false
+        });
+        await expect(
+          access(join(installedRoot, "domain.yaml"))
+        ).resolves.toBeUndefined();
+      } finally {
+        database.close();
+      }
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }
