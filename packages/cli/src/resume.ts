@@ -1,9 +1,9 @@
-import type { Task, WorkerRun } from "@runstead/core";
+import type { Task, ToolCall, WorkerRun } from "@runstead/core";
 import { createRunsteadId, type JsonObject, type RunsteadEvent } from "@runstead/core";
 import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sqlite";
 
 import { withRunsteadManagerLock } from "./manager-lock.js";
-import { finishWorkerRun } from "./runtime-audit.js";
+import { finishToolCall, finishWorkerRun } from "./runtime-audit.js";
 import { listTasks } from "./tasks.js";
 
 export interface InterruptedTask {
@@ -86,6 +86,11 @@ function resumeInterruptedTasksUnlocked(
         task: interrupted.task,
         now: resumedAt
       });
+      failInterruptedToolCalls({
+        database,
+        task: interrupted.task,
+        now: resumedAt
+      });
 
       if (interrupted.task.attempt >= interrupted.task.maxAttempts) {
         const task: Task = {
@@ -150,6 +155,43 @@ function resumeInterruptedTasksUnlocked(
   };
 }
 
+function failInterruptedToolCalls(input: {
+  database: ReturnType<typeof openRunsteadDatabase>;
+  task: Task;
+  now: Date;
+}): ToolCall[] {
+  const interruptedToolCalls = (
+    input.database
+      .prepare(
+        `
+        SELECT id, worker_run_id, task_id, action_type, status,
+               policy_decision_id, input_json, output_json, started_at, ended_at
+        FROM tool_calls
+        WHERE task_id = ? AND status IN ('requested', 'allowed', 'running')
+        ORDER BY started_at ASC, id ASC
+      `
+      )
+      .all(input.task.id) as unknown as ToolCallRow[]
+  ).map(rowToToolCall);
+
+  return interruptedToolCalls.map((toolCall) =>
+    finishToolCall({
+      database: input.database,
+      toolCall,
+      status: "failed",
+      ...(toolCall.policyDecisionId === undefined
+        ? {}
+        : { policyDecisionId: toolCall.policyDecisionId }),
+      output: {
+        ...(toolCall.output ?? {}),
+        summary: "Tool call interrupted during resume",
+        previousTaskStatus: input.task.status
+      },
+      now: input.now
+    })
+  );
+}
+
 function resumeFailedOutput(task: Task): JsonObject {
   return {
     ...(task.output ?? {}),
@@ -206,6 +248,19 @@ interface WorkerRunRow {
   output_json: string | null;
 }
 
+interface ToolCallRow {
+  id: string;
+  worker_run_id: string;
+  task_id: string;
+  action_type: string;
+  status: ToolCall["status"];
+  policy_decision_id: string | null;
+  input_json: string;
+  output_json: string | null;
+  started_at: string;
+  ended_at: string | null;
+}
+
 function rowToWorkerRun(row: WorkerRunRow): WorkerRun {
   return {
     id: row.id,
@@ -221,6 +276,25 @@ function rowToWorkerRun(row: WorkerRunRow): WorkerRun {
     ...(row.output_json === null
       ? {}
       : { output: JSON.parse(row.output_json) as JsonObject })
+  };
+}
+
+function rowToToolCall(row: ToolCallRow): ToolCall {
+  return {
+    id: row.id,
+    workerRunId: row.worker_run_id,
+    taskId: row.task_id,
+    actionType: row.action_type,
+    status: row.status,
+    ...(row.policy_decision_id === null
+      ? {}
+      : { policyDecisionId: row.policy_decision_id }),
+    input: JSON.parse(row.input_json) as JsonObject,
+    ...(row.output_json === null
+      ? {}
+      : { output: JSON.parse(row.output_json) as JsonObject }),
+    startedAt: row.started_at,
+    ...(row.ended_at === null ? {} : { endedAt: row.ended_at })
   };
 }
 

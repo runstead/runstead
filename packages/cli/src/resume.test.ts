@@ -9,7 +9,7 @@ import { describe, expect, it } from "vitest";
 import { createGoal } from "./goals.js";
 import { initRunstead } from "./init.js";
 import { findInterruptedTasks, resumeInterruptedTasks } from "./resume.js";
-import { startWorkerRun } from "./runtime-audit.js";
+import { startToolCall, startWorkerRun } from "./runtime-audit.js";
 import { claimTask, showTask } from "./tasks.js";
 
 describe("findInterruptedTasks", () => {
@@ -77,12 +77,25 @@ describe("findInterruptedTasks", () => {
       const database = openRunsteadDatabase(goal.stateDb);
 
       try {
-        startWorkerRun({
+        const workerRun = startWorkerRun({
           database,
           task: claimedTask,
           workerType: "shell_verifier",
           enforcementLevel: "policy_enforced",
           now: new Date("2026-05-14T07:11:30.000Z")
+        });
+        startToolCall({
+          database,
+          workerRun,
+          task: claimedTask,
+          action: {
+            actionId: "act_interrupted",
+            actionType: "shell.exec",
+            context: {
+              command: "pnpm test"
+            }
+          },
+          now: new Date("2026-05-14T07:11:31.000Z")
         });
       } finally {
         database.close();
@@ -103,6 +116,13 @@ describe("findInterruptedTasks", () => {
           summary?: string;
           previousTaskStatus?: string;
         };
+        const toolCall = resumedDatabase
+          .prepare("SELECT status, output_json FROM tool_calls WHERE task_id = ?")
+          .get(task.id) as { status: string; output_json: string };
+        const toolOutput = JSON.parse(toolCall.output_json) as {
+          summary?: string;
+          previousTaskStatus?: string;
+        };
 
         expect(result.requeuedTasks).toHaveLength(1);
         expect(result.failedTasks).toHaveLength(0);
@@ -118,6 +138,11 @@ describe("findInterruptedTasks", () => {
         expect(workerRun.status).toBe("failed");
         expect(workerOutput).toMatchObject({
           summary: "Worker run interrupted during resume",
+          previousTaskStatus: "claimed"
+        });
+        expect(toolCall.status).toBe("failed");
+        expect(toolOutput).toMatchObject({
+          summary: "Tool call interrupted during resume",
           previousTaskStatus: "claimed"
         });
       } finally {
