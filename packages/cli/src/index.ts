@@ -1844,6 +1844,12 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     .option("--github-app", "Use configured GitHub App installation auth")
     .option("--installation-id <id>", "Override configured GitHub App installation id")
     .option("--actor <id>", "RBAC subject for repair task creation", "local-admin")
+    .option(
+      "--verifier <name=command>",
+      "Verifier command to store on the CI repair task",
+      collectValues,
+      []
+    )
     .action(
       async (
         runId: string,
@@ -1852,6 +1858,7 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
           githubApp?: boolean;
           installationId?: string;
           actor: string;
+          verifier: string[];
         }
       ) => {
         await requireRbacPermission({
@@ -1867,7 +1874,8 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
         const result = await createCiRepairTaskFromWorkflowRun({
           ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
           runId,
-          ...(authToken === undefined ? {} : { authToken })
+          ...(authToken === undefined ? {} : { authToken }),
+          verifierCommands: options.verifier.map(parseVerifierCommandOption)
         });
 
         console.log(formatCiRepairTaskReport(result));

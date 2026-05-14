@@ -238,6 +238,12 @@ describe("cli entrypoint", () => {
       expect(command?.options.map((option) => option.long)).toContain("--github-app");
     }
 
+    expect(
+      run?.commands
+        .find((command) => command.name() === "repair")
+        ?.options.map((option) => option.long)
+    ).toContain("--verifier");
+
     const prCreateOptions = pr?.commands
       .find((command) => command.name() === "create")
       ?.options.map((option) => option.long);
