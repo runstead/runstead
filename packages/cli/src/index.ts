@@ -341,6 +341,8 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     .option("--cwd <path>", "Workspace directory")
     .option("--secret <secret>", "GitHub webhook secret")
     .option("--allow-unsigned", "Allow unsigned webhook requests")
+    .option("--github-app", "Use configured GitHub App installation auth")
+    .option("--installation-id <id>", "Override configured GitHub App installation id")
     .option("--actor <id>", "RBAC subject for webhook management", "local-admin")
     .action(
       async (options: {
@@ -349,6 +351,8 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
         cwd?: string;
         secret?: string;
         allowUnsigned?: boolean;
+        githubApp?: boolean;
+        installationId?: string;
         actor: string;
       }) => {
         const { checkPermission } = await import("./rbac.js");
@@ -388,9 +392,11 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
             );
 
             if (runId !== undefined) {
+              const authToken = await resolveGitHubAuthToken(options);
               await createCiRepairTaskFromWorkflowRun({
                 ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-                runId
+                runId,
+                ...(authToken === undefined ? {} : { authToken })
               });
             }
           }

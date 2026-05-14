@@ -151,6 +151,7 @@ describe("cli entrypoint", () => {
     const serve = webhook?.commands.find((command) => command.name() === "serve");
 
     expect(serve?.options.map((option) => option.long)).toContain("--actor");
+    expect(serve?.options.map((option) => option.long)).toContain("--github-app");
   });
 
   it("exposes RBAC actor selection on scheduler ticks", () => {
