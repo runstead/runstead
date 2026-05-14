@@ -133,18 +133,16 @@ export async function handleGitHubWorkflowRunWebhook(
 
 export function recordGitHubWorkflowRunWebhookEvent(
   options: RecordGitHubWorkflowRunWebhookEventOptions
-): Promise<RunsteadEvent | undefined> {
-  if (!options.result.handled) {
-    return Promise.resolve(undefined);
-  }
-
+): Promise<RunsteadEvent> {
   const root = requireRunsteadRootSync(resolve(options.cwd ?? process.cwd())).root;
   const stateDb = join(root, "state.db");
   const event: RunsteadEvent = {
     eventId: createRunsteadId("evt"),
-    type: "webhook.workflow_run_handled",
-    aggregateType: "github_workflow_run",
-    aggregateId: options.result.runId,
+    type: options.result.handled
+      ? "webhook.workflow_run_handled"
+      : "webhook.workflow_run_ignored",
+    aggregateType: options.result.handled ? "github_workflow_run" : "github_webhook",
+    aggregateId: options.result.handled ? options.result.runId : options.event,
     payload: webhookAuditPayload(options.event, options.result),
     createdAt: (options.now ?? new Date()).toISOString()
   };
@@ -177,8 +175,16 @@ async function auditWebhookResult(
 
 function webhookAuditPayload(
   event: string,
-  result: Extract<HandleGitHubWorkflowRunWebhookResult, { handled: true }>
+  result: HandleGitHubWorkflowRunWebhookResult
 ): Record<string, unknown> {
+  if (!result.handled) {
+    return {
+      sourceEvent: event,
+      handled: false,
+      reason: result.reason
+    };
+  }
+
   if (result.mode === "intake") {
     return {
       sourceEvent: event,

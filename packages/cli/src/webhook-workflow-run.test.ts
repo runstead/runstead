@@ -214,6 +214,66 @@ describe("handleGitHubWorkflowRunWebhook", () => {
       await rm(workspace, { force: true, recursive: true });
     }
   });
+
+  it("records ignored webhook deliveries in the audit log", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-webhook-audit-"));
+    const root = join(workspace, ".runstead");
+
+    try {
+      await mkdir(root, { recursive: true });
+      await writeFile(
+        join(root, "config.yaml"),
+        "version: 1\ndomain: repo-maintenance\n",
+        "utf8"
+      );
+      openRunsteadDatabase(join(root, "state.db")).close();
+
+      const event = await recordGitHubWorkflowRunWebhookEvent({
+        cwd: workspace,
+        event: "issues",
+        result: {
+          handled: false,
+          reason: "not_repairable_workflow_run"
+        },
+        now: new Date("2026-05-14T08:20:00.000Z")
+      });
+      const database = openRunsteadDatabase(join(root, "state.db"));
+
+      try {
+        const row = database
+          .prepare(
+            `
+            SELECT type, aggregate_type, aggregate_id, payload_json, created_at
+            FROM events
+            WHERE event_id = ?
+          `
+          )
+          .get(event.eventId) as {
+          type: string;
+          aggregate_type: string;
+          aggregate_id: string;
+          payload_json: string;
+          created_at: string;
+        };
+
+        expect(row).toMatchObject({
+          type: "webhook.workflow_run_ignored",
+          aggregate_type: "github_webhook",
+          aggregate_id: "issues",
+          created_at: "2026-05-14T08:20:00.000Z"
+        });
+        expect(JSON.parse(row.payload_json)).toEqual({
+          sourceEvent: "issues",
+          handled: false,
+          reason: "not_repairable_workflow_run"
+        });
+      } finally {
+        database.close();
+      }
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
 });
 
 function fakeCiRepair(runId: string): CreateCiRepairTaskResult {
