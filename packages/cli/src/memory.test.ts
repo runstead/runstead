@@ -197,6 +197,85 @@ describe("recordProjectFact", () => {
       await rm(workspace, { force: true, recursive: true });
     }
   });
+
+  it("rejects duplicate verified project facts in the same scope", async () => {
+    const workspace = join(tmpdir(), `runstead-project-fact-duplicate-${process.pid}`);
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await initRunstead({ cwd: workspace });
+      await writeFile(
+        join(workspace, "package.json"),
+        `${JSON.stringify({ packageManager: "pnpm@11.1.1" })}\n`,
+        "utf8"
+      );
+
+      const fact = recordProjectFact({
+        cwd: workspace,
+        scope: "repo:acme/app",
+        content: "This repo uses pnpm.",
+        sourceRefs: ["file:package.json"]
+      }).memory;
+
+      expect(() =>
+        recordProjectFact({
+          cwd: workspace,
+          scope: "repo:acme/app",
+          content: "  this repo uses pnpm.  ",
+          sourceRefs: ["file:package.json"]
+        })
+      ).toThrow(`Duplicate project fact conflicts with ${fact.id}`);
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("records explicit same-scope project fact conflicts", async () => {
+    const workspace = join(tmpdir(), `runstead-project-fact-conflict-${process.pid}`);
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await initRunstead({ cwd: workspace });
+      await writeFile(
+        join(workspace, "package.json"),
+        `${JSON.stringify({ packageManager: "pnpm@11.1.1" })}\n`,
+        "utf8"
+      );
+      await writeFile(
+        join(workspace, "README.md"),
+        "Historical docs mention npm.\n",
+        "utf8"
+      );
+
+      const currentFact = recordProjectFact({
+        cwd: workspace,
+        scope: "repo:acme/app",
+        content: "This repo uses pnpm.",
+        sourceRefs: ["file:package.json"],
+        now: new Date("2026-05-14T06:00:00.000Z")
+      }).memory;
+      const historicalFact = recordProjectFact({
+        cwd: workspace,
+        scope: "repo:acme/app",
+        content: "Historical docs mention npm.",
+        sourceRefs: ["file:README.md"],
+        conflictsWith: [currentFact.id],
+        now: new Date("2026-05-14T06:01:00.000Z")
+      }).memory;
+
+      expect(historicalFact.conflictsWith).toEqual([currentFact.id]);
+      expect(
+        listProjectFacts({ cwd: workspace, scope: "repo:acme/app" }).facts.map(
+          (fact) => [fact.id, fact.conflictsWith]
+        )
+      ).toEqual([
+        [historicalFact.id, [currentFact.id]],
+        [currentFact.id, []]
+      ]);
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
 });
 
 describe("retrieveProjectFacts", () => {

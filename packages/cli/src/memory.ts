@@ -41,6 +41,7 @@ export interface RecordProjectFactOptions {
   content: string;
   sourceRefs: string[];
   confidence?: number;
+  conflictsWith?: string[];
   createdBy?: string;
   taskId?: string;
   now?: Date;
@@ -139,34 +140,40 @@ export function recordProjectFact(
   validateProjectFactSources(cwd, options.sourceRefs);
 
   const createdAt = (options.now ?? new Date()).toISOString();
-  const memory = MemoryRecordSchema.parse({
-    id: createRunsteadId("mem"),
-    scope: options.scope,
-    type: "project_fact",
-    status: "verified",
-    confidence: options.confidence ?? 0.95,
-    content: options.content,
-    sourceRefs: options.sourceRefs,
-    provenance: provenance({
-      ...(options.createdBy === undefined ? {} : { createdBy: options.createdBy }),
-      ...(options.taskId === undefined ? {} : { taskId: options.taskId })
-    }),
-    createdAt,
-    updatedAt: createdAt,
-    conflictsWith: []
-  });
-  const event: RunsteadEvent = {
-    eventId: createRunsteadId("evt"),
-    type: "memory.project_fact_verified",
-    aggregateType: "memory",
-    aggregateId: memory.id,
-    payload: memoryEventPayload(memory),
-    createdAt
-  };
   const stateDb = resolvedState.stateDb;
   const database = openRunsteadDatabase(stateDb);
 
   try {
+    const existingFacts = readProjectFacts(database, options.scope);
+
+    rejectDuplicateProjectFact(existingFacts, options.content);
+    validateProjectFactConflictRefs(existingFacts, options.conflictsWith ?? []);
+
+    const memory = MemoryRecordSchema.parse({
+      id: createRunsteadId("mem"),
+      scope: options.scope,
+      type: "project_fact",
+      status: "verified",
+      confidence: options.confidence ?? 0.95,
+      content: options.content,
+      sourceRefs: options.sourceRefs,
+      provenance: provenance({
+        ...(options.createdBy === undefined ? {} : { createdBy: options.createdBy }),
+        ...(options.taskId === undefined ? {} : { taskId: options.taskId })
+      }),
+      createdAt,
+      updatedAt: createdAt,
+      conflictsWith: options.conflictsWith ?? []
+    });
+    const event: RunsteadEvent = {
+      eventId: createRunsteadId("evt"),
+      type: "memory.project_fact_verified",
+      aggregateType: "memory",
+      aggregateId: memory.id,
+      payload: memoryEventPayload(memory),
+      createdAt
+    };
+
     appendEventAndProject(database, {
       event,
       projection: {
@@ -174,15 +181,15 @@ export function recordProjectFact(
         value: memory
       }
     });
+
+    return {
+      memory,
+      event,
+      stateDb
+    };
   } finally {
     database.close();
   }
-
-  return {
-    memory,
-    event,
-    stateDb
-  };
 }
 
 export function listProjectFacts(
@@ -269,7 +276,8 @@ function memoryEventPayload(memory: MemoryRecord): JsonObject {
     status: memory.status,
     confidence: memory.confidence,
     sourceRefs: memory.sourceRefs,
-    provenance: memory.provenance
+    provenance: memory.provenance,
+    conflictsWith: memory.conflictsWith
   };
 }
 
@@ -289,6 +297,38 @@ function validateProjectFactSources(cwd: string, sourceRefs: string[]): void {
 
     accessSync(resolvedPath, constants.R_OK);
   }
+}
+
+function rejectDuplicateProjectFact(
+  existingFacts: MemoryRecord[],
+  content: string
+): void {
+  const normalized = normalizeFactContent(content);
+  const duplicate = existingFacts.find(
+    (fact) => normalizeFactContent(fact.content) === normalized
+  );
+
+  if (duplicate !== undefined) {
+    throw new Error(`Duplicate project fact conflicts with ${duplicate.id}`);
+  }
+}
+
+function validateProjectFactConflictRefs(
+  existingFacts: MemoryRecord[],
+  conflictsWith: string[]
+): void {
+  const ids = new Set(existingFacts.map((fact) => fact.id));
+  const missing = conflictsWith.filter((id) => !ids.has(id));
+
+  if (missing.length > 0) {
+    throw new Error(
+      `Project fact conflict references must point to verified facts in the same scope: ${missing.join(", ")}`
+    );
+  }
+}
+
+function normalizeFactContent(content: string): string {
+  return content.trim().replace(/\s+/g, " ").toLowerCase();
 }
 
 function sourceRefPath(sourceRef: string): string {
