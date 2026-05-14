@@ -1,0 +1,9 @@
+version: 1
+benchmarks:
+  - id: weekly-research-digest-smoke
+    fixture: weekly-research-digest-smoke
+    acceptance_contracts:
+      - sources_are_cited
+      - source_freshness_checked
+      - contradictions_reviewed
+      - external_publish_not_performed

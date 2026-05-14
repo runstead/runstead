@@ -55,6 +55,12 @@ describe("validateDomainPackDir", () => {
       "scan_sources",
       "summarize_findings"
     ]);
+    expect(result.fixtures.map((fixture) => fixture.id)).toEqual([
+      "weekly-research-digest-smoke"
+    ]);
+    expect(result.evals.map((evaluation) => evaluation.id)).toEqual([
+      "weekly-research-digest-smoke"
+    ]);
   });
 
   it("validates the experimental email-followup draft-only pack", async () => {

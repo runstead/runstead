@@ -1,0 +1,15 @@
+version: 1
+fixtures:
+  - id: weekly-research-digest-smoke
+    description: Representative research digest input for smoke evals.
+    path: weekly-research-digest-smoke
+    task_type: summarize_findings
+    goal_template: weekly-research-digest
+    tags:
+      - smoke
+      - research
+    acceptance_contracts:
+      - sources_are_cited
+      - source_freshness_checked
+      - contradictions_reviewed
+      - external_publish_not_performed
