@@ -1306,6 +1306,7 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     .option("--installation-id <id>", "GitHub App installation id")
     .option("--api-base-url <url>", "GitHub API base URL")
     .option("--force", "Overwrite an existing GitHub App config")
+    .option("--actor <id>", "RBAC subject for GitHub App management", "local-admin")
     .action(
       async (options: {
         cwd?: string;
@@ -1314,7 +1315,21 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
         installationId?: string;
         apiBaseUrl?: string;
         force?: boolean;
+        actor: string;
       }) => {
+        const { checkPermission } = await import("./rbac.js");
+        const permission = await checkPermission({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          subject: options.actor,
+          permission: "daemon.manage"
+        });
+
+        if (permission.decision !== "allow") {
+          throw new Error(
+            `Subject ${options.actor} cannot manage GitHub App mode: ${permission.reason}`
+          );
+        }
+
         const { initGitHubAppMode } = await import("./github-app.js");
         const result = await initGitHubAppMode({
           ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
@@ -1339,7 +1354,21 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     .command("status")
     .description("Show GitHub App mode configuration.")
     .option("--cwd <path>", "Workspace directory")
-    .action(async (options: { cwd?: string }) => {
+    .option("--actor <id>", "RBAC subject for GitHub App management", "local-admin")
+    .action(async (options: { cwd?: string; actor: string }) => {
+      const { checkPermission } = await import("./rbac.js");
+      const permission = await checkPermission({
+        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+        subject: options.actor,
+        permission: "daemon.manage"
+      });
+
+      if (permission.decision !== "allow") {
+        throw new Error(
+          `Subject ${options.actor} cannot inspect GitHub App mode: ${permission.reason}`
+        );
+      }
+
       const { formatGitHubAppConfigSummary, loadGitHubAppConfig } =
         await import("./github-app.js");
       const config = await loadGitHubAppConfig({
@@ -1353,7 +1382,21 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     .command("jwt")
     .description("Print a signed GitHub App JWT.")
     .option("--cwd <path>", "Workspace directory")
-    .action(async (options: { cwd?: string }) => {
+    .option("--actor <id>", "RBAC subject for GitHub App management", "local-admin")
+    .action(async (options: { cwd?: string; actor: string }) => {
+      const { checkPermission } = await import("./rbac.js");
+      const permission = await checkPermission({
+        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+        subject: options.actor,
+        permission: "daemon.manage"
+      });
+
+      if (permission.decision !== "allow") {
+        throw new Error(
+          `Subject ${options.actor} cannot sign GitHub App JWTs: ${permission.reason}`
+        );
+      }
+
       const { createGitHubAppJwtFromConfig } = await import("./github-app.js");
       const result = await createGitHubAppJwtFromConfig({
         ...(options.cwd === undefined ? {} : { cwd: options.cwd })

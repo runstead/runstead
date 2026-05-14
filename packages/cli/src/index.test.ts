@@ -72,4 +72,17 @@ describe("cli entrypoint", () => {
 
     expect(tick?.options.map((option) => option.long)).toContain("--actor");
   });
+
+  it("exposes RBAC actor selection on GitHub App mode", () => {
+    const github = createProgram().commands.find(
+      (command) => command.name() === "github"
+    );
+    const app = github?.commands.find((command) => command.name() === "app");
+
+    for (const commandName of ["init", "status", "jwt"]) {
+      const command = app?.commands.find((item) => item.name() === commandName);
+
+      expect(command?.options.map((option) => option.long)).toContain("--actor");
+    }
+  });
 });
