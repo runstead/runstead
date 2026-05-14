@@ -1103,11 +1103,25 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     .option("--template <id>", "Goal template id")
     .option("--title <title>", "Override goal title")
     .option("--repo <ref>", "Registered repository id, alias, or path")
+    .option("--actor <id>", "RBAC subject for goal management", "local-admin")
     .action(
       async (
         domain: string,
-        options: { cwd?: string; template?: string; title?: string; repo?: string }
+        options: {
+          cwd?: string;
+          template?: string;
+          title?: string;
+          repo?: string;
+          actor: string;
+        }
       ) => {
+        await requireRbacPermission({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          actor: options.actor,
+          permission: "goal.manage",
+          action: "manage goals"
+        });
+
         const { createGoal } = await import("./goals.js");
         const result = await createGoal({
           domain,
@@ -1128,7 +1142,15 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     .command("list")
     .description("List goals.")
     .option("--cwd <path>", "Workspace directory")
-    .action(async (options: { cwd?: string }) => {
+    .option("--actor <id>", "RBAC subject for goal access", "local-admin")
+    .action(async (options: { cwd?: string; actor: string }) => {
+      await requireRbacPermission({
+        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+        actor: options.actor,
+        permission: "goal.read",
+        action: "list goals"
+      });
+
       const { listGoals } = await import("./goals.js");
       const result = listGoals(options);
 
@@ -1147,7 +1169,15 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     .description("Show a goal.")
     .argument("<id>", "Goal id")
     .option("--cwd <path>", "Workspace directory")
-    .action(async (id: string, options: { cwd?: string }) => {
+    .option("--actor <id>", "RBAC subject for goal access", "local-admin")
+    .action(async (id: string, options: { cwd?: string; actor: string }) => {
+      await requireRbacPermission({
+        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+        actor: options.actor,
+        permission: "goal.read",
+        action: "inspect goals"
+      });
+
       const { showGoal } = await import("./goals.js");
       const result = showGoal({ ...options, id });
 
@@ -1167,7 +1197,15 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     .description("List tasks.")
     .option("--cwd <path>", "Workspace directory")
     .option("--goal <id>", "Filter by goal id")
-    .action(async (options: { cwd?: string; goal?: string }) => {
+    .option("--actor <id>", "RBAC subject for task access", "local-admin")
+    .action(async (options: { cwd?: string; goal?: string; actor: string }) => {
+      await requireRbacPermission({
+        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+        actor: options.actor,
+        permission: "task.read",
+        action: "list tasks"
+      });
+
       const { listTasks } = await import("./tasks.js");
       const result = listTasks({
         ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
@@ -1191,7 +1229,15 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     .description("Show a task.")
     .argument("<id>", "Task id")
     .option("--cwd <path>", "Workspace directory")
-    .action(async (id: string, options: { cwd?: string }) => {
+    .option("--actor <id>", "RBAC subject for task access", "local-admin")
+    .action(async (id: string, options: { cwd?: string; actor: string }) => {
+      await requireRbacPermission({
+        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+        actor: options.actor,
+        permission: "task.read",
+        action: "inspect tasks"
+      });
+
       const { showTask } = await import("./tasks.js");
       const result = showTask({ ...options, id });
 

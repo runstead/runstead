@@ -75,6 +75,23 @@ describe("cli entrypoint", () => {
     }
   });
 
+  it("exposes RBAC actor selection on goal and task commands", () => {
+    const goal = createProgram().commands.find((command) => command.name() === "goal");
+    const task = createProgram().commands.find((command) => command.name() === "task");
+
+    for (const commandName of ["create", "list", "show"]) {
+      const command = goal?.commands.find((item) => item.name() === commandName);
+
+      expect(command?.options.map((option) => option.long)).toContain("--actor");
+    }
+
+    for (const commandName of ["list", "show"]) {
+      const command = task?.commands.find((item) => item.name() === commandName);
+
+      expect(command?.options.map((option) => option.long)).toContain("--actor");
+    }
+  });
+
   it("exposes RBAC actor selection on repository commands", () => {
     const repo = createProgram().commands.find((command) => command.name() === "repo");
 
