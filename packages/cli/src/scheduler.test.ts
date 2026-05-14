@@ -125,6 +125,48 @@ describe("scheduleDueTasks", () => {
       await rm(workspace, { force: true, recursive: true });
     }
   });
+
+  it("does not reschedule recurrences blocked on approval", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-scheduler-"));
+
+    try {
+      await writePackageJson(workspace);
+      await initRunstead({ cwd: workspace });
+
+      const created = await createGoal({
+        cwd: workspace,
+        domain: "repo-maintenance",
+        now: new Date("2026-05-14T00:00:00.000Z")
+      });
+      const task = created.generatedTasks[0];
+
+      if (task === undefined) {
+        throw new Error("Expected createGoal to generate an initial task");
+      }
+
+      updateTaskStatus(created.stateDb, task, {
+        status: "waiting_approval",
+        updatedAt: "2026-05-14T00:05:00.000Z"
+      });
+
+      const result = await scheduleDueTasks({
+        cwd: workspace,
+        now: new Date("2026-05-16T00:00:00.000Z")
+      });
+
+      expect(result.scheduledTasks).toEqual([]);
+      expect(result.skippedTasks).toEqual([
+        expect.objectContaining({
+          goalId: created.goal.id,
+          type: "run_local_verifiers",
+          reason: "active_task_exists",
+          taskId: task.id
+        })
+      ]);
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
 });
 
 async function writePackageJson(workspace: string): Promise<void> {
@@ -141,31 +183,43 @@ async function writePackageJson(workspace: string): Promise<void> {
 }
 
 function completeTask(stateDb: string, task: Task, completedAt: string): void {
-  const database = openRunsteadDatabase(stateDb);
-  const completedTask: Task = {
-    ...task,
+  updateTaskStatus(stateDb, task, {
     status: "completed",
+    updatedAt: completedAt,
     output: {
       exitCode: 0
-    },
-    updatedAt: completedAt
+    }
+  });
+}
+
+function updateTaskStatus(
+  stateDb: string,
+  task: Task,
+  update: Pick<Task, "status" | "updatedAt"> & { output?: Task["output"] }
+): void {
+  const database = openRunsteadDatabase(stateDb);
+  const updatedTask: Task = {
+    ...task,
+    status: update.status,
+    ...(update.output === undefined ? {} : { output: update.output }),
+    updatedAt: update.updatedAt
   };
 
   try {
     appendEventAndProject(database, {
       event: {
         eventId: createRunsteadId("evt"),
-        type: "task.completed",
+        type: `task.${update.status}`,
         aggregateType: "task",
         aggregateId: task.id,
         payload: {
           source: "scheduler_test"
         },
-        createdAt: completedAt
+        createdAt: update.updatedAt
       },
       projection: {
         type: "task",
-        value: completedTask
+        value: updatedTask
       }
     });
   } finally {

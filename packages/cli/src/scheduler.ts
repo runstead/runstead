@@ -46,7 +46,13 @@ export interface ScheduleDueTasksResult {
   skippedTasks: SkippedScheduledTask[];
 }
 
-const ACTIVE_TASK_STATUSES = new Set(["queued", "claimed", "running"]);
+const ACTIVE_TASK_STATUSES = new Set([
+  "queued",
+  "claimed",
+  "running",
+  "waiting_approval",
+  "blocked"
+]);
 
 export async function scheduleDueTasks(
   options: ScheduleDueTasksOptions = {}
