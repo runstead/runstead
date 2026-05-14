@@ -63,6 +63,18 @@ describe("cli entrypoint", () => {
     expect(weekly?.options.map((option) => option.long)).toContain("--actor");
   });
 
+  it("exposes RBAC actor selection on approval commands", () => {
+    const approval = createProgram().commands.find(
+      (command) => command.name() === "approval"
+    );
+
+    for (const commandName of ["list", "show", "approve", "deny"]) {
+      const command = approval?.commands.find((item) => item.name() === commandName);
+
+      expect(command?.options.map((option) => option.long)).toContain("--actor");
+    }
+  });
+
   it("exposes RBAC actor selection on repository commands", () => {
     const repo = createProgram().commands.find((command) => command.name() === "repo");
 

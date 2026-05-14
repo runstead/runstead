@@ -1213,7 +1213,15 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     .description("List approval requests.")
     .option("--cwd <path>", "Workspace directory")
     .option("--status <status>", "Filter by approval status")
-    .action(async (options: { cwd?: string; status?: string }) => {
+    .option("--actor <id>", "RBAC subject for approval access", "local-admin")
+    .action(async (options: { cwd?: string; status?: string; actor: string }) => {
+      await requireRbacPermission({
+        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+        actor: options.actor,
+        permission: "approval.read",
+        action: "list approvals"
+      });
+
       const { listApprovals } = await import("./approvals.js");
       const status = parseApprovalStatus(options.status);
       const result = listApprovals({
@@ -1238,7 +1246,15 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     .description("Show an approval request.")
     .argument("<id>", "Approval id")
     .option("--cwd <path>", "Workspace directory")
-    .action(async (id: string, options: { cwd?: string }) => {
+    .option("--actor <id>", "RBAC subject for approval access", "local-admin")
+    .action(async (id: string, options: { cwd?: string; actor: string }) => {
+      await requireRbacPermission({
+        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+        actor: options.actor,
+        permission: "approval.read",
+        action: "inspect approvals"
+      });
+
       const { showApproval } = await import("./approvals.js");
       const result = showApproval({ ...options, id });
 
@@ -1257,36 +1273,50 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     .description("Approve a pending approval request.")
     .argument("<id>", "Approval id")
     .option("--cwd <path>", "Workspace directory")
+    .option("--actor <id>", "RBAC subject for approval decisions", "local-admin")
     .option("--decided-by <id>", "Approver id")
-    .action(async (id: string, options: { cwd?: string; decidedBy?: string }) => {
-      const { decideApproval } = await import("./approvals.js");
-      const result = await decideApproval({
-        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-        id,
-        decision: "approved",
-        ...(options.decidedBy === undefined ? {} : { decidedBy: options.decidedBy })
-      });
+    .action(
+      async (
+        id: string,
+        options: { cwd?: string; actor: string; decidedBy?: string }
+      ) => {
+        const actor = options.decidedBy ?? options.actor;
+        const { decideApproval } = await import("./approvals.js");
+        const result = await decideApproval({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          id,
+          decision: "approved",
+          decidedBy: actor
+        });
 
-      console.log(`Approved: ${result.approval.id}`);
-    });
+        console.log(`Approved: ${result.approval.id}`);
+      }
+    );
 
   approval
     .command("deny")
     .description("Deny a pending approval request.")
     .argument("<id>", "Approval id")
     .option("--cwd <path>", "Workspace directory")
+    .option("--actor <id>", "RBAC subject for approval decisions", "local-admin")
     .option("--decided-by <id>", "Approver id")
-    .action(async (id: string, options: { cwd?: string; decidedBy?: string }) => {
-      const { decideApproval } = await import("./approvals.js");
-      const result = await decideApproval({
-        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-        id,
-        decision: "denied",
-        ...(options.decidedBy === undefined ? {} : { decidedBy: options.decidedBy })
-      });
+    .action(
+      async (
+        id: string,
+        options: { cwd?: string; actor: string; decidedBy?: string }
+      ) => {
+        const actor = options.decidedBy ?? options.actor;
+        const { decideApproval } = await import("./approvals.js");
+        const result = await decideApproval({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          id,
+          decision: "denied",
+          decidedBy: actor
+        });
 
-      console.log(`Denied: ${result.approval.id}`);
-    });
+        console.log(`Denied: ${result.approval.id}`);
+      }
+    );
 
   const verifier = program.command("verifier").description("Run verifiers.");
 
