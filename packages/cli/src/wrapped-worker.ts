@@ -11,6 +11,8 @@ import {
 } from "./checkpoints.js";
 
 const execFileAsync = promisify(execFile);
+export const DEFAULT_WORKER_TIMEOUT_MS = 30 * 60_000;
+export const DEFAULT_WORKER_MAX_OUTPUT_BYTES = 1024 * 1024 * 10;
 
 export type WrappedWorkerKind = "claude_code" | "codex_cli";
 
@@ -49,6 +51,8 @@ export interface WrappedWorkerRunOptions extends WrappedWorkerPromptInput {
   checkpointBefore?: WorkspaceCheckpoint;
   checkpointRunner?: GitCheckpointRunner;
   env?: Record<string, string>;
+  timeoutMs?: number;
+  maxOutputBytes?: number;
 }
 
 export interface WorkerProcessResult {
@@ -60,7 +64,12 @@ export interface WorkerProcessResult {
 export type WorkerProcessRunner = (
   command: string,
   args: string[],
-  options: { cwd: string; env?: Record<string, string> }
+  options: {
+    cwd: string;
+    env?: Record<string, string>;
+    timeoutMs?: number;
+    maxOutputBytes?: number;
+  }
 ) => Promise<WorkerProcessResult>;
 
 export interface WrappedWorkerRunResult extends WorkerProcessResult {
@@ -189,7 +198,9 @@ export async function startWrappedWorker(
     command.args,
     {
       cwd: resolve(options.workspace),
-      ...(options.env === undefined ? {} : { env: options.env })
+      ...(options.env === undefined ? {} : { env: options.env }),
+      timeoutMs: options.timeoutMs ?? DEFAULT_WORKER_TIMEOUT_MS,
+      maxOutputBytes: options.maxOutputBytes ?? DEFAULT_WORKER_MAX_OUTPUT_BYTES
     }
   );
 
@@ -231,13 +242,19 @@ function bulletList(values: string[]): string {
 async function runWorkerProcess(
   command: string,
   args: string[],
-  options: { cwd: string; env?: Record<string, string> }
+  options: {
+    cwd: string;
+    env?: Record<string, string>;
+    timeoutMs?: number;
+    maxOutputBytes?: number;
+  }
 ): Promise<WorkerProcessResult> {
   try {
     const result = await execFileAsync(command, args, {
       cwd: options.cwd,
       env: options.env === undefined ? process.env : { ...process.env, ...options.env },
-      maxBuffer: 1024 * 1024 * 10,
+      maxBuffer: options.maxOutputBytes ?? DEFAULT_WORKER_MAX_OUTPUT_BYTES,
+      timeout: options.timeoutMs ?? DEFAULT_WORKER_TIMEOUT_MS,
       windowsHide: true
     });
 

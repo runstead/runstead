@@ -123,9 +123,23 @@ describe("workerCommand", () => {
 
 describe("startWrappedWorker", () => {
   it("starts the selected worker through an injectable process runner", async () => {
-    const calls: { command: string; args: string[]; cwd: string }[] = [];
+    const calls: {
+      command: string;
+      args: string[];
+      cwd: string;
+      timeoutMs?: number;
+      maxOutputBytes?: number;
+    }[] = [];
     const runner: WorkerProcessRunner = (command, args, options) => {
-      calls.push({ command, args, cwd: options.cwd });
+      calls.push({
+        command,
+        args,
+        cwd: options.cwd,
+        ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
+        ...(options.maxOutputBytes === undefined
+          ? {}
+          : { maxOutputBytes: options.maxOutputBytes })
+      });
 
       return Promise.resolve({
         stdout: '{"summary":"done"}',
@@ -161,7 +175,9 @@ describe("startWrappedWorker", () => {
       {
         command: "codex",
         args: ["exec", result.prompt],
-        cwd: "/repo"
+        cwd: "/repo",
+        timeoutMs: 1_800_000,
+        maxOutputBytes: 10485760
       }
     ]);
   });
