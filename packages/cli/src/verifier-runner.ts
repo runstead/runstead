@@ -14,6 +14,7 @@ import {
   findApprovedApprovalForAction,
   requestApproval
 } from "./approvals.js";
+import { withRunsteadManagerLock } from "./manager-lock.js";
 import { loadPolicyProfileFromFile } from "./policy-loader.js";
 import type { ActionEnvelope, PolicyProfile } from "./policy.js";
 import { recordPolicyDecision } from "./policy-log.js";
@@ -55,6 +56,19 @@ export interface RunTaskVerifiersResult {
 }
 
 export async function runTaskVerifiers(
+  options: RunTaskVerifiersOptions
+): Promise<RunTaskVerifiersResult> {
+  const cwd = resolve(options.cwd ?? process.cwd());
+
+  return withRunsteadManagerLock({ cwd }, () =>
+    runTaskVerifiersUnlocked({
+      ...options,
+      cwd
+    })
+  );
+}
+
+export async function runTaskVerifiersUnlocked(
   options: RunTaskVerifiersOptions
 ): Promise<RunTaskVerifiersResult> {
   const cwd = resolve(options.cwd ?? process.cwd());

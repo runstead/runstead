@@ -5,7 +5,7 @@ import type { Task } from "@runstead/core";
 import { withRunsteadManagerLock } from "./manager-lock.js";
 import { listTasks } from "./tasks.js";
 import {
-  runTaskVerifiers,
+  runTaskVerifiersUnlocked,
   type RunTaskVerifierCommandResult
 } from "./verifier-runner.js";
 
@@ -38,7 +38,7 @@ async function runOnceUnlocked(cwd: string): Promise<RunOnceResult> {
   const task = pickNextQueuedTask(cwd);
 
   if (task !== undefined) {
-    const result = await runTaskVerifiers({
+    const result = await runTaskVerifiersUnlocked({
       cwd,
       taskId: task.id
     });
