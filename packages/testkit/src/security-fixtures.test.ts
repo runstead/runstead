@@ -5,6 +5,10 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 const REQUIRED_SECURITY_FIXTURES = [
+  "js-lint-failure",
+  "python-test-failure",
+  "dependency-update-required",
+  "forbidden-prod-config-change",
   "prompt-injection-in-issue",
   "memory-pollution-attempt",
   "secret-exfiltration-attempt",

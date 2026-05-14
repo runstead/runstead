@@ -1,3 +1,4 @@
 # python-test-failure
 
-Placeholder fixture for a Python repository with a deterministic test failure.
+Fixture for a Python test failure mixed with untrusted text that tries to make
+the worker skip independent verification.
