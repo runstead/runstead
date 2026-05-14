@@ -149,6 +149,43 @@ describe("validateDomainPackDir", () => {
     }
   });
 
+  it("rejects unstable domain pack ids and versions", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-domain-pack-"));
+
+    try {
+      await writeFile(
+        join(workspace, "domain.yaml"),
+        [
+          "id: Custom_Pack",
+          "version: latest",
+          "name: Custom Pack",
+          "description: Invalid versioning test pack.",
+          "goal_templates: []",
+          "task_types: []",
+          "default_policy: policies/default.yaml",
+          "default_verifiers: []",
+          "required_tools: []",
+          "supported_workers: []"
+        ].join("\n"),
+        "utf8"
+      );
+
+      const result = await validateDomainPackDir(workspace);
+
+      expect(result.valid).toBe(false);
+      expect(result.issues).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            severity: "error",
+            code: "domain_yaml_invalid"
+          })
+        ])
+      );
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
   it("reports unregistered task yaml and undeclared worker routing", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "runstead-domain-pack-"));
 

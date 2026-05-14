@@ -3,6 +3,9 @@ import { readFile } from "node:fs/promises";
 import { parse as parseYaml } from "yaml";
 import { z } from "zod";
 
+const DOMAIN_PACK_ID_PATTERN = /^[a-z][a-z0-9-]*$/;
+const SEMVER_PATTERN = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
+
 export const DomainPackScopeSchema = z.object({
   resourceTypes: z.array(z.string().min(1))
 });
@@ -13,8 +16,8 @@ export const DomainPackSecuritySchema = z.object({
 });
 
 export const DomainPackSchema = z.object({
-  id: z.string().min(1),
-  version: z.string().min(1),
+  id: z.string().regex(DOMAIN_PACK_ID_PATTERN),
+  version: z.string().regex(SEMVER_PATTERN),
   name: z.string().min(1),
   description: z.string().min(1),
   scope: DomainPackScopeSchema.optional(),
@@ -30,8 +33,8 @@ export const DomainPackSchema = z.object({
 export type DomainPack = z.infer<typeof DomainPackSchema>;
 
 const DomainPackYamlSchema = z.object({
-  id: z.string().min(1),
-  version: z.string().min(1),
+  id: z.string().regex(DOMAIN_PACK_ID_PATTERN),
+  version: z.string().regex(SEMVER_PATTERN),
   name: z.string().min(1),
   description: z.string().min(1),
   scope: z
