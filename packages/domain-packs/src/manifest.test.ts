@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 import { buildDomainPackManifest } from "./manifest.js";
+import { createDomainPackTemplate } from "./template.js";
 
 describe("buildDomainPackManifest", () => {
   it("builds a deterministic manifest for the built-in repo-maintenance pack", async () => {
@@ -28,6 +29,8 @@ describe("buildDomainPackManifest", () => {
       defaultPolicy: "policies/repo-maintenance.yaml",
       goalTemplates: ["keep-ci-green"],
       taskTypes: ["repo_inspect", "run_local_verifiers", "ci_repair"],
+      fixtures: [],
+      evals: [],
       requiredTools: ["filesystem", "shell", "git", "github"],
       supportedWorkers: ["shell", "claude_code", "codex_cli"]
     });
@@ -43,6 +46,33 @@ describe("buildDomainPackManifest", () => {
     expect(manifest.files.every((file) => /^[a-f0-9]{64}$/.test(file.sha256))).toBe(
       true
     );
+  });
+
+  it("includes fixture and eval files in generated pack manifests", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-domain-manifest-"));
+
+    try {
+      const template = await createDomainPackTemplate({
+        id: "customer-ops",
+        outputDir: join(workspace, "customer-ops")
+      });
+
+      const manifest = await buildDomainPackManifest(template.root);
+
+      expect(manifest.fixtures).toEqual(["manual-review-smoke"]);
+      expect(manifest.evals).toEqual(["manual-review-smoke"]);
+      expect(manifest.files.map((file) => file.path)).toEqual([
+        "domain.yaml",
+        "evals/benchmark.yaml",
+        "fixtures/manifest.yaml",
+        "fixtures/manual-review-smoke/README.md",
+        "goal-templates/default-goal.yaml",
+        "policies/default.yaml",
+        "task-types/manual_review.yaml"
+      ]);
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
   });
 
   it("rejects invalid packs instead of producing partial manifests", async () => {
