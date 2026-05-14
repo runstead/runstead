@@ -136,12 +136,36 @@ export function formatDaemonReport(result: RunDaemonResult): string {
     `Cwd: ${result.cwd}`,
     `Ticks: ${result.ticks.length}`,
     `Stopped: ${result.stoppedReason}`,
-    ...result.ticks.map((tick) =>
-      tick.result.ranTask
-        ? `  tick ${tick.tick}: scheduled=${scheduledCount(tick)} ran ${tick.result.task.id} status=${tick.result.task.status}`
-        : `  tick ${tick.tick}: scheduled=${scheduledCount(tick)} idle (${tick.result.reason})`
-    )
+    ...result.ticks.map(formatDaemonTick)
   ].join("\n");
+}
+
+function formatDaemonTick(tick: DaemonTick): string {
+  if (!tick.result.ranTask) {
+    return `  tick ${tick.tick}: scheduled=${scheduledCount(tick)} idle (${tick.result.reason})`;
+  }
+
+  const base = `  tick ${tick.tick}: scheduled=${scheduledCount(tick)} ran ${tick.result.task.id} type=${tick.result.task.type} status=${tick.result.task.status}`;
+
+  if (tick.result.ciRepairResult === undefined) {
+    return base;
+  }
+
+  const ciRepair = tick.result.ciRepairResult;
+  const pullRequest =
+    ciRepair.pullRequest === undefined
+      ? []
+      : [`pr=${ciRepair.pullRequest.url ?? ciRepair.pullRequest.head}`];
+  const approval =
+    ciRepair.approval === undefined ? [] : [`approval=${ciRepair.approval.id}`];
+
+  return [
+    base,
+    `ci_repair=${ciRepair.status}`,
+    `branch=${ciRepair.branchName}`,
+    ...pullRequest,
+    ...approval
+  ].join(" ");
 }
 
 function scheduledCount(tick: DaemonTick): number {
