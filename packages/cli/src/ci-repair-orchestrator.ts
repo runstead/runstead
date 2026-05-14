@@ -677,13 +677,75 @@ function buildCiRepairPullRequestBody(
   ciRepair: CreateCiRepairTaskResult,
   verifierTask: Task
 ): string {
-  return [
+  const context = ciRepairOrchestratorContext(verifierTask);
+  const approval = approvalOutput(verifierTask);
+  const sections = [
     `Runstead repaired GitHub Actions run ${ciRepair.workflowRun.runId}.`,
-    "",
-    `Workflow: ${ciRepair.workflowRun.workflowName ?? "unknown"}`,
-    `Conclusion: ${ciRepair.workflowRun.conclusion ?? "unknown"}`,
-    `Verifier status: ${verifierTask.status}`
-  ].join("\n");
+    [
+      "## Runstead Task",
+      `- Goal: ${verifierTask.goalId}`,
+      `- Task: ${verifierTask.id}`,
+      `- Status: ${verifierTask.status}`
+    ].join("\n"),
+    [
+      "## Workflow",
+      `- Workflow: ${ciRepair.workflowRun.workflowName ?? "unknown"}`,
+      `- Conclusion: ${ciRepair.workflowRun.conclusion ?? "unknown"}`,
+      `- Run: ${ciRepair.workflowRun.url ?? ciRepair.workflowRun.runId}`
+    ].join("\n"),
+    context === undefined
+      ? ""
+      : [
+          "## Worker",
+          `- Worker: ${context.workerResult.worker}`,
+          `- Exit: ${context.workerResult.exitCode}`,
+          ...(context.workerResult.checkpointBefore === undefined
+            ? []
+            : [`- Checkpoint: ${context.workerResult.checkpointBefore.id}`])
+        ].join("\n"),
+    context === undefined
+      ? ""
+      : [
+          "## Verification",
+          `- Diff scope: ${context.diffScope.passed ? "passed" : "failed"}`,
+          ...context.verifierCommandResults.map(
+            (result) =>
+              `- ${result.verifier}: exit=${result.exitCode ?? "unknown"} evidence=${result.evidenceId}`
+          )
+        ].join("\n"),
+    [
+      "## Policy",
+      approval === undefined
+        ? "- Approval: not required by policy"
+        : `- Approval: ${approval.id} ${approval.status}${approval.decidedBy === undefined ? "" : ` by ${approval.decidedBy}`}`
+    ].join("\n")
+  ].filter((section) => section.length > 0);
+
+  return sections.join("\n\n");
+}
+
+function approvalOutput(task: Task):
+  | {
+      id: string;
+      status: string;
+      decidedBy?: string;
+    }
+  | undefined {
+  const value = task.output?.approval;
+
+  if (
+    !isRecord(value) ||
+    typeof value.id !== "string" ||
+    typeof value.status !== "string"
+  ) {
+    return undefined;
+  }
+
+  return {
+    id: value.id,
+    status: value.status,
+    ...(typeof value.decidedBy === "string" ? { decidedBy: value.decidedBy } : {})
+  };
 }
 
 async function rollbackWorkerChanges(options: {
@@ -1208,6 +1270,21 @@ function parsePullRequestResumeContext(task: Task): CiRepairOrchestratorResumeCo
 function pullRequestResumeContext(
   task: Task
 ): CiRepairOrchestratorResumeContext | undefined {
+  const value = ciRepairOrchestratorContext(task);
+
+  if (
+    value?.stage !== "push_approval_requested" &&
+    value?.stage !== "pr_approval_requested"
+  ) {
+    return undefined;
+  }
+
+  return value;
+}
+
+function ciRepairOrchestratorContext(
+  task: Task
+): CiRepairOrchestratorResumeContext | undefined {
   const value = task.output?.ciRepairOrchestrator;
 
   if (!isRecord(value)) {
@@ -1215,13 +1292,7 @@ function pullRequestResumeContext(
   }
 
   if (
-    value.stage !== "push_approval_requested" &&
-    value.stage !== "pr_approval_requested"
-  ) {
-    return undefined;
-  }
-
-  if (
+    typeof value.stage !== "string" ||
     typeof value.runId !== "string" ||
     typeof value.branchName !== "string" ||
     typeof value.base !== "string" ||

@@ -446,13 +446,34 @@ describe("runCiRepairOrchestrator", () => {
       if (!third.ranTask) {
         throw new Error("Expected run once to finish CI repair");
       }
+      const thirdCiRepair = third.ciRepairResult;
+
+      if (thirdCiRepair === undefined) {
+        throw new Error("Expected CI repair result");
+      }
 
       expect(third.task.type).toBe("ci_repair");
       expect(third.task.status).toBe("completed");
-      expect(third.ciRepairResult?.status).toBe("completed");
-      expect(third.ciRepairResult?.pullRequest?.url).toBe(
-        "https://github.example/pr/1"
+      expect(thirdCiRepair.status).toBe("completed");
+      expect(thirdCiRepair.pullRequest?.url).toBe("https://github.example/pr/1");
+      const prCreateCall = githubCalls.find(
+        (args) => args[0] === "pr" && args[1] === "create"
       );
+      const bodyIndex = prCreateCall?.indexOf("--body") ?? -1;
+      const body = bodyIndex < 0 ? "" : (prCreateCall?.[bodyIndex + 1] ?? "");
+
+      expect(body).toContain("## Runstead Task");
+      expect(body).toContain("## Worker");
+      expect(body).toContain("- Worker: codex_cli");
+      expect(body).toContain("## Verification");
+      expect(body).toContain("- Diff scope: passed");
+      expect(body).toContain("- test: exit=0 evidence=ev_test");
+      expect(body).toContain("## Policy");
+      expect(body).toContain(
+        `- Approval: ${second.ciRepairResult.approval.id} approved by local-admin`
+      );
+      expect(body).toContain("## Evidence");
+      expect(body).toContain(thirdCiRepair.ciRepair.evidence.id);
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }
