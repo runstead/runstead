@@ -36,6 +36,12 @@ describe("initRunstead", () => {
       );
       const rbacPolicy = await readFile(join(result.root, "rbac.yaml"), "utf8");
       const teamPolicy = await readFile(join(result.root, "team-policy.yaml"), "utf8");
+      const domainManifest = JSON.parse(
+        await readFile(
+          join(result.root, "domains", "repo-maintenance", "runstead-manifest.json"),
+          "utf8"
+        )
+      ) as { domain: { id: string }; fixtures: string[]; evals: string[] };
       const database = await stat(result.stateDb);
       const evidenceFiles = await readdir(join(result.root, "evidence"));
 
@@ -44,6 +50,13 @@ describe("initRunstead", () => {
       expect(goalTemplate).toContain("id: keep-ci-green");
       expect(domainPolicy).toContain("id: policy_repo_maintenance_v1");
       expect(domainPolicy).toContain("default_decision: require_approval");
+      expect(domainManifest).toMatchObject({
+        domain: {
+          id: "repo-maintenance"
+        },
+        fixtures: ["js-test-failure"],
+        evals: ["js-test-failure-smoke"]
+      });
       expect(rbacPolicy).toContain("local-admin");
       expect(teamPolicy).toContain("team_policy_repo_maintenance_v1");
       expect(database.isFile()).toBe(true);

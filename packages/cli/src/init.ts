@@ -3,7 +3,10 @@ import { access, copyFile, mkdir, readdir, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
 import type { Goal, Task } from "@runstead/core";
-import { getRepoMaintenancePackDir } from "@runstead/domain-packs";
+import {
+  buildDomainPackManifest,
+  getRepoMaintenancePackDir
+} from "@runstead/domain-packs";
 import { openRunsteadDatabase } from "@runstead/state-sqlite";
 
 import { createGoal } from "./goals.js";
@@ -162,11 +165,14 @@ export async function initRunstead(
   await mkdir(join(root, "checkpoints"), { recursive: true });
   await mkdir(join(root, "reports"), { recursive: true });
 
+  const repoMaintenanceDomainDir = join(root, "domains", "repo-maintenance");
+
   await copyDirectoryIfMissing(
     getRepoMaintenancePackDir(),
-    join(root, "domains", "repo-maintenance"),
+    repoMaintenanceDomainDir,
     options.force
   );
+  await writeDomainPackManifest(repoMaintenanceDomainDir);
   await writeIfMissing(join(root, "config.yaml"), DEFAULT_CONFIG, options.force);
   await writeIfMissing(
     join(root, "policies", "repo-maintenance.yaml"),
@@ -206,6 +212,16 @@ export async function initRunstead(
     ...(createdGoal === undefined ? {} : { defaultGoal: createdGoal.goal }),
     generatedTasks: createdGoal?.generatedTasks ?? []
   };
+}
+
+async function writeDomainPackManifest(packDir: string): Promise<void> {
+  const manifest = await buildDomainPackManifest(packDir);
+
+  await writeFile(
+    join(packDir, "runstead-manifest.json"),
+    `${JSON.stringify(manifest, null, 2)}\n`,
+    "utf8"
+  );
 }
 
 async function copyDirectoryIfMissing(
