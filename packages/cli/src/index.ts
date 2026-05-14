@@ -1164,6 +1164,27 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
       console.log(formatSkillValidationReport(result.validation));
     });
 
+  skill
+    .command("deprecate")
+    .description("Deprecate a promoted skill package.")
+    .argument("<path>", "Skill package directory")
+    .option("--deprecated-by <id>", "Deprecator identity", "local-admin")
+    .option("--reason <text>", "Deprecation reason")
+    .action(
+      async (path: string, options: { deprecatedBy: string; reason?: string }) => {
+        const { deprecateSkillPackage, formatSkillValidationReport } =
+          await import("@runstead/skills");
+        const result = await deprecateSkillPackage({
+          root: path,
+          deprecatedBy: options.deprecatedBy,
+          ...(options.reason === undefined ? {} : { reason: options.reason })
+        });
+
+        console.log(`Deprecated skill package: ${result.root}`);
+        console.log(formatSkillValidationReport(result.validation));
+      }
+    );
+
   const repo = program.command("repo").description("Manage registered repositories.");
 
   repo

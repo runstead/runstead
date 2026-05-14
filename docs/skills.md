@@ -15,8 +15,12 @@ runstead skill candidate create fix-pnpm-ci-failures \
 
 runstead skill test ./skills/fix-pnpm-ci-failures
 runstead skill promote ./skills/fix-pnpm-ci-failures --promoted-by maintainer
+runstead skill deprecate ./skills/fix-pnpm-ci-failures \
+  --deprecated-by maintainer \
+  --reason "superseded by a safer workflow"
 ```
 
 Promotion updates `skill.yaml` from `candidate` to `promoted` and appends the
 promotion decision to `changelog.md`. It does not automatically attach the skill
-to future tasks.
+to future tasks. Deprecation updates `skill.yaml` from `promoted` to
+`deprecated` and records the reason in `changelog.md`.

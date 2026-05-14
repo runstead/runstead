@@ -29,6 +29,20 @@ export interface PromoteSkillPackageResult {
   validation: SkillPackageValidationResult;
 }
 
+export interface DeprecateSkillPackageOptions {
+  root: string;
+  deprecatedBy?: string;
+  reason?: string;
+  now?: Date;
+}
+
+export interface DeprecateSkillPackageResult {
+  root: string;
+  previousStatus: "promoted";
+  skill: SkillPackage;
+  validation: SkillPackageValidationResult;
+}
+
 type SkillStatus = SkillPackage["status"];
 
 export async function promoteSkillPackage(
@@ -71,6 +85,42 @@ export async function promoteSkillPackage(
     previousStatus: "candidate",
     skill: validation.skill,
     test,
+    validation
+  };
+}
+
+export async function deprecateSkillPackage(
+  options: DeprecateSkillPackageOptions
+): Promise<DeprecateSkillPackageResult> {
+  const root = resolve(options.root);
+  const skillPath = join(root, "skill.yaml");
+  const current = await loadSkillPackageFromFile(skillPath);
+
+  if (current.status !== "promoted") {
+    throw new Error(`Only promoted skills can be deprecated: ${current.status}`);
+  }
+
+  const deprecatedAt = (options.now ?? new Date()).toISOString();
+  const deprecatedBy = options.deprecatedBy ?? "local-admin";
+  const reason = options.reason ?? "manual deprecation";
+
+  await writeSkillStatus(skillPath, "deprecated");
+  await appendFile(
+    join(root, "changelog.md"),
+    `\n- Deprecated by ${deprecatedBy} at ${deprecatedAt}: ${reason}.\n`,
+    "utf8"
+  );
+
+  const validation = await validateSkillPackageDir(root);
+
+  if (validation.skill === undefined) {
+    throw new Error("Deprecated skill package could not be reloaded");
+  }
+
+  return {
+    root,
+    previousStatus: "promoted",
+    skill: validation.skill,
     validation
   };
 }

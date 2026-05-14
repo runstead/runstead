@@ -238,17 +238,23 @@ describe("cli entrypoint", () => {
     }
   });
 
-  it("exposes skill promotion", () => {
+  it("exposes skill promotion and deprecation", () => {
     const skill = createProgram().commands.find(
       (command) => command.name() === "skill"
     );
 
     expect(skill?.commands.map((command) => command.name())).toContain("promote");
+    expect(skill?.commands.map((command) => command.name())).toContain("deprecate");
     expect(
       skill?.commands
         .find((command) => command.name() === "promote")
         ?.options.map((option) => option.long)
     ).toContain("--promoted-by");
+    expect(
+      skill?.commands
+        .find((command) => command.name() === "deprecate")
+        ?.options.map((option) => option.long)
+    ).toEqual(expect.arrayContaining(["--deprecated-by", "--reason"]));
   });
 
   it("exposes RBAC actor selection on GitHub App mode", () => {
