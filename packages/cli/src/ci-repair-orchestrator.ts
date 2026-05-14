@@ -573,6 +573,19 @@ export async function runCiRepairOrchestrator(
           };
         }
 
+        if (error instanceof ToolActionDeniedError) {
+          throw error;
+        }
+
+        failCiRepairOrchestratorRun({
+          database,
+          task: publishTask,
+          workerRun,
+          summary: "CI repair publish failed",
+          error,
+          ...(options.now === undefined ? {} : { now: options.now })
+        });
+
         throw error;
       }
     } catch (error) {
@@ -865,6 +878,40 @@ async function resumeCiRepairPullRequest(options: {
           approval: approvalSummary(error)
         };
       }
+
+      if (error instanceof ToolActionDeniedError) {
+        markTaskTerminal({
+          database,
+          task: resumeTask,
+          status: "blocked",
+          output: {
+            summary: error.message,
+            policyDecisionId: error.policyDecision.id
+          },
+          ...(options.now === undefined ? {} : { now: options.now })
+        });
+        finishWorkerRun({
+          database,
+          workerRun,
+          status: "blocked",
+          output: {
+            error: error.message,
+            policyDecisionId: error.policyDecision.id
+          },
+          ...(options.now === undefined ? {} : { now: options.now })
+        });
+
+        throw error;
+      }
+
+      failCiRepairOrchestratorRun({
+        database,
+        task: resumeTask,
+        workerRun,
+        summary: "CI repair publish failed",
+        error,
+        ...(options.now === undefined ? {} : { now: options.now })
+      });
 
       throw error;
     }
@@ -1408,6 +1455,42 @@ function writeTaskOutput(input: {
   });
 
   return task;
+}
+
+function failCiRepairOrchestratorRun(input: {
+  database: RunsteadDatabase;
+  task: Task;
+  workerRun: ReturnType<typeof startWorkerRun>;
+  summary: string;
+  error: unknown;
+  now?: Date;
+}): Task {
+  const output = {
+    ...(input.task.output ?? {}),
+    summary: input.summary,
+    error: errorMessage(input.error)
+  };
+  const task = markTaskTerminal({
+    database: input.database,
+    task: input.task,
+    status: "failed",
+    output,
+    ...(input.now === undefined ? {} : { now: input.now })
+  });
+
+  finishWorkerRun({
+    database: input.database,
+    workerRun: input.workerRun,
+    status: "failed",
+    output,
+    ...(input.now === undefined ? {} : { now: input.now })
+  });
+
+  return task;
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function taskEvent(

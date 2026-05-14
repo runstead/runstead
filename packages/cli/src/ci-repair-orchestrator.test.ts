@@ -272,6 +272,116 @@ describe("runCiRepairOrchestrator", () => {
       await rm(workspace, { force: true, recursive: true });
     }
   });
+
+  it("marks task and worker failed when approved branch push fails", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-ci-push-failure-"));
+    const gitCalls: string[][] = [];
+
+    try {
+      await initRunstead({ cwd: workspace, createDefaultGoal: true });
+
+      const first = await runCiRepairOrchestrator({
+        cwd: workspace,
+        runId: "123",
+        worker: "codex_cli",
+        base: "main",
+        allowedPaths: ["src/**"],
+        verifierCommands: [{ name: "test", command: "pnpm test" }],
+        githubRunner: githubRunner([]),
+        gitRunner: gitRunner(gitCalls, { diffNameOnly: "src/fix.ts\n" }),
+        workerRunner: workerRunner([]),
+        verifierRunner: verifierRunner([]),
+        now: new Date("2026-05-14T12:00:00.000Z")
+      });
+
+      expect(first.status).toBe("waiting_approval");
+
+      if (first.approval === undefined) {
+        throw new Error("Expected push approval request");
+      }
+
+      await decideApproval({
+        cwd: workspace,
+        id: first.approval.id,
+        decision: "approved",
+        decidedBy: "local-admin",
+        now: new Date("2026-05-14T12:01:00.000Z")
+      });
+
+      await expect(
+        runCiRepairOrchestrator({
+          cwd: workspace,
+          runId: "123",
+          worker: "codex_cli",
+          base: "main",
+          allowedPaths: ["src/**"],
+          verifierCommands: [{ name: "test", command: "pnpm test" }],
+          githubRunner: githubRunner([]),
+          gitRunner: gitRunner(gitCalls, {
+            diffNameOnly: "src/fix.ts\n",
+            pushExitCode: 1,
+            pushStderr: "permission denied\n"
+          }),
+          workerRunner: workerRunner([]),
+          verifierRunner: verifierRunner([]),
+          now: new Date("2026-05-14T12:02:00.000Z")
+        })
+      ).rejects.toThrow("git push failed");
+
+      const database = openRunsteadDatabase(join(workspace, ".runstead", "state.db"));
+
+      try {
+        const task = database
+          .prepare("SELECT status, output_json FROM tasks WHERE id = ?")
+          .get(first.ciRepair.task.id) as { status: string; output_json: string };
+        const taskOutput = JSON.parse(task.output_json) as {
+          summary?: string;
+          error?: string;
+        };
+        const workerRuns = database
+          .prepare(
+            "SELECT worker_type, status, output_json FROM worker_runs ORDER BY started_at, id"
+          )
+          .all() as {
+          worker_type: string;
+          status: string;
+          output_json: string | null;
+        }[];
+        const pushCalls = database
+          .prepare(
+            "SELECT status, output_json FROM tool_calls WHERE action_type = 'git.push' ORDER BY started_at, id"
+          )
+          .all() as { status: string; output_json: string | null }[];
+        const lastWorkerRun = workerRuns.at(-1);
+        const lastWorkerOutput = JSON.parse(lastWorkerRun?.output_json ?? "{}") as {
+          summary?: string;
+          error?: string;
+        };
+        const failedPushOutput = JSON.parse(pushCalls.at(-1)?.output_json ?? "{}") as {
+          error?: string;
+        };
+
+        expect(task.status).toBe("failed");
+        expect(taskOutput.summary).toBe("CI repair publish failed");
+        expect(taskOutput.error).toContain("git push failed");
+        expect(lastWorkerRun).toMatchObject({
+          worker_type: "ci_repair_orchestrator",
+          status: "failed"
+        });
+        expect(lastWorkerOutput.summary).toBe("CI repair publish failed");
+        expect(lastWorkerOutput.error).toContain("git push failed");
+        expect(pushCalls.map((call) => call.status)).toEqual([
+          "approval_required",
+          "failed"
+        ]);
+        expect(failedPushOutput.error).toContain("git push failed");
+      } finally {
+        database.close();
+      }
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
 });
 
 function githubRunner(calls: string[][]): GitHubCliRunner {
@@ -315,7 +425,10 @@ function githubRunner(calls: string[][]): GitHubCliRunner {
   };
 }
 
-function gitRunner(calls: string[][], output: { diffNameOnly: string }): GitRunner {
+function gitRunner(
+  calls: string[][],
+  output: { diffNameOnly: string; pushExitCode?: number; pushStderr?: string }
+): GitRunner {
   return (args) => {
     calls.push(args);
 
@@ -324,7 +437,11 @@ function gitRunner(calls: string[][], output: { diffNameOnly: string }): GitRunn
     }
 
     if (args[0] === "push") {
-      return Promise.resolve({ stdout: "pushed\n", stderr: "", exitCode: 0 });
+      return Promise.resolve({
+        stdout: output.pushExitCode === undefined ? "pushed\n" : "",
+        stderr: output.pushStderr ?? "",
+        exitCode: output.pushExitCode ?? 0
+      });
     }
 
     switch (args.join(" ")) {
