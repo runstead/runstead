@@ -83,6 +83,7 @@ describe("createCiRepairTaskFromWorkflowRun", () => {
             used_for_prompt: boolean;
           };
           workflowRun: { conclusion: string };
+          failureClassification: { category: string; summary: string };
           log: { log: string };
         };
         const evidenceEvent = database
@@ -116,6 +117,10 @@ describe("createCiRepairTaskFromWorkflowRun", () => {
             source: "github_actions_log",
             redacted: true,
             used_for_prompt: false
+          },
+          failureClassification: {
+            category: "test",
+            summary: "Test verification failed"
           }
         });
         expect(evidence).toMatchObject({
@@ -124,6 +129,10 @@ describe("createCiRepairTaskFromWorkflowRun", () => {
           summary: "Verify failure run 123 24 log bytes"
         });
         expect(artifact.workflowRun.conclusion).toBe("failure");
+        expect(artifact.failureClassification).toMatchObject({
+          category: "test",
+          summary: "Test verification failed"
+        });
         expect(artifact.metadata).toEqual({
           trust: "untrusted_external",
           source: "github_actions_log",

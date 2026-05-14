@@ -51,6 +51,21 @@ export interface CreateCiRepairTaskResult {
   log: GitHubWorkflowRunLog;
 }
 
+interface CiFailureClassification extends JsonObject {
+  category:
+    | "build"
+    | "cancelled"
+    | "dependency_install"
+    | "lint"
+    | "test"
+    | "timeout"
+    | "typecheck"
+    | "unknown";
+  summary: string;
+  confidence: number;
+  matchedSignals: string[];
+}
+
 const REPAIRABLE_CONCLUSIONS = new Set([
   "failure",
   "timed_out",
@@ -89,6 +104,7 @@ export async function createCiRepairTaskFromWorkflowRun(
 
   assertRepairableWorkflowRun(workflowRun);
   const evidenceLog = redactGitHubWorkflowRunLog(log);
+  const failureClassification = classifyCiFailure(workflowRun, evidenceLog);
 
   const goal = listGoals({ cwd }).goals.find(
     (candidate) =>
@@ -114,6 +130,7 @@ export async function createCiRepairTaskFromWorkflowRun(
       workflowRun,
       logEvidenceType: "github_workflow_run",
       logEvidenceMetadata: CI_LOG_EVIDENCE_METADATA,
+      failureClassification,
       repairPlan: {
         fetchLog: true,
         classifyFailure: true,
@@ -139,6 +156,7 @@ export async function createCiRepairTaskFromWorkflowRun(
     goalId: task.goalId,
     metadata: CI_LOG_EVIDENCE_METADATA,
     workflowRun,
+    failureClassification,
     log: evidenceLog
   };
   const evidenceContents = `${JSON.stringify(evidenceArtifact, null, 2)}\n`;
@@ -169,6 +187,7 @@ export async function createCiRepairTaskFromWorkflowRun(
       runId: workflowRun.runId,
       workflowName: workflowRun.workflowName,
       conclusion: workflowRun.conclusion,
+      failureCategory: failureClassification.category,
       evidenceId: evidence.id
     },
     createdAt
@@ -363,6 +382,7 @@ async function createGovernedCiRepairTaskFromWorkflowRun(
       ]);
       const workflowRun = workflowRunResult.value;
       const evidenceLog = redactGitHubWorkflowRunLog(logResult.value);
+      const failureClassification = classifyCiFailure(workflowRun, evidenceLog);
 
       assertRepairableWorkflowRun(workflowRun);
 
@@ -374,6 +394,7 @@ async function createGovernedCiRepairTaskFromWorkflowRun(
           workflowRun,
           logEvidenceType: "github_workflow_run",
           logEvidenceMetadata: CI_LOG_EVIDENCE_METADATA,
+          failureClassification,
           repairPlan: {
             fetchLog: true,
             classifyFailure: true,
@@ -393,6 +414,7 @@ async function createGovernedCiRepairTaskFromWorkflowRun(
         goalId: finalTask.goalId,
         metadata: CI_LOG_EVIDENCE_METADATA,
         workflowRun,
+        failureClassification,
         log: evidenceLog
       };
       const evidenceContents = `${JSON.stringify(evidenceArtifact, null, 2)}\n`;
@@ -448,6 +470,7 @@ async function createGovernedCiRepairTaskFromWorkflowRun(
             runId: workflowRun.runId,
             workflowName: workflowRun.workflowName,
             conclusion: workflowRun.conclusion,
+            failureCategory: failureClassification.category,
             evidenceId: evidence.id
           },
           createdAt
@@ -575,6 +598,94 @@ function workflowRunSummary(
     `run ${status.runId}`,
     `${log.byteLength} log bytes`
   ].join(" ");
+}
+
+function classifyCiFailure(
+  status: GitHubWorkflowRunStatus,
+  log: GitHubWorkflowRunLog
+): CiFailureClassification {
+  const text = `${status.conclusion ?? ""}\n${status.workflowName ?? ""}\n${log.log}`;
+  const normalized = text.toLowerCase();
+
+  if (
+    status.conclusion === "timed_out" ||
+    hasAny(normalized, ["timed out", "timeout"])
+  ) {
+    return classification("timeout", "Workflow run timed out", 0.9, ["timeout"]);
+  }
+
+  if (
+    status.conclusion === "cancelled" ||
+    hasAny(normalized, ["cancelled", "canceled"])
+  ) {
+    return classification("cancelled", "Workflow run was cancelled", 0.9, [
+      "cancelled"
+    ]);
+  }
+
+  if (
+    hasAny(normalized, [
+      "npm err!",
+      "pnpm err",
+      "yarn error",
+      "lockfile",
+      "cannot find module",
+      "dependency",
+      "failed to install"
+    ])
+  ) {
+    return classification(
+      "dependency_install",
+      "Dependency installation or resolution failed",
+      0.75,
+      ["dependency_install"]
+    );
+  }
+
+  if (hasAny(normalized, ["eslint", "lint failed", "lint error"])) {
+    return classification("lint", "Lint verification failed", 0.75, ["lint"]);
+  }
+
+  if (
+    /\bts\d{4}\b/i.test(text) ||
+    hasAny(normalized, ["typecheck", "type error", "tsc"])
+  ) {
+    return classification("typecheck", "Type checking failed", 0.75, ["typecheck"]);
+  }
+
+  if (
+    hasAny(normalized, ["test failed", "failing test", "expected", "received", "fail "])
+  ) {
+    return classification("test", "Test verification failed", 0.7, ["test"]);
+  }
+
+  if (
+    hasAny(normalized, ["build failed", "compilation failed", "vite build", "webpack"])
+  ) {
+    return classification("build", "Build failed", 0.65, ["build"]);
+  }
+
+  return classification("unknown", "Workflow failed; cause not classified", 0.2, [
+    "unknown"
+  ]);
+}
+
+function classification(
+  category: CiFailureClassification["category"],
+  summary: string,
+  confidence: number,
+  matchedSignals: string[]
+): CiFailureClassification {
+  return {
+    category,
+    summary,
+    confidence,
+    matchedSignals
+  };
+}
+
+function hasAny(value: string, needles: string[]): boolean {
+  return needles.some((needle) => value.includes(needle));
 }
 
 function sha256(contents: string): string {
