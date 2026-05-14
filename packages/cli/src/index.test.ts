@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
   createProgram,
   inferProgramName,
+  requireSecretPrintAcknowledgement,
   requireUnmanagedHelperAcknowledgement
 } from "./index.js";
 
@@ -268,6 +269,12 @@ describe("cli entrypoint", () => {
 
       expect(command?.options.map((option) => option.long)).toContain("--actor");
     }
+
+    for (const commandName of ["jwt", "token"]) {
+      const command = app?.commands.find((item) => item.name() === commandName);
+
+      expect(command?.options.map((option) => option.long)).toContain("--print-secret");
+    }
   });
 
   it("exposes RBAC actor selection on GitHub integration commands", () => {
@@ -326,6 +333,15 @@ describe("cli entrypoint", () => {
         { unmanaged: true },
         "create GitHub pull requests"
       )
+    ).not.toThrow();
+  });
+
+  it("requires explicit acknowledgement before printing GitHub App credentials", () => {
+    expect(() => requireSecretPrintAcknowledgement({}, "GitHub App JWTs")).toThrow(
+      "Refusing to print GitHub App JWTs"
+    );
+    expect(() =>
+      requireSecretPrintAcknowledgement({ printSecret: true }, "GitHub App JWTs")
     ).not.toThrow();
   });
 

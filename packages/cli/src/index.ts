@@ -2022,7 +2022,12 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     .description("Print a signed GitHub App JWT.")
     .option("--cwd <path>", "Workspace directory")
     .option("--actor <id>", "RBAC subject for GitHub App management", "local-admin")
-    .action(async (options: { cwd?: string; actor: string }) => {
+    .option(
+      "--print-secret",
+      "Acknowledge that the GitHub App JWT will be printed to stdout"
+    )
+    .action(async (options: { cwd?: string; actor: string; printSecret?: boolean }) => {
+      requireSecretPrintAcknowledgement(options, "GitHub App JWTs");
       const { checkPermission } = await import("./rbac.js");
       const permission = await checkPermission({
         ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
@@ -2050,8 +2055,18 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     .option("--cwd <path>", "Workspace directory")
     .option("--installation-id <id>", "Override configured GitHub App installation id")
     .option("--actor <id>", "RBAC subject for GitHub App management", "local-admin")
+    .option(
+      "--print-secret",
+      "Acknowledge that the installation access token will be printed to stdout"
+    )
     .action(
-      async (options: { cwd?: string; installationId?: string; actor: string }) => {
+      async (options: {
+        cwd?: string;
+        installationId?: string;
+        actor: string;
+        printSecret?: boolean;
+      }) => {
+        requireSecretPrintAcknowledgement(options, "GitHub App installation tokens");
         await requireRbacPermission({
           ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
           actor: options.actor,
@@ -2494,6 +2509,17 @@ export function requireUnmanagedHelperAcknowledgement(
   if (options.unmanaged !== true) {
     throw new Error(
       `Refusing to ${action} through an unmanaged helper. Use the governed runtime, or pass --unmanaged to acknowledge this bypass.`
+    );
+  }
+}
+
+export function requireSecretPrintAcknowledgement(
+  options: { printSecret?: boolean },
+  secretName: string
+): void {
+  if (options.printSecret !== true) {
+    throw new Error(
+      `Refusing to print ${secretName}. Pass --print-secret to acknowledge stdout will contain a credential.`
     );
   }
 }
