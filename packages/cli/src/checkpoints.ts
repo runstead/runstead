@@ -3,7 +3,8 @@ import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, normalize, resolve, sep } from "node:path";
 import { promisify } from "node:util";
 
-import { createRunsteadId } from "@runstead/core";
+import { createRunsteadId, type RunsteadEvent } from "@runstead/core";
+import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sqlite";
 
 const execFileAsync = promisify(execFile);
 
@@ -49,6 +50,13 @@ export interface RestoreWorkspaceCheckpointResult {
   restoredTrackedPatch: boolean;
   restoredUntrackedFiles: string[];
   removedUntrackedFiles: string[];
+}
+
+export interface RecordWorkspaceCheckpointRestoreEventOptions {
+  stateDb: string;
+  result: RestoreWorkspaceCheckpointResult;
+  actor?: string;
+  now?: Date;
 }
 
 export async function createWorkspaceCheckpoint(
@@ -246,6 +254,36 @@ export function formatWorkspaceCheckpointRestoreReport(
     `Untracked files restored: ${result.restoredUntrackedFiles.length}`,
     `Untracked files removed: ${result.removedUntrackedFiles.length}`
   ].join("\n");
+}
+
+export function recordWorkspaceCheckpointRestoreEvent(
+  options: RecordWorkspaceCheckpointRestoreEventOptions
+): RunsteadEvent {
+  const event: RunsteadEvent = {
+    eventId: createRunsteadId("evt"),
+    type: "checkpoint.restored",
+    aggregateType: "checkpoint",
+    aggregateId: options.result.checkpoint.id,
+    payload: {
+      workspace: options.result.checkpoint.workspace,
+      checkpointId: options.result.checkpoint.id,
+      currentHead: options.result.currentHead ?? "",
+      restoredTrackedPatch: options.result.restoredTrackedPatch,
+      restoredUntrackedFiles: options.result.restoredUntrackedFiles,
+      removedUntrackedFiles: options.result.removedUntrackedFiles,
+      ...(options.actor === undefined ? {} : { actor: options.actor })
+    },
+    createdAt: (options.now ?? new Date()).toISOString()
+  };
+  const database = openRunsteadDatabase(options.stateDb);
+
+  try {
+    appendEventAndProject(database, { event });
+  } finally {
+    database.close();
+  }
+
+  return event;
 }
 
 async function runGit(

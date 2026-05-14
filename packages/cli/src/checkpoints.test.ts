@@ -2,10 +2,12 @@ import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promise
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { openRunsteadDatabase } from "@runstead/state-sqlite";
 import { describe, expect, it } from "vitest";
 
 import {
   createWorkspaceCheckpoint,
+  recordWorkspaceCheckpointRestoreEvent,
   restoreWorkspaceCheckpoint,
   type GitCheckpointRunner
 } from "./checkpoints.js";
@@ -123,7 +125,7 @@ describe("restoreWorkspaceCheckpoint", () => {
           return Promise.resolve({ stdout: "reset", stderr: "", exitCode: 0 });
         case "ls-files":
           return Promise.resolve({
-            stdout: "notes.txt\0new.txt\0.runstead/state.db\0.team/state.db\0",
+            stdout: "notes.txt\0new.txt\0.runstead/runtime.txt\0.team/state.db\0",
             stderr: "",
             exitCode: 0
           });
@@ -137,8 +139,9 @@ describe("restoreWorkspaceCheckpoint", () => {
     try {
       await mkdir(join(workspace, ".runstead"), { recursive: true });
       await mkdir(join(workspace, ".team"), { recursive: true });
+      openRunsteadDatabase(join(workspace, ".runstead", "state.db")).close();
       await writeFile(join(workspace, "notes.txt"), "before", "utf8");
-      await writeFile(join(workspace, ".runstead", "state.db"), "keep", "utf8");
+      await writeFile(join(workspace, ".runstead", "runtime.txt"), "keep", "utf8");
       await writeFile(join(workspace, ".team", "state.db"), "keep legacy", "utf8");
       const checkpoint = await createWorkspaceCheckpoint({
         workspace,
@@ -174,11 +177,54 @@ describe("restoreWorkspaceCheckpoint", () => {
       );
       await expect(access(join(workspace, "new.txt"))).rejects.toThrow();
       await expect(
-        readFile(join(workspace, ".runstead", "state.db"), "utf8")
+        readFile(join(workspace, ".runstead", "runtime.txt"), "utf8")
       ).resolves.toBe("keep");
       await expect(
         readFile(join(workspace, ".team", "state.db"), "utf8")
       ).resolves.toBe("keep legacy");
+
+      const event = recordWorkspaceCheckpointRestoreEvent({
+        stateDb: join(workspace, ".runstead", "state.db"),
+        result,
+        actor: "local-admin",
+        now: new Date("2026-05-14T01:00:00.000Z")
+      });
+      const database = openRunsteadDatabase(join(workspace, ".runstead", "state.db"));
+
+      try {
+        const row = database
+          .prepare(
+            `
+            SELECT type, aggregate_type, aggregate_id, payload_json, created_at
+            FROM events
+            WHERE event_id = ?
+          `
+          )
+          .get(event.eventId) as {
+          type: string;
+          aggregate_type: string;
+          aggregate_id: string;
+          payload_json: string;
+          created_at: string;
+        };
+
+        expect(row).toMatchObject({
+          type: "checkpoint.restored",
+          aggregate_type: "checkpoint",
+          aggregate_id: checkpoint.id,
+          created_at: "2026-05-14T01:00:00.000Z"
+        });
+        expect(JSON.parse(row.payload_json)).toMatchObject({
+          checkpointId: checkpoint.id,
+          currentHead: "abc123",
+          restoredTrackedPatch: true,
+          restoredUntrackedFiles: ["notes.txt"],
+          removedUntrackedFiles: ["notes.txt", "new.txt"],
+          actor: "local-admin"
+        });
+      } finally {
+        database.close();
+      }
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }

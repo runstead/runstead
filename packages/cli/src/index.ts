@@ -181,8 +181,11 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
           action: "restore checkpoints"
         });
 
-        const { formatWorkspaceCheckpointRestoreReport, restoreWorkspaceCheckpoint } =
-          await import("./checkpoints.js");
+        const {
+          formatWorkspaceCheckpointRestoreReport,
+          recordWorkspaceCheckpointRestoreEvent,
+          restoreWorkspaceCheckpoint
+        } = await import("./checkpoints.js");
         const { requireRunsteadRoot } = await import("./runstead-root.js");
         const resolved = await requireRunsteadRoot(options.cwd);
         const result = await restoreWorkspaceCheckpoint({
@@ -190,6 +193,11 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
           checkpointDir: join(resolved.root, "checkpoints"),
           checkpointId: id,
           allowHeadMismatch: options.allowHeadMismatch === true
+        });
+        recordWorkspaceCheckpointRestoreEvent({
+          stateDb: join(resolved.root, "state.db"),
+          result,
+          actor: options.actor
         });
 
         console.log(formatWorkspaceCheckpointRestoreReport(result));
