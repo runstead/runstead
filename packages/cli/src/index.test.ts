@@ -143,6 +143,18 @@ describe("cli entrypoint", () => {
     expect(tick?.options.map((option) => option.long)).toContain("--actor");
   });
 
+  it("exposes RBAC actor selection on team policy commands", () => {
+    const teamPolicy = createProgram().commands.find(
+      (command) => command.name() === "team-policy"
+    );
+
+    for (const commandName of ["init", "show", "compile"]) {
+      const command = teamPolicy?.commands.find((item) => item.name() === commandName);
+
+      expect(command?.options.map((option) => option.long)).toContain("--actor");
+    }
+  });
+
   it("exposes RBAC actor selection on GitHub App mode", () => {
     const github = createProgram().commands.find(
       (command) => command.name() === "github"

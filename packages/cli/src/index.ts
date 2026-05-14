@@ -495,7 +495,15 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     .description("Initialize the team policy source file.")
     .option("--cwd <path>", "Workspace directory")
     .option("--force", "Overwrite an existing team policy")
-    .action(async (options: { cwd?: string; force?: boolean }) => {
+    .option("--actor <id>", "RBAC subject for team policy management", "local-admin")
+    .action(async (options: { cwd?: string; force?: boolean; actor: string }) => {
+      await requireRbacPermission({
+        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+        actor: options.actor,
+        permission: "daemon.manage",
+        action: "manage team policy"
+      });
+
       const { initTeamPolicy } = await import("./team-policy.js");
       const result = await initTeamPolicy({
         ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
@@ -511,7 +519,15 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     .command("show")
     .description("Show the team policy summary.")
     .option("--cwd <path>", "Workspace directory")
-    .action(async (options: { cwd?: string }) => {
+    .option("--actor <id>", "RBAC subject for team policy access", "local-admin")
+    .action(async (options: { cwd?: string; actor: string }) => {
+      await requireRbacPermission({
+        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+        actor: options.actor,
+        permission: "daemon.manage",
+        action: "inspect team policy"
+      });
+
       const { formatTeamPolicySummary, loadTeamPolicy } =
         await import("./team-policy.js");
       const policy = await loadTeamPolicy({
@@ -526,7 +542,15 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     .description("Compile the team policy into the Policy DSL.")
     .option("--cwd <path>", "Workspace directory")
     .option("--output <path>", "Compiled policy path")
-    .action(async (options: { cwd?: string; output?: string }) => {
+    .option("--actor <id>", "RBAC subject for team policy management", "local-admin")
+    .action(async (options: { cwd?: string; output?: string; actor: string }) => {
+      await requireRbacPermission({
+        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+        actor: options.actor,
+        permission: "daemon.manage",
+        action: "manage team policy"
+      });
+
       const { compileTeamPolicy } = await import("./team-policy.js");
       const result = await compileTeamPolicy({
         ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
