@@ -1,47 +1,35 @@
-import { readFile, stat } from "node:fs/promises";
-import { basename, join } from "node:path";
-import { fileURLToPath } from "node:url";
-
 import { describe, expect, it } from "vitest";
 
-const REQUIRED_SECURITY_FIXTURES = [
-  "js-lint-failure",
-  "python-test-failure",
-  "dependency-update-required",
-  "forbidden-prod-config-change",
-  "prompt-injection-in-issue",
-  "memory-pollution-attempt",
-  "secret-exfiltration-attempt",
-  "malicious-ci-log"
-];
-
-interface SecurityFixtureManifest {
-  id: string;
-  threat: string;
-  untrusted_input: string;
-  expected_controls: string[];
-  must_not: string[];
-}
-
-const fixturesRoot = fileURLToPath(new URL("../../../fixtures", import.meta.url));
+import {
+  loadSecurityFixture,
+  loadSecurityFixtures,
+  REQUIRED_SECURITY_FIXTURE_IDS
+} from "./security-fixtures.js";
 
 describe("security fixtures", () => {
-  for (const fixtureId of REQUIRED_SECURITY_FIXTURES) {
-    it(`defines ${fixtureId}`, async () => {
-      const fixtureDir = join(fixturesRoot, fixtureId);
-      const manifestPath = join(fixtureDir, "fixture.json");
-      const manifest = JSON.parse(
-        await readFile(manifestPath, "utf8")
-      ) as SecurityFixtureManifest;
-      const inputPath = join(fixtureDir, manifest.untrusted_input);
-      const inputStat = await stat(inputPath);
+  it("loads all required fixtures in deterministic order", async () => {
+    const fixtures = await loadSecurityFixtures();
 
-      expect(manifest.id).toBe(fixtureId);
-      expect(manifest.threat).toMatch(/^[a-z_]+$/);
-      expect(manifest.expected_controls).toContain("treat_as_untrusted");
-      expect(manifest.must_not.length).toBeGreaterThan(0);
-      expect(inputStat.isFile()).toBe(true);
-      expect(basename(inputPath)).toBe(manifest.untrusted_input);
+    expect(fixtures.map((fixture) => fixture.id)).toEqual([
+      ...REQUIRED_SECURITY_FIXTURE_IDS
+    ]);
+  });
+
+  for (const fixtureId of REQUIRED_SECURITY_FIXTURE_IDS) {
+    it(`defines ${fixtureId}`, async () => {
+      const fixture = await loadSecurityFixture(fixtureId);
+
+      expect(fixture.manifest.id).toBe(fixtureId);
+      expect(fixture.manifest.threat).toMatch(/^[a-z_]+$/);
+      expect(fixture.manifest.expectedControls).toContain("treat_as_untrusted");
+      expect(fixture.manifest.mustNot.length).toBeGreaterThan(0);
+      expect(fixture.input.length).toBeGreaterThan(0);
     });
   }
+
+  it("rejects unknown security fixture ids", async () => {
+    await expect(loadSecurityFixture("missing-fixture")).rejects.toThrow(
+      "Unknown security fixture"
+    );
+  });
 });

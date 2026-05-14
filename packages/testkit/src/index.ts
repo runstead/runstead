@@ -2,6 +2,8 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+export * from "./security-fixtures.js";
+
 export interface TempWorkspace {
   path: string;
   cleanup: () => Promise<void>;
