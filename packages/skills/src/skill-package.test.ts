@@ -108,6 +108,11 @@ describe("validateSkillPackageDir", () => {
         ),
         "utf8"
       );
+      await writeFile(
+        join(root, "permissions.yaml"),
+        "network: deny_by_default\n",
+        "utf8"
+      );
 
       const result = await validateSkillPackageDir(root);
 
@@ -120,6 +125,9 @@ describe("validateSkillPackageDir", () => {
           }),
           expect.objectContaining({
             code: "tool_policy_overlap"
+          }),
+          expect.objectContaining({
+            code: "permissions_file_mismatch"
           })
         ])
       );
@@ -136,7 +144,13 @@ async function createSkillPackageFixture(name: string): Promise<string> {
   await mkdir(join(root, "tests"), { recursive: true });
   await writeFile(join(root, "skill.yaml"), VALID_SKILL_YAML, "utf8");
   await writeFile(join(root, "SKILL.md"), "# Fix pnpm CI failures\n", "utf8");
-  await writeFile(join(root, "permissions.yaml"), "network: deny_by_default\n", "utf8");
+  await writeFile(
+    join(root, "permissions.yaml"),
+    ["network: deny_by_default", "dependency_install: approval_required", ""].join(
+      "\n"
+    ),
+    "utf8"
+  );
   await writeFile(join(root, "tests", "run.sh"), "#!/usr/bin/env sh\n", "utf8");
   await writeFile(join(root, "rollback.md"), "# Rollback\n", "utf8");
 

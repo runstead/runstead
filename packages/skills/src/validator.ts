@@ -1,8 +1,9 @@
 import { constants } from "node:fs";
-import { access } from "node:fs/promises";
+import { access, readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
-import { ZodError } from "zod";
+import { parse as parseYaml } from "yaml";
+import { ZodError, z } from "zod";
 
 import { loadSkillPackageFromFile, type SkillPackage } from "./skill-package.js";
 
@@ -29,6 +30,8 @@ const REQUIRED_FILES = [
   "tests/run.sh",
   "rollback.md"
 ];
+
+const PermissionsFileSchema = z.record(z.string().min(1), z.string().min(1));
 
 export async function validateSkillPackageDir(
   root: string
@@ -61,6 +64,11 @@ export async function validateSkillPackageDir(
 
   if (skill !== undefined) {
     issues.push(...validateSkillPackageSemantics(skill));
+    await validatePermissionsFile({
+      root: resolvedRoot,
+      skill,
+      issues
+    });
   }
 
   return {
@@ -134,6 +142,54 @@ function validateSkillPackageSemantics(skill: SkillPackage): SkillValidationIssu
   }
 
   return issues;
+}
+
+async function validatePermissionsFile(input: {
+  root: string;
+  skill: SkillPackage;
+  issues: SkillValidationIssue[];
+}): Promise<void> {
+  const path = join(input.root, "permissions.yaml");
+
+  if (!(await isReadable(path))) {
+    return;
+  }
+
+  try {
+    const permissions = PermissionsFileSchema.parse(
+      parseYaml(await readFile(path, "utf8"))
+    );
+
+    if (!sameStringRecord(permissions, input.skill.permissions)) {
+      input.issues.push({
+        severity: "error",
+        code: "permissions_file_mismatch",
+        message: "permissions.yaml must match skill.yaml permissions",
+        path: "permissions.yaml"
+      });
+    }
+  } catch (error) {
+    input.issues.push({
+      severity: "error",
+      code: "invalid_permissions_yaml",
+      message: validationErrorMessage(error),
+      path: "permissions.yaml"
+    });
+  }
+}
+
+function sameStringRecord(
+  left: Record<string, string>,
+  right: Record<string, string>
+): boolean {
+  const leftEntries = Object.entries(left).sort(([leftKey], [rightKey]) =>
+    leftKey.localeCompare(rightKey)
+  );
+  const rightEntries = Object.entries(right).sort(([leftKey], [rightKey]) =>
+    leftKey.localeCompare(rightKey)
+  );
+
+  return JSON.stringify(leftEntries) === JSON.stringify(rightEntries);
 }
 
 async function isReadable(path: string): Promise<boolean> {
