@@ -170,6 +170,7 @@ describe("buildDashboard", () => {
       expect(html).toContain("Runstead Dashboard");
       expect(html).toContain("service-api");
       expect(html).toContain("task_001 completed");
+      expect(html).toContain("healthy age=60000ms");
       expect(snapshot.summary).toEqual({
         repositories: 1,
         activeGoals: 1,
@@ -182,6 +183,8 @@ describe("buildDashboard", () => {
         available: true,
         tick: 7,
         updatedAt: "2026-05-14T05:59:00.000Z",
+        ageMs: 60000,
+        stale: false,
         taskId: "task_001",
         taskStatus: "completed",
         eventId: "evt_daemon_tick"
@@ -217,7 +220,9 @@ describe("buildDashboard", () => {
           },
           daemon: {
             available: true,
-            updatedAt: "2026-05-14T05:59:00.000Z"
+            updatedAt: "2026-05-14T05:59:00.000Z",
+            ageMs: 60000,
+            stale: false
           }
         });
       } finally {

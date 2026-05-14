@@ -102,6 +102,8 @@ export interface DashboardDaemonStatus {
   taskType?: string;
   taskStatus?: string;
   eventId?: string;
+  ageMs?: number;
+  stale?: boolean;
   error?: string;
 }
 
@@ -124,7 +126,7 @@ export async function buildDashboard(
   try {
     const snapshot = {
       ...readDashboardSnapshot(database, generatedAt),
-      daemon: await readDashboardDaemonStatus(root)
+      daemon: await readDashboardDaemonStatus(root, generatedAt)
     };
     const html = formatDashboardHtml(snapshot);
     const event: RunsteadEvent = {
@@ -233,11 +235,15 @@ function readDashboardSnapshot(
   };
 }
 
-async function readDashboardDaemonStatus(root: string): Promise<DashboardDaemonStatus> {
+async function readDashboardDaemonStatus(
+  root: string,
+  generatedAt: string
+): Promise<DashboardDaemonStatus> {
   try {
     const raw = JSON.parse(
       await readFile(join(root, "daemon", "status.json"), "utf8")
     ) as Record<string, unknown>;
+    const health = daemonHealth(raw, generatedAt);
 
     return {
       available: true,
@@ -250,7 +256,8 @@ async function readDashboardDaemonStatus(root: string): Promise<DashboardDaemonS
       ...(typeof raw.taskId === "string" ? { taskId: raw.taskId } : {}),
       ...(typeof raw.taskType === "string" ? { taskType: raw.taskType } : {}),
       ...(typeof raw.taskStatus === "string" ? { taskStatus: raw.taskStatus } : {}),
-      ...(typeof raw.eventId === "string" ? { eventId: raw.eventId } : {})
+      ...(typeof raw.eventId === "string" ? { eventId: raw.eventId } : {}),
+      ...(health ?? {})
     };
   } catch (error) {
     return {
@@ -258,6 +265,29 @@ async function readDashboardDaemonStatus(root: string): Promise<DashboardDaemonS
       error: error instanceof SyntaxError ? "invalid_status" : "missing_status"
     };
   }
+}
+
+function daemonHealth(
+  raw: Record<string, unknown>,
+  generatedAt: string
+): Pick<DashboardDaemonStatus, "ageMs" | "stale"> | undefined {
+  if (typeof raw.updatedAt !== "string" || typeof raw.intervalMs !== "number") {
+    return undefined;
+  }
+
+  const generatedMs = Date.parse(generatedAt);
+  const updatedMs = Date.parse(raw.updatedAt);
+
+  if (!Number.isFinite(generatedMs) || !Number.isFinite(updatedMs)) {
+    return undefined;
+  }
+
+  const ageMs = Math.max(0, generatedMs - updatedMs);
+
+  return {
+    ageMs,
+    stale: ageMs > raw.intervalMs * 2
+  };
 }
 
 function readDashboardSummary(database: RunsteadDatabase): DashboardSummary {
@@ -465,6 +495,16 @@ function daemonSection(status: DashboardDaemonStatus): string {
   const rows: [string, string][] = status.available
     ? [
         ["Status", "available"],
+        ...(status.stale === undefined
+          ? []
+          : ([
+              [
+                "Health",
+                `${status.stale ? "stale" : "healthy"}${
+                  status.ageMs === undefined ? "" : ` age=${status.ageMs}ms`
+                }`
+              ]
+            ] as [string, string][])),
         ["Updated", status.updatedAt ?? "unknown"],
         ["Tick", status.tick === undefined ? "unknown" : String(status.tick)],
         [
@@ -488,7 +528,15 @@ function daemonSection(status: DashboardDaemonStatus): string {
     )
     .join("");
 
-  return `<section><header><h2>Daemon</h2><span class="muted">${status.available ? "heartbeat" : "offline"}</span></header><table><tbody>${body}</tbody></table></section>`;
+  return `<section><header><h2>Daemon</h2><span class="muted">${daemonSectionLabel(status)}</span></header><table><tbody>${body}</tbody></table></section>`;
+}
+
+function daemonSectionLabel(status: DashboardDaemonStatus): string {
+  if (!status.available) {
+    return "offline";
+  }
+
+  return status.stale === true ? "stale" : "heartbeat";
 }
 
 function tableSection<T>(
@@ -539,7 +587,9 @@ function dashboardEventPayload(
       ...(snapshot.daemon.updatedAt === undefined
         ? {}
         : { updatedAt: snapshot.daemon.updatedAt }),
-      ...(snapshot.daemon.error === undefined ? {} : { error: snapshot.daemon.error })
+      ...(snapshot.daemon.error === undefined ? {} : { error: snapshot.daemon.error }),
+      ...(snapshot.daemon.stale === undefined ? {} : { stale: snapshot.daemon.stale }),
+      ...(snapshot.daemon.ageMs === undefined ? {} : { ageMs: snapshot.daemon.ageMs })
     }
   };
 }
