@@ -45,6 +45,7 @@ describe("handleGitHubWorkflowRunWebhook", () => {
       cwd: "/repo",
       authToken: "token",
       verifierCommands: [{ name: "test", command: "pnpm test" }],
+      now: new Date("2026-05-14T08:00:00.000Z"),
       intake: (options) => {
         calls.push(options);
         return Promise.resolve(ciRepair);
@@ -66,14 +67,16 @@ describe("handleGitHubWorkflowRunWebhook", () => {
         cwd: "/repo",
         runId: "123",
         authToken: "token",
-        verifierCommands: [{ name: "test", command: "pnpm test" }]
+        verifierCommands: [{ name: "test", command: "pnpm test" }],
+        now: new Date("2026-05-14T08:00:00.000Z")
       }
     ]);
     expect(audits).toEqual([
       {
         cwd: "/repo",
         event: "workflow_run",
-        result
+        result,
+        now: new Date("2026-05-14T08:00:00.000Z")
       }
     ]);
   });
@@ -121,7 +124,8 @@ describe("handleGitHubWorkflowRunWebhook", () => {
         allowedPaths: ["src/**"],
         deniedPaths: [".env"],
         verifierCommands: [{ name: "test", command: "pnpm test" }],
-        authToken: "token"
+        authToken: "token",
+        now: new Date("2026-05-14T08:00:00.000Z")
       }
     ]);
     expect(audits).toEqual([

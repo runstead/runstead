@@ -135,7 +135,8 @@ export async function handleGitHubWorkflowRunWebhook(
       allowedPaths: options.allowedPaths ?? [],
       deniedPaths: options.deniedPaths ?? [],
       verifierCommands,
-      ...(options.authToken === undefined ? {} : { authToken: options.authToken })
+      ...(options.authToken === undefined ? {} : { authToken: options.authToken }),
+      ...(options.now === undefined ? {} : { now: options.now })
     });
 
     const result: HandleGitHubWorkflowRunWebhookResult = {
@@ -156,7 +157,8 @@ export async function handleGitHubWorkflowRunWebhook(
     ...(options.authToken === undefined ? {} : { authToken: options.authToken }),
     ...(options.verifierCommands === undefined
       ? {}
-      : { verifierCommands: options.verifierCommands })
+      : { verifierCommands: options.verifierCommands }),
+    ...(options.now === undefined ? {} : { now: options.now })
   });
 
   const result: HandleGitHubWorkflowRunWebhookResult = {
