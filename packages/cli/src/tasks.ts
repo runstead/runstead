@@ -44,6 +44,14 @@ export interface ClaimTaskOptions {
   now?: Date;
 }
 
+export interface BlockTaskOptions {
+  cwd?: string;
+  task: Task;
+  reason: string;
+  output?: JsonObject;
+  now?: Date;
+}
+
 export interface ClaimTaskResult {
   task: Task;
   event: RunsteadEvent;
@@ -68,6 +76,12 @@ export interface CreateRunLocalVerifiersTaskOptions extends BuildRunLocalVerifie
 }
 
 export interface CreateTaskResult {
+  task: Task;
+  event: RunsteadEvent;
+  stateDb: string;
+}
+
+export interface UpdateTaskResult {
   task: Task;
   event: RunsteadEvent;
   stateDb: string;
@@ -341,6 +355,52 @@ export function claimTask(options: ClaimTaskOptions): ClaimTaskResult {
   } finally {
     database.close();
   }
+}
+
+export function blockTask(options: BlockTaskOptions): UpdateTaskResult {
+  const stateDb = resolveStateDb(options.cwd);
+  const blockedAt = (options.now ?? new Date()).toISOString();
+  const task: Task = {
+    ...options.task,
+    status: "blocked",
+    output: {
+      ...(options.task.output ?? {}),
+      ...(options.output ?? {}),
+      reason: options.reason
+    },
+    updatedAt: blockedAt
+  };
+  const event: RunsteadEvent = {
+    eventId: createRunsteadId("evt"),
+    type: "task.blocked",
+    aggregateType: "task",
+    aggregateId: task.id,
+    payload: {
+      previousStatus: options.task.status,
+      ...(options.output ?? {}),
+      reason: options.reason
+    },
+    createdAt: blockedAt
+  };
+  const database = openRunsteadDatabase(stateDb);
+
+  try {
+    appendEventAndProject(database, {
+      event,
+      projection: {
+        type: "task",
+        value: task
+      }
+    });
+  } finally {
+    database.close();
+  }
+
+  return {
+    task,
+    event,
+    stateDb
+  };
 }
 
 function resolveStateDb(cwd = process.cwd()): string {

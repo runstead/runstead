@@ -265,6 +265,59 @@ describe("runOnce", () => {
     }
   });
 
+  it("blocks queued task types that do not have a run route", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-run-unsupported-"));
+
+    try {
+      await initRunstead({ cwd: workspace });
+      const goal = await createGoal({
+        cwd: workspace,
+        domain: "repo-maintenance",
+        now: new Date("2026-05-14T08:00:00.000Z")
+      });
+      const task: Task = {
+        id: "task_research_scan",
+        goalId: goal.goal.id,
+        domain: "research-monitor",
+        type: "scan_sources",
+        status: "queued",
+        priority: "medium",
+        attempt: 0,
+        maxAttempts: 1,
+        input: {
+          taskType: "scan_sources"
+        },
+        verifiers: ["source:url_recorded"],
+        createdAt: "2026-05-14T07:59:00.000Z",
+        updatedAt: "2026-05-14T07:59:00.000Z"
+      };
+
+      insertTask(goal.stateDb, task);
+
+      const result = await runOnce({
+        cwd: workspace,
+        now: new Date("2026-05-14T08:02:00.000Z")
+      });
+
+      expect(result).toMatchObject({
+        ranTask: true,
+        task: {
+          id: task.id,
+          type: "scan_sources",
+          status: "blocked",
+          output: {
+            reason: "unsupported_task_type",
+            supportedTaskTypes: ["run_local_verifiers", "ci_repair"]
+          }
+        }
+      });
+      expect(formatRunOnceReport(result)).toContain("Blocked: unsupported_task_type");
+      expect(runOnceExitCode(result)).toBe(1);
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
   it("returns a non-zero exit code for a failed task", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "runstead-run-"));
 

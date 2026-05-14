@@ -12,12 +12,14 @@ import {
 } from "./ci-repair-orchestrator.js";
 import type { GitHubCliRunner } from "./github-actions.js";
 import { withRunsteadManagerLock } from "./manager-lock.js";
-import { listTasks } from "./tasks.js";
+import { blockTask, listTasks } from "./tasks.js";
 import {
   runTaskVerifiersUnlocked,
   type RunTaskVerifierCommandResult
 } from "./verifier-runner.js";
 import type { CommandVerifierInput } from "./verifier-evidence.js";
+
+const RUN_ONCE_SUPPORTED_TASK_TYPES = ["run_local_verifiers", "ci_repair"];
 
 export interface RunOnceOptions {
   cwd?: string;
@@ -130,6 +132,24 @@ export async function runOnceUnlocked(
     };
   }
 
+  if (task !== undefined) {
+    const blocked = blockTask({
+      cwd,
+      task,
+      reason: "unsupported_task_type",
+      output: {
+        supportedTaskTypes: RUN_ONCE_SUPPORTED_TASK_TYPES
+      },
+      ...(options.now === undefined ? {} : { now: options.now })
+    });
+
+    return {
+      cwd,
+      ranTask: true,
+      task: blocked.task
+    };
+  }
+
   return {
     cwd,
     ranTask: false,
@@ -142,7 +162,7 @@ export function pickNextQueuedTask(cwd = process.cwd()): Task | undefined {
     .tasks.filter(
       (task) =>
         task.status === "queued" &&
-        (task.type === "run_local_verifiers" ||
+        (task.type !== "ci_repair" ||
           isCiRepairPullRequestResumeTask(task) ||
           isRunnableCiRepairTask(task))
     )
@@ -223,6 +243,16 @@ export function formatRunOnceReport(result: RunOnceResult): string {
     ].join("\n");
   }
 
+  if (result.task.status === "blocked" && result.commandResults === undefined) {
+    return [
+      "Runstead run --once",
+      `Task: ${result.task.id}`,
+      `Type: ${result.task.type}`,
+      "Status: blocked",
+      `Blocked: ${taskOutputReason(result.task) ?? "unsupported_task_type"}`
+    ].join("\n");
+  }
+
   return [
     "Runstead run --once",
     `Task: ${result.task.id}`,
@@ -234,6 +264,12 @@ export function formatRunOnceReport(result: RunOnceResult): string {
         `  ${command.verifier}: exit=${command.exitCode ?? "unknown"} evidence=${command.evidenceId}`
     )
   ].join("\n");
+}
+
+function taskOutputReason(task: Task): string | undefined {
+  const reason = task.output?.reason;
+
+  return typeof reason === "string" ? reason : undefined;
 }
 
 export function runOnceExitCode(result: RunOnceResult): number {
