@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -9,6 +9,7 @@ import {
   formatDomainPackValidationResult,
   validateDomainPackDir
 } from "./validator.js";
+import { createDomainPackTemplate } from "./template.js";
 
 describe("validateDomainPackDir", () => {
   it("validates the built-in repo-maintenance pack", async () => {
@@ -203,6 +204,57 @@ describe("validateDomainPackDir", () => {
           acceptanceContracts: ["manual_review_complete"]
         }
       ]);
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("rejects symlinks in manifest-controlled pack references", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-domain-pack-"));
+
+    try {
+      const template = await createDomainPackTemplate({
+        id: "symlink-pack",
+        outputDir: join(workspace, "pack")
+      });
+      const policyPath = join(template.root, "policies", "default.yaml");
+      const fixturePath = join(template.root, "fixtures", "manual-review-smoke");
+      const outsidePolicy = join(workspace, "outside-policy.yaml");
+      const outsideFixture = join(workspace, "outside-fixture");
+
+      await writeFile(
+        outsidePolicy,
+        [
+          "id: policy_symlink_pack_default_v1",
+          "version: 1",
+          "default_decision: require_approval",
+          "default_risk: medium",
+          "rules: []"
+        ].join("\n"),
+        "utf8"
+      );
+      await mkdir(outsideFixture, { recursive: true });
+      await writeFile(join(outsideFixture, "README.md"), "# Outside fixture\n", "utf8");
+      await rm(policyPath, { force: true });
+      await rm(fixturePath, { force: true, recursive: true });
+      await symlink(outsidePolicy, policyPath);
+      await symlink(outsideFixture, fixturePath);
+
+      const result = await validateDomainPackDir(template.root);
+
+      expect(result.valid).toBe(false);
+      expect(result.issues).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            code: "default_policy_symlink",
+            path: "policies/default.yaml"
+          }),
+          expect.objectContaining({
+            code: "fixture_path_symlink",
+            path: "fixtures/manual-review-smoke"
+          })
+        ])
+      );
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }

@@ -1,5 +1,5 @@
 import { constants } from "node:fs";
-import { access, readdir, readFile } from "node:fs/promises";
+import { access, lstat, readdir, readFile } from "node:fs/promises";
 import { basename, join, resolve, sep } from "node:path";
 
 import { parse as parseYaml } from "yaml";
@@ -278,6 +278,10 @@ async function loadDomain(
     return undefined;
   }
 
+  if (await collectSymlinkIssue("domain_yaml", root, path, issues)) {
+    return undefined;
+  }
+
   try {
     return await loadDomainPackFromFile(path);
   } catch (error) {
@@ -305,6 +309,10 @@ async function loadGoalTemplate(
     return undefined;
   }
 
+  if (await collectSymlinkIssue("goal_template", undefined, path, issues)) {
+    return undefined;
+  }
+
   try {
     return await loadGoalTemplateFromFile(path);
   } catch (error) {
@@ -329,6 +337,10 @@ async function loadTaskType(
       message: `Task type file is missing: ${path}`,
       path
     });
+    return undefined;
+  }
+
+  if (await collectSymlinkIssue("task_type", undefined, path, issues)) {
     return undefined;
   }
 
@@ -389,6 +401,12 @@ async function assertDefaultPolicy(input: {
       message: `Default policy file is missing: ${input.referencedPath}`,
       path: resolvedPath
     });
+    return;
+  }
+
+  if (
+    await collectSymlinkIssue("default_policy", input.root, resolvedPath, input.issues)
+  ) {
     return;
   }
 
@@ -602,6 +620,17 @@ async function collectFixtureManifest(input: {
     return [];
   }
 
+  if (
+    await collectSymlinkIssue(
+      "fixture_manifest",
+      input.root,
+      manifestPath,
+      input.issues
+    )
+  ) {
+    return [];
+  }
+
   let parsed: z.infer<typeof DomainPackFixtureYamlSchema>;
 
   try {
@@ -660,6 +689,12 @@ async function collectEvalBenchmark(input: {
   const benchmarkPath = join(input.root, "evals", "benchmark.yaml");
 
   if (!(await fileExists(benchmarkPath))) {
+    return [];
+  }
+
+  if (
+    await collectSymlinkIssue("eval_benchmark", input.root, benchmarkPath, input.issues)
+  ) {
     return [];
   }
 
@@ -776,8 +811,35 @@ async function assertFixtureReferences(input: {
         message: `Fixture ${fixture.id} path is missing: ${fixture.path}`,
         path: relativeToRoot(input.root, fixturePath)
       });
+      continue;
     }
+
+    await collectSymlinkIssue("fixture_path", input.root, fixturePath, input.issues);
   }
+}
+
+async function collectSymlinkIssue(
+  codePrefix: string,
+  root: string | undefined,
+  path: string,
+  issues: DomainPackValidationIssue[]
+): Promise<boolean> {
+  try {
+    if (!(await lstat(path)).isSymbolicLink()) {
+      return false;
+    }
+  } catch {
+    return false;
+  }
+
+  issues.push({
+    severity: "error",
+    code: `${codePrefix}_symlink`,
+    message: `Domain pack path must not be a symlink: ${path}`,
+    path: root === undefined ? path : relativeToRoot(root, path)
+  });
+
+  return true;
 }
 
 async function collectUnregisteredFixtureDirectories(input: {
