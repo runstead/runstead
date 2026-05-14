@@ -162,6 +162,25 @@ describe("cli entrypoint", () => {
     expect(grant?.options.map((option) => option.long)).toContain("--actor");
   });
 
+  it("exposes RBAC actor selection on memory commands", () => {
+    const memory = createProgram().commands.find(
+      (command) => command.name() === "memory"
+    );
+    const fact = memory?.commands.find((command) => command.name() === "fact");
+
+    expect(
+      memory?.commands
+        .find((command) => command.name() === "quarantine")
+        ?.options.map((option) => option.long)
+    ).toContain("--actor");
+
+    for (const commandName of ["add", "list", "search"]) {
+      const command = fact?.commands.find((item) => item.name() === commandName);
+
+      expect(command?.options.map((option) => option.long)).toContain("--actor");
+    }
+  });
+
   it("exposes RBAC actor selection on GitHub App mode", () => {
     const github = createProgram().commands.find(
       (command) => command.name() === "github"

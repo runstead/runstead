@@ -65,6 +65,7 @@ roles:
     - repo.read
     - goal.read
     - task.read
+    - memory.read
     - audit.read
   operator:
     - dashboard.read
@@ -74,12 +75,15 @@ roles:
     - goal.manage
     - task.read
     - task.run
+    - memory.read
+    - memory.write
     - daemon.manage
   approver:
     - dashboard.read
     - repo.read
     - goal.read
     - task.read
+    - memory.read
     - approval.read
     - approval.decide
   admin:

@@ -654,6 +654,7 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     .option("--confidence <number>", "Confidence score from 0 to 1")
     .option("--created-by <id>", "Creator id")
     .option("--task <id>", "Source task id")
+    .option("--actor <id>", "RBAC subject for memory writes", "local-admin")
     .action(
       async (options: {
         cwd?: string;
@@ -664,7 +665,15 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
         confidence?: string;
         createdBy?: string;
         task?: string;
+        actor: string;
       }) => {
+        await requireRbacPermission({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          actor: options.actor,
+          permission: "memory.write",
+          action: "write memory"
+        });
+
         const { quarantineMemoryCandidate } = await import("./memory.js");
         const confidence = parseOptionalFloat(options.confidence, "--confidence");
         const result = quarantineMemoryCandidate({
@@ -696,6 +705,7 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     .option("--confidence <number>", "Confidence score from 0 to 1")
     .option("--created-by <id>", "Creator id")
     .option("--task <id>", "Source task id")
+    .option("--actor <id>", "RBAC subject for memory writes", "local-admin")
     .action(
       async (options: {
         cwd?: string;
@@ -705,7 +715,15 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
         confidence?: string;
         createdBy?: string;
         task?: string;
+        actor: string;
       }) => {
+        await requireRbacPermission({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          actor: options.actor,
+          permission: "memory.write",
+          action: "write memory"
+        });
+
         const { recordProjectFact } = await import("./memory.js");
         const confidence = parseOptionalFloat(options.confidence, "--confidence");
         const result = recordProjectFact({
@@ -728,7 +746,15 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     .description("List verified project facts.")
     .option("--cwd <path>", "Workspace directory")
     .option("--scope <scope>", "Filter by memory scope")
-    .action(async (options: { cwd?: string; scope?: string }) => {
+    .option("--actor <id>", "RBAC subject for memory access", "local-admin")
+    .action(async (options: { cwd?: string; scope?: string; actor: string }) => {
+      await requireRbacPermission({
+        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+        actor: options.actor,
+        permission: "memory.read",
+        action: "read memory"
+      });
+
       const { listProjectFacts } = await import("./memory.js");
       const result = listProjectFacts({
         ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
@@ -755,6 +781,7 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     .option("--query <text>", "Search text")
     .option("--limit <number>", "Maximum facts to return")
     .option("--include-conflicted", "Include facts with explicit conflicts")
+    .option("--actor <id>", "RBAC subject for memory access", "local-admin")
     .action(
       async (options: {
         cwd?: string;
@@ -762,7 +789,15 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
         query?: string;
         limit?: string;
         includeConflicted?: boolean;
+        actor: string;
       }) => {
+        await requireRbacPermission({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          actor: options.actor,
+          permission: "memory.read",
+          action: "read memory"
+        });
+
         const { retrieveProjectFacts } = await import("./memory.js");
         const limit = parseOptionalInteger(options.limit, "--limit");
         const result = retrieveProjectFacts({
