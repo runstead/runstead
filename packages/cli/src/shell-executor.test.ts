@@ -34,6 +34,46 @@ describe("runShellCommand", () => {
 
     expect(result.exitCode).toBeNull();
     expect(result.timedOut).toBe(true);
+    expect(result.forceKilled).toBe(false);
+  });
+
+  it.skipIf(process.platform === "win32")(
+    "force kills timed out commands that ignore termination",
+    async () => {
+      const result = await runShellCommand({
+        command: `exec ${nodeCommand(
+          "process.on('SIGTERM', () => {}); setInterval(() => {}, 1000);"
+        )}`,
+        timeoutMs: 1_000,
+        killGraceMs: 25
+      });
+
+      expect(result.exitCode).toBeNull();
+      expect(result.timedOut).toBe(true);
+      expect(result.forceKilled).toBe(true);
+    }
+  );
+
+  it("does not force kill commands that exit during the grace period", async () => {
+    const result = await runShellCommand({
+      command: nodeCommand(
+        "process.on('SIGTERM', () => process.exit(0)); setInterval(() => {}, 1000);"
+      ),
+      timeoutMs: 100,
+      killGraceMs: 100
+    });
+
+    expect(result.timedOut).toBe(true);
+    expect(result.forceKilled).toBe(false);
+  });
+
+  it("rejects non-positive kill grace values", async () => {
+    await expect(
+      runShellCommand({
+        command: nodeCommand("process.exit(0)"),
+        killGraceMs: 0
+      })
+    ).rejects.toThrow("killGraceMs must be greater than 0");
   });
 
   it("captures stdout and stderr", async () => {

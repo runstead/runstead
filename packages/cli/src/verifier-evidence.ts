@@ -135,6 +135,7 @@ export async function storeCommandVerifierPolicyEvidence(
     signal: null,
     durationMs: 0,
     timedOut: false,
+    forceKilled: false,
     stdout: "",
     stderr: "",
     stdoutTruncated: false,
@@ -234,6 +235,7 @@ function evidenceEventPayload(
     summary: evidence.summary,
     exitCode: result.exitCode,
     timedOut: result.timedOut,
+    forceKilled: result.forceKilled,
     durationMs: result.durationMs
   };
 }

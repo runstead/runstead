@@ -7,6 +7,7 @@ export interface ShellCommandInput {
   cwd?: string;
   env?: Record<string, string | undefined>;
   timeoutMs?: number;
+  killGraceMs?: number;
   maxOutputBytes?: number;
   redactValues?: string[];
 }
@@ -18,6 +19,7 @@ export interface ShellCommandResult {
   signal: NodeJS.Signals | null;
   durationMs: number;
   timedOut: boolean;
+  forceKilled: boolean;
   stdout: string;
   stderr: string;
   stdoutTruncated: boolean;
@@ -25,6 +27,7 @@ export interface ShellCommandResult {
 }
 
 const DEFAULT_MAX_OUTPUT_BYTES = 1024 * 1024;
+const DEFAULT_KILL_GRACE_MS = 1_000;
 
 export function runShellCommand(input: ShellCommandInput): Promise<ShellCommandResult> {
   if (input.timeoutMs !== undefined && input.timeoutMs <= 0) {
@@ -35,8 +38,13 @@ export function runShellCommand(input: ShellCommandInput): Promise<ShellCommandR
     return Promise.reject(new Error("maxOutputBytes must be greater than 0"));
   }
 
+  if (input.killGraceMs !== undefined && input.killGraceMs <= 0) {
+    return Promise.reject(new Error("killGraceMs must be greater than 0"));
+  }
+
   const cwd = resolve(input.cwd ?? process.cwd());
   const maxOutputBytes = input.maxOutputBytes ?? DEFAULT_MAX_OUTPUT_BYTES;
+  const killGraceMs = input.killGraceMs ?? DEFAULT_KILL_GRACE_MS;
   const env = {
     ...process.env,
     ...input.env
@@ -46,21 +54,40 @@ export function runShellCommand(input: ShellCommandInput): Promise<ShellCommandR
 
   return new Promise((resolveResult, reject) => {
     let timedOut = false;
+    let forceKilled = false;
+    let pendingClose:
+      | {
+          exitCode: number | null;
+          signal: NodeJS.Signals | null;
+        }
+      | undefined;
     const stdout = createOutputCapture(maxOutputBytes);
     const stderr = createOutputCapture(maxOutputBytes);
+    const useProcessGroup = process.platform !== "win32";
     const child = spawn(input.command, {
       cwd,
       env,
+      detached: useProcessGroup,
       shell: true,
       stdio: ["ignore", "pipe", "pipe"],
       windowsHide: true
     });
+    let forceKillTimeout: NodeJS.Timeout | undefined;
     const timeout =
       input.timeoutMs === undefined
         ? undefined
         : setTimeout(() => {
             timedOut = true;
-            child.kill("SIGTERM");
+            killChildProcess(child, "SIGTERM", useProcessGroup);
+            forceKillTimeout = setTimeout(() => {
+              forceKillTimeout = undefined;
+              forceKilled = killChildProcess(child, "SIGKILL", useProcessGroup);
+
+              if (pendingClose !== undefined) {
+                resolveFromClose(pendingClose.exitCode, pendingClose.signal);
+              }
+            }, killGraceMs);
+            forceKillTimeout.unref();
           }, input.timeoutMs);
 
     timeout?.unref();
@@ -75,12 +102,34 @@ export function runShellCommand(input: ShellCommandInput): Promise<ShellCommandR
       if (timeout !== undefined) {
         clearTimeout(timeout);
       }
+      if (forceKillTimeout !== undefined) {
+        clearTimeout(forceKillTimeout);
+      }
 
       reject(error);
     });
     child.once("close", (exitCode, signal) => {
       if (timeout !== undefined) {
         clearTimeout(timeout);
+      }
+
+      if (timedOut && forceKillTimeout !== undefined) {
+        pendingClose = {
+          exitCode,
+          signal
+        };
+        return;
+      }
+
+      resolveFromClose(exitCode, signal);
+    });
+
+    function resolveFromClose(
+      exitCode: number | null,
+      signal: NodeJS.Signals | null
+    ): void {
+      if (forceKillTimeout !== undefined) {
+        clearTimeout(forceKillTimeout);
       }
 
       resolveResult({
@@ -90,13 +139,31 @@ export function runShellCommand(input: ShellCommandInput): Promise<ShellCommandR
         signal,
         durationMs: Math.round(performance.now() - startedAt),
         timedOut,
+        forceKilled,
         stdout: redactText(stdout.contents(), redactionValues),
         stderr: redactText(stderr.contents(), redactionValues),
         stdoutTruncated: stdout.truncated,
         stderrTruncated: stderr.truncated
       });
-    });
+    }
   });
+}
+
+function killChildProcess(
+  child: ReturnType<typeof spawn>,
+  signal: NodeJS.Signals,
+  useProcessGroup: boolean
+): boolean {
+  if (useProcessGroup && child.pid !== undefined) {
+    try {
+      process.kill(-child.pid, signal);
+      return true;
+    } catch {
+      return child.kill(signal);
+    }
+  }
+
+  return child.kill(signal);
 }
 
 function createOutputCapture(maxBytes: number): {
