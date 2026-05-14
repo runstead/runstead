@@ -38,6 +38,17 @@ describe("cli entrypoint", () => {
     expect(repo?.commands.map((command) => command.name())).toContain("archive");
   });
 
+  it("exposes RBAC actor selection on checkpoint restore", () => {
+    const checkpoint = createProgram().commands.find(
+      (command) => command.name() === "checkpoint"
+    );
+    const restore = checkpoint?.commands.find(
+      (command) => command.name() === "restore"
+    );
+
+    expect(restore?.options.map((option) => option.long)).toContain("--actor");
+  });
+
   it("exposes RBAC actor selection on task execution commands", () => {
     const run = createProgram().commands.find((command) => command.name() === "run");
     const verifier = createProgram().commands.find(

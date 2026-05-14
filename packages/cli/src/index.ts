@@ -139,8 +139,19 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
       "--allow-head-mismatch",
       "Restore even when the current HEAD differs from the checkpoint HEAD"
     )
+    .option("--actor <id>", "RBAC subject for checkpoint restore", "local-admin")
     .action(
-      async (id: string, options: { cwd?: string; allowHeadMismatch?: boolean }) => {
+      async (
+        id: string,
+        options: { cwd?: string; allowHeadMismatch?: boolean; actor: string }
+      ) => {
+        await requireRbacPermission({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          actor: options.actor,
+          permission: "repo.manage",
+          action: "restore checkpoints"
+        });
+
         const { formatWorkspaceCheckpointRestoreReport, restoreWorkspaceCheckpoint } =
           await import("./checkpoints.js");
         const { requireRunsteadRoot } = await import("./runstead-root.js");
