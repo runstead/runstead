@@ -31,4 +31,12 @@ describe("cli entrypoint", () => {
       expect.arrayContaining(["manifest"])
     );
   });
+
+  it("exposes RBAC actor selection on daemon management", () => {
+    const daemon = createProgram().commands.find(
+      (command) => command.name() === "daemon"
+    );
+
+    expect(daemon?.options.map((option) => option.long)).toContain("--actor");
+  });
 });

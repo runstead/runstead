@@ -213,6 +213,7 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     .option("--max-ticks <number>", "Stop after this many ticks")
     .option("--interval-ms <number>", "Delay between ticks", "30000")
     .option("--no-scheduler", "Disable background scheduling before each tick")
+    .option("--actor <id>", "RBAC subject for daemon management", "local-admin")
     .action(
       async (options: {
         cwd?: string;
@@ -220,7 +221,21 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
         maxTicks?: string;
         intervalMs: string;
         scheduler?: boolean;
+        actor: string;
       }) => {
+        const { checkPermission } = await import("./rbac.js");
+        const permission = await checkPermission({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          subject: options.actor,
+          permission: "daemon.manage"
+        });
+
+        if (permission.decision !== "allow") {
+          throw new Error(
+            `Subject ${options.actor} cannot manage daemon: ${permission.reason}`
+          );
+        }
+
         const { formatDaemonReport, runDaemon } = await import("./daemon.js");
         const maxTicks =
           options.once === true
