@@ -1,4 +1,4 @@
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -113,6 +113,7 @@ describe("validateSkillPackageDir", () => {
         "network: deny_by_default\n",
         "utf8"
       );
+      await chmod(join(root, "tests", "run.sh"), 0o644);
 
       const result = await validateSkillPackageDir(root);
 
@@ -128,6 +129,9 @@ describe("validateSkillPackageDir", () => {
           }),
           expect.objectContaining({
             code: "permissions_file_mismatch"
+          }),
+          expect.objectContaining({
+            code: "test_script_not_executable"
           })
         ])
       );
@@ -152,6 +156,7 @@ async function createSkillPackageFixture(name: string): Promise<string> {
     "utf8"
   );
   await writeFile(join(root, "tests", "run.sh"), "#!/usr/bin/env sh\n", "utf8");
+  await chmod(join(root, "tests", "run.sh"), 0o755);
   await writeFile(join(root, "rollback.md"), "# Rollback\n", "utf8");
 
   return root;

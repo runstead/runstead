@@ -51,6 +51,18 @@ export async function validateSkillPackageDir(
     }
   }
 
+  if (
+    (await isReadable(join(resolvedRoot, "tests/run.sh"))) &&
+    !(await isExecutable(join(resolvedRoot, "tests/run.sh")))
+  ) {
+    issues.push({
+      severity: "error",
+      code: "test_script_not_executable",
+      message: "Skill package test script must be executable: tests/run.sh",
+      path: "tests/run.sh"
+    });
+  }
+
   try {
     skill = await loadSkillPackageFromFile(join(resolvedRoot, "skill.yaml"));
   } catch (error) {
@@ -195,6 +207,15 @@ function sameStringRecord(
 async function isReadable(path: string): Promise<boolean> {
   try {
     await access(path, constants.R_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function isExecutable(path: string): Promise<boolean> {
+  try {
+    await access(path, constants.X_OK);
     return true;
   } catch {
     return false;
