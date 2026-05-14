@@ -1,5 +1,5 @@
 import { constants } from "node:fs";
-import { access, stat } from "node:fs/promises";
+import { access, readFile, stat } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
 
 import { validateDomainPackDir } from "@runstead/domain-packs";
@@ -75,6 +75,7 @@ export async function doctorRunstead(
   checks.push(
     await checkDirectory("daemon-dir", "daemon status directory", join(root, "daemon"))
   );
+  checks.push(await checkDaemonHeartbeat(root));
   checks.push(
     await checkDirectory("reports-dir", "reports directory", join(root, "reports"))
   );
@@ -178,6 +179,48 @@ async function checkDomainPackValidation(path: string): Promise<DoctorCheck> {
   }
 }
 
+async function checkDaemonHeartbeat(root: string): Promise<DoctorCheck> {
+  const path = join(root, "daemon", "status.json");
+
+  try {
+    await access(path, constants.F_OK);
+  } catch {
+    return pass("daemon-heartbeat", "daemon heartbeat", "not recorded");
+  }
+
+  try {
+    const value = JSON.parse(await readFile(path, "utf8")) as unknown;
+
+    if (!isRecord(value)) {
+      return fail("daemon-heartbeat", "daemon heartbeat", "status is not an object");
+    }
+
+    const cwd = value.cwd;
+    const pid = value.pid;
+    const tick = value.tick;
+    const updatedAt = value.updatedAt;
+    const ranTask = value.ranTask;
+    const valid =
+      typeof cwd === "string" &&
+      typeof pid === "number" &&
+      typeof tick === "number" &&
+      typeof updatedAt === "string" &&
+      typeof ranTask === "boolean";
+
+    if (!valid) {
+      return fail(
+        "daemon-heartbeat",
+        "daemon heartbeat",
+        "status is missing required fields"
+      );
+    }
+
+    return pass("daemon-heartbeat", "daemon heartbeat", `tick ${tick} at ${updatedAt}`);
+  } catch (error) {
+    return fail("daemon-heartbeat", "daemon heartbeat", errorMessage(error));
+  }
+}
+
 async function checkPolicyValidation(path: string): Promise<DoctorCheck> {
   try {
     await loadPolicyProfileFromFile(path);
@@ -262,4 +305,8 @@ function fail(id: string, label: string, message: string): DoctorCheck {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

@@ -31,6 +31,7 @@ describe("doctorRunstead", () => {
           "team-policy",
           "github-app-config",
           "daemon-dir",
+          "daemon-heartbeat",
           "state-db"
         ])
       );
@@ -152,6 +153,33 @@ describe("doctorRunstead", () => {
       expect(result.ok).toBe(false);
       expect(result.checks.find((check) => check.id === "daemon-dir")).toMatchObject({
         status: "fail"
+      });
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("fails when the daemon heartbeat file is invalid", async () => {
+    const workspace = join(tmpdir(), `runstead-doctor-daemon-heartbeat-${process.pid}`);
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await mkdir(workspace, { recursive: true });
+      await initRunstead({ cwd: workspace });
+      await writeFile(
+        join(workspace, ".runstead", "daemon", "status.json"),
+        JSON.stringify({ tick: 1 }),
+        "utf8"
+      );
+
+      const result = await doctorRunstead({ cwd: workspace });
+
+      expect(result.ok).toBe(false);
+      expect(
+        result.checks.find((check) => check.id === "daemon-heartbeat")
+      ).toMatchObject({
+        status: "fail",
+        message: "status is missing required fields"
       });
     } finally {
       await rm(workspace, { force: true, recursive: true });
