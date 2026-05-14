@@ -60,7 +60,9 @@ async function runOnceUnlocked(cwd: string): Promise<RunOnceResult> {
 
 export function pickNextQueuedTask(cwd = process.cwd()): Task | undefined {
   return listTasks({ cwd })
-    .tasks.filter((task) => task.status === "queued")
+    .tasks.filter(
+      (task) => task.status === "queued" && task.type === "run_local_verifiers"
+    )
     .sort((left, right) => left.createdAt.localeCompare(right.createdAt))[0];
 }
 

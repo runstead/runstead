@@ -121,6 +121,68 @@ describe("runOnce", () => {
     }
   });
 
+  it("does not route ci repair tasks through the generic runner", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-run-ci-repair-"));
+
+    try {
+      await initRunstead({ cwd: workspace });
+      const goal = await createGoal({
+        cwd: workspace,
+        domain: "repo-maintenance",
+        now: new Date("2026-05-14T08:00:00.000Z")
+      });
+      const verifierTask = goal.generatedTasks[0];
+
+      if (verifierTask === undefined) {
+        throw new Error("Expected createGoal to generate run_local_verifiers task");
+      }
+
+      insertTask(goal.stateDb, {
+        id: "task_ci_repair_older",
+        goalId: goal.goal.id,
+        domain: "repo-maintenance",
+        type: "ci_repair",
+        status: "queued",
+        priority: "high",
+        attempt: 0,
+        maxAttempts: 1,
+        input: {
+          source: "github_actions",
+          runId: "123"
+        },
+        verifiers: ["evidence:github_workflow_run"],
+        createdAt: "2026-05-14T07:59:00.000Z",
+        updatedAt: "2026-05-14T07:59:00.000Z"
+      });
+      configureTaskCommand(goal.stateDb, {
+        ...verifierTask,
+        input: {
+          commands: [
+            {
+              name: "test",
+              command: nodeCommand("process.exit(0)")
+            }
+          ]
+        },
+        verifiers: ["command:test"]
+      });
+      await allowVerifierCommand(workspace, nodeCommand("process.exit(0)"));
+
+      const result = await runOnce({ cwd: workspace });
+
+      expect(result).toMatchObject({
+        ranTask: true,
+        task: {
+          id: verifierTask.id,
+          type: "run_local_verifiers",
+          status: "completed"
+        }
+      });
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
   it("returns a non-zero exit code for a failed task", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "runstead-run-"));
 
@@ -181,6 +243,32 @@ function configureTaskCommand(stateDb: string, task: Task): void {
           commands: task.input.commands
         },
         createdAt: "2026-05-14T08:01:00.000Z"
+      },
+      projection: {
+        type: "task",
+        value: task
+      }
+    });
+  } finally {
+    database.close();
+  }
+}
+
+function insertTask(stateDb: string, task: Task): void {
+  const database = openRunsteadDatabase(stateDb);
+
+  try {
+    appendEventAndProject(database, {
+      event: {
+        eventId: `evt_${task.id}_created`,
+        type: "task.created",
+        aggregateType: "task",
+        aggregateId: task.id,
+        payload: {
+          goalId: task.goalId,
+          type: task.type
+        },
+        createdAt: task.createdAt
       },
       projection: {
         type: "task",
