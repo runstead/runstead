@@ -9,6 +9,7 @@ import { describe, expect, it } from "vitest";
 import { createGoal } from "./goals.js";
 import { initRunstead } from "./init.js";
 import { formatRunOnceReport, runOnce, runOnceExitCode } from "./run.js";
+import type { RunCiRepairOrchestratorResult } from "./ci-repair-orchestrator.js";
 
 describe("runOnce", () => {
   it("throws before creating state in an uninitialized workspace", async () => {
@@ -183,6 +184,87 @@ describe("runOnce", () => {
     }
   });
 
+  it("routes ready ci repair tasks through the orchestrator", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-run-ci-ready-"));
+
+    try {
+      await initRunstead({ cwd: workspace });
+      const goal = await createGoal({
+        cwd: workspace,
+        domain: "repo-maintenance",
+        now: new Date("2026-05-14T08:00:00.000Z")
+      });
+      const task: Task = {
+        id: "task_ci_repair_ready",
+        goalId: goal.goal.id,
+        domain: "repo-maintenance",
+        type: "ci_repair",
+        status: "queued",
+        priority: "high",
+        attempt: 0,
+        maxAttempts: 1,
+        input: {
+          source: "github_actions",
+          runId: "123",
+          logEvidenceType: "github_workflow_run",
+          workflowRun: {
+            runId: "123",
+            status: "completed",
+            conclusion: "failure"
+          },
+          commands: [
+            {
+              name: "test",
+              command: "pnpm test"
+            }
+          ]
+        },
+        verifiers: ["evidence:github_workflow_run", "command:test"],
+        createdAt: "2026-05-14T07:59:00.000Z",
+        updatedAt: "2026-05-14T07:59:00.000Z"
+      };
+      const calls: unknown[] = [];
+
+      insertTask(goal.stateDb, task);
+
+      const result = await runOnce({
+        cwd: workspace,
+        authToken: "ghs_token",
+        ciRepairOrchestrator: (options) => {
+          calls.push(options);
+
+          return Promise.resolve(
+            fakeCiRepairOrchestration(workspace, goal.stateDb, task)
+          );
+        }
+      });
+
+      expect(calls).toEqual([
+        expect.objectContaining({
+          cwd: workspace,
+          runId: "123",
+          worker: "codex_cli",
+          verifierCommands: [{ name: "test", command: "pnpm test" }],
+          authToken: "ghs_token"
+        })
+      ]);
+      expect(result).toMatchObject({
+        ranTask: true,
+        task: {
+          id: task.id,
+          type: "ci_repair",
+          status: "completed"
+        },
+        ciRepairResult: {
+          status: "completed",
+          branchName: "runstead/task_ci_repair_ready/ci-123"
+        }
+      });
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
   it("returns a non-zero exit code for a failed task", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "runstead-run-"));
 
@@ -278,6 +360,56 @@ function insertTask(stateDb: string, task: Task): void {
   } finally {
     database.close();
   }
+}
+
+function fakeCiRepairOrchestration(
+  cwd: string,
+  stateDb: string,
+  task: Task
+): RunCiRepairOrchestratorResult {
+  const completedTask: Task = {
+    ...task,
+    status: "completed",
+    updatedAt: "2026-05-14T08:05:00.000Z"
+  };
+
+  return {
+    status: "completed",
+    ciRepair: {
+      cwd,
+      stateDb,
+      task: completedTask,
+      event: {
+        eventId: "evt_ci_ready",
+        type: "task.created",
+        aggregateType: "task",
+        aggregateId: task.id,
+        payload: { runId: "123" },
+        createdAt: task.createdAt
+      },
+      evidence: {
+        id: "ev_ci_ready",
+        type: "github_workflow_run",
+        subjectType: "task",
+        subjectId: task.id,
+        uri: "file:///repo/.runstead/evidence/ci-ready.json",
+        createdAt: task.createdAt
+      },
+      evidencePath: "/repo/.runstead/evidence/ci-ready.json",
+      workflowRun: {
+        runId: "123",
+        status: "completed",
+        conclusion: "failure"
+      },
+      log: {
+        runId: "123",
+        log: "",
+        byteLength: 0
+      },
+      created: false
+    },
+    branchName: "runstead/task_ci_repair_ready/ci-123"
+  };
 }
 
 function nodeCommand(script: string): string {

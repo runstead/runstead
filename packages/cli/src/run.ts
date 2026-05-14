@@ -7,6 +7,7 @@ import {
   isCiRepairPullRequestResumeTask,
   runCiRepairOrchestratorUnlocked,
   type CiRepairGitRunner,
+  type RunCiRepairOrchestratorOptions,
   type RunCiRepairOrchestratorResult
 } from "./ci-repair-orchestrator.js";
 import type { GitHubCliRunner } from "./github-actions.js";
@@ -16,12 +17,16 @@ import {
   runTaskVerifiersUnlocked,
   type RunTaskVerifierCommandResult
 } from "./verifier-runner.js";
+import type { CommandVerifierInput } from "./verifier-evidence.js";
 
 export interface RunOnceOptions {
   cwd?: string;
   authToken?: string;
   githubRunner?: GitHubCliRunner;
   gitRunner?: CiRepairGitRunner;
+  ciRepairOrchestrator?: (
+    options: RunCiRepairOrchestratorOptions
+  ) => Promise<RunCiRepairOrchestratorResult>;
   now?: Date;
 }
 
@@ -95,6 +100,36 @@ export async function runOnceUnlocked(
     };
   }
 
+  if (task !== undefined && isRunnableCiRepairTask(task)) {
+    const runId = ciRepairTaskRunId(task);
+
+    if (runId === undefined) {
+      throw new Error(`Task ${task.id} is missing a CI workflow run id`);
+    }
+
+    const result = await (
+      options.ciRepairOrchestrator ?? runCiRepairOrchestratorUnlocked
+    )({
+      cwd,
+      runId,
+      worker: "codex_cli",
+      verifierCommands: verifierCommandsFromCiRepairTask(task),
+      ...(options.authToken === undefined ? {} : { authToken: options.authToken }),
+      ...(options.githubRunner === undefined
+        ? {}
+        : { githubRunner: options.githubRunner }),
+      ...(options.gitRunner === undefined ? {} : { gitRunner: options.gitRunner }),
+      ...(options.now === undefined ? {} : { now: options.now })
+    });
+
+    return {
+      cwd,
+      ranTask: true,
+      task: result.ciRepair.task,
+      ciRepairResult: result
+    };
+  }
+
   return {
     cwd,
     ranTask: false,
@@ -107,9 +142,63 @@ export function pickNextQueuedTask(cwd = process.cwd()): Task | undefined {
     .tasks.filter(
       (task) =>
         task.status === "queued" &&
-        (task.type === "run_local_verifiers" || isCiRepairPullRequestResumeTask(task))
+        (task.type === "run_local_verifiers" ||
+          isCiRepairPullRequestResumeTask(task) ||
+          isRunnableCiRepairTask(task))
     )
     .sort((left, right) => left.createdAt.localeCompare(right.createdAt))[0];
+}
+
+function isRunnableCiRepairTask(task: Task): boolean {
+  return (
+    task.domain === "repo-maintenance" &&
+    task.type === "ci_repair" &&
+    task.status === "queued" &&
+    ciRepairTaskRunId(task) !== undefined &&
+    task.input.logEvidenceType === "github_workflow_run" &&
+    isRecord(task.input.workflowRun) &&
+    verifierCommandsFromCiRepairTask(task).length > 0
+  );
+}
+
+function ciRepairTaskRunId(task: Task): string | undefined {
+  const runId = task.input.runId;
+
+  if (typeof runId === "string" || typeof runId === "number") {
+    return String(runId);
+  }
+
+  return undefined;
+}
+
+function verifierCommandsFromCiRepairTask(task: Task): CommandVerifierInput[] {
+  const commands = task.input.commands;
+
+  if (!Array.isArray(commands)) {
+    return [];
+  }
+
+  return commands.flatMap((command): CommandVerifierInput[] => {
+    if (!isRecord(command)) {
+      return [];
+    }
+
+    const name = command.name;
+    const commandText = command.command;
+
+    return typeof name === "string" && typeof commandText === "string"
+      ? [
+          {
+            name,
+            command: commandText
+          }
+        ]
+      : [];
+  });
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
 }
 
 export function formatRunOnceReport(result: RunOnceResult): string {
