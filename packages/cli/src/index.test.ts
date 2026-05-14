@@ -95,4 +95,24 @@ describe("cli entrypoint", () => {
       expect(command?.options.map((option) => option.long)).toContain("--actor");
     }
   });
+
+  it("exposes RBAC actor selection on GitHub integration commands", () => {
+    const github = createProgram().commands.find(
+      (command) => command.name() === "github"
+    );
+    const run = github?.commands.find((command) => command.name() === "run");
+    const pr = github?.commands.find((command) => command.name() === "pr");
+
+    for (const commandName of ["status", "logs", "repair", "orchestrate-repair"]) {
+      const command = run?.commands.find((item) => item.name() === commandName);
+
+      expect(command?.options.map((option) => option.long)).toContain("--actor");
+    }
+
+    expect(
+      pr?.commands
+        .find((command) => command.name() === "create")
+        ?.options.map((option) => option.long)
+    ).toContain("--actor");
+  });
 });

@@ -1443,7 +1443,15 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     .description("Show GitHub workflow run status.")
     .argument("<run-id>", "GitHub Actions workflow run id")
     .option("--cwd <path>", "Workspace directory")
-    .action(async (runId: string, options: { cwd?: string }) => {
+    .option("--actor <id>", "RBAC subject for GitHub run access", "local-admin")
+    .action(async (runId: string, options: { cwd?: string; actor: string }) => {
+      await requireRbacPermission({
+        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+        actor: options.actor,
+        permission: "repo.read",
+        action: "inspect GitHub workflow runs"
+      });
+
       const { formatWorkflowRunStatus, getGitHubWorkflowRunStatus } =
         await import("./github-actions.js");
       const result = await getGitHubWorkflowRunStatus({
@@ -1459,7 +1467,15 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     .description("Print GitHub workflow run logs.")
     .argument("<run-id>", "GitHub Actions workflow run id")
     .option("--cwd <path>", "Workspace directory")
-    .action(async (runId: string, options: { cwd?: string }) => {
+    .option("--actor <id>", "RBAC subject for GitHub run access", "local-admin")
+    .action(async (runId: string, options: { cwd?: string; actor: string }) => {
+      await requireRbacPermission({
+        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+        actor: options.actor,
+        permission: "repo.read",
+        action: "inspect GitHub workflow run logs"
+      });
+
       const { fetchGitHubWorkflowRunLog } = await import("./github-actions.js");
       const result = await fetchGitHubWorkflowRunLog({
         ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
@@ -1474,7 +1490,15 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     .description("Create a CI repair task from a failed GitHub workflow run.")
     .argument("<run-id>", "GitHub Actions workflow run id")
     .option("--cwd <path>", "Workspace directory")
-    .action(async (runId: string, options: { cwd?: string }) => {
+    .option("--actor <id>", "RBAC subject for repair task creation", "local-admin")
+    .action(async (runId: string, options: { cwd?: string; actor: string }) => {
+      await requireRbacPermission({
+        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+        actor: options.actor,
+        permission: "task.run",
+        action: "create CI repair tasks"
+      });
+
       const { createCiRepairTaskFromWorkflowRun, formatCiRepairTaskReport } =
         await import("./ci-repair.js");
       const result = await createCiRepairTaskFromWorkflowRun({
@@ -1495,6 +1519,7 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     .option("--draft", "Create a draft pull request")
     .option("--allowed <pattern>", "Allowed changed path pattern", collectValues, [])
     .option("--denied <pattern>", "Denied changed path pattern", collectValues, [])
+    .option("--actor <id>", "RBAC subject for repair orchestration", "local-admin")
     .requiredOption(
       "--verifier <name=command>",
       "Verifier command to run after repair",
@@ -1512,8 +1537,16 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
           allowed: string[];
           denied: string[];
           verifier: string[];
+          actor: string;
         }
       ) => {
+        await requireRbacPermission({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          actor: options.actor,
+          permission: "task.run",
+          action: "orchestrate CI repair"
+        });
+
         const { formatCiRepairOrchestratorReport, runCiRepairOrchestrator } =
           await import("./ci-repair-orchestrator.js");
         const result = await runCiRepairOrchestrator({
@@ -1545,6 +1578,7 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     .option("--task <id>", "Runstead task id")
     .option("--goal <id>", "Runstead goal id")
     .option("--evidence <summary>", "Evidence summary", collectValues, [])
+    .option("--actor <id>", "RBAC subject for pull request creation", "local-admin")
     .action(
       async (options: {
         cwd?: string;
@@ -1556,7 +1590,15 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
         task?: string;
         goal?: string;
         evidence: string[];
+        actor: string;
       }) => {
+        await requireRbacPermission({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          actor: options.actor,
+          permission: "repo.manage",
+          action: "create GitHub pull requests"
+        });
+
         const { createGitHubPullRequest } = await import("./github-pr.js");
         const result = await createGitHubPullRequest({
           ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
