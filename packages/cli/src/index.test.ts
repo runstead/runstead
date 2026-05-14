@@ -224,13 +224,15 @@ describe("cli entrypoint", () => {
       const command = run?.commands.find((item) => item.name() === commandName);
 
       expect(command?.options.map((option) => option.long)).toContain("--actor");
+      expect(command?.options.map((option) => option.long)).toContain("--github-app");
     }
 
-    expect(
-      pr?.commands
-        .find((command) => command.name() === "create")
-        ?.options.map((option) => option.long)
-    ).toContain("--actor");
+    const prCreateOptions = pr?.commands
+      .find((command) => command.name() === "create")
+      ?.options.map((option) => option.long);
+
+    expect(prCreateOptions).toContain("--actor");
+    expect(prCreateOptions).toContain("--github-app");
   });
 
   it("exposes RBAC actor selection on git branch helpers", () => {

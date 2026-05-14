@@ -1689,71 +1689,113 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     .description("Show GitHub workflow run status.")
     .argument("<run-id>", "GitHub Actions workflow run id")
     .option("--cwd <path>", "Workspace directory")
+    .option("--github-app", "Use configured GitHub App installation auth")
+    .option("--installation-id <id>", "Override configured GitHub App installation id")
     .option("--actor <id>", "RBAC subject for GitHub run access", "local-admin")
-    .action(async (runId: string, options: { cwd?: string; actor: string }) => {
-      await requireRbacPermission({
-        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-        actor: options.actor,
-        permission: "repo.read",
-        action: "inspect GitHub workflow runs"
-      });
+    .action(
+      async (
+        runId: string,
+        options: {
+          cwd?: string;
+          githubApp?: boolean;
+          installationId?: string;
+          actor: string;
+        }
+      ) => {
+        await requireRbacPermission({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          actor: options.actor,
+          permission: "repo.read",
+          action: "inspect GitHub workflow runs"
+        });
 
-      const { formatWorkflowRunStatus, getGitHubWorkflowRunStatus } =
-        await import("./github-actions.js");
-      const result = await getGitHubWorkflowRunStatus({
-        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-        runId
-      });
+        const authToken = await resolveGitHubAuthToken(options);
+        const { formatWorkflowRunStatus, getGitHubWorkflowRunStatus } =
+          await import("./github-actions.js");
+        const result = await getGitHubWorkflowRunStatus({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          runId,
+          ...(authToken === undefined ? {} : { authToken })
+        });
 
-      console.log(formatWorkflowRunStatus(result));
-    });
+        console.log(formatWorkflowRunStatus(result));
+      }
+    );
 
   githubRun
     .command("logs")
     .description("Print GitHub workflow run logs.")
     .argument("<run-id>", "GitHub Actions workflow run id")
     .option("--cwd <path>", "Workspace directory")
+    .option("--github-app", "Use configured GitHub App installation auth")
+    .option("--installation-id <id>", "Override configured GitHub App installation id")
     .option("--actor <id>", "RBAC subject for GitHub run access", "local-admin")
-    .action(async (runId: string, options: { cwd?: string; actor: string }) => {
-      await requireRbacPermission({
-        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-        actor: options.actor,
-        permission: "repo.read",
-        action: "inspect GitHub workflow run logs"
-      });
+    .action(
+      async (
+        runId: string,
+        options: {
+          cwd?: string;
+          githubApp?: boolean;
+          installationId?: string;
+          actor: string;
+        }
+      ) => {
+        await requireRbacPermission({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          actor: options.actor,
+          permission: "repo.read",
+          action: "inspect GitHub workflow run logs"
+        });
 
-      const { fetchGitHubWorkflowRunLog } = await import("./github-actions.js");
-      const result = await fetchGitHubWorkflowRunLog({
-        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-        runId
-      });
+        const authToken = await resolveGitHubAuthToken(options);
+        const { fetchGitHubWorkflowRunLog } = await import("./github-actions.js");
+        const result = await fetchGitHubWorkflowRunLog({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          runId,
+          ...(authToken === undefined ? {} : { authToken })
+        });
 
-      process.stdout.write(result.log);
-    });
+        process.stdout.write(result.log);
+      }
+    );
 
   githubRun
     .command("repair")
     .description("Create a CI repair task from a failed GitHub workflow run.")
     .argument("<run-id>", "GitHub Actions workflow run id")
     .option("--cwd <path>", "Workspace directory")
+    .option("--github-app", "Use configured GitHub App installation auth")
+    .option("--installation-id <id>", "Override configured GitHub App installation id")
     .option("--actor <id>", "RBAC subject for repair task creation", "local-admin")
-    .action(async (runId: string, options: { cwd?: string; actor: string }) => {
-      await requireRbacPermission({
-        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-        actor: options.actor,
-        permission: "task.run",
-        action: "create CI repair tasks"
-      });
+    .action(
+      async (
+        runId: string,
+        options: {
+          cwd?: string;
+          githubApp?: boolean;
+          installationId?: string;
+          actor: string;
+        }
+      ) => {
+        await requireRbacPermission({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          actor: options.actor,
+          permission: "task.run",
+          action: "create CI repair tasks"
+        });
 
-      const { createCiRepairTaskFromWorkflowRun, formatCiRepairTaskReport } =
-        await import("./ci-repair.js");
-      const result = await createCiRepairTaskFromWorkflowRun({
-        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-        runId
-      });
+        const authToken = await resolveGitHubAuthToken(options);
+        const { createCiRepairTaskFromWorkflowRun, formatCiRepairTaskReport } =
+          await import("./ci-repair.js");
+        const result = await createCiRepairTaskFromWorkflowRun({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          runId,
+          ...(authToken === undefined ? {} : { authToken })
+        });
 
-      console.log(formatCiRepairTaskReport(result));
-    });
+        console.log(formatCiRepairTaskReport(result));
+      }
+    );
 
   githubRun
     .command("orchestrate-repair")
@@ -1765,6 +1807,8 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     .option("--draft", "Create a draft pull request")
     .option("--allowed <pattern>", "Allowed changed path pattern", collectValues, [])
     .option("--denied <pattern>", "Denied changed path pattern", collectValues, [])
+    .option("--github-app", "Use configured GitHub App installation auth")
+    .option("--installation-id <id>", "Override configured GitHub App installation id")
     .option("--actor <id>", "RBAC subject for repair orchestration", "local-admin")
     .requiredOption(
       "--verifier <name=command>",
@@ -1782,6 +1826,8 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
           draft?: boolean;
           allowed: string[];
           denied: string[];
+          githubApp?: boolean;
+          installationId?: string;
           verifier: string[];
           actor: string;
         }
@@ -1793,6 +1839,7 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
           action: "orchestrate CI repair"
         });
 
+        const authToken = await resolveGitHubAuthToken(options);
         const { formatCiRepairOrchestratorReport, runCiRepairOrchestrator } =
           await import("./ci-repair-orchestrator.js");
         const result = await runCiRepairOrchestrator({
@@ -1803,6 +1850,7 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
           draft: options.draft === true,
           allowedPaths: options.allowed,
           deniedPaths: options.denied,
+          ...(authToken === undefined ? {} : { authToken }),
           verifierCommands: options.verifier.map(parseVerifierCommandOption)
         });
 
@@ -1824,6 +1872,8 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     .option("--task <id>", "Runstead task id")
     .option("--goal <id>", "Runstead goal id")
     .option("--evidence <summary>", "Evidence summary", collectValues, [])
+    .option("--github-app", "Use configured GitHub App installation auth")
+    .option("--installation-id <id>", "Override configured GitHub App installation id")
     .option("--actor <id>", "RBAC subject for pull request creation", "local-admin")
     .action(
       async (options: {
@@ -1836,6 +1886,8 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
         task?: string;
         goal?: string;
         evidence: string[];
+        githubApp?: boolean;
+        installationId?: string;
         actor: string;
       }) => {
         await requireRbacPermission({
@@ -1845,6 +1897,7 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
           action: "create GitHub pull requests"
         });
 
+        const authToken = await resolveGitHubAuthToken(options);
         const { createGitHubPullRequest } = await import("./github-pr.js");
         const result = await createGitHubPullRequest({
           ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
@@ -1855,6 +1908,7 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
           ...(options.draft === undefined ? {} : { draft: options.draft }),
           ...(options.task === undefined ? {} : { taskId: options.task }),
           ...(options.goal === undefined ? {} : { goalId: options.goal }),
+          ...(authToken === undefined ? {} : { authToken }),
           evidence: evidenceSummariesFromCli(options.evidence)
         });
 
@@ -2017,6 +2071,27 @@ async function requireRbacPermission(options: {
       `Subject ${options.actor} cannot ${options.action}: ${result.reason}`
     );
   }
+}
+
+async function resolveGitHubAuthToken(options: {
+  cwd?: string;
+  githubApp?: boolean;
+  installationId?: string;
+}): Promise<string | undefined> {
+  if (options.githubApp !== true) {
+    return undefined;
+  }
+
+  const { createGitHubAppInstallationTokenFromConfig } =
+    await import("./github-app.js");
+  const result = await createGitHubAppInstallationTokenFromConfig({
+    ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+    ...(options.installationId === undefined
+      ? {}
+      : { installationId: options.installationId })
+  });
+
+  return result.token;
 }
 
 function parseDateOption(value: string, optionName: string): Date {
