@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
 import { createRunsteadId, type JsonObject, type RunsteadEvent } from "@runstead/core";
@@ -34,6 +34,7 @@ export interface DashboardSnapshot {
   tasks: DashboardTask[];
   approvals: DashboardApproval[];
   events: DashboardEvent[];
+  daemon: DashboardDaemonStatus;
 }
 
 export interface DashboardSummary {
@@ -89,6 +90,21 @@ export interface DashboardEvent {
   createdAt: string;
 }
 
+export interface DashboardDaemonStatus {
+  available: boolean;
+  updatedAt?: string;
+  pid?: number;
+  tick?: number;
+  intervalMs?: number;
+  ranTask?: boolean;
+  reason?: string;
+  taskId?: string;
+  taskType?: string;
+  taskStatus?: string;
+  eventId?: string;
+  error?: string;
+}
+
 export async function buildDashboard(
   options: BuildDashboardOptions = {}
 ): Promise<BuildDashboardResult> {
@@ -106,7 +122,10 @@ export async function buildDashboard(
   const database = openRunsteadDatabase(stateDb);
 
   try {
-    const snapshot = readDashboardSnapshot(database, generatedAt);
+    const snapshot = {
+      ...readDashboardSnapshot(database, generatedAt),
+      daemon: await readDashboardDaemonStatus(root)
+    };
     const html = formatDashboardHtml(snapshot);
     const event: RunsteadEvent = {
       eventId: createRunsteadId("evt"),
@@ -207,8 +226,38 @@ function readDashboardSnapshot(
     goals,
     tasks,
     approvals,
-    events
+    events,
+    daemon: {
+      available: false
+    }
   };
+}
+
+async function readDashboardDaemonStatus(root: string): Promise<DashboardDaemonStatus> {
+  try {
+    const raw = JSON.parse(
+      await readFile(join(root, "daemon", "status.json"), "utf8")
+    ) as Record<string, unknown>;
+
+    return {
+      available: true,
+      ...(typeof raw.updatedAt === "string" ? { updatedAt: raw.updatedAt } : {}),
+      ...(typeof raw.pid === "number" ? { pid: raw.pid } : {}),
+      ...(typeof raw.tick === "number" ? { tick: raw.tick } : {}),
+      ...(typeof raw.intervalMs === "number" ? { intervalMs: raw.intervalMs } : {}),
+      ...(typeof raw.ranTask === "boolean" ? { ranTask: raw.ranTask } : {}),
+      ...(typeof raw.reason === "string" ? { reason: raw.reason } : {}),
+      ...(typeof raw.taskId === "string" ? { taskId: raw.taskId } : {}),
+      ...(typeof raw.taskType === "string" ? { taskType: raw.taskType } : {}),
+      ...(typeof raw.taskStatus === "string" ? { taskStatus: raw.taskStatus } : {}),
+      ...(typeof raw.eventId === "string" ? { eventId: raw.eventId } : {})
+    };
+  } catch (error) {
+    return {
+      available: false,
+      error: error instanceof SyntaxError ? "invalid_status" : "missing_status"
+    };
+  }
 }
 
 function readDashboardSummary(database: RunsteadDatabase): DashboardSummary {
@@ -348,6 +397,7 @@ function formatDashboardHtml(snapshot: DashboardSnapshot): string {
       ${metric("Failed Tasks", summary.failedTasks)}
       ${metric("Pending Approvals", summary.pendingApprovals)}
     </div>
+    ${daemonSection(snapshot.daemon)}
     ${tableSection(
       "Repositories",
       snapshot.repositories,
@@ -411,6 +461,36 @@ function metric(label: string, value: number): string {
   return `<div class="metric"><strong>${value}</strong><span>${escapeHtml(label)}</span></div>`;
 }
 
+function daemonSection(status: DashboardDaemonStatus): string {
+  const rows: [string, string][] = status.available
+    ? [
+        ["Status", "available"],
+        ["Updated", status.updatedAt ?? "unknown"],
+        ["Tick", status.tick === undefined ? "unknown" : String(status.tick)],
+        [
+          "Last result",
+          status.ranTask === true
+            ? `${status.taskId ?? "unknown"} ${status.taskStatus ?? "unknown"}`
+            : `idle (${status.reason ?? "unknown"})`
+        ],
+        ...(status.eventId === undefined
+          ? []
+          : ([["Audit event", status.eventId]] as [string, string][]))
+      ]
+    : [
+        ["Status", "unavailable"],
+        ["Reason", status.error ?? "missing_status"]
+      ];
+  const body = rows
+    .map(
+      ([label, value]) =>
+        `<tr><th>${escapeHtml(label)}</th><td>${escapeHtml(value)}</td></tr>`
+    )
+    .join("");
+
+  return `<section><header><h2>Daemon</h2><span class="muted">${status.available ? "heartbeat" : "offline"}</span></header><table><tbody>${body}</tbody></table></section>`;
+}
+
 function tableSection<T>(
   title: string,
   rows: T[],
@@ -453,7 +533,14 @@ function dashboardEventPayload(
   return {
     htmlPath,
     dataPath,
-    summary: snapshot.summary
+    summary: snapshot.summary,
+    daemon: {
+      available: snapshot.daemon.available,
+      ...(snapshot.daemon.updatedAt === undefined
+        ? {}
+        : { updatedAt: snapshot.daemon.updatedAt }),
+      ...(snapshot.daemon.error === undefined ? {} : { error: snapshot.daemon.error })
+    }
   };
 }
 

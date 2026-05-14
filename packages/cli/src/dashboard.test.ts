@@ -133,6 +133,30 @@ describe("buildDashboard", () => {
         database.close();
       }
 
+      await mkdir(join(root, "daemon"), { recursive: true });
+      await writeFile(
+        join(root, "daemon", "status.json"),
+        `${JSON.stringify(
+          {
+            cwd: workspace,
+            pid: 12345,
+            tick: 7,
+            intervalMs: 30000,
+            updatedAt: "2026-05-14T05:59:00.000Z",
+            scheduledTasks: 1,
+            skippedTasks: 0,
+            ranTask: true,
+            taskId: "task_001",
+            taskType: "run_local_verifiers",
+            taskStatus: "completed",
+            eventId: "evt_daemon_tick"
+          },
+          null,
+          2
+        )}\n`,
+        "utf8"
+      );
+
       const result = await buildDashboard({
         cwd: workspace,
         now: new Date("2026-05-14T06:00:00.000Z")
@@ -145,6 +169,7 @@ describe("buildDashboard", () => {
       expect(result.outputDir).toBe(join(root, "dashboard"));
       expect(html).toContain("Runstead Dashboard");
       expect(html).toContain("service-api");
+      expect(html).toContain("task_001 completed");
       expect(snapshot.summary).toEqual({
         repositories: 1,
         activeGoals: 1,
@@ -152,6 +177,14 @@ describe("buildDashboard", () => {
         runningTasks: 0,
         failedTasks: 0,
         pendingApprovals: 1
+      });
+      expect(snapshot.daemon).toMatchObject({
+        available: true,
+        tick: 7,
+        updatedAt: "2026-05-14T05:59:00.000Z",
+        taskId: "task_001",
+        taskStatus: "completed",
+        eventId: "evt_daemon_tick"
       });
 
       const auditDatabase = openRunsteadDatabase(stateDb);
@@ -181,6 +214,10 @@ describe("buildDashboard", () => {
           summary: {
             activeGoals: 1,
             queuedTasks: 1
+          },
+          daemon: {
+            available: true,
+            updatedAt: "2026-05-14T05:59:00.000Z"
           }
         });
       } finally {

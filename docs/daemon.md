@@ -21,6 +21,9 @@ Inspect the last heartbeat:
 runstead daemon --status
 ```
 
+`runstead dashboard build` also embeds the latest heartbeat in
+`dashboard/state.json` and the generated HTML dashboard.
+
 Use `--no-heartbeat` only for tests or wrapper environments that provide their
 own liveness signal.
 
