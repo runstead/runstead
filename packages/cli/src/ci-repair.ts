@@ -630,7 +630,12 @@ function classifyCiFailure(
 
   if (
     status.conclusion === "timed_out" ||
-    hasAny(normalized, ["timed out", "timeout"])
+    hasAny(normalized, [
+      "workflow run timed out",
+      "job timed out",
+      "the job running on runner has exceeded",
+      "exceeded the maximum execution time"
+    ])
   ) {
     return classification("timeout", "Workflow run timed out", 0.9, ["timeout"]);
   }
@@ -652,7 +657,12 @@ function classifyCiFailure(
       "lockfile",
       "cannot find module",
       "dependency",
-      "failed to install"
+      "failed to install",
+      "err_pnpm_outdated_lockfile",
+      "frozen-lockfile",
+      "npm ci can only install",
+      "package-lock.json",
+      "pnpm-lock.yaml"
     ])
   ) {
     return classification(
@@ -663,25 +673,53 @@ function classifyCiFailure(
     );
   }
 
-  if (hasAny(normalized, ["eslint", "lint failed", "lint error"])) {
+  if (hasAny(normalized, ["eslint", "lint failed", "lint error", "ruff", "flake8"])) {
     return classification("lint", "Lint verification failed", 0.75, ["lint"]);
   }
 
   if (
     /\bts\d{4}\b/i.test(text) ||
-    hasAny(normalized, ["typecheck", "type error", "tsc"])
+    hasAny(normalized, ["typecheck", "type error", "tsc", "mypy", "pyright"])
   ) {
     return classification("typecheck", "Type checking failed", 0.75, ["typecheck"]);
   }
 
   if (
-    hasAny(normalized, ["test failed", "failing test", "expected", "received", "fail "])
+    hasAny(normalized, [
+      "test failed",
+      "failing test",
+      "failed test",
+      "failed tests",
+      "tests failed",
+      "expected",
+      "received",
+      "assertionerror",
+      "assertion failed",
+      "pytest",
+      "vitest",
+      "jest",
+      "@playwright/test",
+      "playwright test",
+      "cargo test",
+      "go test",
+      "fail "
+    ])
   ) {
     return classification("test", "Test verification failed", 0.7, ["test"]);
   }
 
   if (
-    hasAny(normalized, ["build failed", "compilation failed", "vite build", "webpack"])
+    hasAny(normalized, [
+      "build failed",
+      "compilation failed",
+      "vite build",
+      "webpack",
+      "could not compile",
+      "cargo build",
+      "go build",
+      "gradle build",
+      "mvn package"
+    ])
   ) {
     return classification("build", "Build failed", 0.65, ["build"]);
   }

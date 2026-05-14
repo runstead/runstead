@@ -319,6 +319,71 @@ describe("createCiRepairTaskFromWorkflowRun", () => {
     }
   });
 
+  it("classifies ecosystem-specific CI failure signals", async () => {
+    const scenarios = [
+      {
+        name: "playwright assertion timeout",
+        log: [
+          "Running 1 test using 1 worker",
+          "Error: expect(locator).toBeVisible() failed",
+          "Timeout 5000ms exceeded.",
+          "@playwright/test"
+        ].join("\n"),
+        expectedCategory: "test"
+      },
+      {
+        name: "pytest assertion failure",
+        log: [
+          "============================= test session starts =============================",
+          "FAILED tests/test_api.py::test_health - AssertionError: expected 200"
+        ].join("\n"),
+        expectedCategory: "test"
+      },
+      {
+        name: "cargo compile failure",
+        log: [
+          "error[E0425]: cannot find value `missing` in this scope",
+          "error: could not compile `runstead-fixture` (lib) due to 1 previous error"
+        ].join("\n"),
+        expectedCategory: "build"
+      },
+      {
+        name: "pnpm frozen lockfile failure",
+        log: [
+          "ERR_PNPM_OUTDATED_LOCKFILE Cannot install with frozen-lockfile",
+          "pnpm-lock.yaml is not up to date with package.json"
+        ].join("\n"),
+        expectedCategory: "dependency_install"
+      }
+    ] as const;
+
+    for (const scenario of scenarios) {
+      const workspace = await mkdtemp(join(tmpdir(), "runstead-ci-classify-"));
+
+      try {
+        await initRunstead({
+          cwd: workspace,
+          createDefaultGoal: true
+        });
+
+        const result = await createCiRepairTaskFromWorkflowRun({
+          cwd: workspace,
+          runId: scenario.name,
+          runner: classificationRunner(scenario.log),
+          now: new Date("2026-05-14T11:07:00.000Z")
+        });
+
+        expect(result.task.input).toMatchObject({
+          failureClassification: {
+            category: scenario.expectedCategory
+          }
+        });
+      } finally {
+        await rm(workspace, { force: true, recursive: true });
+      }
+    }
+  });
+
   it("rejects successful workflow runs", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "runstead-ci-repair-"));
     const runner: GitHubCliRunner = (args) => {
@@ -418,3 +483,26 @@ describe("createCiRepairTaskFromWorkflowRun", () => {
     ).toBeUndefined();
   });
 });
+
+function classificationRunner(log: string): GitHubCliRunner {
+  return (args) => {
+    if (args.includes("--log")) {
+      return Promise.resolve({
+        stdout: log,
+        stderr: "",
+        exitCode: 0
+      });
+    }
+
+    return Promise.resolve({
+      stdout: JSON.stringify({
+        databaseId: 123,
+        workflowName: "Verify",
+        status: "completed",
+        conclusion: "failure"
+      }),
+      stderr: "",
+      exitCode: 0
+    });
+  };
+}
