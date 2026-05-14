@@ -51,7 +51,7 @@ import { requireRunsteadRootSync } from "./runstead-root.js";
 import { finishWorkerRun, startWorkerRun } from "./runtime-audit.js";
 import { listTasks } from "./tasks.js";
 import {
-  runTaskVerifiers,
+  runTaskVerifiersUnlocked,
   type RunTaskVerifiersOptions,
   type RunTaskVerifiersResult
 } from "./verifier-runner.js";
@@ -401,11 +401,13 @@ export async function runCiRepairOrchestratorUnlocked(
         );
       }
 
-      const verifierResult = await (options.verifierRunner ?? runTaskVerifiers)({
-        cwd,
-        taskId: ciRepair.task.id,
-        ...(options.now === undefined ? {} : { now: options.now })
-      });
+      const verifierResult = await (options.verifierRunner ?? runTaskVerifiersUnlocked)(
+        {
+          cwd,
+          taskId: ciRepair.task.id,
+          ...(options.now === undefined ? {} : { now: options.now })
+        }
+      );
       const normalizedVerifierResult: RunTaskVerifiersResult = {
         ...verifierResult,
         task: {

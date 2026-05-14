@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -271,6 +271,47 @@ describe("runCiRepairOrchestrator", () => {
       ).rejects.toThrow("CI repair diff scope failed");
 
       expect(gitCalls).toContainEqual(["reset", "--hard", "abc123"]);
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("runs the default verifier path inside the orchestrator lock", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-ci-default-verifier-"));
+
+    try {
+      await initRunstead({ cwd: workspace, createDefaultGoal: true });
+      await writeFile(
+        join(workspace, "package.json"),
+        JSON.stringify({
+          scripts: {
+            test: 'node -e "process.exit(0)"'
+          }
+        })
+      );
+
+      const result = await runCiRepairOrchestrator({
+        cwd: workspace,
+        runId: "123",
+        worker: "codex_cli",
+        base: "main",
+        allowedPaths: ["src/**"],
+        verifierCommands: [{ name: "test", command: "pnpm test" }],
+        githubRunner: githubRunner([]),
+        gitRunner: gitRunner([], { diffNameOnly: "src/fix.ts\n" }),
+        workerRunner: workerRunner([]),
+        now: new Date("2026-05-14T12:00:00.000Z")
+      });
+
+      expect(result.status).toBe("waiting_approval");
+      expect(result.verifierResult?.task.status).toBe("waiting_approval");
+      expect(result.verifierResult?.commandResults).toMatchObject([
+        {
+          verifier: "test",
+          exitCode: 0,
+          timedOut: false
+        }
+      ]);
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }
