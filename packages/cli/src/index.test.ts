@@ -49,6 +49,14 @@ describe("cli entrypoint", () => {
     expect(restore?.options.map((option) => option.long)).toContain("--actor");
   });
 
+  it("exposes RBAC actor selection on resume", () => {
+    const resume = createProgram().commands.find(
+      (command) => command.name() === "resume"
+    );
+
+    expect(resume?.options.map((option) => option.long)).toContain("--actor");
+  });
+
   it("exposes RBAC actor selection on task execution commands", () => {
     const run = createProgram().commands.find((command) => command.name() === "run");
     const verifier = createProgram().commands.find(

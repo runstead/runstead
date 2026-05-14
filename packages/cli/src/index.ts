@@ -112,7 +112,15 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     .command("resume")
     .description("Resume interrupted local work by requeueing interrupted tasks.")
     .option("--cwd <path>", "Workspace directory")
-    .action(async (options: { cwd?: string }) => {
+    .option("--actor <id>", "RBAC subject for task execution", "local-admin")
+    .action(async (options: { cwd?: string; actor: string }) => {
+      await requireRbacPermission({
+        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+        actor: options.actor,
+        permission: "task.run",
+        action: "resume tasks"
+      });
+
       const { resumeInterruptedTasks } = await import("./resume.js");
       const result = await resumeInterruptedTasks(options);
 
