@@ -349,7 +349,21 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     .description("Build the local static dashboard.")
     .option("--cwd <path>", "Workspace directory")
     .option("--output <path>", "Dashboard output directory")
-    .action(async (options: { cwd?: string; output?: string }) => {
+    .option("--actor <id>", "RBAC subject for dashboard access", "local-admin")
+    .action(async (options: { cwd?: string; output?: string; actor: string }) => {
+      const { checkPermission } = await import("./rbac.js");
+      const permission = await checkPermission({
+        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+        subject: options.actor,
+        permission: "dashboard.read"
+      });
+
+      if (permission.decision !== "allow") {
+        throw new Error(
+          `Subject ${options.actor} cannot build dashboard: ${permission.reason}`
+        );
+      }
+
       const { buildDashboard } = await import("./dashboard.js");
       const result = await buildDashboard({
         ...(options.cwd === undefined ? {} : { cwd: options.cwd }),

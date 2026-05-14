@@ -39,4 +39,13 @@ describe("cli entrypoint", () => {
 
     expect(daemon?.options.map((option) => option.long)).toContain("--actor");
   });
+
+  it("exposes RBAC actor selection on dashboard build", () => {
+    const dashboard = createProgram().commands.find(
+      (command) => command.name() === "dashboard"
+    );
+    const build = dashboard?.commands.find((command) => command.name() === "build");
+
+    expect(build?.options.map((option) => option.long)).toContain("--actor");
+  });
 });
