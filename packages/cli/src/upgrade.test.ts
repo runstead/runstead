@@ -1,4 +1,4 @@
-import { access, cp, rm } from "node:fs/promises";
+import { access, cp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -78,6 +78,33 @@ describe("upgradeRunsteadState", () => {
 
       await expect(upgradeRunsteadState({ cwd: workspace })).rejects.toThrow(
         "Runstead upgrade requires .runstead state"
+      );
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("does not rewrite an existing domain manifest to hide local drift", async () => {
+    const workspace = join(tmpdir(), `runstead-upgrade-domain-drift-${process.pid}`);
+    const domainPath = join(
+      workspace,
+      ".runstead",
+      "domains",
+      "repo-maintenance",
+      "domain.yaml"
+    );
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await initRunstead({ cwd: workspace });
+      await writeFile(
+        domainPath,
+        `${await readFile(domainPath, "utf8")}\n# drift\n`,
+        "utf8"
+      );
+
+      await expect(upgradeRunsteadState({ cwd: workspace })).rejects.toThrow(
+        "domain-pack-manifests"
       );
     } finally {
       await rm(workspace, { force: true, recursive: true });

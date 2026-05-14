@@ -174,7 +174,7 @@ export async function initRunstead(
     repoMaintenanceDomainDir,
     options.force
   );
-  await writeDomainPackManifest(repoMaintenanceDomainDir);
+  await writeDomainPackManifest(repoMaintenanceDomainDir, options.force);
   await writeIfMissing(join(root, "config.yaml"), DEFAULT_CONFIG, options.force);
   await writeIfMissing(
     join(root, "policies", "repo-maintenance.yaml"),
@@ -216,14 +216,16 @@ export async function initRunstead(
   };
 }
 
-async function writeDomainPackManifest(packDir: string): Promise<void> {
+async function writeDomainPackManifest(packDir: string, force = false): Promise<void> {
+  const manifestPath = join(packDir, "runstead-manifest.json");
+
+  if (!force && (await exists(manifestPath))) {
+    return;
+  }
+
   const manifest = await buildDomainPackManifest(packDir);
 
-  await writeFile(
-    join(packDir, "runstead-manifest.json"),
-    `${JSON.stringify(manifest, null, 2)}\n`,
-    "utf8"
-  );
+  await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
 }
 
 async function copyDirectoryIfMissing(
