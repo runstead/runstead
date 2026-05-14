@@ -68,6 +68,7 @@ export interface RetrieveProjectFactsOptions {
   scope?: string;
   query?: string;
   limit?: number;
+  includeConflicted?: boolean;
   now?: Date;
 }
 
@@ -227,7 +228,11 @@ export function retrieveProjectFacts(
   const database = openRunsteadDatabase(stateDb);
 
   try {
-    const facts = readProjectFacts(database, options.scope)
+    const projectFacts = readProjectFacts(database, options.scope);
+    const facts = filterConflictedProjectFacts({
+      facts: projectFacts,
+      includeConflicted: options.includeConflicted === true
+    })
       .filter((fact) => matchesFactQuery(fact, options.query))
       .slice(0, limit);
     const retrievalId = createRunsteadId("retr");
@@ -242,6 +247,7 @@ export function retrieveProjectFacts(
         scope: options.scope ?? null,
         query: normalizedQuery(options.query),
         limit,
+        includeConflicted: options.includeConflicted === true,
         resultCount: facts.length,
         resultIds: facts.map((fact) => fact.id)
       },
@@ -389,6 +395,29 @@ function matchesFactQuery(fact: MemoryRecord, query: string | undefined): boolea
   const haystack = [fact.content, ...fact.sourceRefs].join("\n").toLowerCase();
 
   return haystack.includes(normalized);
+}
+
+function filterConflictedProjectFacts(input: {
+  facts: MemoryRecord[];
+  includeConflicted: boolean;
+}): MemoryRecord[] {
+  if (input.includeConflicted) {
+    return input.facts;
+  }
+
+  const conflictedIds = new Set<string>();
+
+  for (const fact of input.facts) {
+    if (fact.conflictsWith.length > 0) {
+      conflictedIds.add(fact.id);
+    }
+
+    for (const conflictingFactId of fact.conflictsWith) {
+      conflictedIds.add(conflictingFactId);
+    }
+  }
+
+  return input.facts.filter((fact) => !conflictedIds.has(fact.id));
 }
 
 function normalizedQuery(query: string | undefined): string | null {

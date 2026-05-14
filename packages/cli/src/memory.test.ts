@@ -357,4 +357,60 @@ describe("retrieveProjectFacts", () => {
       await rm(workspace, { force: true, recursive: true });
     }
   });
+
+  it("excludes explicitly conflicted project facts unless requested", async () => {
+    const workspace = join(
+      tmpdir(),
+      `runstead-memory-conflict-retrieval-${process.pid}`
+    );
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await initRunstead({ cwd: workspace });
+      await writeFile(
+        join(workspace, "package.json"),
+        `${JSON.stringify({ packageManager: "pnpm@11.1.1" })}\n`,
+        "utf8"
+      );
+      await writeFile(
+        join(workspace, "README.md"),
+        "Historical docs mention npm.\n",
+        "utf8"
+      );
+
+      const currentFact = recordProjectFact({
+        cwd: workspace,
+        scope: "repo:acme/app",
+        content: "This repo uses pnpm.",
+        sourceRefs: ["file:package.json"],
+        now: new Date("2026-05-14T06:00:00.000Z")
+      }).memory;
+      const historicalFact = recordProjectFact({
+        cwd: workspace,
+        scope: "repo:acme/app",
+        content: "Historical docs mention npm.",
+        sourceRefs: ["file:README.md"],
+        conflictsWith: [currentFact.id],
+        now: new Date("2026-05-14T06:01:00.000Z")
+      }).memory;
+
+      const defaultRetrieval = retrieveProjectFacts({
+        cwd: workspace,
+        scope: "repo:acme/app"
+      });
+      const diagnosticRetrieval = retrieveProjectFacts({
+        cwd: workspace,
+        scope: "repo:acme/app",
+        includeConflicted: true
+      });
+
+      expect(defaultRetrieval.facts).toEqual([]);
+      expect(diagnosticRetrieval.facts.map((fact) => fact.id)).toEqual([
+        historicalFact.id,
+        currentFact.id
+      ]);
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
 });

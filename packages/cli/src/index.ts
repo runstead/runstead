@@ -670,12 +670,14 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     .option("--scope <scope>", "Filter by memory scope")
     .option("--query <text>", "Search text")
     .option("--limit <number>", "Maximum facts to return")
+    .option("--include-conflicted", "Include facts with explicit conflicts")
     .action(
       async (options: {
         cwd?: string;
         scope?: string;
         query?: string;
         limit?: string;
+        includeConflicted?: boolean;
       }) => {
         const { retrieveProjectFacts } = await import("./memory.js");
         const limit = parseOptionalInteger(options.limit, "--limit");
@@ -683,7 +685,8 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
           ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
           ...(options.scope === undefined ? {} : { scope: options.scope }),
           ...(options.query === undefined ? {} : { query: options.query }),
-          ...(limit === undefined ? {} : { limit })
+          ...(limit === undefined ? {} : { limit }),
+          includeConflicted: options.includeConflicted === true
         });
 
         console.log(`Retrieval audit: ${result.retrievalId}`);
