@@ -1315,6 +1315,42 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     );
 
   domain
+    .command("install")
+    .description("Install a validated domain pack into .runstead/domains.")
+    .argument("<ref>", "Domain pack id or path")
+    .option("--cwd <path>", "Workspace directory")
+    .option("--root <path>", "Additional domain pack root", collectValues, [])
+    .option("--no-built-ins", "Exclude built-in domain packs")
+    .option("--force", "Overwrite an installed domain pack")
+    .action(
+      async (
+        ref: string,
+        options: {
+          cwd?: string;
+          root: string[];
+          builtIns?: boolean;
+          force?: boolean;
+        }
+      ) => {
+        const { installDomainPack } = await import("./domain-pack-install.js");
+        const result = await installDomainPack({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          ref,
+          roots: options.root,
+          includeBuiltIns: options.builtIns !== false,
+          force: options.force === true
+        });
+
+        console.log(
+          `${result.overwritten ? "Reinstalled" : "Installed"} domain pack: ${result.id}`
+        );
+        console.log(`Destination: ${result.destination}`);
+        console.log(`Manifest: ${result.manifestPath}`);
+        console.log(`Files: ${result.installedFiles.length}`);
+      }
+    );
+
+  domain
     .command("validate")
     .description("Validate a domain pack directory.")
     .argument("<path>", "Domain pack directory")

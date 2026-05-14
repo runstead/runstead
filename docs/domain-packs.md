@@ -220,7 +220,8 @@ For a local Runstead workspace, copy or generate the pack under
 
 ```sh
 runstead init
-runstead domain create customer-ops --output .runstead/domains/customer-ops
+runstead domain create customer-ops --output ./customer-ops
+runstead domain install ./customer-ops
 runstead domain validate .runstead/domains/customer-ops
 runstead goal create customer-ops --template weekly-triage
 ```
