@@ -132,6 +132,9 @@ export async function initGitHubAppMode(
       : { installationId: options.installationId }),
     apiBaseUrl: options.apiBaseUrl ?? DEFAULT_GITHUB_API_BASE_URL
   };
+
+  await assertReadablePrivateKey(config.privateKeyPath);
+
   const event: RunsteadEvent = {
     eventId: createRunsteadId("evt"),
     type: "github_app.configured",
@@ -371,5 +374,13 @@ async function exists(path: string): Promise<boolean> {
     return true;
   } catch {
     return false;
+  }
+}
+
+async function assertReadablePrivateKey(path: string): Promise<void> {
+  try {
+    await access(path, constants.R_OK);
+  } catch {
+    throw new Error(`GitHub App private key is not readable: ${path}`);
   }
 }

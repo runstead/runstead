@@ -206,4 +206,30 @@ describe("github app mode", () => {
       await rm(workspace, { force: true, recursive: true });
     }
   });
+
+  it("rejects unreadable private keys during configuration", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-github-app-missing-"));
+    const root = join(workspace, ".runstead");
+    const keyPath = join(workspace, "missing.pem");
+
+    try {
+      await mkdir(root, { recursive: true });
+      await writeFile(
+        join(root, "config.yaml"),
+        "version: 1\ndomain: repo-maintenance\n",
+        "utf8"
+      );
+      openRunsteadDatabase(join(root, "state.db")).close();
+
+      await expect(
+        initGitHubAppMode({
+          cwd: workspace,
+          appId: "12345",
+          privateKeyPath: keyPath
+        })
+      ).rejects.toThrow("GitHub App private key is not readable");
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
 });
