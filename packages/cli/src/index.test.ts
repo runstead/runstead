@@ -49,6 +49,20 @@ describe("cli entrypoint", () => {
     expect(verifierRun?.options.map((option) => option.long)).toContain("--actor");
   });
 
+  it("exposes RBAC actor selection on audit and report commands", () => {
+    const audit = createProgram().commands.find(
+      (command) => command.name() === "audit"
+    );
+    const report = createProgram().commands.find(
+      (command) => command.name() === "report"
+    );
+    const auditExport = audit?.commands.find((command) => command.name() === "export");
+    const weekly = report?.commands.find((command) => command.name() === "weekly");
+
+    expect(auditExport?.options.map((option) => option.long)).toContain("--actor");
+    expect(weekly?.options.map((option) => option.long)).toContain("--actor");
+  });
+
   it("exposes RBAC actor selection on repository commands", () => {
     const repo = createProgram().commands.find((command) => command.name() === "repo");
 

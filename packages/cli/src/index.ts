@@ -544,7 +544,15 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     .description("Export the append-only event log as JSONL.")
     .option("--cwd <path>", "Workspace directory")
     .option("--output <path>", "Write JSONL to a file instead of stdout")
-    .action(async (options: { cwd?: string; output?: string }) => {
+    .option("--actor <id>", "RBAC subject for audit access", "local-admin")
+    .action(async (options: { cwd?: string; output?: string; actor: string }) => {
+      await requireRbacPermission({
+        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+        actor: options.actor,
+        permission: "audit.read",
+        action: "export audit logs"
+      });
+
       const { exportAuditLog } = await import("./audit-export.js");
       const result = await exportAuditLog({
         ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
@@ -568,21 +576,36 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     .option("--cwd <path>", "Workspace directory")
     .option("--week <YYYY-Www>", "ISO week to report, for example 2026-W20")
     .option("--print", "Print the generated markdown")
-    .action(async (options: { cwd?: string; week?: string; print?: boolean }) => {
-      const { generateWeeklyReport } = await import("./weekly-report.js");
-      const result = await generateWeeklyReport({
-        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-        ...(options.week === undefined ? {} : { week: options.week })
-      });
+    .option("--actor <id>", "RBAC subject for report generation", "local-admin")
+    .action(
+      async (options: {
+        cwd?: string;
+        week?: string;
+        print?: boolean;
+        actor: string;
+      }) => {
+        await requireRbacPermission({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          actor: options.actor,
+          permission: "audit.read",
+          action: "generate reports"
+        });
 
-      console.log(`Generated weekly report: ${result.reportPath}`);
-      console.log(`Week: ${result.week}`);
+        const { generateWeeklyReport } = await import("./weekly-report.js");
+        const result = await generateWeeklyReport({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          ...(options.week === undefined ? {} : { week: options.week })
+        });
 
-      if (options.print === true) {
-        console.log("");
-        console.log(result.markdown);
+        console.log(`Generated weekly report: ${result.reportPath}`);
+        console.log(`Week: ${result.week}`);
+
+        if (options.print === true) {
+          console.log("");
+          console.log(result.markdown);
+        }
       }
-    });
+    );
 
   const memory = program
     .command("memory")
