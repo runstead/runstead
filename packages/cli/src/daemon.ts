@@ -70,6 +70,10 @@ export interface DaemonHeartbeatStatus {
   taskId?: string;
   taskType?: string;
   taskStatus?: string;
+  ciRepairStatus?: string;
+  branchName?: string;
+  approvalId?: string;
+  pullRequest?: string;
   eventId?: string;
   ageMs?: number;
   stale?: boolean;
@@ -227,6 +231,20 @@ export function formatDaemonStatus(status: DaemonHeartbeatStatus): string {
     status.ranTask
       ? `Last result: ran ${status.taskId ?? "unknown"} type=${status.taskType ?? "unknown"} status=${status.taskStatus ?? "unknown"}`
       : `Last result: idle (${status.reason ?? "unknown"})`,
+    ...(status.ciRepairStatus === undefined
+      ? []
+      : [
+          [
+            `CI repair: ${status.ciRepairStatus}`,
+            status.branchName === undefined ? undefined : `branch=${status.branchName}`,
+            status.pullRequest === undefined ? undefined : `pr=${status.pullRequest}`,
+            status.approvalId === undefined
+              ? undefined
+              : `approval=${status.approvalId}`
+          ]
+            .filter((part): part is string => part !== undefined)
+            .join(" ")
+        ]),
     ...(status.eventId === undefined ? [] : [`Audit event: ${status.eventId}`])
   ].join("\n");
 }
@@ -409,7 +427,23 @@ function daemonHeartbeatStatus(input: {
     ranTask: true,
     taskId: input.result.task.id,
     taskType: input.result.task.type,
-    taskStatus: input.result.task.status
+    taskStatus: input.result.task.status,
+    ...(input.result.ciRepairResult === undefined
+      ? {}
+      : {
+          ciRepairStatus: input.result.ciRepairResult.status,
+          branchName: input.result.ciRepairResult.branchName,
+          ...(input.result.ciRepairResult.approval === undefined
+            ? {}
+            : { approvalId: input.result.ciRepairResult.approval.id }),
+          ...(input.result.ciRepairResult.pullRequest === undefined
+            ? {}
+            : {
+                pullRequest:
+                  input.result.ciRepairResult.pullRequest.url ??
+                  input.result.ciRepairResult.pullRequest.head
+              })
+        })
   };
 }
 

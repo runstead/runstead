@@ -101,6 +101,10 @@ export interface DashboardDaemonStatus {
   taskId?: string;
   taskType?: string;
   taskStatus?: string;
+  ciRepairStatus?: string;
+  branchName?: string;
+  approvalId?: string;
+  pullRequest?: string;
   eventId?: string;
   ageMs?: number;
   stale?: boolean;
@@ -256,6 +260,12 @@ async function readDashboardDaemonStatus(
       ...(typeof raw.taskId === "string" ? { taskId: raw.taskId } : {}),
       ...(typeof raw.taskType === "string" ? { taskType: raw.taskType } : {}),
       ...(typeof raw.taskStatus === "string" ? { taskStatus: raw.taskStatus } : {}),
+      ...(typeof raw.ciRepairStatus === "string"
+        ? { ciRepairStatus: raw.ciRepairStatus }
+        : {}),
+      ...(typeof raw.branchName === "string" ? { branchName: raw.branchName } : {}),
+      ...(typeof raw.approvalId === "string" ? { approvalId: raw.approvalId } : {}),
+      ...(typeof raw.pullRequest === "string" ? { pullRequest: raw.pullRequest } : {}),
       ...(typeof raw.eventId === "string" ? { eventId: raw.eventId } : {}),
       ...(health ?? {})
     };
@@ -513,6 +523,27 @@ function daemonSection(status: DashboardDaemonStatus): string {
             ? `${status.taskId ?? "unknown"} ${status.taskStatus ?? "unknown"}`
             : `idle (${status.reason ?? "unknown"})`
         ],
+        ...(status.ciRepairStatus === undefined
+          ? []
+          : ([
+              [
+                "CI repair",
+                [
+                  status.ciRepairStatus,
+                  status.branchName === undefined
+                    ? undefined
+                    : `branch=${status.branchName}`,
+                  status.pullRequest === undefined
+                    ? undefined
+                    : `pr=${status.pullRequest}`,
+                  status.approvalId === undefined
+                    ? undefined
+                    : `approval=${status.approvalId}`
+                ]
+                  .filter((part): part is string => part !== undefined)
+                  .join(" ")
+              ]
+            ] as [string, string][])),
         ...(status.eventId === undefined
           ? []
           : ([["Audit event", status.eventId]] as [string, string][]))
@@ -589,7 +620,19 @@ function dashboardEventPayload(
         : { updatedAt: snapshot.daemon.updatedAt }),
       ...(snapshot.daemon.error === undefined ? {} : { error: snapshot.daemon.error }),
       ...(snapshot.daemon.stale === undefined ? {} : { stale: snapshot.daemon.stale }),
-      ...(snapshot.daemon.ageMs === undefined ? {} : { ageMs: snapshot.daemon.ageMs })
+      ...(snapshot.daemon.ageMs === undefined ? {} : { ageMs: snapshot.daemon.ageMs }),
+      ...(snapshot.daemon.ciRepairStatus === undefined
+        ? {}
+        : { ciRepairStatus: snapshot.daemon.ciRepairStatus }),
+      ...(snapshot.daemon.branchName === undefined
+        ? {}
+        : { branchName: snapshot.daemon.branchName }),
+      ...(snapshot.daemon.approvalId === undefined
+        ? {}
+        : { approvalId: snapshot.daemon.approvalId }),
+      ...(snapshot.daemon.pullRequest === undefined
+        ? {}
+        : { pullRequest: snapshot.daemon.pullRequest })
     }
   };
 }

@@ -147,8 +147,11 @@ describe("buildDashboard", () => {
             skippedTasks: 0,
             ranTask: true,
             taskId: "task_001",
-            taskType: "run_local_verifiers",
-            taskStatus: "completed",
+            taskType: "ci_repair",
+            taskStatus: "waiting_approval",
+            ciRepairStatus: "waiting_approval",
+            branchName: "runstead/task_001/ci-456",
+            approvalId: "appr_dashboard_ci",
             eventId: "evt_daemon_tick"
           },
           null,
@@ -169,8 +172,11 @@ describe("buildDashboard", () => {
       expect(result.outputDir).toBe(join(root, "dashboard"));
       expect(html).toContain("Runstead Dashboard");
       expect(html).toContain("service-api");
-      expect(html).toContain("task_001 completed");
+      expect(html).toContain("task_001 waiting_approval");
       expect(html).toContain("healthy age=60000ms");
+      expect(html).toContain(
+        "waiting_approval branch=runstead/task_001/ci-456 approval=appr_dashboard_ci"
+      );
       expect(snapshot.summary).toEqual({
         repositories: 1,
         activeGoals: 1,
@@ -186,7 +192,11 @@ describe("buildDashboard", () => {
         ageMs: 60000,
         stale: false,
         taskId: "task_001",
-        taskStatus: "completed",
+        taskType: "ci_repair",
+        taskStatus: "waiting_approval",
+        ciRepairStatus: "waiting_approval",
+        branchName: "runstead/task_001/ci-456",
+        approvalId: "appr_dashboard_ci",
         eventId: "evt_daemon_tick"
       });
 

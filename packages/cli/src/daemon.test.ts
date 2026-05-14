@@ -221,6 +221,62 @@ describe("runDaemon", () => {
     }
   });
 
+  it("includes ci repair orchestration details in heartbeat status", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-daemon-ci-heartbeat-"));
+    const scheduler: DaemonScheduler = (options) =>
+      Promise.resolve({
+        cwd: options.cwd ?? "",
+        stateDb: join(workspace, ".runstead", "state.db"),
+        scheduledTasks: [],
+        skippedTasks: []
+      });
+    const runner: DaemonRunner = (options) =>
+      Promise.resolve({
+        cwd: options.cwd ?? "",
+        ranTask: true,
+        task: fakeTask({
+          id: "task_ci_repair_heartbeat",
+          type: "ci_repair",
+          status: "waiting_approval"
+        }),
+        ciRepairResult: fakeCiRepairResult({
+          status: "waiting_approval",
+          branchName: "runstead/task_ci_repair_heartbeat/ci-456",
+          approvalId: "approval_push_heartbeat"
+        })
+      });
+
+    try {
+      await initRunstead({ cwd: workspace });
+      const result = await runDaemon({
+        cwd: workspace,
+        intervalMs: 0,
+        maxTicks: 1,
+        scheduler,
+        runner,
+        heartbeat: true,
+        now: new Date("2026-05-14T09:07:00.000Z")
+      });
+      const status = await readDaemonStatus({ cwd: workspace });
+
+      expect(result.ticks[0]?.heartbeat).toMatchObject({
+        ranTask: true,
+        taskId: "task_ci_repair_heartbeat",
+        taskType: "ci_repair",
+        taskStatus: "waiting_approval",
+        ciRepairStatus: "waiting_approval",
+        branchName: "runstead/task_ci_repair_heartbeat/ci-456",
+        approvalId: "approval_push_heartbeat"
+      });
+      expect(status).toMatchObject(result.ticks[0]?.heartbeat ?? {});
+      expect(formatDaemonStatus(status)).toContain(
+        "CI repair: waiting_approval branch=runstead/task_ci_repair_heartbeat/ci-456 approval=approval_push_heartbeat"
+      );
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
   it("marks stale daemon heartbeat status", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "runstead-daemon-stale-"));
     const scheduler: DaemonScheduler = (options) =>

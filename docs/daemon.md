@@ -20,8 +20,9 @@ runstead daemon --max-ticks 5 --interval-ms 30000
 ```
 
 Each real daemon tick writes `.runstead/daemon/status.json` by default. The
-heartbeat records the process id, tick number, timestamp, scheduling counts, and
-last task result so operators can tell whether the daemon is alive without
+heartbeat records the process id, tick number, timestamp, scheduling counts,
+last task result, and CI repair branch/approval/PR progress when the tick ran a
+repair orchestration, so operators can tell whether the daemon is alive without
 opening SQLite.
 
 Inspect the last heartbeat:
