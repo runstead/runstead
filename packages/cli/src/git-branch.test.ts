@@ -20,9 +20,13 @@ describe("buildRunsteadBranchName", () => {
 
 describe("createGitBranch", () => {
   it("creates a branch from a base ref without forcing", async () => {
-    const calls: { args: string[]; cwd: string }[] = [];
+    const calls: { args: string[]; cwd: string; timeoutMs?: number }[] = [];
     const runner: GitRunner = (args, options) => {
-      calls.push({ args, cwd: options.cwd });
+      calls.push({
+        args,
+        cwd: options.cwd,
+        ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs })
+      });
 
       return Promise.resolve({
         stdout: "",
@@ -46,6 +50,7 @@ describe("createGitBranch", () => {
     expect(calls).toEqual([
       {
         cwd: "/repo",
+        timeoutMs: 60000,
         args: ["switch", "-c", "runstead/task-123", "main"]
       }
     ]);
@@ -54,9 +59,13 @@ describe("createGitBranch", () => {
 
 describe("pushGitBranch", () => {
   it("pushes a normalized branch to origin with upstream tracking", async () => {
-    const calls: { args: string[]; cwd: string }[] = [];
+    const calls: { args: string[]; cwd: string; timeoutMs?: number }[] = [];
     const runner: GitRunner = (args, options) => {
-      calls.push({ args, cwd: options.cwd });
+      calls.push({
+        args,
+        cwd: options.cwd,
+        ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs })
+      });
 
       return Promise.resolve({
         stdout: "branch pushed\n",
@@ -80,6 +89,7 @@ describe("pushGitBranch", () => {
     expect(calls).toEqual([
       {
         cwd: "/repo",
+        timeoutMs: 60000,
         args: ["push", "--set-upstream", "origin", "runstead/task-123"]
       }
     ]);

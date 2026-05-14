@@ -12,7 +12,7 @@ export interface GitCommandResult {
 
 export type GitRunner = (
   args: string[],
-  options: { cwd: string }
+  options: { cwd: string; timeoutMs?: number }
 ) => Promise<GitCommandResult>;
 
 export interface RunsteadBranchNameOptions {
@@ -25,6 +25,7 @@ export interface CreateGitBranchOptions {
   cwd?: string;
   branchName: string;
   baseRef?: string;
+  timeoutMs?: number;
   runner?: GitRunner;
 }
 
@@ -38,6 +39,7 @@ export interface PushGitBranchOptions {
   cwd?: string;
   branchName: string;
   remote?: string;
+  timeoutMs?: number;
   runner?: GitRunner;
 }
 
@@ -47,6 +49,8 @@ export interface PushGitBranchResult {
   remote: string;
   stdout: string;
 }
+
+export const DEFAULT_GIT_CLI_TIMEOUT_MS = 60_000;
 
 export function buildRunsteadBranchName(options: RunsteadBranchNameOptions): string {
   const prefix = normalizeBranchSegment(options.prefix ?? "runstead");
@@ -68,7 +72,10 @@ export async function createGitBranch(
     options.baseRef === undefined
       ? ["switch", "-c", branchName]
       : ["switch", "-c", branchName, options.baseRef];
-  const result = await (options.runner ?? runGit)(args, { cwd });
+  const result = await (options.runner ?? runGit)(args, {
+    cwd,
+    timeoutMs: options.timeoutMs ?? DEFAULT_GIT_CLI_TIMEOUT_MS
+  });
 
   if (result.exitCode !== 0) {
     throw new Error(
@@ -91,7 +98,10 @@ export async function pushGitBranch(
   const remote = options.remote ?? "origin";
   const result = await (options.runner ?? runGit)(
     ["push", "--set-upstream", remote, branchName],
-    { cwd }
+    {
+      cwd,
+      timeoutMs: options.timeoutMs ?? DEFAULT_GIT_CLI_TIMEOUT_MS
+    }
   );
 
   if (result.exitCode !== 0) {
@@ -127,11 +137,12 @@ function normalizeBranchSegment(value: string): string {
 
 async function runGit(
   args: string[],
-  options: { cwd: string }
+  options: { cwd: string; timeoutMs?: number }
 ): Promise<GitCommandResult> {
   try {
     const result = await execFileAsync("git", args, {
       cwd: options.cwd,
+      timeout: options.timeoutMs ?? DEFAULT_GIT_CLI_TIMEOUT_MS,
       windowsHide: true
     });
 

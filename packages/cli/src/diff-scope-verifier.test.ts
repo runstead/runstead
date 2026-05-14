@@ -16,9 +16,13 @@ describe("matchesPolicyPathPattern", () => {
 
 describe("verifyGitDiffScope", () => {
   it("flags denied paths and files outside the allowed scope", async () => {
-    const calls: { args: string[]; cwd: string }[] = [];
+    const calls: { args: string[]; cwd: string; timeoutMs?: number }[] = [];
     const runner: GitDiffRunner = (args, options) => {
-      calls.push({ args, cwd: options.cwd });
+      calls.push({
+        args,
+        cwd: options.cwd,
+        ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs })
+      });
 
       return Promise.resolve({
         stdout: "src/index.ts\n.env\nREADME.md\n",
@@ -55,6 +59,7 @@ describe("verifyGitDiffScope", () => {
     expect(calls).toEqual([
       {
         cwd: "/repo",
+        timeoutMs: 60000,
         args: ["diff", "--name-only", "main...feature"]
       }
     ]);

@@ -14,7 +14,7 @@ export interface GitDiffCommandResult {
 
 export type GitDiffRunner = (
   args: string[],
-  options: { cwd: string }
+  options: { cwd: string; timeoutMs?: number }
 ) => Promise<GitDiffCommandResult>;
 
 export interface VerifyGitDiffScopeOptions {
@@ -23,6 +23,7 @@ export interface VerifyGitDiffScopeOptions {
   headRef?: string;
   allowedPaths?: string[];
   deniedPaths?: string[];
+  timeoutMs?: number;
   runner?: GitDiffRunner;
 }
 
@@ -45,7 +46,10 @@ export async function verifyGitDiffScope(
   const cwd = resolve(options.cwd ?? process.cwd());
   const result = await (options.runner ?? runGit)(
     diffNameOnlyArgs(options.baseRef, options.headRef),
-    { cwd }
+    {
+      cwd,
+      timeoutMs: options.timeoutMs ?? DEFAULT_GIT_CLI_TIMEOUT_MS
+    }
   );
 
   if (result.exitCode !== 0) {
@@ -142,11 +146,12 @@ function diffScopeViolations(
 
 async function runGit(
   args: string[],
-  options: { cwd: string }
+  options: { cwd: string; timeoutMs?: number }
 ): Promise<GitDiffCommandResult> {
   try {
     const result = await execFileAsync("git", args, {
       cwd: options.cwd,
+      timeout: options.timeoutMs ?? DEFAULT_GIT_CLI_TIMEOUT_MS,
       windowsHide: true
     });
 
@@ -163,6 +168,8 @@ async function runGit(
     };
   }
 }
+
+const DEFAULT_GIT_CLI_TIMEOUT_MS = 60_000;
 
 function commandExitCode(error: unknown): number {
   if (
