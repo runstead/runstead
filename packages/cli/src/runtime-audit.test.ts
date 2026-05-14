@@ -149,6 +149,16 @@ describe("runtime audit", () => {
             )
             .all(workerRun.id, toolCall.id) as { type: string }[]
         ).map((row) => row.type);
+        const requestedPayload = database
+          .prepare(
+            `
+            SELECT payload_json
+            FROM events
+            WHERE type = 'tool_call.requested'
+              AND aggregate_id = ?
+          `
+          )
+          .get(toolCall.id) as { payload_json: string };
 
         expect(storedWorkerRun).toEqual({
           status: "completed",
@@ -167,6 +177,13 @@ describe("runtime audit", () => {
           "tool_call.completed",
           "worker_run.completed"
         ]);
+        expect(JSON.parse(requestedPayload.payload_json)).toMatchObject({
+          toolCallId: toolCall.id,
+          workerRunId: workerRun.id,
+          taskId: task.id,
+          actionId: "act_test",
+          actionType: "shell.exec"
+        });
       } finally {
         database.close();
       }

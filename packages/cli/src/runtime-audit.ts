@@ -136,6 +136,7 @@ export function startToolCall(options: StartToolCallOptions): ToolCall {
         toolCallId: toolCall.id,
         workerRunId: toolCall.workerRunId,
         taskId: toolCall.taskId,
+        actionId: options.action.actionId,
         actionType: toolCall.actionType
       },
       startedAt
