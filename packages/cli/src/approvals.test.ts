@@ -26,6 +26,10 @@ describe("approvals", () => {
       const action = {
         actionId: "act_approval_test",
         actionType: "github.pr.create",
+        resource: {
+          type: "pull_request",
+          id: "main...runstead/task_001"
+        },
         context: {
           sideEffects: ["github_pr_create"]
         }
@@ -34,6 +38,7 @@ describe("approvals", () => {
       const recorded = recordPolicyDecision({
         cwd: workspace,
         policyId: policy.id,
+        policyFingerprint: "policy_fp_test",
         action,
         result: policyResult,
         now: new Date("2026-05-14T10:00:00.000Z")
@@ -62,6 +67,19 @@ describe("approvals", () => {
           actionId: "act_approval_test",
           expiresAt: "2026-05-15T10:01:00.000Z"
         });
+        expect(shown.policyDecision).toMatchObject({
+          policyId: policy.id,
+          action: {
+            actionType: "github.pr.create",
+            resource: {
+              type: "pull_request",
+              id: "main...runstead/task_001"
+            }
+          },
+          result: {
+            policyFingerprint: "policy_fp_test"
+          }
+        });
         const event = database
           .prepare(
             `
@@ -71,11 +89,24 @@ describe("approvals", () => {
           `
           )
           .get(approval.id) as { payload_json: string } | undefined;
+        const payload = JSON.parse(event?.payload_json ?? "{}") as {
+          obligations?: unknown;
+        };
 
-        expect(JSON.parse(event?.payload_json ?? "{}")).toMatchObject({
+        expect(payload).toMatchObject({
           approvalId: approval.id,
-          expiresAt: "2026-05-15T10:01:00.000Z"
+          expiresAt: "2026-05-15T10:01:00.000Z",
+          policyId: policy.id,
+          policyFingerprint: "policy_fp_test",
+          action: {
+            actionType: "github.pr.create",
+            resource: {
+              type: "pull_request",
+              id: "main...runstead/task_001"
+            }
+          }
         });
+        expect(payload.obligations).toEqual([]);
       } finally {
         database.close();
       }

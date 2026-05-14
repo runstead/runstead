@@ -1854,6 +1854,29 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
       console.log(`Requested by: ${result.approval.requestedBy ?? "unknown"}`);
       console.log(`Expires: ${result.approval.expiresAt ?? "none"}`);
       console.log(`Decided by: ${result.approval.decidedBy ?? "none"}`);
+
+      if (result.policyDecision !== undefined) {
+        console.log(`Policy: ${result.policyDecision.policyId}`);
+        console.log(
+          `Policy fingerprint: ${approvalPolicyFingerprint(result.policyDecision.result)}`
+        );
+        console.log(
+          `Action type: ${approvalActionField(
+            result.policyDecision.action,
+            "actionType"
+          )}`
+        );
+        console.log(
+          `Resource: ${approvalResourceSummary(result.policyDecision.action)}`
+        );
+        console.log(
+          `Obligations: ${
+            result.policyDecision.obligations.length === 0
+              ? "none"
+              : result.policyDecision.obligations.join(", ")
+          }`
+        );
+      }
     });
 
   approval
@@ -2667,6 +2690,46 @@ function parseApprovalStatus(
   }
 
   throw new Error("--status must be pending, approved, denied, or expired");
+}
+
+function approvalPolicyFingerprint(result: unknown): string {
+  if (!isRecord(result)) {
+    return "unknown";
+  }
+
+  return typeof result.policyFingerprint === "string"
+    ? result.policyFingerprint
+    : "unknown";
+}
+
+function approvalActionField(action: unknown, field: string): string {
+  if (!isRecord(action)) {
+    return "unknown";
+  }
+
+  const value = action[field];
+  return typeof value === "string" ? value : "unknown";
+}
+
+function approvalResourceSummary(action: unknown): string {
+  if (!isRecord(action) || !isRecord(action.resource)) {
+    return "unknown";
+  }
+
+  const type =
+    typeof action.resource.type === "string" ? action.resource.type : "unknown";
+  const identifier =
+    typeof action.resource.id === "string"
+      ? action.resource.id
+      : typeof action.resource.path === "string"
+        ? action.resource.path
+        : undefined;
+
+  return identifier === undefined ? type : `${type}:${identifier}`;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 const entrypoint = process.argv[1] ? pathToFileURL(process.argv[1]).href : undefined;

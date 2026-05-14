@@ -4,6 +4,7 @@ import {
   type ApprovalRequest,
   type JsonObject,
   type PolicyDecisionRecord,
+  PolicyDecisionRecordSchema,
   type RunsteadEvent,
   type Task,
   TaskSchema
@@ -38,6 +39,7 @@ export interface ShowApprovalOptions {
 
 export interface ShowApprovalResult {
   approval: ApprovalRequest;
+  policyDecision?: PolicyDecisionRecord;
   stateDb: string;
 }
 
@@ -91,7 +93,7 @@ export function requestApproval(options: RequestApprovalOptions): ApprovalReques
     event: approvalEvent(
       "approval.requested",
       approval,
-      approvalPayload(approval),
+      approvalPayload(approval, options.policyDecision),
       createdAt
     ),
     projection: {
@@ -164,8 +166,12 @@ export function showApproval(options: ShowApprovalOptions): ShowApprovalResult {
       throw new Error(`Approval not found: ${options.id}`);
     }
 
+    const approval = rowToApproval(row);
+    const policyDecision = findPolicyDecision(database, approval.policyDecisionId);
+
     return {
-      approval: rowToApproval(row),
+      approval,
+      ...(policyDecision === undefined ? {} : { policyDecision }),
       stateDb
     };
   } finally {
@@ -203,15 +209,17 @@ export async function decideApproval(
     decidedBy: subject,
     updatedAt: decidedAt
   };
-  const event = approvalEvent(
-    options.decision === "approved" ? "approval.approved" : "approval.denied",
-    approval,
-    approvalPayload(approval),
-    decidedAt
-  );
   const database = openRunsteadDatabase(current.stateDb);
 
   try {
+    const policyDecision = findPolicyDecision(database, approval.policyDecisionId);
+    const event = approvalEvent(
+      options.decision === "approved" ? "approval.approved" : "approval.denied",
+      approval,
+      approvalPayload(approval, policyDecision),
+      decidedAt
+    );
+
     appendEventAndProject(database, {
       event,
       projection: {
@@ -220,16 +228,16 @@ export async function decideApproval(
       }
     });
     updateTaskForApprovalDecision(database, approval);
+
+    return {
+      approval,
+      event,
+      previousStatus: current.approval.status,
+      stateDb: current.stateDb
+    };
   } finally {
     database.close();
   }
-
-  return {
-    approval,
-    event,
-    previousStatus: current.approval.status,
-    stateDb: current.stateDb
-  };
 }
 
 export function findApprovedApprovalForAction(
@@ -285,7 +293,10 @@ export function expireApprovalGrant(
     event: approvalEvent(
       "approval.expired",
       approval,
-      approvalPayload(approval),
+      approvalPayload(
+        approval,
+        findPolicyDecision(options.database, approval.policyDecisionId)
+      ),
       expiredAt
     ),
     projection: {
@@ -313,7 +324,12 @@ function approvalEvent(
   };
 }
 
-function approvalPayload(approval: ApprovalRequest): JsonObject {
+function approvalPayload(
+  approval: ApprovalRequest,
+  policyDecision?: PolicyDecisionRecord
+): JsonObject {
+  const policyFingerprint = policyDecision?.result.policyFingerprint;
+
   return {
     approvalId: approval.id,
     policyDecisionId: approval.policyDecisionId,
@@ -321,6 +337,14 @@ function approvalPayload(approval: ApprovalRequest): JsonObject {
     status: approval.status,
     risk: approval.risk,
     reason: approval.reason,
+    ...(policyDecision === undefined
+      ? {}
+      : {
+          policyId: policyDecision.policyId,
+          action: policyDecision.action,
+          obligations: policyDecision.obligations,
+          ...(typeof policyFingerprint === "string" ? { policyFingerprint } : {})
+        }),
     ...(approval.expiresAt === undefined ? {} : { expiresAt: approval.expiresAt }),
     ...(approval.decidedAt === undefined ? {} : { decidedAt: approval.decidedAt }),
     ...(approval.decidedBy === undefined ? {} : { decidedBy: approval.decidedBy })
@@ -409,6 +433,20 @@ interface ApprovalRow {
   updated_at: string;
 }
 
+interface PolicyDecisionRow {
+  id: string;
+  action_id: string;
+  policy_id: string;
+  decision: string;
+  risk: string;
+  rule_id: string | null;
+  reason: string;
+  obligations_json: string;
+  action_json: string;
+  result_json: string;
+  created_at: string;
+}
+
 interface TaskRow {
   id: string;
   goal_id: string;
@@ -439,6 +477,40 @@ function rowToApproval(row: ApprovalRow): ApprovalRequest {
     ...(row.decided_by === null ? {} : { decidedBy: row.decided_by }),
     createdAt: row.created_at,
     updatedAt: row.updated_at
+  });
+}
+
+function findPolicyDecision(
+  database: ReturnType<typeof openRunsteadDatabase>,
+  id: string
+): PolicyDecisionRecord | undefined {
+  const row = database
+    .prepare(
+      `
+      SELECT id, action_id, policy_id, decision, risk, rule_id, reason,
+             obligations_json, action_json, result_json, created_at
+      FROM policy_decisions
+      WHERE id = ?
+    `
+    )
+    .get(id) as PolicyDecisionRow | undefined;
+
+  return row === undefined ? undefined : rowToPolicyDecision(row);
+}
+
+function rowToPolicyDecision(row: PolicyDecisionRow): PolicyDecisionRecord {
+  return PolicyDecisionRecordSchema.parse({
+    id: row.id,
+    actionId: row.action_id,
+    policyId: row.policy_id,
+    decision: row.decision,
+    risk: row.risk,
+    ...(row.rule_id === null ? {} : { ruleId: row.rule_id }),
+    reason: row.reason,
+    obligations: JSON.parse(row.obligations_json) as string[],
+    action: JSON.parse(row.action_json) as JsonObject,
+    result: JSON.parse(row.result_json) as JsonObject,
+    createdAt: row.created_at
   });
 }
 
