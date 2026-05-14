@@ -681,6 +681,7 @@ function buildCiRepairPullRequestBody(
 ): string {
   const context = ciRepairOrchestratorContext(verifierTask);
   const approval = approvalOutput(verifierTask);
+  const failureClassification = failureClassificationOutput(ciRepair.task);
   const sections = [
     `Runstead repaired GitHub Actions run ${ciRepair.workflowRun.runId}.`,
     [
@@ -695,6 +696,14 @@ function buildCiRepairPullRequestBody(
       `- Conclusion: ${ciRepair.workflowRun.conclusion ?? "unknown"}`,
       `- Run: ${ciRepair.workflowRun.url ?? ciRepair.workflowRun.runId}`
     ].join("\n"),
+    failureClassification === undefined
+      ? ""
+      : [
+          "## Diagnosis",
+          `- Category: ${failureClassification.category}`,
+          `- Summary: ${failureClassification.summary}`,
+          `- Confidence: ${failureClassification.confidence}`
+        ].join("\n"),
     context === undefined
       ? ""
       : [
@@ -710,6 +719,7 @@ function buildCiRepairPullRequestBody(
       : [
           "## Verification",
           `- Diff scope: ${context.diffScope.passed ? "passed" : "failed"}`,
+          `- Changed files: ${context.diffScope.changedFiles.length === 0 ? "none" : context.diffScope.changedFiles.join(", ")}`,
           ...context.verifierCommandResults.map(
             (result) =>
               `- ${result.verifier}: exit=${result.exitCode ?? "unknown"} evidence=${result.evidenceId}`
@@ -724,6 +734,31 @@ function buildCiRepairPullRequestBody(
   ].filter((section) => section.length > 0);
 
   return sections.join("\n\n");
+}
+
+function failureClassificationOutput(task: Task):
+  | {
+      category: string;
+      summary: string;
+      confidence: number;
+    }
+  | undefined {
+  const value = task.input.failureClassification;
+
+  if (
+    !isRecord(value) ||
+    typeof value.category !== "string" ||
+    typeof value.summary !== "string" ||
+    typeof value.confidence !== "number"
+  ) {
+    return undefined;
+  }
+
+  return {
+    category: value.category,
+    summary: value.summary,
+    confidence: value.confidence
+  };
 }
 
 function approvalOutput(task: Task):

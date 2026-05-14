@@ -506,8 +506,11 @@ describe("runCiRepairOrchestrator", () => {
       expect(body).toContain("## Runstead Task");
       expect(body).toContain("## Worker");
       expect(body).toContain("- Worker: codex_cli");
+      expect(body).toContain("## Diagnosis");
+      expect(body).toContain("- Category: test");
       expect(body).toContain("## Verification");
       expect(body).toContain("- Diff scope: passed");
+      expect(body).toContain("- Changed files: src/fix.ts");
       expect(body).toContain("- test: exit=0 evidence=ev_test");
       expect(body).toContain("## Policy");
       expect(body).toContain(
