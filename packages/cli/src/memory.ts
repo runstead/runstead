@@ -44,6 +44,7 @@ export interface RecordProjectFactOptions {
   sourceRefs: string[];
   confidence?: number;
   conflictsWith?: string[];
+  expiresAt?: string;
   createdBy?: string;
   taskId?: string;
   now?: Date;
@@ -58,6 +59,8 @@ export interface RecordProjectFactResult {
 export interface ListProjectFactsOptions {
   cwd?: string;
   scope?: string;
+  includeExpired?: boolean;
+  now?: Date;
 }
 
 export interface ListProjectFactsResult {
@@ -71,6 +74,7 @@ export interface RetrieveProjectFactsOptions {
   query?: string;
   limit?: number;
   includeConflicted?: boolean;
+  includeExpired?: boolean;
   now?: Date;
 }
 
@@ -151,6 +155,10 @@ export function recordProjectFact(
 
     rejectDuplicateProjectFact(existingFacts, options.content);
     validateProjectFactConflictRefs(existingFacts, options.conflictsWith ?? []);
+    const expiresAt =
+      options.expiresAt === undefined
+        ? undefined
+        : validateMemoryTimestamp(options.expiresAt, "expiresAt");
 
     const memory = MemoryRecordSchema.parse({
       id: createRunsteadId("mem"),
@@ -166,6 +174,7 @@ export function recordProjectFact(
       }),
       createdAt,
       updatedAt: createdAt,
+      ...(expiresAt === undefined ? {} : { expiresAt }),
       conflictsWith: options.conflictsWith ?? []
     });
     const event: RunsteadEvent = {
@@ -206,7 +215,11 @@ export function listProjectFacts(
 
   try {
     return {
-      facts: readProjectFacts(database, options.scope),
+      facts: filterExpiredProjectFacts({
+        facts: readProjectFacts(database, options.scope),
+        includeExpired: options.includeExpired === true,
+        now: options.now ?? new Date()
+      }),
       stateDb
     };
   } finally {
@@ -230,7 +243,11 @@ export function retrieveProjectFacts(
   const database = openRunsteadDatabase(stateDb);
 
   try {
-    const projectFacts = readProjectFacts(database, options.scope);
+    const projectFacts = filterExpiredProjectFacts({
+      facts: readProjectFacts(database, options.scope),
+      includeExpired: options.includeExpired === true,
+      now: options.now ?? new Date()
+    });
     const facts = filterConflictedProjectFacts({
       facts: projectFacts,
       includeConflicted: options.includeConflicted === true
@@ -250,6 +267,7 @@ export function retrieveProjectFacts(
         query: normalizedQuery(options.query),
         limit,
         includeConflicted: options.includeConflicted === true,
+        includeExpired: options.includeExpired === true,
         resultCount: facts.length,
         resultIds: facts.map((fact) => fact.id)
       },
@@ -295,6 +313,7 @@ function memoryEventPayload(memory: MemoryRecord): JsonObject {
     confidence: memory.confidence,
     sourceRefs: memory.sourceRefs,
     provenance: memory.provenance,
+    ...(memory.expiresAt === undefined ? {} : { expiresAt: memory.expiresAt }),
     conflictsWith: memory.conflictsWith
   };
 }
@@ -432,10 +451,37 @@ function filterConflictedProjectFacts(input: {
   return input.facts.filter((fact) => !conflictedIds.has(fact.id));
 }
 
+function filterExpiredProjectFacts(input: {
+  facts: MemoryRecord[];
+  includeExpired: boolean;
+  now: Date;
+}): MemoryRecord[] {
+  if (input.includeExpired) {
+    return input.facts;
+  }
+
+  const nowMs = input.now.getTime();
+
+  return input.facts.filter(
+    (fact) =>
+      fact.expiresAt === undefined ||
+      !Number.isFinite(Date.parse(fact.expiresAt)) ||
+      Date.parse(fact.expiresAt) > nowMs
+  );
+}
+
 function normalizedQuery(query: string | undefined): string | null {
   const normalized = query?.trim().toLowerCase();
 
   return normalized === undefined || normalized.length === 0 ? null : normalized;
+}
+
+function validateMemoryTimestamp(value: string, field: string): string {
+  if (!Number.isFinite(Date.parse(value))) {
+    throw new Error(`Memory ${field} must be a valid timestamp`);
+  }
+
+  return value;
 }
 
 interface MemoryRow {

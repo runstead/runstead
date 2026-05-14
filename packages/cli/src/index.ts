@@ -830,6 +830,7 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     .option("--cwd <path>", "Workspace directory")
     .option("--source <ref>", "Source/provenance reference", collectValues, [])
     .option("--confidence <number>", "Confidence score from 0 to 1")
+    .option("--expires-at <iso>", "Timestamp after which the fact is hidden by default")
     .option("--created-by <id>", "Creator id")
     .option("--task <id>", "Source task id")
     .option("--actor <id>", "RBAC subject for memory writes", "local-admin")
@@ -841,6 +842,7 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
         content: string;
         source: string[];
         confidence?: string;
+        expiresAt?: string;
         createdBy?: string;
         task?: string;
         actor: string;
@@ -861,6 +863,14 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
           content: options.content,
           sourceRefs: options.source,
           ...(confidence === undefined ? {} : { confidence }),
+          ...(options.expiresAt === undefined
+            ? {}
+            : {
+                expiresAt: parseDateOption(
+                  options.expiresAt,
+                  "--expires-at"
+                ).toISOString()
+              }),
           ...(options.createdBy === undefined ? {} : { createdBy: options.createdBy }),
           ...(options.task === undefined ? {} : { taskId: options.task })
         });
@@ -924,32 +934,41 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     .description("List verified project facts.")
     .option("--cwd <path>", "Workspace directory")
     .option("--scope <scope>", "Filter by memory scope")
+    .option("--include-expired", "Include expired project facts")
     .option("--actor <id>", "RBAC subject for memory access", "local-admin")
-    .action(async (options: { cwd?: string; scope?: string; actor: string }) => {
-      await requireRbacPermission({
-        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-        actor: options.actor,
-        permission: "memory.read",
-        action: "read memory"
-      });
+    .action(
+      async (options: {
+        cwd?: string;
+        scope?: string;
+        includeExpired?: boolean;
+        actor: string;
+      }) => {
+        await requireRbacPermission({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          actor: options.actor,
+          permission: "memory.read",
+          action: "read memory"
+        });
 
-      const { listProjectFacts } = await import("./memory.js");
-      const result = listProjectFacts({
-        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-        ...(options.scope === undefined ? {} : { scope: options.scope })
-      });
+        const { listProjectFacts } = await import("./memory.js");
+        const result = listProjectFacts({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          ...(options.scope === undefined ? {} : { scope: options.scope }),
+          includeExpired: options.includeExpired === true
+        });
 
-      if (result.facts.length === 0) {
-        console.log("No project facts found.");
-        return;
+        if (result.facts.length === 0) {
+          console.log("No project facts found.");
+          return;
+        }
+
+        for (const fact of result.facts) {
+          console.log(
+            `${fact.id} ${fact.scope} confidence=${fact.confidence}: ${fact.content}`
+          );
+        }
       }
-
-      for (const fact of result.facts) {
-        console.log(
-          `${fact.id} ${fact.scope} confidence=${fact.confidence}: ${fact.content}`
-        );
-      }
-    });
+    );
 
   memoryFact
     .command("search")
@@ -959,6 +978,7 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     .option("--query <text>", "Search text")
     .option("--limit <number>", "Maximum facts to return")
     .option("--include-conflicted", "Include facts with explicit conflicts")
+    .option("--include-expired", "Include expired project facts")
     .option("--actor <id>", "RBAC subject for memory access", "local-admin")
     .action(
       async (options: {
@@ -967,6 +987,7 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
         query?: string;
         limit?: string;
         includeConflicted?: boolean;
+        includeExpired?: boolean;
         actor: string;
       }) => {
         await requireRbacPermission({
@@ -983,7 +1004,8 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
           ...(options.scope === undefined ? {} : { scope: options.scope }),
           ...(options.query === undefined ? {} : { query: options.query }),
           ...(limit === undefined ? {} : { limit }),
-          includeConflicted: options.includeConflicted === true
+          includeConflicted: options.includeConflicted === true,
+          includeExpired: options.includeExpired === true
         });
 
         console.log(`Retrieval audit: ${result.retrievalId}`);

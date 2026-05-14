@@ -302,6 +302,74 @@ describe("recordProjectFact", () => {
       await rm(workspace, { force: true, recursive: true });
     }
   });
+
+  it("hides expired project facts by default", async () => {
+    const workspace = join(tmpdir(), `runstead-project-fact-expiry-${process.pid}`);
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      const initialized = await initRunstead({ cwd: workspace });
+      await writeFile(
+        join(workspace, "package.json"),
+        `${JSON.stringify({ packageManager: "pnpm@11.1.1" })}\n`,
+        "utf8"
+      );
+
+      const result = recordProjectFact({
+        cwd: workspace,
+        scope: "repo:acme/app",
+        content: "This repo uses pnpm.",
+        sourceRefs: ["file:package.json"],
+        expiresAt: "2026-05-14T06:05:00.000Z",
+        now: new Date("2026-05-14T06:00:00.000Z")
+      });
+      const beforeExpiry = listProjectFacts({
+        cwd: workspace,
+        scope: "repo:acme/app",
+        now: new Date("2026-05-14T06:04:00.000Z")
+      });
+      const afterExpiry = listProjectFacts({
+        cwd: workspace,
+        scope: "repo:acme/app",
+        now: new Date("2026-05-14T06:06:00.000Z")
+      });
+      const includeExpired = retrieveProjectFacts({
+        cwd: workspace,
+        scope: "repo:acme/app",
+        includeExpired: true,
+        now: new Date("2026-05-14T06:06:00.000Z")
+      });
+      const database = openRunsteadDatabase(initialized.stateDb);
+
+      try {
+        const event = database
+          .prepare(
+            `
+            SELECT payload_json
+            FROM events
+            WHERE event_id = ?
+          `
+          )
+          .get(result.event.eventId) as { payload_json: string };
+
+        expect(result.memory.expiresAt).toBe("2026-05-14T06:05:00.000Z");
+        expect(beforeExpiry.facts).toEqual([result.memory]);
+        expect(afterExpiry.facts).toEqual([]);
+        expect(includeExpired.facts).toEqual([result.memory]);
+        expect(JSON.parse(event.payload_json)).toMatchObject({
+          expiresAt: "2026-05-14T06:05:00.000Z"
+        });
+        expect(includeExpired.event.payload).toMatchObject({
+          includeExpired: true,
+          resultIds: [result.memory.id]
+        });
+      } finally {
+        database.close();
+      }
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
 });
 
 describe("retrieveProjectFacts", () => {
