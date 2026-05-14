@@ -122,6 +122,14 @@ describe("runCiRepairOrchestrator", () => {
               status: "completed"
             }),
             expect.objectContaining({
+              action_type: "git.status",
+              status: "completed"
+            }),
+            expect.objectContaining({
+              action_type: "git.commit",
+              status: "completed"
+            }),
+            expect.objectContaining({
               action_type: "git.diff",
               status: "completed"
             }),
@@ -182,6 +190,8 @@ describe("runCiRepairOrchestrator", () => {
           "git.branch.create",
           "checkpoint.create",
           "worker.external.start",
+          "git.status",
+          "git.commit",
           "git.diff",
           "git.push"
         ])
@@ -275,6 +285,7 @@ describe("runCiRepairOrchestrator", () => {
       expect(pullRequestBody).toContain("## Evidence");
       expect(pullRequestBody).toContain(`- CI log: ${third.ciRepair.evidence.id}`);
       expect(pullRequestBody).toContain("- test: ev_test");
+      expect(pullRequestBody).toContain("- Commit: abc123");
       expect(pullRequestBody).toContain(
         `- Approval: ${second.approval.id} approved by local-admin`
       );
@@ -325,6 +336,38 @@ describe("runCiRepairOrchestrator", () => {
       ).rejects.toThrow("CI repair diff scope failed");
 
       expect(gitCalls).toContainEqual(["reset", "--hard", "abc123"]);
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("fails before publish when the worker produces no branch diff", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-ci-empty-diff-"));
+    const githubCalls: string[][] = [];
+    const gitCalls: string[][] = [];
+
+    try {
+      await initRunstead({ cwd: workspace, createDefaultGoal: true });
+
+      await expect(
+        runCiRepairOrchestrator({
+          cwd: workspace,
+          runId: "123",
+          worker: "codex_cli",
+          base: "main",
+          verifierCommands: [{ name: "test", command: "pnpm test" }],
+          githubRunner: githubRunner(githubCalls),
+          gitRunner: gitRunner(gitCalls, { diffNameOnly: "" }),
+          workerRunner: workerRunner([]),
+          verifierRunner: verifierRunner([]),
+          now: new Date("2026-05-14T12:00:00.000Z")
+        })
+      ).rejects.toThrow("CI repair produced no git diff");
+
+      expect(gitCalls.some((args) => args[0] === "push")).toBe(false);
+      expect(githubCalls.some((args) => args[0] === "pr" && args[1] === "create")).toBe(
+        false
+      );
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }
@@ -560,6 +603,7 @@ describe("runCiRepairOrchestrator", () => {
       expect(body).toContain("## Runstead Task");
       expect(body).toContain("## Worker");
       expect(body).toContain("- Worker: codex_cli");
+      expect(body).toContain("- Commit: abc123");
       expect(body).toContain("## Diagnosis");
       expect(body).toContain("- Category: test");
       expect(body).toContain("## Verification");
@@ -751,12 +795,33 @@ function gitRunner(
       });
     }
 
+    if (args[0] === "add") {
+      return Promise.resolve({ stdout: "", stderr: "", exitCode: 0 });
+    }
+
+    if (args[0] === "commit") {
+      return Promise.resolve({
+        stdout: "[runstead/test abc123] Runstead repair\n",
+        stderr: "",
+        exitCode: 0
+      });
+    }
+
     switch (args.join(" ")) {
       case "rev-parse HEAD":
         return Promise.resolve({ stdout: "abc123\n", stderr: "", exitCode: 0 });
       case "status --short":
         return Promise.resolve({ stdout: "", stderr: "", exitCode: 0 });
+      case "diff --name-only":
+      case "diff --cached --name-only":
+        return Promise.resolve({
+          stdout: output.diffNameOnly,
+          stderr: "",
+          exitCode: 0
+        });
       case "diff --binary HEAD":
+        return Promise.resolve({ stdout: "", stderr: "", exitCode: 0 });
+      case "ls-files --others --exclude-standard":
         return Promise.resolve({ stdout: "", stderr: "", exitCode: 0 });
       case "ls-files --others --exclude-standard -z":
         return Promise.resolve({ stdout: "", stderr: "", exitCode: 0 });

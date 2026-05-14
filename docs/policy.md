@@ -12,7 +12,7 @@ verifier and CI repair flows:
 - tool contract registry
 - shell verifier guard
 - governed filesystem read/write proxy
-- governed GitHub, git, checkpoint, and wrapped-worker actions in CI repair
+- governed GitHub, git branch/commit/push, checkpoint, and wrapped-worker actions in CI repair
 - ordered audit timelines for replaying governed task lifecycles
 
 Use `runstead audit replay <task-id>` to reconstruct a task lifecycle from the
@@ -30,9 +30,10 @@ orchestrator.
 Wrapped external workers run in `policy_gated_wrapper` mode: Runstead gates the
 worker launch, records the action envelope and policy decision, starts the
 worker with native sandbox or permission guardrails, checkpoints the workspace,
-verifies diff scope and command evidence after the worker exits, and audits the
-result. It does not yet fully hard-proxy each tool call made inside the external
-worker process.
+commits worker changes through a governed `git.commit` action, verifies diff
+scope and command evidence after the worker exits, and audits the result. It
+does not yet fully hard-proxy each tool call made inside the external worker
+process.
 
 Mutating unmanaged helpers now require explicit acknowledgement with
 `--unmanaged`:

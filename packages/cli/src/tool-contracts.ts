@@ -57,6 +57,14 @@ const TOOL_CONTRACTS: ToolContract[] = [
     policyRequired: true
   },
   {
+    actionType: "git.commit",
+    tool: "git",
+    resourceTypes: ["commit", "repository"],
+    sideEffects: ["write_workspace"],
+    evidenceRequired: true,
+    policyRequired: true
+  },
+  {
     actionType: "git.push",
     tool: "git",
     resourceTypes: ["branch", "repository"],

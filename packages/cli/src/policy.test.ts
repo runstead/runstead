@@ -291,6 +291,39 @@ describe("evaluatePolicy CI repair workspace action rules", () => {
       obligations: CI_REPAIR_WORKSPACE_OBLIGATIONS
     });
   });
+
+  it("allows governed CI repair commits unless protected files are touched", () => {
+    const allowed = evaluatePolicy({
+      policy: minimumPolicy,
+      action: {
+        actionId: "act_commit_src",
+        actionType: "git.commit",
+        context: {
+          filesTouched: ["src/fix.ts"]
+        }
+      }
+    });
+    const denied = evaluatePolicy({
+      policy: minimumPolicy,
+      action: {
+        actionId: "act_commit_env",
+        actionType: "git.commit",
+        context: {
+          filesTouched: [".env"]
+        }
+      }
+    });
+
+    expect(allowed).toMatchObject({
+      decision: "allow",
+      ruleId: "allow_ci_repair_workspace_actions"
+    });
+    expect(denied).toMatchObject({
+      decision: "deny",
+      ruleId: "deny_protected_paths",
+      matchedPath: ".env"
+    });
+  });
 });
 
 describe("evaluatePolicy dangerous shell rules", () => {

@@ -68,6 +68,7 @@ rules:
       action_type:
         in:
           - git.branch.create
+          - git.commit
           - checkpoint.create
           - checkpoint.restore
           - worker.external.start

@@ -26,9 +26,13 @@ import {
 } from "./checkpoints.js";
 import {
   buildRunsteadBranchName,
+  commitGitChanges,
   createGitBranch,
+  listGitChangedFiles,
   pushGitBranch,
-  type GitRunner
+  type CommitGitChangesResult,
+  type GitRunner,
+  type ListGitChangedFilesResult
 } from "./git-branch.js";
 import type {
   GitHubCliRunner,
@@ -95,6 +99,7 @@ export interface RunCiRepairOrchestratorResult {
   ciRepair: CreateCiRepairTaskResult;
   branchName: string;
   workerResult?: WrappedWorkerRunResult;
+  commit?: CommitGitChangesResult;
   diffScope?: GitDiffScopeVerification;
   verifierResult?: RunTaskVerifiersResult;
   pullRequest?: CreateGitHubPullRequestResult;
@@ -343,6 +348,66 @@ export async function runCiRepairOrchestratorUnlocked(
         );
       }
 
+      const changedFiles = await runGovernedToolAction({
+        cwd,
+        stateDb,
+        database,
+        policy,
+        task: ciRepair.task,
+        workerRun,
+        action: gitStatusAction({
+          task: ciRepair.task,
+          cwd
+        }),
+        requestedBy: "runstead:ci-repair",
+        ...(options.now === undefined ? {} : { now: options.now }),
+        run: async () => {
+          const value = await listGitChangedFiles({
+            cwd,
+            ...(options.gitRunner === undefined ? {} : { runner: options.gitRunner })
+          });
+
+          return {
+            value,
+            output: gitChangedFilesOutput(value)
+          };
+        }
+      }).then((result) => result.value);
+      const hasCommittableChanges =
+        changedFiles.changedFiles.length > changedFiles.excludedFiles.length;
+      const commit = hasCommittableChanges
+        ? await runGovernedToolAction({
+            cwd,
+            stateDb,
+            database,
+            policy,
+            task: ciRepair.task,
+            workerRun,
+            action: gitCommitAction({
+              task: ciRepair.task,
+              cwd,
+              changedFiles: changedFiles.changedFiles
+            }),
+            requestedBy: "runstead:ci-repair",
+            ...(options.now === undefined ? {} : { now: options.now }),
+            run: async () => {
+              const value = await commitGitChanges({
+                cwd,
+                message: `Runstead repair CI run ${ciRepair.workflowRun.runId}`,
+                changedFiles: changedFiles.changedFiles,
+                ...(options.gitRunner === undefined
+                  ? {}
+                  : { runner: options.gitRunner })
+              });
+
+              return {
+                value,
+                output: gitCommitOutput(value)
+              };
+            }
+          }).then((result) => result.value)
+        : undefined;
+
       const diffScope = await runGovernedToolAction({
         cwd,
         stateDb,
@@ -374,6 +439,38 @@ export async function runCiRepairOrchestratorUnlocked(
           };
         }
       }).then((result) => result.value);
+
+      if (diffScope.changedFiles.length === 0) {
+        await rollbackWorkerChanges({
+          cwd,
+          root,
+          stateDb,
+          database,
+          policy,
+          task: ciRepair.task,
+          workerRun,
+          workerResult,
+          ...(options.gitRunner === undefined ? {} : { gitRunner: options.gitRunner }),
+          ...(options.now === undefined ? {} : { now: options.now })
+        });
+        markTaskTerminal({
+          database,
+          task: ciRepair.task,
+          status: "failed",
+          output: {
+            summary: "CI repair produced no git diff"
+          },
+          ...(options.now === undefined ? {} : { now: options.now })
+        });
+        finishWorkerRun({
+          database,
+          workerRun,
+          status: "failed",
+          output: diffScopeOutput(diffScope),
+          ...(options.now === undefined ? {} : { now: options.now })
+        });
+        throw new Error("CI repair produced no git diff");
+      }
 
       if (!diffScope.passed) {
         await rollbackWorkerChanges({
@@ -462,6 +559,7 @@ export async function runCiRepairOrchestratorUnlocked(
         base,
         draft: options.draft === true,
         workerResult,
+        ...(commit === undefined ? {} : { commit }),
         diffScope,
         verifierResult: normalizedVerifierResult
       });
@@ -561,6 +659,7 @@ export async function runCiRepairOrchestratorUnlocked(
           },
           branchName,
           workerResult,
+          ...(commit === undefined ? {} : { commit }),
           diffScope,
           verifierResult: {
             ...normalizedVerifierResult,
@@ -607,6 +706,7 @@ export async function runCiRepairOrchestratorUnlocked(
             },
             branchName,
             workerResult,
+            ...(commit === undefined ? {} : { commit }),
             diffScope,
             verifierResult: {
               ...normalizedVerifierResult,
@@ -720,6 +820,9 @@ function buildCiRepairPullRequestBody(
           "## Worker",
           `- Worker: ${context.workerResult.worker}`,
           `- Exit: ${context.workerResult.exitCode}`,
+          ...(context.commit === undefined
+            ? []
+            : [`- Commit: ${context.commit.commitSha}`]),
           ...(context.workerResult.checkpointBefore === undefined
             ? []
             : [`- Checkpoint: ${context.workerResult.checkpointBefore.id}`])
@@ -984,6 +1087,7 @@ async function resumeCiRepairPullRequest(options: {
         },
         branchName: context.branchName,
         workerResult: context.workerResult,
+        ...(context.commit === undefined ? {} : { commit: context.commit }),
         diffScope: context.diffScope,
         verifierResult: {
           task: completedTask,
@@ -1030,6 +1134,7 @@ async function resumeCiRepairPullRequest(options: {
           },
           branchName: context.branchName,
           workerResult: context.workerResult,
+          ...(context.commit === undefined ? {} : { commit: context.commit }),
           diffScope: context.diffScope,
           verifierResult: {
             task: waitingTask,
@@ -1254,6 +1359,7 @@ function buildPullRequestResumeContext(input: {
   base: string;
   draft: boolean;
   workerResult: WrappedWorkerRunResult;
+  commit?: CommitGitChangesResult;
   diffScope: GitDiffScopeVerification;
   verifierResult: RunTaskVerifiersResult;
 }): CiRepairOrchestratorResumeContext {
@@ -1283,6 +1389,7 @@ function buildPullRequestResumeContext(input: {
     verifierTask: input.verifierResult.task,
     verifierCommandResults: input.verifierResult.commandResults,
     workerResult: durableWorkerResult(input.workerResult),
+    ...(input.commit === undefined ? {} : { commit: input.commit }),
     diffScope: input.diffScope
   };
 }
@@ -1301,6 +1408,7 @@ interface CiRepairOrchestratorResumeContext extends JsonObject {
   verifierTask: Task;
   verifierCommandResults: RunTaskVerifiersResult["commandResults"];
   workerResult: WrappedWorkerRunResult;
+  commit?: CommitGitChangesResult;
   diffScope: GitDiffScopeVerification;
   approvalId?: string;
 }
@@ -1454,6 +1562,39 @@ function gitBranchCreateAction(input: {
   };
 }
 
+function gitStatusAction(input: { task: Task; cwd: string }): ActionEnvelope {
+  return {
+    actionId: stableActionId("git_status", [input.task.id]),
+    actionType: "git.status",
+    resource: {
+      type: "repository",
+      path: input.cwd
+    },
+    context: {
+      cwd: input.cwd
+    }
+  };
+}
+
+function gitCommitAction(input: {
+  task: Task;
+  cwd: string;
+  changedFiles: string[];
+}): ActionEnvelope {
+  return {
+    actionId: stableActionId("git_commit", [input.task.id, ...input.changedFiles]),
+    actionType: "git.commit",
+    resource: {
+      type: "repository",
+      path: input.cwd
+    },
+    context: {
+      cwd: input.cwd,
+      filesTouched: input.changedFiles
+    }
+  };
+}
+
 function checkpointCreateAction(input: {
   task: Task;
   cwd: string;
@@ -1577,6 +1718,25 @@ function checkpointOutput(checkpoint: WorkspaceCheckpoint): JsonObject {
     checkpointId: checkpoint.id,
     head: checkpoint.head ?? "",
     untrackedFiles: checkpoint.untrackedFiles
+  };
+}
+
+function gitChangedFilesOutput(changedFiles: ListGitChangedFilesResult): JsonObject {
+  return {
+    changedFiles: changedFiles.changedFiles,
+    trackedFiles: changedFiles.trackedFiles,
+    stagedFiles: changedFiles.stagedFiles,
+    untrackedFiles: changedFiles.untrackedFiles,
+    excludedFiles: changedFiles.excludedFiles
+  };
+}
+
+function gitCommitOutput(commit: CommitGitChangesResult): JsonObject {
+  return {
+    commitSha: commit.commitSha,
+    changedFiles: commit.changedFiles,
+    committedFiles: commit.committedFiles,
+    stdout: commit.stdout
   };
 }
 

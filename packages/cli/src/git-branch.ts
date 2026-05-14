@@ -50,6 +50,38 @@ export interface PushGitBranchResult {
   stdout: string;
 }
 
+export interface ListGitChangedFilesOptions {
+  cwd?: string;
+  timeoutMs?: number;
+  runner?: GitRunner;
+}
+
+export interface ListGitChangedFilesResult {
+  cwd: string;
+  changedFiles: string[];
+  trackedFiles: string[];
+  stagedFiles: string[];
+  untrackedFiles: string[];
+  excludedFiles: string[];
+}
+
+export interface CommitGitChangesOptions {
+  cwd?: string;
+  message: string;
+  changedFiles: string[];
+  timeoutMs?: number;
+  runner?: GitRunner;
+}
+
+export interface CommitGitChangesResult {
+  cwd: string;
+  message: string;
+  commitSha: string;
+  changedFiles: string[];
+  committedFiles: string[];
+  stdout: string;
+}
+
 export const DEFAULT_GIT_CLI_TIMEOUT_MS = 60_000;
 
 export function buildRunsteadBranchName(options: RunsteadBranchNameOptions): string {
@@ -116,6 +148,94 @@ export async function pushGitBranch(
   };
 }
 
+export async function listGitChangedFiles(
+  options: ListGitChangedFilesOptions = {}
+): Promise<ListGitChangedFilesResult> {
+  const cwd = resolve(options.cwd ?? process.cwd());
+  const runner = options.runner ?? runGit;
+  const commandOptions = {
+    cwd,
+    timeoutMs: options.timeoutMs ?? DEFAULT_GIT_CLI_TIMEOUT_MS
+  };
+  const [tracked, staged, untracked] = await Promise.all([
+    runner(["diff", "--name-only"], commandOptions),
+    runner(["diff", "--cached", "--name-only"], commandOptions),
+    runner(["ls-files", "--others", "--exclude-standard"], commandOptions)
+  ]);
+
+  assertGitCommand(tracked, "git diff --name-only");
+  assertGitCommand(staged, "git diff --cached --name-only");
+  assertGitCommand(untracked, "git ls-files --others --exclude-standard");
+
+  const trackedFiles = parsePathLines(tracked.stdout);
+  const stagedFiles = parsePathLines(staged.stdout);
+  const untrackedFiles = parsePathLines(untracked.stdout);
+  const changedFiles = uniquePaths([
+    ...trackedFiles,
+    ...stagedFiles,
+    ...untrackedFiles
+  ]);
+  const excludedFiles = changedFiles.filter(isCommitExcludedPath);
+
+  return {
+    cwd,
+    changedFiles,
+    trackedFiles,
+    stagedFiles,
+    untrackedFiles,
+    excludedFiles
+  };
+}
+
+export async function commitGitChanges(
+  options: CommitGitChangesOptions
+): Promise<CommitGitChangesResult> {
+  const cwd = resolve(options.cwd ?? process.cwd());
+  const runner = options.runner ?? runGit;
+  const commandOptions = {
+    cwd,
+    timeoutMs: options.timeoutMs ?? DEFAULT_GIT_CLI_TIMEOUT_MS
+  };
+  const changedFiles = uniquePaths(options.changedFiles);
+  const filesToCommit = changedFiles.filter((path) => !isCommitExcludedPath(path));
+
+  if (filesToCommit.length === 0) {
+    throw new Error("No committable git changes found");
+  }
+
+  const add = await runner(["add", "--", ...filesToCommit], commandOptions);
+  assertGitCommand(add, "git add");
+
+  const staged = await runner(["diff", "--cached", "--name-only"], commandOptions);
+  assertGitCommand(staged, "git diff --cached --name-only");
+
+  const committedFiles = parsePathLines(staged.stdout).filter((path) =>
+    filesToCommit.includes(path)
+  );
+
+  if (committedFiles.length === 0) {
+    throw new Error("No staged git changes found after add");
+  }
+
+  const commit = await runner(
+    ["commit", "--no-gpg-sign", "-m", options.message, "--", ...committedFiles],
+    commandOptions
+  );
+  assertGitCommand(commit, "git commit");
+
+  const revParse = await runner(["rev-parse", "HEAD"], commandOptions);
+  assertGitCommand(revParse, "git rev-parse HEAD");
+
+  return {
+    cwd,
+    message: options.message,
+    commitSha: revParse.stdout.trim(),
+    changedFiles,
+    committedFiles,
+    stdout: commit.stdout
+  };
+}
+
 function normalizeBranchName(branchName: string): string {
   return branchName
     .split("/")
@@ -173,6 +293,14 @@ function commandExitCode(error: unknown): number {
   return 1;
 }
 
+function assertGitCommand(result: GitCommandResult, description: string): void {
+  if (result.exitCode !== 0) {
+    throw new Error(
+      `${description} failed with exit ${result.exitCode}: ${result.stderr}`
+    );
+  }
+}
+
 function commandOutput(error: unknown, key: "stdout" | "stderr"): string {
   if (typeof error === "object" && error !== null) {
     const output = (error as Record<string, unknown>)[key];
@@ -183,4 +311,30 @@ function commandOutput(error: unknown, key: "stdout" | "stderr"): string {
   }
 
   return "";
+}
+
+function parsePathLines(stdout: string): string[] {
+  return stdout
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+}
+
+function uniquePaths(paths: string[]): string[] {
+  return [...new Set(paths)];
+}
+
+function isCommitExcludedPath(path: string): boolean {
+  const normalized = path.replaceAll("\\", "/").replace(/^\.\/+/, "");
+
+  return (
+    normalized === ".runstead" ||
+    normalized.startsWith(".runstead/") ||
+    normalized === ".team" ||
+    normalized.startsWith(".team/") ||
+    normalized === ".git" ||
+    normalized.startsWith(".git/") ||
+    normalized === "node_modules" ||
+    normalized.startsWith("node_modules/")
+  );
 }

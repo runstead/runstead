@@ -110,6 +110,7 @@ export const DEFAULT_READ_WORKSPACE_ACTION_TYPES = [
 ];
 export const DEFAULT_CI_REPAIR_WORKSPACE_ACTION_TYPES = [
   "git.branch.create",
+  "git.commit",
   "checkpoint.create",
   "checkpoint.restore",
   "worker.external.start"

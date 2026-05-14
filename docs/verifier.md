@@ -10,6 +10,7 @@ The current verifier path supports:
 - command output evidence artifacts
 - policy-block evidence for denied or approval-required commands
 - diff scope verification for CI repair worker changes
+- no-empty-diff enforcement before CI repair publishing
 - GitHub workflow run log evidence for CI repair intake
 - PR evidence summaries generated from task and verifier output
 

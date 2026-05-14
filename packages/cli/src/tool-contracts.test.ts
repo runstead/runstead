@@ -18,6 +18,7 @@ describe("tool contract registry", () => {
         "git.status",
         "git.diff",
         "git.branch.create",
+        "git.commit",
         "git.push",
         "github.run.read",
         "github.run.log.read",
