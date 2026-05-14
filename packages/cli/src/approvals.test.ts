@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   decideApproval,
+  findApprovedApprovalForAction,
   listApprovals,
   requestApproval,
   showApproval
@@ -156,6 +157,83 @@ describe("approvals", () => {
       expect(showApproval({ cwd: workspace, id: approvalId }).approval.status).toBe(
         "pending"
       );
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("expires approved grants when they age out before use", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-approval-expiry-"));
+
+    try {
+      const initialized = await initRunstead({ cwd: workspace });
+      const policy = createExternalWriteApprovalPolicy();
+      const action = {
+        actionId: "act_approval_expiry_test",
+        actionType: "github.pr.create",
+        context: {
+          sideEffects: ["github_pr_create"]
+        }
+      };
+      const policyResult = evaluatePolicy({ policy, action });
+      const recorded = recordPolicyDecision({
+        cwd: workspace,
+        policyId: policy.id,
+        action,
+        result: policyResult,
+        now: new Date("2026-05-14T11:00:00.000Z")
+      });
+      const database = openRunsteadDatabase(initialized.stateDb);
+      let approvalId = "";
+
+      try {
+        approvalId = requestApproval({
+          database,
+          policyDecision: recorded.decision,
+          now: new Date("2026-05-14T11:01:00.000Z")
+        }).id;
+      } finally {
+        database.close();
+      }
+
+      await decideApproval({
+        cwd: workspace,
+        id: approvalId,
+        decision: "approved",
+        now: new Date("2026-05-14T11:02:00.000Z")
+      });
+
+      const expiryDatabase = openRunsteadDatabase(initialized.stateDb);
+
+      try {
+        expect(
+          findApprovedApprovalForAction({
+            database: expiryDatabase,
+            actionId: "act_approval_expiry_test",
+            now: new Date("2026-05-15T11:01:01.000Z")
+          })
+        ).toBeUndefined();
+
+        const expired = showApproval({ cwd: workspace, id: approvalId }).approval;
+        expect(expired.status).toBe("expired");
+        const event = expiryDatabase
+          .prepare(
+            `
+            SELECT payload_json
+            FROM events
+            WHERE type = 'approval.expired' AND aggregate_id = ?
+          `
+          )
+          .get(approvalId) as { payload_json: string } | undefined;
+
+        expect(JSON.parse(event?.payload_json ?? "{}")).toMatchObject({
+          approvalId,
+          status: "expired",
+          expiresAt: "2026-05-15T11:01:00.000Z"
+        });
+      } finally {
+        expiryDatabase.close();
+      }
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }

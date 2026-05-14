@@ -260,6 +260,11 @@ export function findApprovedApprovalForAction(
     approval.expiresAt !== undefined &&
     Date.parse(approval.expiresAt) <= now.getTime()
   ) {
+    expireApprovalGrant({
+      database: options.database,
+      approval,
+      now
+    });
     return undefined;
   }
 
