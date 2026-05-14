@@ -69,7 +69,10 @@ export function startWorkerRun(options: StartWorkerRunOptions): WorkerRun {
         workerRunId: workerRun.id,
         taskId: workerRun.taskId,
         workerType: workerRun.workerType,
-        enforcementLevel: workerRun.enforcementLevel
+        enforcementLevel: workerRun.enforcementLevel,
+        ...(workerRun.checkpointBefore === undefined
+          ? {}
+          : { checkpointBefore: workerRun.checkpointBefore })
       },
       startedAt
     ),

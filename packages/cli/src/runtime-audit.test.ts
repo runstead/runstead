@@ -39,6 +39,7 @@ describe("runtime audit", () => {
           task,
           workerType: "shell_verifier",
           enforcementLevel: "policy_enforced",
+          checkpointBefore: "chk_before",
           now: new Date("2026-05-14T09:01:00.000Z")
         });
         const toolCall = startToolCall({
@@ -114,6 +115,7 @@ describe("runtime audit", () => {
           .prepare(
             `
             SELECT status, worker_type, enforcement_level, output_json
+                 , checkpoint_before
             FROM worker_runs
             WHERE id = ?
           `
@@ -122,6 +124,7 @@ describe("runtime audit", () => {
           status: string;
           worker_type: string;
           enforcement_level: string;
+          checkpoint_before: string;
           output_json: string;
         };
         const storedToolCall = database
@@ -159,11 +162,22 @@ describe("runtime audit", () => {
           `
           )
           .get(toolCall.id) as { payload_json: string };
+        const workerStartedPayload = database
+          .prepare(
+            `
+            SELECT payload_json
+            FROM events
+            WHERE type = 'worker_run.started'
+              AND aggregate_id = ?
+          `
+          )
+          .get(workerRun.id) as { payload_json: string };
 
         expect(storedWorkerRun).toEqual({
           status: "completed",
           worker_type: "shell_verifier",
           enforcement_level: "policy_enforced",
+          checkpoint_before: "chk_before",
           output_json: JSON.stringify({ summary: "Verifier passed" })
         });
         expect(storedToolCall).toEqual({
@@ -183,6 +197,11 @@ describe("runtime audit", () => {
           taskId: task.id,
           actionId: "act_test",
           actionType: "shell.exec"
+        });
+        expect(JSON.parse(workerStartedPayload.payload_json)).toMatchObject({
+          workerRunId: workerRun.id,
+          taskId: task.id,
+          checkpointBefore: "chk_before"
         });
       } finally {
         database.close();
