@@ -2,6 +2,7 @@ export * from "./domain-pack.js";
 export * from "./email-followup.js";
 export * from "./goal-template.js";
 export * from "./loader.js";
+export * from "./manifest.js";
 export * from "./registry.js";
 export * from "./research-monitor.js";
 export * from "./repo-maintenance.js";
