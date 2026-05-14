@@ -1422,6 +1422,7 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     .option("--head <ref>", "Head ref", "HEAD")
     .option("--allowed <pattern>", "Allowed path pattern", collectValues, [])
     .option("--denied <pattern>", "Denied path pattern", collectValues, [])
+    .option("--actor <id>", "RBAC subject for verifier execution", "local-admin")
     .action(
       async (options: {
         cwd?: string;
@@ -1429,7 +1430,15 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
         head?: string;
         allowed: string[];
         denied: string[];
+        actor: string;
       }) => {
+        await requireRbacPermission({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          actor: options.actor,
+          permission: "task.run",
+          action: "run verifiers"
+        });
+
         const { formatGitDiffScopeReport, verifyGitDiffScope } =
           await import("./diff-scope-verifier.js");
         const result = await verifyGitDiffScope({

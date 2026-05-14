@@ -44,9 +44,15 @@ describe("cli entrypoint", () => {
       (command) => command.name() === "verifier"
     );
     const verifierRun = verifier?.commands.find((command) => command.name() === "run");
+    const verifierDiffScope = verifier?.commands.find(
+      (command) => command.name() === "diff-scope"
+    );
 
     expect(run?.options.map((option) => option.long)).toContain("--actor");
     expect(verifierRun?.options.map((option) => option.long)).toContain("--actor");
+    expect(verifierDiffScope?.options.map((option) => option.long)).toContain(
+      "--actor"
+    );
   });
 
   it("exposes RBAC actor selection on audit and report commands", () => {
