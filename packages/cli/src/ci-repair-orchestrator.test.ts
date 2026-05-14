@@ -614,6 +614,10 @@ describe("runCiRepairOrchestrator", () => {
       expect(body).toContain(
         `- Approval: ${second.ciRepairResult.approval.id} approved by local-admin`
       );
+      expect(body).toContain("- git.push: completed policy=require_approval");
+      expect(body).toContain(
+        "- github.pr.create: approval_required policy=require_approval"
+      );
       expect(body).toContain("## Evidence");
       expect(body).toContain(thirdCiRepair.ciRepair.evidence.id);
     } finally {

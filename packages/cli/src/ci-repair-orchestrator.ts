@@ -787,7 +787,8 @@ export function formatCiRepairOrchestratorReport(
 
 function buildCiRepairPullRequestBody(
   ciRepair: CreateCiRepairTaskResult,
-  verifierTask: Task
+  verifierTask: Task,
+  auditSummary?: CiRepairPullRequestAuditSummary
 ): string {
   const context = ciRepairOrchestratorContext(verifierTask);
   const approval = approvalOutput(verifierTask);
@@ -854,11 +855,79 @@ function buildCiRepairPullRequestBody(
       "## Policy",
       approval === undefined
         ? "- Approval: not required by policy"
-        : `- Approval: ${approval.id} ${approval.status}${approval.decidedBy === undefined ? "" : ` by ${approval.decidedBy}`}`
+        : `- Approval: ${approval.id} ${approval.status}${approval.decidedBy === undefined ? "" : ` by ${approval.decidedBy}`}`,
+      ...(auditSummary === undefined || auditSummary.toolCalls.length === 0
+        ? []
+        : auditSummary.toolCalls.map(formatPullRequestToolPolicyLine))
     ].join("\n")
   ].filter((section) => section.length > 0);
 
   return sections.join("\n\n");
+}
+
+interface CiRepairPullRequestAuditSummary {
+  toolCalls: CiRepairPullRequestToolPolicy[];
+}
+
+interface CiRepairPullRequestToolPolicy {
+  actionType: string;
+  status: string;
+  decision?: string;
+  risk?: string;
+  ruleId?: string;
+}
+
+function readCiRepairPullRequestAuditSummary(
+  database: RunsteadDatabase,
+  taskId: string
+): CiRepairPullRequestAuditSummary {
+  const rows = database
+    .prepare(
+      `
+      SELECT
+        tc.action_type,
+        tc.status,
+        pd.decision,
+        pd.risk,
+        pd.rule_id
+      FROM tool_calls tc
+      LEFT JOIN policy_decisions pd ON pd.id = tc.policy_decision_id
+      WHERE tc.task_id = ?
+        AND tc.status != 'requested'
+      ORDER BY tc.started_at ASC, tc.id ASC
+      LIMIT 16
+    `
+    )
+    .all(taskId) as unknown as ToolPolicyRow[];
+
+  return {
+    toolCalls: rows.map((row) => ({
+      actionType: row.action_type,
+      status: row.status,
+      ...(row.decision === null ? {} : { decision: row.decision }),
+      ...(row.risk === null ? {} : { risk: row.risk }),
+      ...(row.rule_id === null ? {} : { ruleId: row.rule_id })
+    }))
+  };
+}
+
+interface ToolPolicyRow {
+  action_type: string;
+  status: string;
+  decision: string | null;
+  risk: string | null;
+  rule_id: string | null;
+}
+
+function formatPullRequestToolPolicyLine(item: CiRepairPullRequestToolPolicy): string {
+  return [
+    `- ${item.actionType}: ${item.status}`,
+    item.decision === undefined ? undefined : `policy=${item.decision}`,
+    item.risk === undefined ? undefined : `risk=${item.risk}`,
+    item.ruleId === undefined ? undefined : `rule=${item.ruleId}`
+  ]
+    .filter((part): part is string => part !== undefined)
+    .join(" ");
 }
 
 function failureClassificationOutput(task: Task):
@@ -1220,10 +1289,18 @@ async function createGovernedPullRequest(options: {
     requestedBy: "runstead:ci-repair",
     ...(options.now === undefined ? {} : { now: options.now }),
     run: async () => {
+      const auditSummary = readCiRepairPullRequestAuditSummary(
+        options.database,
+        options.task.id
+      );
       const value = await createGitHubPullRequest({
         cwd: options.cwd,
         title,
-        body: buildCiRepairPullRequestBody(options.ciRepair, options.task),
+        body: buildCiRepairPullRequestBody(
+          options.ciRepair,
+          options.task,
+          auditSummary
+        ),
         base: options.base,
         head: options.branchName,
         draft: options.draft,
