@@ -121,6 +121,9 @@ version: 0.1.0
 name: ${yamlString(input.name)}
 description: ${yamlString(input.description)}
 
+compatibility:
+  runstead_min_version: 0.0.0
+
 scope:
   resource_types:
     - workspace_item

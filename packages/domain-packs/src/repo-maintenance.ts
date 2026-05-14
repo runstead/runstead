@@ -8,6 +8,9 @@ export const repoMaintenancePack = {
   name: "Repository Maintenance",
   description:
     "Keep software repositories healthy with governed AI workers and verifier-first evidence.",
+  compatibility: {
+    runsteadMinVersion: "0.0.0"
+  },
   goalTemplates: ["keep-ci-green"],
   taskTypes: ["repo_inspect", "run_local_verifiers", "ci_repair"],
   defaultPolicy: "policies/repo-maintenance.yaml",
@@ -20,6 +23,9 @@ export const repoMaintenanceDomainYaml = `id: repo-maintenance
 version: 0.1.0
 name: Repository Maintenance
 description: Keep software repositories healthy with governed AI workers.
+
+compatibility:
+  runstead_min_version: 0.0.0
 
 scope:
   resource_types:

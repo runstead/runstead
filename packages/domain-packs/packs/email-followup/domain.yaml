@@ -3,6 +3,9 @@ version: 0.1.0
 name: Email Follow-up
 description: Draft follow-up email responses with recipient checks and no sending.
 
+compatibility:
+  runstead_min_version: 0.0.0
+
 scope:
   resource_types:
     - mailbox

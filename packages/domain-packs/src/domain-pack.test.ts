@@ -13,6 +13,23 @@ describe("repo-maintenance pack", () => {
     expect(parseDomainPack(repoMaintenancePack).id).toBe("repo-maintenance");
   });
 
+  it("requires Runstead compatibility metadata", () => {
+    expect(() =>
+      parseDomainPack({
+        id: "custom-pack",
+        version: "0.1.0",
+        name: "Custom Pack",
+        description: "Custom governed work.",
+        goalTemplates: [],
+        taskTypes: [],
+        defaultPolicy: "policies/default.yaml",
+        defaultVerifiers: [],
+        requiredTools: [],
+        supportedWorkers: []
+      })
+    ).toThrow();
+  });
+
   it("loads and validates the built-in domain.yaml", async () => {
     const domainPath = fileURLToPath(
       new URL("../packs/repo-maintenance/domain.yaml", import.meta.url)
@@ -22,6 +39,9 @@ describe("repo-maintenance pack", () => {
 
     expect(pack).toMatchObject({
       id: "repo-maintenance",
+      compatibility: {
+        runsteadMinVersion: "0.0.0"
+      },
       goalTemplates: ["keep-ci-green"],
       taskTypes: ["repo_inspect", "run_local_verifiers", "ci_repair"],
       defaultPolicy: "policies/repo-maintenance.yaml"

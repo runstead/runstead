@@ -22,6 +22,9 @@ describe("buildDomainPackManifest", () => {
         version: "0.1.0",
         name: "Repository Maintenance"
       },
+      compatibility: {
+        runsteadMinVersion: "0.0.0"
+      },
       defaultPolicy: "policies/repo-maintenance.yaml",
       goalTemplates: ["keep-ci-green"],
       taskTypes: ["repo_inspect", "run_local_verifiers", "ci_repair"],
@@ -54,6 +57,8 @@ describe("buildDomainPackManifest", () => {
           "version: 0.1.0",
           "name: Invalid Pack",
           "description: Missing task yaml.",
+          "compatibility:",
+          "  runstead_min_version: 0.0.0",
           "goal_templates: []",
           "task_types:",
           "  - missing_task",

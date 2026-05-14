@@ -116,6 +116,8 @@ describe("domain pack registry", () => {
           "version: 0.1.0",
           "name: Broken Pack",
           "description: Invalid registry test pack.",
+          "compatibility:",
+          "  runstead_min_version: 0.0.0",
           "goal_templates: []",
           "task_types: []",
           "default_policy: policies/default.yaml",

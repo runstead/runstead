@@ -55,6 +55,9 @@ version: 0.1.0
 name: Customer Ops
 description: Govern recurring customer operations work.
 
+compatibility:
+  runstead_min_version: 0.0.0
+
 scope:
   resource_types:
     - ticket
@@ -87,6 +90,9 @@ security:
 
 Use lowercase kebab-case for pack ids. Use stable task and template ids because
 goal state stores those ids in SQLite.
+
+`compatibility.runstead_min_version` is required. Bump it when a pack starts
+depending on newer Runstead policy, verifier, worker, or manifest behavior.
 
 ## Goal Templates
 
@@ -149,6 +155,7 @@ runstead domain validate ./customer-ops
 The validator checks that:
 
 - `domain.yaml` is parseable.
+- `domain.yaml` declares Runstead compatibility metadata.
 - Manifest references resolve to files inside the pack.
 - Goal templates and task types declare the same domain id as the pack.
 - Referenced template and task ids match file names.

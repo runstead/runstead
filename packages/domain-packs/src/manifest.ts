@@ -14,6 +14,7 @@ export interface DomainPackManifestFile {
 export interface DomainPackManifest {
   schemaVersion: 1;
   domain: Pick<DomainPack, "id" | "version" | "name">;
+  compatibility: DomainPack["compatibility"];
   defaultPolicy: string;
   goalTemplates: string[];
   taskTypes: string[];
@@ -55,6 +56,7 @@ export async function buildDomainPackManifest(
       version: domain.version,
       name: domain.name
     },
+    compatibility: domain.compatibility,
     defaultPolicy: domain.defaultPolicy,
     goalTemplates: [...domain.goalTemplates],
     taskTypes: [...domain.taskTypes],

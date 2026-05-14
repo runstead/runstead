@@ -3,6 +3,9 @@ version: 0.1.0
 name: Research Monitor
 description: Track sources over time and produce cited research digests.
 
+compatibility:
+  runstead_min_version: 0.0.0
+
 scope:
   resource_types:
     - topic

@@ -6,6 +6,11 @@ import { z } from "zod";
 const DOMAIN_PACK_ID_PATTERN = /^[a-z][a-z0-9-]*$/;
 const SEMVER_PATTERN = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
 
+export const DomainPackCompatibilitySchema = z.object({
+  runsteadMinVersion: z.string().regex(SEMVER_PATTERN),
+  runsteadMaxVersion: z.string().regex(SEMVER_PATTERN).optional()
+});
+
 export const DomainPackScopeSchema = z.object({
   resourceTypes: z.array(z.string().min(1))
 });
@@ -20,6 +25,7 @@ export const DomainPackSchema = z.object({
   version: z.string().regex(SEMVER_PATTERN),
   name: z.string().min(1),
   description: z.string().min(1),
+  compatibility: DomainPackCompatibilitySchema,
   scope: DomainPackScopeSchema.optional(),
   goalTemplates: z.array(z.string().min(1)),
   taskTypes: z.array(z.string().min(1)),
@@ -37,6 +43,10 @@ const DomainPackYamlSchema = z.object({
   version: z.string().regex(SEMVER_PATTERN),
   name: z.string().min(1),
   description: z.string().min(1),
+  compatibility: z.object({
+    runstead_min_version: z.string().regex(SEMVER_PATTERN),
+    runstead_max_version: z.string().regex(SEMVER_PATTERN).optional()
+  }),
   scope: z
     .object({
       resource_types: z.array(z.string().min(1))
@@ -68,6 +78,12 @@ export function parseDomainPackYaml(input: unknown): DomainPack {
     version: parsed.version,
     name: parsed.name,
     description: parsed.description,
+    compatibility: {
+      runsteadMinVersion: parsed.compatibility.runstead_min_version,
+      ...(parsed.compatibility.runstead_max_version === undefined
+        ? {}
+        : { runsteadMaxVersion: parsed.compatibility.runstead_max_version })
+    },
     scope:
       parsed.scope === undefined
         ? undefined
