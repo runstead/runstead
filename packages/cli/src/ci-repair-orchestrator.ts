@@ -119,7 +119,7 @@ export async function runCiRepairOrchestrator(
   );
 }
 
-async function runCiRepairOrchestratorUnlocked(
+export async function runCiRepairOrchestratorUnlocked(
   options: RunCiRepairOrchestratorOptions
 ): Promise<RunCiRepairOrchestratorResult> {
   const cwd = resolve(options.cwd ?? process.cwd());
@@ -518,6 +518,7 @@ async function runCiRepairOrchestratorUnlocked(
         const completedTask = writeTaskOutput({
           database,
           task: publishTask,
+          status: "completed",
           output: {
             ...(publishTask.output ?? {}),
             ciRepairOrchestrator: {
@@ -526,7 +527,7 @@ async function runCiRepairOrchestratorUnlocked(
               pullRequest
             }
           },
-          eventType: "task.updated",
+          eventType: "task.completed",
           ...(options.now === undefined ? {} : { now: options.now })
         });
 
@@ -831,6 +832,7 @@ async function resumeCiRepairPullRequest(options: {
       const completedTask = writeTaskOutput({
         database,
         task: resumeTask,
+        status: "completed",
         output: {
           ...(resumeTask.output ?? {}),
           ciRepairOrchestrator: {
@@ -839,7 +841,7 @@ async function resumeCiRepairPullRequest(options: {
             pullRequest
           }
         },
-        eventType: "task.updated",
+        eventType: "task.completed",
         ...(options.now === undefined ? {} : { now: options.now })
       });
 
@@ -1087,6 +1089,19 @@ function findPullRequestResumeTask(options: {
 
     return pullRequestResumeContext(task) !== undefined;
   });
+}
+
+export function isCiRepairPullRequestResumeTask(task: Task): boolean {
+  return (
+    task.domain === "repo-maintenance" &&
+    task.type === "ci_repair" &&
+    task.status === "queued" &&
+    pullRequestResumeContext(task) !== undefined
+  );
+}
+
+export function ciRepairPullRequestResumeRunId(task: Task): string | undefined {
+  return pullRequestResumeContext(task)?.runId;
 }
 
 function assertNoRunningCiRepairOrchestratorWorker(input: {

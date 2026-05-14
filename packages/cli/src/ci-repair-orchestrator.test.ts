@@ -14,6 +14,7 @@ import {
   formatCiRepairOrchestratorReport,
   runCiRepairOrchestrator
 } from "./ci-repair-orchestrator.js";
+import { runOnce } from "./run.js";
 import { startWorkerRun } from "./runtime-audit.js";
 import type { GitRunner } from "./git-branch.js";
 import type { GitHubCliRunner } from "./github-actions.js";
@@ -358,6 +359,100 @@ describe("runCiRepairOrchestrator", () => {
       }
 
       expect(gitCalls).toEqual([]);
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("resumes approved CI repair publishing from run once", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-ci-run-once-"));
+    const githubCalls: string[][] = [];
+    const gitCalls: string[][] = [];
+
+    try {
+      await initRunstead({ cwd: workspace, createDefaultGoal: true });
+
+      const first = await runCiRepairOrchestrator({
+        cwd: workspace,
+        runId: "123",
+        worker: "codex_cli",
+        base: "main",
+        allowedPaths: ["src/**"],
+        verifierCommands: [{ name: "test", command: "pnpm test" }],
+        githubRunner: githubRunner(githubCalls),
+        gitRunner: gitRunner(gitCalls, { diffNameOnly: "src/fix.ts\n" }),
+        workerRunner: workerRunner([]),
+        verifierRunner: verifierRunner([]),
+        now: new Date("2026-05-14T12:00:00.000Z")
+      });
+
+      expect(first.status).toBe("waiting_approval");
+
+      if (first.approval === undefined) {
+        throw new Error("Expected push approval request");
+      }
+
+      await decideApproval({
+        cwd: workspace,
+        id: first.approval.id,
+        decision: "approved",
+        decidedBy: "local-admin",
+        now: new Date("2026-05-14T12:01:00.000Z")
+      });
+
+      const second = await runOnce({
+        cwd: workspace,
+        githubRunner: githubRunner(githubCalls),
+        gitRunner: gitRunner(gitCalls, { diffNameOnly: "src/fix.ts\n" }),
+        now: new Date("2026-05-14T12:02:00.000Z")
+      });
+
+      if (!second.ranTask) {
+        throw new Error("Expected run once to resume CI repair");
+      }
+
+      expect(second.task.type).toBe("ci_repair");
+      expect(second.ciRepairResult?.status).toBe("waiting_approval");
+      expect(second.ciRepairResult?.approval?.id).toMatch(/^appr_/);
+      expect(gitCalls).toContainEqual([
+        "push",
+        "--set-upstream",
+        "origin",
+        first.branchName
+      ]);
+      expect(githubCalls.some((args) => args[0] === "pr" && args[1] === "create")).toBe(
+        false
+      );
+
+      if (second.ciRepairResult?.approval === undefined) {
+        throw new Error("Expected PR approval request");
+      }
+
+      await decideApproval({
+        cwd: workspace,
+        id: second.ciRepairResult.approval.id,
+        decision: "approved",
+        decidedBy: "local-admin",
+        now: new Date("2026-05-14T12:03:00.000Z")
+      });
+
+      const third = await runOnce({
+        cwd: workspace,
+        githubRunner: githubRunner(githubCalls),
+        gitRunner: gitRunner(gitCalls, { diffNameOnly: "src/fix.ts\n" }),
+        now: new Date("2026-05-14T12:04:00.000Z")
+      });
+
+      if (!third.ranTask) {
+        throw new Error("Expected run once to finish CI repair");
+      }
+
+      expect(third.task.type).toBe("ci_repair");
+      expect(third.task.status).toBe("completed");
+      expect(third.ciRepairResult?.status).toBe("completed");
+      expect(third.ciRepairResult?.pullRequest?.url).toBe(
+        "https://github.example/pr/1"
+      );
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }
