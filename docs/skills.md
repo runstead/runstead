@@ -24,3 +24,9 @@ Promotion updates `skill.yaml` from `candidate` to `promoted` and appends the
 promotion decision to `changelog.md`. It does not automatically attach the skill
 to future tasks. Deprecation updates `skill.yaml` from `promoted` to
 `deprecated` and records the reason in `changelog.md`.
+
+Skill package validation fails closed when required package files are symlinks or
+resolve outside the package root. Keep `skill.yaml`, `SKILL.md`,
+`permissions.yaml`, `tests/run.sh`, and `rollback.md` as regular files inside
+the package so promotion cannot smuggle instructions, tests, or rollback notes
+from another location.

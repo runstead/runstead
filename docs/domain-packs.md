@@ -207,6 +207,8 @@ The validator checks that:
 - `domain.yaml` is parseable.
 - `domain.yaml` declares Runstead compatibility metadata.
 - Manifest references resolve to files inside the pack.
+- Manifest, policy, template, task type, fixture, and eval paths are not
+  symlinks and do not escape the pack directory.
 - Goal templates and task types declare the same domain id as the pack.
 - Referenced template and task ids match file names.
 - Extra task type YAML files that are not registered in `domain.yaml` are warned.
