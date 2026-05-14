@@ -136,7 +136,6 @@ export async function runCiRepairOrchestrator(
     cwd,
     runId: options.runId,
     verifierCommands: options.verifierCommands,
-    governed: true,
     ...(options.githubRunner === undefined ? {} : { runner: options.githubRunner }),
     ...(options.now === undefined ? {} : { now: options.now })
   });
