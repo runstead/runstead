@@ -6,10 +6,15 @@ import { pathToFileURL } from "node:url";
 import {
   createRunsteadId,
   type Evidence,
+  type JsonObject,
   type RunsteadEvent,
   type Task
 } from "@runstead/core";
-import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sqlite";
+import {
+  appendEventAndProject,
+  openRunsteadDatabase,
+  type RunsteadDatabase
+} from "@runstead/state-sqlite";
 
 import {
   fetchGitHubWorkflowRunLog,
@@ -62,7 +67,7 @@ const CI_LOG_EVIDENCE_METADATA = {
 export async function createCiRepairTaskFromWorkflowRun(
   options: CreateCiRepairTaskOptions
 ): Promise<CreateCiRepairTaskResult> {
-  if (options.governed === true) {
+  if (options.governed !== false) {
     return createGovernedCiRepairTaskFromWorkflowRun(options);
   }
 
@@ -296,181 +301,202 @@ async function createGovernedCiRepairTaskFromWorkflowRun(
       enforcementLevel: "policy_enforced",
       ...(options.now === undefined ? {} : { now: options.now })
     });
-    const [workflowRunResult, logResult] = await Promise.all([
-      runGovernedToolAction({
-        cwd,
-        stateDb: resolvedState.stateDb,
-        database,
-        policy,
-        task,
-        workerRun,
-        action: githubRunReadAction({ task, cwd, runId: options.runId }),
-        requestedBy: "runstead:ci-repair",
-        ...(options.now === undefined ? {} : { now: options.now }),
-        run: async () => {
-          const value = await getGitHubWorkflowRunStatus({
-            cwd,
-            runId: options.runId,
-            ...(options.runner === undefined ? {} : { runner: options.runner })
-          });
 
-          return {
-            value,
-            output: {
-              runId: value.runId,
-              status: value.status,
-              ...(value.conclusion === undefined
-                ? {}
-                : { conclusion: value.conclusion })
-            }
-          };
-        }
-      }),
-      runGovernedToolAction({
-        cwd,
-        stateDb: resolvedState.stateDb,
-        database,
-        policy,
-        task,
-        workerRun,
-        action: githubRunLogReadAction({ task, cwd, runId: options.runId }),
-        requestedBy: "runstead:ci-repair",
-        ...(options.now === undefined ? {} : { now: options.now }),
-        run: async () => {
-          const value = await fetchGitHubWorkflowRunLog({
-            cwd,
-            runId: options.runId,
-            ...(options.runner === undefined ? {} : { runner: options.runner })
-          });
+    try {
+      const [workflowRunResult, logResult] = await Promise.all([
+        runGovernedToolAction({
+          cwd,
+          stateDb: resolvedState.stateDb,
+          database,
+          policy,
+          task,
+          workerRun,
+          action: githubRunReadAction({ task, cwd, runId: options.runId }),
+          requestedBy: "runstead:ci-repair",
+          ...(options.now === undefined ? {} : { now: options.now }),
+          run: async () => {
+            const value = await getGitHubWorkflowRunStatus({
+              cwd,
+              runId: options.runId,
+              ...(options.runner === undefined ? {} : { runner: options.runner })
+            });
 
-          return {
-            value,
-            output: {
-              runId: value.runId,
-              byteLength: value.byteLength,
-              trust: CI_LOG_EVIDENCE_METADATA.trust
-            }
-          };
-        }
-      })
-    ]);
-    const workflowRun = workflowRunResult.value;
-    const evidenceLog = redactGitHubWorkflowRunLog(logResult.value);
+            return {
+              value,
+              output: {
+                runId: value.runId,
+                status: value.status,
+                ...(value.conclusion === undefined
+                  ? {}
+                  : { conclusion: value.conclusion })
+              }
+            };
+          }
+        }),
+        runGovernedToolAction({
+          cwd,
+          stateDb: resolvedState.stateDb,
+          database,
+          policy,
+          task,
+          workerRun,
+          action: githubRunLogReadAction({ task, cwd, runId: options.runId }),
+          requestedBy: "runstead:ci-repair",
+          ...(options.now === undefined ? {} : { now: options.now }),
+          run: async () => {
+            const value = await fetchGitHubWorkflowRunLog({
+              cwd,
+              runId: options.runId,
+              ...(options.runner === undefined ? {} : { runner: options.runner })
+            });
 
-    assertRepairableWorkflowRun(workflowRun);
+            return {
+              value,
+              output: {
+                runId: value.runId,
+                byteLength: value.byteLength,
+                trust: CI_LOG_EVIDENCE_METADATA.trust
+              }
+            };
+          }
+        })
+      ]);
+      const workflowRun = workflowRunResult.value;
+      const evidenceLog = redactGitHubWorkflowRunLog(logResult.value);
 
-    const finalTask: Task = {
-      ...task,
-      input: {
-        source: "github_actions",
-        runId: workflowRun.runId,
-        workflowRun,
-        logEvidenceType: "github_workflow_run",
-        logEvidenceMetadata: CI_LOG_EVIDENCE_METADATA,
-        repairPlan: {
-          fetchLog: true,
-          classifyFailure: true,
-          runLocalVerifiers: true,
-          createPullRequestWithEvidence: true
-        },
-        ...(options.verifierCommands === undefined
-          ? {}
-          : { commands: options.verifierCommands })
-      },
-      updatedAt: createdAt
-    };
-    const evidenceArtifact = {
-      schemaVersion: 1,
-      createdAt,
-      taskId: finalTask.id,
-      goalId: finalTask.goalId,
-      metadata: CI_LOG_EVIDENCE_METADATA,
-      workflowRun,
-      log: evidenceLog
-    };
-    const evidenceContents = `${JSON.stringify(evidenceArtifact, null, 2)}\n`;
-    const evidenceId = createRunsteadId("ev");
-    const evidenceDir = join(resolvedState.root, "evidence");
-    const evidencePath = join(
-      evidenceDir,
-      `github-workflow-run-${workflowRun.runId}-${evidenceId}.json`
-    );
-    const evidence: Evidence = {
-      id: evidenceId,
-      type: "github_workflow_run",
-      subjectType: "task",
-      subjectId: finalTask.id,
-      uri: pathToFileURL(evidencePath).href,
-      hash: sha256(evidenceContents),
-      summary: workflowRunSummary(workflowRun, evidenceLog),
-      createdAt
-    };
-    const evidenceEvent: RunsteadEvent = {
-      eventId: createRunsteadId("evt"),
-      type: "evidence.recorded",
-      aggregateType: "evidence",
-      aggregateId: evidence.id,
-      payload: {
-        evidenceId: evidence.id,
-        evidenceType: evidence.type,
-        taskId: finalTask.id,
-        uri: evidence.uri,
-        hash: evidence.hash,
-        summary: evidence.summary,
-        metadata: CI_LOG_EVIDENCE_METADATA
-      },
-      createdAt
-    };
+      assertRepairableWorkflowRun(workflowRun);
 
-    await mkdir(evidenceDir, { recursive: true });
-    await writeFile(evidencePath, evidenceContents, "utf8");
-    appendEventAndProject(database, {
-      event: evidenceEvent,
-      projection: {
-        type: "evidence",
-        value: evidence
-      }
-    });
-    appendEventAndProject(database, {
-      event: {
-        eventId: createRunsteadId("evt"),
-        type: "task.updated",
-        aggregateType: "task",
-        aggregateId: finalTask.id,
-        payload: {
+      const finalTask: Task = {
+        ...task,
+        input: {
+          source: "github_actions",
           runId: workflowRun.runId,
-          workflowName: workflowRun.workflowName,
-          conclusion: workflowRun.conclusion,
-          evidenceId: evidence.id
+          workflowRun,
+          logEvidenceType: "github_workflow_run",
+          logEvidenceMetadata: CI_LOG_EVIDENCE_METADATA,
+          repairPlan: {
+            fetchLog: true,
+            classifyFailure: true,
+            runLocalVerifiers: true,
+            createPullRequestWithEvidence: true
+          },
+          ...(options.verifierCommands === undefined
+            ? {}
+            : { commands: options.verifierCommands })
+        },
+        updatedAt: createdAt
+      };
+      const evidenceArtifact = {
+        schemaVersion: 1,
+        createdAt,
+        taskId: finalTask.id,
+        goalId: finalTask.goalId,
+        metadata: CI_LOG_EVIDENCE_METADATA,
+        workflowRun,
+        log: evidenceLog
+      };
+      const evidenceContents = `${JSON.stringify(evidenceArtifact, null, 2)}\n`;
+      const evidenceId = createRunsteadId("ev");
+      const evidenceDir = join(resolvedState.root, "evidence");
+      const evidencePath = join(
+        evidenceDir,
+        `github-workflow-run-${workflowRun.runId}-${evidenceId}.json`
+      );
+      const evidence: Evidence = {
+        id: evidenceId,
+        type: "github_workflow_run",
+        subjectType: "task",
+        subjectId: finalTask.id,
+        uri: pathToFileURL(evidencePath).href,
+        hash: sha256(evidenceContents),
+        summary: workflowRunSummary(workflowRun, evidenceLog),
+        createdAt
+      };
+      const evidenceEvent: RunsteadEvent = {
+        eventId: createRunsteadId("evt"),
+        type: "evidence.recorded",
+        aggregateType: "evidence",
+        aggregateId: evidence.id,
+        payload: {
+          evidenceId: evidence.id,
+          evidenceType: evidence.type,
+          taskId: finalTask.id,
+          uri: evidence.uri,
+          hash: evidence.hash,
+          summary: evidence.summary,
+          metadata: CI_LOG_EVIDENCE_METADATA
         },
         createdAt
-      },
-      projection: {
-        type: "task",
-        value: finalTask
-      }
-    });
-    finishWorkerRun({
-      database,
-      workerRun,
-      status: "completed",
-      output: {
-        workflowRun: workflowRun.runId,
-        evidenceId: evidence.id
-      },
-      ...(options.now === undefined ? {} : { now: options.now })
-    });
+      };
 
-    return {
-      cwd,
-      stateDb: resolvedState.stateDb,
-      task: finalTask,
-      event: taskCreatedEvent,
-      evidence,
-      evidencePath,
-      workflowRun,
-      log: evidenceLog
-    };
+      await mkdir(evidenceDir, { recursive: true });
+      await writeFile(evidencePath, evidenceContents, "utf8");
+      appendEventAndProject(database, {
+        event: evidenceEvent,
+        projection: {
+          type: "evidence",
+          value: evidence
+        }
+      });
+      appendEventAndProject(database, {
+        event: {
+          eventId: createRunsteadId("evt"),
+          type: "task.updated",
+          aggregateType: "task",
+          aggregateId: finalTask.id,
+          payload: {
+            runId: workflowRun.runId,
+            workflowName: workflowRun.workflowName,
+            conclusion: workflowRun.conclusion,
+            evidenceId: evidence.id
+          },
+          createdAt
+        },
+        projection: {
+          type: "task",
+          value: finalTask
+        }
+      });
+      finishWorkerRun({
+        database,
+        workerRun,
+        status: "completed",
+        output: {
+          runId: workflowRun.runId,
+          evidenceId: evidence.id
+        },
+        ...(options.now === undefined ? {} : { now: options.now })
+      });
+
+      return {
+        cwd,
+        stateDb: resolvedState.stateDb,
+        task: finalTask,
+        event: taskCreatedEvent,
+        evidence,
+        evidencePath,
+        workflowRun,
+        log: evidenceLog
+      };
+    } catch (error) {
+      markCiRepairTaskFailed({
+        database,
+        task,
+        error,
+        ...(options.now === undefined ? {} : { now: options.now })
+      });
+      finishWorkerRun({
+        database,
+        workerRun,
+        status: "failed",
+        output: {
+          error: errorMessage(error)
+        },
+        ...(options.now === undefined ? {} : { now: options.now })
+      });
+
+      throw error;
+    }
   } finally {
     database.close();
   }
@@ -553,6 +579,45 @@ function workflowRunSummary(
 
 function sha256(contents: string): string {
   return createHash("sha256").update(contents).digest("hex");
+}
+
+function markCiRepairTaskFailed(input: {
+  database: RunsteadDatabase;
+  task: Task;
+  error: unknown;
+  now?: Date;
+}): Task {
+  const updatedAt = (input.now ?? new Date()).toISOString();
+  const output: JsonObject = {
+    error: errorMessage(input.error)
+  };
+  const task: Task = {
+    ...input.task,
+    status: "failed",
+    output,
+    updatedAt
+  };
+
+  appendEventAndProject(input.database, {
+    event: {
+      eventId: createRunsteadId("evt"),
+      type: "task.failed",
+      aggregateType: "task",
+      aggregateId: task.id,
+      payload: output,
+      createdAt: updatedAt
+    },
+    projection: {
+      type: "task",
+      value: task
+    }
+  });
+
+  return task;
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function redactGitHubWorkflowRunLog(log: GitHubWorkflowRunLog): GitHubWorkflowRunLog {

@@ -94,6 +94,14 @@ describe("createCiRepairTaskFromWorkflowRun", () => {
           `
           )
           .get(result.evidence.id) as { payload_json: string };
+        const toolCalls = database
+          .prepare("SELECT action_type, status FROM tool_calls ORDER BY started_at, id")
+          .all() as { action_type: string; status: string }[];
+        const workerRuns = database
+          .prepare(
+            "SELECT worker_type, status FROM worker_runs ORDER BY started_at, id"
+          )
+          .all() as { worker_type: string; status: string }[];
 
         expect(task).toMatchObject({
           type: "ci_repair",
@@ -132,6 +140,26 @@ describe("createCiRepairTaskFromWorkflowRun", () => {
           }
         });
         expect(formatCiRepairTaskReport(result)).toContain(`Task: ${result.task.id}`);
+        expect(toolCalls).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              action_type: "github.run.read",
+              status: "completed"
+            }),
+            expect.objectContaining({
+              action_type: "github.run.log.read",
+              status: "completed"
+            })
+          ])
+        );
+        expect(workerRuns).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              worker_type: "ci_repair_intake",
+              status: "completed"
+            })
+          ])
+        );
         expect(calls.map((args) => args.slice(0, 3))).toEqual([
           ["run", "view", "123"],
           ["run", "view", "123"]
@@ -231,6 +259,38 @@ describe("createCiRepairTaskFromWorkflowRun", () => {
           runner
         })
       ).rejects.toThrow("expected repairable failure");
+
+      const database = openRunsteadDatabase(join(workspace, ".runstead", "state.db"));
+
+      try {
+        const tasks = database
+          .prepare("SELECT status, output_json FROM tasks WHERE type = 'ci_repair'")
+          .all() as { status: string; output_json: string | null }[];
+        const workerRuns = database
+          .prepare("SELECT worker_type, status, output_json FROM worker_runs")
+          .all() as {
+          worker_type: string;
+          status: string;
+          output_json: string | null;
+        }[];
+
+        expect(tasks).toHaveLength(1);
+        expect(tasks[0]).toMatchObject({
+          status: "failed"
+        });
+        const failedTaskOutput = JSON.parse(tasks[0]?.output_json ?? "{}") as {
+          error?: string;
+        };
+        expect(failedTaskOutput.error).toContain("expected repairable failure");
+        expect(workerRuns).toEqual([
+          expect.objectContaining({
+            worker_type: "ci_repair_intake",
+            status: "failed"
+          })
+        ]);
+      } finally {
+        database.close();
+      }
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }
