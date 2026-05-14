@@ -104,7 +104,7 @@ describe("runCiRepairOrchestrator", () => {
               status: "completed"
             }),
             expect.objectContaining({
-              action_type: "github.pr.create",
+              action_type: "git.push",
               status: "approval_required"
             })
           ])
@@ -139,7 +139,7 @@ describe("runCiRepairOrchestrator", () => {
           "checkpoint.create",
           "worker.external.start",
           "git.diff",
-          "github.pr.create"
+          "git.push"
         ])
       );
 
@@ -170,10 +170,17 @@ describe("runCiRepairOrchestrator", () => {
         now: new Date("2026-05-14T12:02:00.000Z")
       });
 
-      expect(second.status).toBe("completed");
-      expect(second.pullRequest?.url).toBe("https://github.example/pr/1");
+      expect(second.status).toBe("waiting_approval");
+      expect(second.pullRequest).toBeUndefined();
+      expect(second.approval?.id).toMatch(/^appr_/);
+      expect(gitCalls).toContainEqual([
+        "push",
+        "--set-upstream",
+        "origin",
+        first.branchName
+      ]);
       expect(githubCalls.some((args) => args[0] === "pr" && args[1] === "create")).toBe(
-        true
+        false
       );
       expect(
         gitCalls.filter((args) => args[0] === "switch" && args[1] === "-c")
@@ -181,6 +188,57 @@ describe("runCiRepairOrchestrator", () => {
       expect(
         showApproval({ cwd: workspace, id: first.approval.id }).approval.status
       ).toBe("expired");
+
+      if (second.approval === undefined) {
+        throw new Error("Expected PR approval request");
+      }
+
+      decideApproval({
+        cwd: workspace,
+        id: second.approval.id,
+        decision: "approved",
+        decidedBy: "alice",
+        now: new Date("2026-05-14T12:03:00.000Z")
+      });
+
+      const third = await runCiRepairOrchestrator({
+        cwd: workspace,
+        runId: "123",
+        worker: "codex_cli",
+        base: "main",
+        allowedPaths: ["src/**"],
+        deniedPaths: [".env"],
+        verifierCommands: [{ name: "test", command: "pnpm test" }],
+        githubRunner: githubRunner(githubCalls),
+        gitRunner: gitRunner(gitCalls, { diffNameOnly: "src/fix.ts\n" }),
+        workerRunner: workerRunner(workerCalls),
+        verifierRunner: verifierRunner(verifierCalls),
+        now: new Date("2026-05-14T12:04:00.000Z")
+      });
+
+      expect(third.status).toBe("completed");
+      expect(third.pullRequest?.url).toBe("https://github.example/pr/1");
+      expect(githubCalls.some((args) => args[0] === "pr" && args[1] === "create")).toBe(
+        true
+      );
+      expect(gitCalls.filter((args) => args[0] === "push")).toHaveLength(1);
+      expect(
+        showApproval({ cwd: workspace, id: second.approval.id }).approval.status
+      ).toBe("expired");
+      const finalAuditLog = await exportAuditLog({ cwd: workspace });
+      const finalRequestedActions = finalAuditLog.entries
+        .filter((entry) => entry.type === "tool_call.requested")
+        .map((entry) =>
+          typeof entry.payload === "object" &&
+          entry.payload !== null &&
+          "actionType" in entry.payload
+            ? entry.payload.actionType
+            : undefined
+        );
+
+      expect(finalRequestedActions).toEqual(
+        expect.arrayContaining(["git.push", "github.pr.create"])
+      );
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }
@@ -263,6 +321,10 @@ function gitRunner(calls: string[][], output: { diffNameOnly: string }): GitRunn
 
     if (args[0] === "switch") {
       return Promise.resolve({ stdout: "", stderr: "", exitCode: 0 });
+    }
+
+    if (args[0] === "push") {
+      return Promise.resolve({ stdout: "pushed\n", stderr: "", exitCode: 0 });
     }
 
     switch (args.join(" ")) {

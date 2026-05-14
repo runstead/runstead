@@ -34,6 +34,20 @@ export interface CreateGitBranchResult {
   baseRef?: string;
 }
 
+export interface PushGitBranchOptions {
+  cwd?: string;
+  branchName: string;
+  remote?: string;
+  runner?: GitRunner;
+}
+
+export interface PushGitBranchResult {
+  cwd: string;
+  branchName: string;
+  remote: string;
+  stdout: string;
+}
+
 export function buildRunsteadBranchName(options: RunsteadBranchNameOptions): string {
   const prefix = normalizeBranchSegment(options.prefix ?? "runstead");
   const task = normalizeBranchSegment(options.taskId);
@@ -66,6 +80,29 @@ export async function createGitBranch(
     cwd,
     branchName,
     ...(options.baseRef === undefined ? {} : { baseRef: options.baseRef })
+  };
+}
+
+export async function pushGitBranch(
+  options: PushGitBranchOptions
+): Promise<PushGitBranchResult> {
+  const cwd = resolve(options.cwd ?? process.cwd());
+  const branchName = normalizeBranchName(options.branchName);
+  const remote = options.remote ?? "origin";
+  const result = await (options.runner ?? runGit)(
+    ["push", "--set-upstream", remote, branchName],
+    { cwd }
+  );
+
+  if (result.exitCode !== 0) {
+    throw new Error(`git push failed with exit ${result.exitCode}: ${result.stderr}`);
+  }
+
+  return {
+    cwd,
+    branchName,
+    remote,
+    stdout: result.stdout
   };
 }
 

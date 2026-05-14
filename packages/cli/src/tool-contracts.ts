@@ -57,6 +57,14 @@ const TOOL_CONTRACTS: ToolContract[] = [
     policyRequired: true
   },
   {
+    actionType: "git.push",
+    tool: "git",
+    resourceTypes: ["branch", "repository"],
+    sideEffects: ["network_write_external", "git_push"],
+    evidenceRequired: true,
+    policyRequired: true
+  },
+  {
     actionType: "github.run.read",
     tool: "github",
     resourceTypes: ["workflow_run"],

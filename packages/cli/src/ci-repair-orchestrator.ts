@@ -27,6 +27,7 @@ import {
 import {
   buildRunsteadBranchName,
   createGitBranch,
+  pushGitBranch,
   type GitRunner
 } from "./git-branch.js";
 import type {
@@ -118,6 +119,7 @@ export async function runCiRepairOrchestrator(
       ...(options.githubRunner === undefined
         ? {}
         : { githubRunner: options.githubRunner }),
+      ...(options.gitRunner === undefined ? {} : { gitRunner: options.gitRunner }),
       ...(options.now === undefined ? {} : { now: options.now })
     });
   }
@@ -434,13 +436,45 @@ export async function runCiRepairOrchestrator(
         ...(options.now === undefined ? {} : { now: options.now })
       });
 
+      let publishTask = taskWithResume;
+      let publishContext = resumeContext;
+
       try {
+        await pushGovernedBranch({
+          cwd,
+          stateDb,
+          database,
+          policy,
+          task: publishTask,
+          workerRun,
+          branchName,
+          base,
+          actionId: publishContext.pushActionId,
+          ...(options.gitRunner === undefined ? {} : { gitRunner: options.gitRunner }),
+          ...(options.now === undefined ? {} : { now: options.now })
+        });
+        publishContext = {
+          ...publishContext,
+          stage: "branch_pushed",
+          branchPushed: true
+        };
+        publishTask = writeTaskOutput({
+          database,
+          task: publishTask,
+          output: {
+            ...(publishTask.output ?? {}),
+            ciRepairOrchestrator: publishContext
+          },
+          eventType: "task.updated",
+          ...(options.now === undefined ? {} : { now: options.now })
+        });
+
         const pullRequest = await createGovernedPullRequest({
           cwd,
           stateDb,
           database,
           policy,
-          task: taskWithResume,
+          task: publishTask,
           workerRun,
           ciRepair,
           branchName,
@@ -454,11 +488,11 @@ export async function runCiRepairOrchestrator(
         });
         const completedTask = writeTaskOutput({
           database,
-          task: taskWithResume,
+          task: publishTask,
           output: {
-            ...(taskWithResume.output ?? {}),
+            ...(publishTask.output ?? {}),
             ciRepairOrchestrator: {
-              ...resumeContext,
+              ...publishContext,
               stage: "completed",
               pullRequest
             }
@@ -494,15 +528,19 @@ export async function runCiRepairOrchestrator(
         };
       } catch (error) {
         if (error instanceof ToolActionApprovalRequiredError) {
+          const approvalStage =
+            error.toolCall.actionType === "git.push"
+              ? "push_approval_requested"
+              : "pr_approval_requested";
           const waitingTask = markTaskTerminal({
             database,
-            task: taskWithResume,
+            task: publishTask,
             status: "waiting_approval",
             output: {
-              ...(taskWithResume.output ?? {}),
+              ...(publishTask.output ?? {}),
               ciRepairOrchestrator: {
-                ...resumeContext,
-                stage: "pr_approval_requested",
+                ...publishContext,
+                stage: approvalStage,
                 approvalId: error.approval.id
               }
             },
@@ -664,6 +702,7 @@ async function resumeCiRepairPullRequest(options: {
   root: string;
   task: Task;
   githubRunner?: GitHubCliRunner;
+  gitRunner?: CiRepairGitRunner;
   now?: Date;
 }): Promise<RunCiRepairOrchestratorResult> {
   const context = parsePullRequestResumeContext(options.task);
@@ -688,19 +727,53 @@ async function resumeCiRepairPullRequest(options: {
       ...(options.now === undefined ? {} : { now: options.now })
     });
 
+    let resumeTask = options.task;
+    let resumeContext = context;
+
     try {
+      if (resumeContext.stage === "push_approval_requested") {
+        await pushGovernedBranch({
+          cwd: options.cwd,
+          stateDb,
+          database,
+          policy,
+          task: resumeTask,
+          workerRun,
+          branchName: resumeContext.branchName,
+          base: resumeContext.base,
+          actionId: resumeContext.pushActionId,
+          ...(options.gitRunner === undefined ? {} : { gitRunner: options.gitRunner }),
+          ...(options.now === undefined ? {} : { now: options.now })
+        });
+        resumeContext = {
+          ...resumeContext,
+          stage: "branch_pushed",
+          branchPushed: true
+        };
+        resumeTask = writeTaskOutput({
+          database,
+          task: resumeTask,
+          output: {
+            ...(resumeTask.output ?? {}),
+            ciRepairOrchestrator: resumeContext
+          },
+          eventType: "task.updated",
+          ...(options.now === undefined ? {} : { now: options.now })
+        });
+      }
+
       const pullRequest = await createGovernedPullRequest({
         cwd: options.cwd,
         stateDb,
         database,
         policy,
-        task: options.task,
+        task: resumeTask,
         workerRun,
         ciRepair,
-        branchName: context.branchName,
-        base: context.base,
-        draft: context.draft,
-        actionId: context.prActionId,
+        branchName: resumeContext.branchName,
+        base: resumeContext.base,
+        draft: resumeContext.draft,
+        actionId: resumeContext.prActionId,
         ...(options.githubRunner === undefined
           ? {}
           : { githubRunner: options.githubRunner }),
@@ -708,11 +781,11 @@ async function resumeCiRepairPullRequest(options: {
       });
       const completedTask = writeTaskOutput({
         database,
-        task: options.task,
+        task: resumeTask,
         output: {
-          ...(options.task.output ?? {}),
+          ...(resumeTask.output ?? {}),
           ciRepairOrchestrator: {
-            ...context,
+            ...resumeContext,
             stage: "completed",
             pullRequest
           }
@@ -748,15 +821,19 @@ async function resumeCiRepairPullRequest(options: {
       };
     } catch (error) {
       if (error instanceof ToolActionApprovalRequiredError) {
+        const approvalStage =
+          error.toolCall.actionType === "git.push"
+            ? "push_approval_requested"
+            : "pr_approval_requested";
         const waitingTask = markTaskTerminal({
           database,
-          task: options.task,
+          task: resumeTask,
           status: "waiting_approval",
           output: {
-            ...(options.task.output ?? {}),
+            ...(resumeTask.output ?? {}),
             ciRepairOrchestrator: {
-              ...context,
-              stage: "pr_approval_requested",
+              ...resumeContext,
+              stage: approvalStage,
               approvalId: error.approval.id
             }
           },
@@ -860,6 +937,52 @@ async function createGovernedPullRequest(options: {
   }).then((result) => result.value);
 }
 
+async function pushGovernedBranch(options: {
+  cwd: string;
+  stateDb: string;
+  database: RunsteadDatabase;
+  policy: PolicyProfile;
+  task: Task;
+  workerRun: ReturnType<typeof startWorkerRun>;
+  branchName: string;
+  base: string;
+  actionId: string;
+  gitRunner?: CiRepairGitRunner;
+  now?: Date;
+}): Promise<void> {
+  await runGovernedToolAction({
+    cwd: options.cwd,
+    stateDb: options.stateDb,
+    database: options.database,
+    policy: options.policy,
+    task: options.task,
+    workerRun: options.workerRun,
+    action: gitPushAction({
+      task: options.task,
+      actionId: options.actionId,
+      branchName: options.branchName,
+      base: options.base
+    }),
+    requestedBy: "runstead:ci-repair",
+    ...(options.now === undefined ? {} : { now: options.now }),
+    run: async () => {
+      const value = await pushGitBranch({
+        cwd: options.cwd,
+        branchName: options.branchName,
+        ...(options.gitRunner === undefined ? {} : { runner: options.gitRunner })
+      });
+
+      return {
+        value,
+        output: {
+          branchName: value.branchName,
+          remote: value.remote
+        }
+      };
+    }
+  });
+}
+
 function findPullRequestResumeTask(options: {
   cwd: string;
   runId: string;
@@ -893,11 +1016,18 @@ function buildPullRequestResumeContext(input: {
   const evidence = evidenceSummary(input.ciRepair.evidence);
 
   return {
-    stage: "ready_for_pr",
+    stage: "ready_for_push",
     runId: input.ciRepair.workflowRun.runId,
     branchName: input.branchName,
     base: input.base,
     draft: input.draft,
+    pushActionId: stableActionId("git_push", [
+      input.ciRepair.task.id,
+      input.base,
+      input.branchName,
+      input.ciRepair.workflowRun.runId
+    ]),
+    branchPushed: false,
     prActionId: stableActionId("github_pr_create", [
       input.ciRepair.task.id,
       input.base,
@@ -919,6 +1049,8 @@ interface CiRepairOrchestratorResumeContext extends JsonObject {
   branchName: string;
   base: string;
   draft: boolean;
+  pushActionId: string;
+  branchPushed: boolean;
   prActionId: string;
   workflowRun: GitHubWorkflowRunStatus;
   evidence: EvidenceSummary;
@@ -959,7 +1091,10 @@ function pullRequestResumeContext(
     return undefined;
   }
 
-  if (value.stage !== "pr_approval_requested") {
+  if (
+    value.stage !== "push_approval_requested" &&
+    value.stage !== "pr_approval_requested"
+  ) {
     return undefined;
   }
 
@@ -967,6 +1102,8 @@ function pullRequestResumeContext(
     typeof value.runId !== "string" ||
     typeof value.branchName !== "string" ||
     typeof value.base !== "string" ||
+    typeof value.pushActionId !== "string" ||
+    typeof value.branchPushed !== "boolean" ||
     typeof value.prActionId !== "string" ||
     typeof value.draft !== "boolean" ||
     !isRecord(value.workflowRun) ||
@@ -1135,6 +1272,26 @@ function gitDiffAction(input: {
     },
     context: {
       cwd: input.cwd
+    }
+  };
+}
+
+function gitPushAction(input: {
+  task: Task;
+  actionId: string;
+  branchName: string;
+  base: string;
+}): ActionEnvelope {
+  return {
+    actionId: input.actionId,
+    actionType: "git.push",
+    resource: {
+      type: "branch",
+      id: input.branchName
+    },
+    context: {
+      networkDomains: ["github.com"],
+      sideEffects: ["git_push"]
     }
   };
 }

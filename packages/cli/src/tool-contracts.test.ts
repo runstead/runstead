@@ -18,6 +18,7 @@ describe("tool contract registry", () => {
         "git.status",
         "git.diff",
         "git.branch.create",
+        "git.push",
         "github.run.read",
         "github.run.log.read",
         "package.install",
@@ -43,6 +44,13 @@ describe("tool contract registry", () => {
       actionType: "github.pr.create",
       tool: "github",
       sideEffects: ["network_write_external", "github_pr_create"],
+      evidenceRequired: true,
+      policyRequired: true
+    });
+    expect(getToolContract("git.push")).toMatchObject({
+      actionType: "git.push",
+      tool: "git",
+      sideEffects: ["network_write_external", "git_push"],
       evidenceRequired: true,
       policyRequired: true
     });
