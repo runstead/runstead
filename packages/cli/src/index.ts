@@ -916,6 +916,26 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
       }
     });
 
+  domain
+    .command("manifest")
+    .description("Build a deterministic domain pack manifest.")
+    .argument("<path>", "Domain pack directory")
+    .option("--output <path>", "Write manifest JSON to a file")
+    .action(async (path: string, options: { output?: string }) => {
+      const { buildDomainPackManifest } = await import("@runstead/domain-packs");
+      const manifest = await buildDomainPackManifest(path);
+      const contents = `${JSON.stringify(manifest, null, 2)}\n`;
+
+      if (options.output === undefined) {
+        process.stdout.write(contents);
+        return;
+      }
+
+      const { writeFile } = await import("node:fs/promises");
+      await writeFile(options.output, contents, "utf8");
+      console.log(`Wrote domain pack manifest: ${options.output}`);
+    });
+
   const goal = program.command("goal").description("Manage durable goals.");
 
   goal

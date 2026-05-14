@@ -21,4 +21,14 @@ describe("cli entrypoint", () => {
     expect(inferProgramName("/usr/local/bin/team")).toBe("team");
     expect(createProgram({ entrypoint: "/usr/local/bin/team" }).name()).toBe("team");
   });
+
+  it("exposes domain pack manifest generation", () => {
+    const domain = createProgram().commands.find(
+      (command) => command.name() === "domain"
+    );
+
+    expect(domain?.commands.map((command) => command.name())).toEqual(
+      expect.arrayContaining(["manifest"])
+    );
+  });
 });
