@@ -1433,6 +1433,45 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     });
 
   domain
+    .command("upgrade")
+    .description("Upgrade an installed domain pack from a validated ref.")
+    .argument("<ref>", "Domain pack id or path")
+    .option("--cwd <path>", "Workspace directory")
+    .option("--root <path>", "Additional domain pack root", collectValues, [])
+    .option("--no-built-ins", "Exclude built-in domain packs")
+    .option("--force", "Upgrade even when active goals or tasks still reference it")
+    .action(
+      async (
+        ref: string,
+        options: {
+          cwd?: string;
+          root: string[];
+          builtIns?: boolean;
+          force?: boolean;
+        }
+      ) => {
+        const { upgradeDomainPack } = await import("./domain-pack-install.js");
+        const result = await upgradeDomainPack({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          ref,
+          roots: options.root,
+          includeBuiltIns: options.builtIns !== false,
+          force: options.force === true
+        });
+
+        console.log(`Upgraded domain pack: ${result.id}`);
+        console.log(
+          `Version: ${result.previousManifest?.domain.version ?? "unknown"} -> ${result.manifest.domain.version}`
+        );
+        console.log(`Destination: ${result.destination}`);
+        console.log(`Manifest: ${result.manifestPath}`);
+        console.log(`Files: ${result.installedFiles.length}`);
+        console.log(`Active goals: ${result.activeGoals}`);
+        console.log(`Active tasks: ${result.activeTasks}`);
+      }
+    );
+
+  domain
     .command("validate")
     .description("Validate a domain pack directory.")
     .argument("<path>", "Domain pack directory")

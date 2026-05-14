@@ -1,4 +1,4 @@
-import { access, mkdtemp, readFile, rm } from "node:fs/promises";
+import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -9,7 +9,11 @@ import {
 import { openRunsteadDatabase } from "@runstead/state-sqlite";
 import { describe, expect, it } from "vitest";
 
-import { installDomainPack, uninstallDomainPack } from "./domain-pack-install.js";
+import {
+  installDomainPack,
+  uninstallDomainPack,
+  upgradeDomainPack
+} from "./domain-pack-install.js";
 import { initRunstead } from "./init.js";
 
 describe("installDomainPack", () => {
@@ -88,6 +92,120 @@ describe("installDomainPack", () => {
       ).resolves.toMatchObject({
         id: "customer-ops",
         overwritten: true
+      });
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("upgrades an installed pack and records version drift", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-domain-upgrade-"));
+    const packRoot = join(workspace, "packs", "customer-ops");
+
+    try {
+      await initRunstead({ cwd: workspace });
+      await createDomainPackTemplate({
+        id: "customer-ops",
+        outputDir: packRoot
+      });
+      await installDomainPack({
+        cwd: workspace,
+        ref: packRoot
+      });
+
+      const domainYaml = await readFile(join(packRoot, "domain.yaml"), "utf8");
+      await writeFile(
+        join(packRoot, "domain.yaml"),
+        domainYaml.replace("version: 0.1.0", "version: 0.2.0"),
+        "utf8"
+      );
+
+      const result = await upgradeDomainPack({
+        cwd: workspace,
+        ref: packRoot,
+        now: new Date("2026-05-14T13:00:00.000Z")
+      });
+      const installedRoot = join(workspace, ".runstead", "domains", "customer-ops");
+      const installedManifest = JSON.parse(
+        await readFile(join(installedRoot, "runstead-manifest.json"), "utf8")
+      ) as { domain: { version: string } };
+      const database = openRunsteadDatabase(join(workspace, ".runstead", "state.db"));
+
+      try {
+        const event = database
+          .prepare(
+            `
+            SELECT type, aggregate_type, aggregate_id, payload_json, created_at
+            FROM events
+            WHERE type = 'domain_pack.upgraded'
+          `
+          )
+          .get() as {
+          type: string;
+          aggregate_type: string;
+          aggregate_id: string;
+          payload_json: string;
+          created_at: string;
+        };
+
+        expect(result).toMatchObject({
+          id: "customer-ops",
+          destination: installedRoot,
+          activeGoals: 0,
+          activeTasks: 0,
+          forced: false
+        });
+        expect(result.previousManifest?.domain.version).toBe("0.1.0");
+        expect(result.manifest.domain.version).toBe("0.2.0");
+        expect(installedManifest.domain.version).toBe("0.2.0");
+        expect(event).toMatchObject({
+          type: "domain_pack.upgraded",
+          aggregate_type: "domain_pack",
+          aggregate_id: "customer-ops",
+          created_at: "2026-05-14T13:00:00.000Z"
+        });
+        expect(JSON.parse(event.payload_json)).toMatchObject({
+          id: "customer-ops",
+          previousVersion: "0.1.0",
+          nextVersion: "0.2.0",
+          activeGoals: 0,
+          activeTasks: 0,
+          forced: false
+        });
+      } finally {
+        database.close();
+      }
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("requires force before upgrading a pack with active work", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-domain-upgrade-"));
+
+    try {
+      await initRunstead({
+        cwd: workspace,
+        createDefaultGoal: true
+      });
+
+      await expect(
+        upgradeDomainPack({
+          cwd: workspace,
+          ref: "repo-maintenance"
+        })
+      ).rejects.toThrow("still in use");
+      await expect(
+        upgradeDomainPack({
+          cwd: workspace,
+          ref: "repo-maintenance",
+          force: true
+        })
+      ).resolves.toMatchObject({
+        id: "repo-maintenance",
+        activeGoals: 1,
+        activeTasks: 1,
+        forced: true
       });
     } finally {
       await rm(workspace, { force: true, recursive: true });

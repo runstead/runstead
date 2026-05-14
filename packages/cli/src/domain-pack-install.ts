@@ -38,6 +38,15 @@ export interface UninstallDomainPackOptions {
   now?: Date;
 }
 
+export interface UpgradeDomainPackOptions {
+  cwd?: string;
+  ref: string;
+  roots?: string[];
+  includeBuiltIns?: boolean;
+  force?: boolean;
+  now?: Date;
+}
+
 export interface UninstallDomainPackResult {
   id: string;
   destination: string;
@@ -46,6 +55,19 @@ export interface UninstallDomainPackResult {
   activeTasks: number;
   removed: boolean;
   manifest?: DomainPackManifest;
+}
+
+export interface UpgradeDomainPackResult {
+  id: string;
+  source: DomainPackRegistryEntry;
+  destination: string;
+  manifest: DomainPackManifest;
+  manifestPath: string;
+  installedFiles: string[];
+  previousManifest?: DomainPackManifest;
+  activeGoals: number;
+  activeTasks: number;
+  forced: boolean;
 }
 
 const DOMAIN_PACK_ID_PATTERN = /^[a-z][a-z0-9-]*$/;
@@ -81,16 +103,11 @@ export async function installDomainPack(
 
   await mkdir(destinationRoot, { recursive: true });
 
-  const installedFiles: string[] = [];
-
-  for (const file of manifest.files) {
-    const source = join(sourceRoot, file.path);
-    const destinationPath = join(destinationRoot, file.path);
-
-    await mkdir(dirname(destinationPath), { recursive: true });
-    await copyFile(source, destinationPath);
-    installedFiles.push(file.path);
-  }
+  const installedFiles = await copyDomainPackFiles({
+    sourceRoot,
+    destinationRoot,
+    manifest
+  });
 
   const manifestPath = join(destinationRoot, "runstead-manifest.json");
 
@@ -164,6 +181,85 @@ export async function uninstallDomainPack(
   }
 }
 
+export async function upgradeDomainPack(
+  options: UpgradeDomainPackOptions
+): Promise<UpgradeDomainPackResult> {
+  const resolved = await requireRunsteadStateDb(resolve(options.cwd ?? process.cwd()));
+  const roots = [...(options.roots ?? [])];
+  const entry = await resolveDomainPackRef(options.ref, {
+    roots,
+    ...(options.includeBuiltIns === undefined
+      ? {}
+      : { includeBuiltIns: options.includeBuiltIns })
+  });
+  const manifest = await buildDomainPackManifest(entry.root);
+  const destination = join(resolved.root, "domains", entry.id);
+  const sourceRoot = resolve(entry.root);
+  const destinationRoot = resolve(destination);
+  const manifestPath = join(destinationRoot, "runstead-manifest.json");
+
+  if (sourceRoot === destinationRoot) {
+    throw new Error(`Domain pack source is already the installed pack: ${entry.id}`);
+  }
+
+  if (!(await exists(destinationRoot))) {
+    throw new Error(`Domain pack is not installed: ${entry.id}`);
+  }
+
+  const previousManifest = await readInstalledManifest(manifestPath);
+  const database = openRunsteadDatabase(resolved.stateDb);
+
+  try {
+    const usage = readDomainUsage(database, entry.id);
+
+    if (options.force !== true && (usage.activeGoals > 0 || usage.activeTasks > 0)) {
+      throw new Error(
+        `Domain pack ${entry.id} is still in use by ${usage.activeGoals} active goal(s) and ${usage.activeTasks} active task(s)`
+      );
+    }
+
+    await rm(destinationRoot, { force: true, recursive: true });
+    await mkdir(destinationRoot, { recursive: true });
+
+    const installedFiles = await copyDomainPackFiles({
+      sourceRoot,
+      destinationRoot,
+      manifest
+    });
+
+    await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+
+    appendEventAndProject(database, {
+      event: domainPackUpgradedEvent({
+        id: entry.id,
+        destination: destinationRoot,
+        manifestPath,
+        ...(previousManifest === undefined ? {} : { previousManifest }),
+        manifest,
+        activeGoals: usage.activeGoals,
+        activeTasks: usage.activeTasks,
+        forced: options.force === true,
+        createdAt: (options.now ?? new Date()).toISOString()
+      })
+    });
+
+    return {
+      id: entry.id,
+      source: entry,
+      destination: destinationRoot,
+      manifest,
+      manifestPath,
+      installedFiles,
+      ...(previousManifest === undefined ? {} : { previousManifest }),
+      activeGoals: usage.activeGoals,
+      activeTasks: usage.activeTasks,
+      forced: options.force === true
+    };
+  } finally {
+    database.close();
+  }
+}
+
 async function exists(path: string): Promise<boolean> {
   try {
     await access(path, constants.F_OK);
@@ -171,6 +267,25 @@ async function exists(path: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+async function copyDomainPackFiles(input: {
+  sourceRoot: string;
+  destinationRoot: string;
+  manifest: DomainPackManifest;
+}): Promise<string[]> {
+  const installedFiles: string[] = [];
+
+  for (const file of input.manifest.files) {
+    const source = join(input.sourceRoot, file.path);
+    const destinationPath = join(input.destinationRoot, file.path);
+
+    await mkdir(dirname(destinationPath), { recursive: true });
+    await copyFile(source, destinationPath);
+    installedFiles.push(file.path);
+  }
+
+  return installedFiles;
 }
 
 async function readInstalledManifest(
@@ -235,6 +350,38 @@ function domainPackUninstalledEvent(input: {
       manifestPath: input.manifestPath,
       version: input.manifest?.domain.version ?? null,
       files: input.manifest?.files.length ?? null,
+      activeGoals: input.activeGoals,
+      activeTasks: input.activeTasks,
+      forced: input.forced
+    },
+    createdAt: input.createdAt
+  };
+}
+
+function domainPackUpgradedEvent(input: {
+  id: string;
+  destination: string;
+  manifestPath: string;
+  previousManifest?: DomainPackManifest;
+  manifest: DomainPackManifest;
+  activeGoals: number;
+  activeTasks: number;
+  forced: boolean;
+  createdAt: string;
+}): RunsteadEvent {
+  return {
+    eventId: createRunsteadId("evt"),
+    type: "domain_pack.upgraded",
+    aggregateType: "domain_pack",
+    aggregateId: input.id,
+    payload: {
+      id: input.id,
+      destination: input.destination,
+      manifestPath: input.manifestPath,
+      previousVersion: input.previousManifest?.domain.version ?? null,
+      nextVersion: input.manifest.domain.version,
+      previousFiles: input.previousManifest?.files.length ?? null,
+      nextFiles: input.manifest.files.length,
       activeGoals: input.activeGoals,
       activeTasks: input.activeTasks,
       forced: input.forced

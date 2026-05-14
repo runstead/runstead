@@ -236,6 +236,16 @@ runstead domain validate .runstead/domains/customer-ops
 runstead goal create customer-ops --template weekly-triage
 ```
 
+Upgrade an installed pack from a validated id or path:
+
+```sh
+runstead domain upgrade ./customer-ops
+```
+
+Runstead records `domain_pack.upgraded` with the previous and next manifest
+versions. Upgrades are refused while active goals or tasks reference the pack
+unless `--force` is used.
+
 Remove a locally installed pack when it is no longer referenced by active work:
 
 ```sh
