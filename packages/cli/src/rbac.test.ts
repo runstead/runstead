@@ -89,6 +89,16 @@ describe("rbac", () => {
         subject: "bob",
         permission: "domain.read"
       });
+      const dashboardManage = await checkPermission({
+        cwd: workspace,
+        subject: "alice",
+        permission: "dashboard.manage"
+      });
+      const dashboardWriteDenied = await checkPermission({
+        cwd: workspace,
+        subject: "bob",
+        permission: "dashboard.manage"
+      });
       const rbacYaml = await readFile(initialized.path, "utf8");
 
       expect(initialized.overwritten).toBe(false);
@@ -122,6 +132,14 @@ describe("rbac", () => {
       });
       expect(domainRead).toMatchObject({
         decision: "allow",
+        roles: ["approver"]
+      });
+      expect(dashboardManage).toMatchObject({
+        decision: "allow",
+        roles: ["operator"]
+      });
+      expect(dashboardWriteDenied).toMatchObject({
+        decision: "deny",
         roles: ["approver"]
       });
       expect(rbacYaml).toContain("bob");

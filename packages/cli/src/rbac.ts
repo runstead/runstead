@@ -70,6 +70,7 @@ roles:
     - audit.read
   operator:
     - dashboard.read
+    - dashboard.manage
     - domain.read
     - domain.manage
     - repo.read

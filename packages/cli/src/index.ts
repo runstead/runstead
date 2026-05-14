@@ -514,13 +514,13 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     .description("Build the local static dashboard.")
     .option("--cwd <path>", "Workspace directory")
     .option("--output <path>", "Dashboard output directory")
-    .option("--actor <id>", "RBAC subject for dashboard access", "local-admin")
+    .option("--actor <id>", "RBAC subject for dashboard generation", "local-admin")
     .action(async (options: { cwd?: string; output?: string; actor: string }) => {
       const { checkPermission } = await import("./rbac.js");
       const permission = await checkPermission({
         ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
         subject: options.actor,
-        permission: "dashboard.read"
+        permission: "dashboard.manage"
       });
 
       if (permission.decision !== "allow") {
