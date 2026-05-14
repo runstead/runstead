@@ -8,13 +8,16 @@ import {
   type RunsteadEvent,
   type Task
 } from "@runstead/core";
-import { loadDomainPackBundleFromDir } from "@runstead/domain-packs";
+import {
+  type DomainPackBundle,
+  loadDomainPackBundleFromDir
+} from "@runstead/domain-packs";
 import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sqlite";
 
 import { inspectGitRepository } from "./repo-inspection.js";
 import { resolveRepositoryReference } from "./repositories.js";
 import { requireRunsteadStateDb, requireRunsteadStateDbSync } from "./runstead-root.js";
-import { buildRunLocalVerifiersTask } from "./tasks.js";
+import { buildDomainTask, buildRunLocalVerifiersTask } from "./tasks.js";
 
 export interface CreateGoalOptions {
   cwd?: string;
@@ -129,9 +132,13 @@ export async function createGoal(
     },
     createdAt
   };
-  const generated = template.generated.recurringTasks.includes("run_local_verifiers")
-    ? [await buildRunLocalVerifiersTask({ cwd: resolvedRepositoryPath, goal, now })]
-    : [];
+  const generated = await buildGeneratedGoalTasks({
+    cwd: resolvedRepositoryPath,
+    goal,
+    bundle,
+    taskTypeIds: template.generated.recurringTasks,
+    now
+  });
   const database = openRunsteadDatabase(stateDb);
 
   try {
@@ -217,6 +224,51 @@ export function showGoal(options: ShowGoalOptions): ShowGoalResult {
   } finally {
     database.close();
   }
+}
+
+async function buildGeneratedGoalTasks(input: {
+  cwd: string;
+  goal: Goal;
+  bundle: DomainPackBundle;
+  taskTypeIds: string[];
+  now: Date;
+}): Promise<{ task: Task; event: RunsteadEvent }[]> {
+  const taskTypesById = new Map(
+    input.bundle.taskTypes.map((taskType) => [taskType.id, taskType])
+  );
+  const generated: { task: Task; event: RunsteadEvent }[] = [];
+
+  for (const taskTypeId of input.taskTypeIds) {
+    if (taskTypeId === "run_local_verifiers") {
+      generated.push(
+        await buildRunLocalVerifiersTask({
+          cwd: input.cwd,
+          goal: input.goal,
+          now: input.now
+        })
+      );
+      continue;
+    }
+
+    const taskType = taskTypesById.get(taskTypeId);
+
+    if (taskType === undefined) {
+      throw new Error(
+        `Goal template references unknown task type ${taskTypeId} in domain pack ${input.bundle.domain.id}`
+      );
+    }
+
+    generated.push(
+      buildDomainTask({
+        cwd: input.cwd,
+        goal: input.goal,
+        taskType,
+        now: input.now
+      })
+    );
+  }
+
+  return generated;
 }
 
 function goalScope(input: {

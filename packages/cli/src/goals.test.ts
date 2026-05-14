@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { openRunsteadDatabase } from "@runstead/state-sqlite";
 import { describe, expect, it } from "vitest";
 
+import { installDomainPack } from "./domain-pack-install.js";
 import { createGoal, listGoals, showGoal } from "./goals.js";
 import { initRunstead } from "./init.js";
 import { registerRepository } from "./repositories.js";
@@ -198,6 +199,66 @@ describe("createGoal", () => {
             command: "pnpm test",
             rawScript: "vitest run"
           }
+        ]
+      });
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("generates recurring tasks from non-repo domain task type contracts", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-goal-domain-"));
+
+    try {
+      await initRunstead({ cwd: workspace });
+      await installDomainPack({
+        cwd: workspace,
+        ref: "research-monitor",
+        now: new Date("2026-05-14T01:20:00.000Z")
+      });
+
+      const result = await createGoal({
+        cwd: workspace,
+        domain: "research-monitor",
+        now: new Date("2026-05-14T01:21:00.000Z")
+      });
+
+      expect(result.goal.scope).toMatchObject({
+        templateId: "weekly-research-digest",
+        recurringTasks: ["scan_sources", "summarize_findings"]
+      });
+      expect(result.generatedTasks.map((task) => task.type)).toEqual([
+        "scan_sources",
+        "summarize_findings"
+      ]);
+      expect(result.generatedTasks[0]).toMatchObject({
+        domain: "research-monitor",
+        priority: "medium",
+        maxAttempts: 2,
+        input: {
+          taskType: "scan_sources",
+          workerRouting: {
+            preferred: "shell",
+            fallback: ["codex_cli"]
+          }
+        },
+        verifiers: ["source:url_recorded", "source:freshness_checked"]
+      });
+      expect(result.generatedTasks[1]).toMatchObject({
+        domain: "research-monitor",
+        priority: "medium",
+        maxAttempts: 1,
+        input: {
+          taskType: "summarize_findings",
+          workerRouting: {
+            preferred: "codex_cli",
+            fallback: ["shell"]
+          }
+        },
+        verifiers: [
+          "citation:source_linked",
+          "citation:no_uncited_claims",
+          "contradiction_check:completed"
         ]
       });
     } finally {

@@ -3,6 +3,11 @@
 Runstead daemon mode runs scheduler ticks and task execution under the workspace
 manager lock.
 
+Scheduler ticks create due recurring tasks from installed domain pack task type
+contracts. `repo-maintenance` keeps a specialized `run_local_verifiers` path so
+test and lint commands are detected from the target repository before the task is
+queued.
+
 For bounded local runs:
 
 ```sh

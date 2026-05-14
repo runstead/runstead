@@ -259,6 +259,12 @@ Runstead refuses to uninstall a pack while active goals or tasks still reference
 it. Use `--force` only after you have archived or otherwise accounted for that
 work; forced uninstalls are still recorded in the audit log.
 
+When a goal template declares `generated.recurring_tasks`, Runstead creates
+initial queued tasks from the referenced task type contracts. The background
+scheduler uses the same task type contracts for later recurrences; the
+`repo-maintenance` `run_local_verifiers` task keeps its special test/lint command
+detection path.
+
 Do not put runtime state, generated reports, or task outputs inside the domain
 pack. Those belong under `.runstead/state.db`, `.runstead/evidence`, and
 `.runstead/reports`.

@@ -1,4 +1,4 @@
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
 
 import {
   type Goal,
@@ -6,12 +6,13 @@ import {
   type RunsteadEvent,
   type Task
 } from "@runstead/core";
+import { loadDomainPackBundleFromDir, type TaskType } from "@runstead/domain-packs";
 import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sqlite";
 
 import { listGoals } from "./goals.js";
 import { withRunsteadManagerLock } from "./manager-lock.js";
 import { requireRunsteadStateDbSync } from "./runstead-root.js";
-import { buildRunLocalVerifiersTask, listTasks } from "./tasks.js";
+import { buildDomainTask, buildRunLocalVerifiersTask, listTasks } from "./tasks.js";
 
 export const DEFAULT_SCHEDULER_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
@@ -71,7 +72,8 @@ export async function scheduleDueTasksUnlocked(
   options: ScheduleDueTasksOptions
 ): Promise<ScheduleDueTasksResult> {
   const cwd = resolve(options.cwd ?? process.cwd());
-  const stateDb = requireRunsteadStateDbSync(cwd).stateDb;
+  const resolvedState = requireRunsteadStateDbSync(cwd);
+  const stateDb = resolvedState.stateDb;
   const now = options.now ?? new Date();
   const defaultIntervalMs = options.defaultIntervalMs ?? DEFAULT_SCHEDULER_INTERVAL_MS;
 
@@ -83,6 +85,10 @@ export async function scheduleDueTasksUnlocked(
 
   for (const goal of goals) {
     const recurringTasks = recurringTaskTypes(goal);
+    const taskTypesById = await taskTypesForGoal({
+      runsteadRoot: resolvedState.root,
+      goal
+    });
 
     for (const type of recurringTasks) {
       const existingTasks = listTasks({ cwd, goalId: goal.id })
@@ -119,7 +125,9 @@ export async function scheduleDueTasksUnlocked(
         continue;
       }
 
-      if (type !== "run_local_verifiers") {
+      const taskType = taskTypesById.get(type);
+
+      if (type !== "run_local_verifiers" && taskType === undefined) {
         skippedTasks.push({
           goalId: goal.id,
           type,
@@ -130,15 +138,34 @@ export async function scheduleDueTasksUnlocked(
         continue;
       }
 
-      const scheduled = await scheduleRunLocalVerifiersTask({
-        cwd,
-        stateDb,
-        goal,
-        now,
-        dueAt,
-        intervalMs,
-        ...(lastTask === undefined ? {} : { lastTask })
-      });
+      let scheduled: ScheduledTaskResult;
+
+      if (type === "run_local_verifiers") {
+        scheduled = await scheduleRunLocalVerifiersTask({
+          cwd,
+          stateDb,
+          goal,
+          now,
+          dueAt,
+          intervalMs,
+          ...(lastTask === undefined ? {} : { lastTask })
+        });
+      } else {
+        if (taskType === undefined) {
+          throw new Error(`Task type ${type} disappeared while scheduling`);
+        }
+
+        scheduled = scheduleDomainTask({
+          cwd,
+          stateDb,
+          goal,
+          taskType,
+          now,
+          dueAt,
+          intervalMs,
+          ...(lastTask === undefined ? {} : { lastTask })
+        });
+      }
 
       scheduledTasks.push(scheduled);
     }
@@ -150,6 +177,17 @@ export async function scheduleDueTasksUnlocked(
     scheduledTasks,
     skippedTasks
   };
+}
+
+async function taskTypesForGoal(input: {
+  runsteadRoot: string;
+  goal: Goal;
+}): Promise<Map<string, TaskType>> {
+  const bundle = await loadDomainPackBundleFromDir(
+    join(input.runsteadRoot, "domains", input.goal.domain)
+  );
+
+  return new Map(bundle.taskTypes.map((taskType) => [taskType.id, taskType]));
 }
 
 export function formatSchedulerReport(result: ScheduleDueTasksResult): string {
@@ -219,6 +257,85 @@ async function scheduleRunLocalVerifiersTask(input: {
       source: "background_scheduler",
       dueAt: input.dueAt,
       intervalMs: input.intervalMs,
+      ...(input.lastTask === undefined
+        ? {}
+        : {
+            lastTaskId: input.lastTask.id,
+            lastTaskStatus: input.lastTask.status
+          })
+    },
+    createdAt: scheduledAt
+  };
+  const database = openRunsteadDatabase(input.stateDb);
+
+  try {
+    appendEventAndProject(database, {
+      event,
+      projection: {
+        type: "task",
+        value: task
+      }
+    });
+  } finally {
+    database.close();
+  }
+
+  return {
+    goalId: input.goal.id,
+    type: task.type,
+    task,
+    event,
+    dueAt: input.dueAt,
+    intervalMs: input.intervalMs
+  };
+}
+
+function scheduleDomainTask(input: {
+  cwd: string;
+  stateDb: string;
+  goal: Goal;
+  taskType: TaskType;
+  now: Date;
+  dueAt: string;
+  intervalMs: number;
+  lastTask?: Task;
+}): ScheduledTaskResult {
+  const scheduledAt = input.now.toISOString();
+  const generated = buildDomainTask({
+    cwd: repositoryPathForGoal(input.goal, input.cwd),
+    goal: input.goal,
+    taskType: input.taskType,
+    now: input.now
+  });
+  const task: Task = {
+    ...generated.task,
+    input: {
+      ...generated.task.input,
+      schedule: {
+        source: "background_scheduler",
+        recurrenceType: generated.task.type,
+        dueAt: input.dueAt,
+        intervalMs: input.intervalMs,
+        scheduledAt,
+        ...(input.lastTask === undefined
+          ? {}
+          : {
+              lastTaskId: input.lastTask.id,
+              lastTaskStatus: input.lastTask.status
+            })
+      }
+    }
+  };
+  const event: RunsteadEvent = {
+    ...generated.event,
+    type: "task.scheduled",
+    payload: {
+      goalId: task.goalId,
+      type: task.type,
+      source: "background_scheduler",
+      dueAt: input.dueAt,
+      intervalMs: input.intervalMs,
+      workerRouting: input.taskType.workerRouting,
       ...(input.lastTask === undefined
         ? {}
         : {

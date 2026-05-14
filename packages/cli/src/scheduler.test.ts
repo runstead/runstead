@@ -6,6 +6,7 @@ import { createRunsteadId, type Task } from "@runstead/core";
 import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sqlite";
 import { describe, expect, it } from "vitest";
 
+import { installDomainPack } from "./domain-pack-install.js";
 import { createGoal } from "./goals.js";
 import { initRunstead } from "./init.js";
 import { scheduleDueTasks, formatSchedulerReport } from "./scheduler.js";
@@ -163,6 +164,74 @@ describe("scheduleDueTasks", () => {
           taskId: task.id
         })
       ]);
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("schedules recurring tasks from installed domain task type contracts", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-scheduler-domain-"));
+
+    try {
+      await initRunstead({ cwd: workspace });
+      await installDomainPack({
+        cwd: workspace,
+        ref: "research-monitor",
+        now: new Date("2026-05-14T00:00:00.000Z")
+      });
+      const created = await createGoal({
+        cwd: workspace,
+        domain: "research-monitor",
+        now: new Date("2026-05-14T00:01:00.000Z")
+      });
+
+      for (const task of created.generatedTasks) {
+        completeTask(created.stateDb, task, "2026-05-14T00:05:00.000Z");
+      }
+
+      const result = await scheduleDueTasks({
+        cwd: workspace,
+        now: new Date("2026-05-15T00:01:01.000Z")
+      });
+
+      expect(result.scheduledTasks.map((item) => item.type)).toEqual([
+        "scan_sources",
+        "summarize_findings"
+      ]);
+      expect(result.scheduledTasks[0]?.task).toMatchObject({
+        domain: "research-monitor",
+        type: "scan_sources",
+        priority: "medium",
+        maxAttempts: 2,
+        input: {
+          taskType: "scan_sources",
+          schedule: {
+            source: "background_scheduler",
+            recurrenceType: "scan_sources",
+            lastTaskStatus: "completed"
+          }
+        },
+        verifiers: ["source:url_recorded", "source:freshness_checked"]
+      });
+      expect(result.scheduledTasks[1]?.task).toMatchObject({
+        domain: "research-monitor",
+        type: "summarize_findings",
+        priority: "medium",
+        maxAttempts: 1,
+        input: {
+          taskType: "summarize_findings",
+          workerRouting: {
+            preferred: "codex_cli",
+            fallback: ["shell"]
+          }
+        },
+        verifiers: [
+          "citation:source_linked",
+          "citation:no_uncited_claims",
+          "contradiction_check:completed"
+        ]
+      });
+      expect(result.skippedTasks).toEqual([]);
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }

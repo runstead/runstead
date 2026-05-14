@@ -8,6 +8,7 @@ import {
   type RunsteadEvent,
   type Task
 } from "@runstead/core";
+import type { TaskType } from "@runstead/domain-packs";
 import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sqlite";
 
 import {
@@ -52,6 +53,13 @@ export interface ClaimTaskResult {
 export interface BuildRunLocalVerifiersTaskOptions {
   cwd?: string;
   goal: Goal;
+  now?: Date;
+}
+
+export interface BuildDomainTaskOptions {
+  cwd?: string;
+  goal: Goal;
+  taskType: TaskType;
   now?: Date;
 }
 
@@ -104,6 +112,51 @@ export async function buildRunLocalVerifiersTask(
       goalId: task.goalId,
       type: task.type,
       commands
+    },
+    createdAt
+  };
+
+  return {
+    task,
+    event
+  };
+}
+
+export function buildDomainTask(options: BuildDomainTaskOptions): {
+  task: Task;
+  event: RunsteadEvent;
+} {
+  const cwd = resolve(options.cwd ?? process.cwd());
+  const createdAt = (options.now ?? new Date()).toISOString();
+  const task: Task = {
+    id: createRunsteadId("task"),
+    goalId: options.goal.id,
+    domain: options.goal.domain,
+    type: options.taskType.id,
+    status: "queued",
+    priority: options.taskType.defaultPriority,
+    attempt: 0,
+    maxAttempts: options.taskType.maxAttempts,
+    input: {
+      repositoryPath: goalRepositoryPath(options.goal, cwd),
+      taskType: options.taskType.id,
+      description: options.taskType.description,
+      workerRouting: options.taskType.workerRouting
+    },
+    verifiers: [...options.taskType.verifiers.required],
+    createdAt,
+    updatedAt: createdAt
+  };
+  const event: RunsteadEvent = {
+    eventId: createRunsteadId("evt"),
+    type: "task.created",
+    aggregateType: "task",
+    aggregateId: task.id,
+    payload: {
+      goalId: task.goalId,
+      type: task.type,
+      workerRouting: options.taskType.workerRouting,
+      verifiers: task.verifiers
     },
     createdAt
   };
