@@ -38,6 +38,7 @@ import type { CommandVerifierInput } from "./verifier-evidence.js";
 export interface CreateCiRepairTaskOptions {
   cwd?: string;
   runId: string;
+  authToken?: string;
   runner?: GitHubCliRunner;
   verifierCommands?: CommandVerifierInput[];
   now?: Date;
@@ -207,6 +208,9 @@ async function createGovernedCiRepairTaskFromWorkflowRun(
             const value = await getGitHubWorkflowRunStatus({
               cwd,
               runId: options.runId,
+              ...(options.authToken === undefined
+                ? {}
+                : { authToken: options.authToken }),
               ...(options.runner === undefined ? {} : { runner: options.runner })
             });
 
@@ -236,6 +240,9 @@ async function createGovernedCiRepairTaskFromWorkflowRun(
             const value = await fetchGitHubWorkflowRunLog({
               cwd,
               runId: options.runId,
+              ...(options.authToken === undefined
+                ? {}
+                : { authToken: options.authToken }),
               ...(options.runner === undefined ? {} : { runner: options.runner })
             });
 

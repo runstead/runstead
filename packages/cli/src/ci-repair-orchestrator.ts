@@ -79,6 +79,7 @@ export interface RunCiRepairOrchestratorOptions {
   allowedPaths?: string[];
   deniedPaths?: string[];
   verifierCommands: CommandVerifierInput[];
+  authToken?: string;
   githubRunner?: GitHubCliRunner;
   gitRunner?: CiRepairGitRunner;
   workerRunner?: WorkerProcessRunner;
@@ -119,6 +120,7 @@ export async function runCiRepairOrchestrator(
       ...(options.githubRunner === undefined
         ? {}
         : { githubRunner: options.githubRunner }),
+      ...(options.authToken === undefined ? {} : { authToken: options.authToken }),
       ...(options.gitRunner === undefined ? {} : { gitRunner: options.gitRunner }),
       ...(options.now === undefined ? {} : { now: options.now })
     });
@@ -136,6 +138,7 @@ export async function runCiRepairOrchestrator(
     cwd,
     runId: options.runId,
     verifierCommands: options.verifierCommands,
+    ...(options.authToken === undefined ? {} : { authToken: options.authToken }),
     ...(options.githubRunner === undefined ? {} : { runner: options.githubRunner }),
     ...(options.now === undefined ? {} : { now: options.now })
   });
@@ -495,6 +498,7 @@ export async function runCiRepairOrchestrator(
           ...(options.githubRunner === undefined
             ? {}
             : { githubRunner: options.githubRunner }),
+          ...(options.authToken === undefined ? {} : { authToken: options.authToken }),
           ...(options.now === undefined ? {} : { now: options.now })
         });
         const completedTask = writeTaskOutput({
@@ -725,6 +729,7 @@ async function resumeCiRepairPullRequest(options: {
   cwd: string;
   root: string;
   task: Task;
+  authToken?: string;
   githubRunner?: GitHubCliRunner;
   gitRunner?: CiRepairGitRunner;
   now?: Date;
@@ -806,6 +811,7 @@ async function resumeCiRepairPullRequest(options: {
         ...(options.githubRunner === undefined
           ? {}
           : { githubRunner: options.githubRunner }),
+        ...(options.authToken === undefined ? {} : { authToken: options.authToken }),
         ...(options.now === undefined ? {} : { now: options.now })
       });
       const completedTask = writeTaskOutput({
@@ -949,6 +955,7 @@ async function createGovernedPullRequest(options: {
   base: string;
   draft: boolean;
   actionId: string;
+  authToken?: string;
   githubRunner?: GitHubCliRunner;
   now?: Date;
 }): Promise<CreateGitHubPullRequestResult> {
@@ -989,6 +996,7 @@ async function createGovernedPullRequest(options: {
             uri: options.ciRepair.evidence.uri
           }
         ],
+        ...(options.authToken === undefined ? {} : { authToken: options.authToken }),
         ...(options.githubRunner === undefined ? {} : { runner: options.githubRunner })
       });
 

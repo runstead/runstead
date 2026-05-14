@@ -16,9 +16,12 @@ import { initRunstead } from "./init.js";
 describe("createCiRepairTaskFromWorkflowRun", () => {
   it("creates a CI repair task with workflow run evidence", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "runstead-ci-repair-"));
-    const calls: string[][] = [];
-    const runner: GitHubCliRunner = (args) => {
-      calls.push(args);
+    const calls: { args: string[]; env?: Record<string, string> }[] = [];
+    const runner: GitHubCliRunner = (args, options) => {
+      calls.push({
+        args,
+        ...(options.env === undefined ? {} : { env: options.env })
+      });
 
       if (args.includes("--log")) {
         return Promise.resolve({
@@ -54,6 +57,7 @@ describe("createCiRepairTaskFromWorkflowRun", () => {
       const result = await createCiRepairTaskFromWorkflowRun({
         cwd: workspace,
         runId: "123",
+        authToken: "ghs_app_token",
         runner,
         now: new Date("2026-05-14T11:00:00.000Z")
       });
@@ -169,9 +173,13 @@ describe("createCiRepairTaskFromWorkflowRun", () => {
             })
           ])
         );
-        expect(calls.map((args) => args.slice(0, 3))).toEqual([
+        expect(calls.map((call) => call.args.slice(0, 3))).toEqual([
           ["run", "view", "123"],
           ["run", "view", "123"]
+        ]);
+        expect(calls.map((call) => call.env)).toEqual([
+          { GH_TOKEN: "ghs_app_token" },
+          { GH_TOKEN: "ghs_app_token" }
         ]);
       } finally {
         database.close();
