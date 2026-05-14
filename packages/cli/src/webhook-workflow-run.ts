@@ -14,7 +14,10 @@ import {
   runCiRepairOrchestrator,
   type RunCiRepairOrchestratorResult
 } from "./ci-repair-orchestrator.js";
-import { requireRunsteadRootSync } from "./runstead-root.js";
+import {
+  requireRunsteadRootSync,
+  requireRunsteadStateDbSync
+} from "./runstead-root.js";
 
 export type GitHubWorkflowRunWebhookMode = "intake" | "orchestrate";
 
@@ -22,6 +25,13 @@ export type HandleGitHubWorkflowRunWebhookResult =
   | {
       handled: false;
       reason: "not_repairable_workflow_run";
+    }
+  | {
+      handled: false;
+      reason: "duplicate_delivery";
+      delivery: string;
+      originalEventId: string;
+      originalEventType: string;
     }
   | {
       handled: true;
@@ -39,16 +49,19 @@ export type HandleGitHubWorkflowRunWebhookResult =
 export interface RecordGitHubWorkflowRunWebhookEventOptions {
   cwd?: string;
   event: string;
+  delivery?: string;
   result: HandleGitHubWorkflowRunWebhookResult;
   now?: Date;
 }
 
 export interface HandleGitHubWorkflowRunWebhookOptions {
   event: string;
+  delivery?: string;
   payload: unknown;
   cwd?: string;
   authToken?: string;
   mode?: GitHubWorkflowRunWebhookMode;
+  dedupeDelivery?: boolean;
   worker?: WrappedWorkerKind;
   base?: string;
   draft?: boolean;
@@ -63,9 +76,36 @@ export interface HandleGitHubWorkflowRunWebhookOptions {
   now?: Date;
 }
 
+interface WebhookDeliveryEventRow {
+  event_id: string;
+  type: string;
+  payload_json: string;
+}
+
 export async function handleGitHubWorkflowRunWebhook(
   options: HandleGitHubWorkflowRunWebhookOptions
 ): Promise<HandleGitHubWorkflowRunWebhookResult> {
+  if (options.dedupeDelivery === true && options.delivery !== undefined) {
+    const duplicate = findRecordedGitHubWebhookDelivery({
+      ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+      delivery: options.delivery
+    });
+
+    if (duplicate !== undefined) {
+      const result: HandleGitHubWorkflowRunWebhookResult = {
+        handled: false,
+        reason: "duplicate_delivery",
+        delivery: options.delivery,
+        originalEventId: duplicate.eventId,
+        originalEventType: duplicate.type
+      };
+
+      await auditWebhookResult(options, result);
+
+      return result;
+    }
+  }
+
   const runId = repairableWorkflowRunIdFromWebhook(options.event, options.payload);
 
   if (runId === undefined) {
@@ -138,12 +178,10 @@ export function recordGitHubWorkflowRunWebhookEvent(
   const stateDb = join(root, "state.db");
   const event: RunsteadEvent = {
     eventId: createRunsteadId("evt"),
-    type: options.result.handled
-      ? "webhook.workflow_run_handled"
-      : "webhook.workflow_run_ignored",
-    aggregateType: options.result.handled ? "github_workflow_run" : "github_webhook",
-    aggregateId: options.result.handled ? options.result.runId : options.event,
-    payload: webhookAuditPayload(options.event, options.result),
+    type: webhookAuditEventType(options.result),
+    aggregateType: webhookAuditAggregateType(options.result),
+    aggregateId: webhookAuditAggregateId(options.event, options.result),
+    payload: webhookAuditPayload(options.event, options.delivery, options.result),
     createdAt: (options.now ?? new Date()).toISOString()
   };
   const database = openRunsteadDatabase(stateDb);
@@ -168,26 +206,114 @@ async function auditWebhookResult(
   await options.audit({
     ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
     event: options.event,
+    ...(options.delivery === undefined ? {} : { delivery: options.delivery }),
     result,
     ...(options.now === undefined ? {} : { now: options.now })
   });
 }
 
-function webhookAuditPayload(
+function findRecordedGitHubWebhookDelivery(options: {
+  cwd?: string;
+  delivery: string;
+}): { eventId: string; type: string } | undefined {
+  const state = requireRunsteadStateDbSync(resolve(options.cwd ?? process.cwd()));
+  const database = openRunsteadDatabase(state.stateDb);
+
+  try {
+    const rows = database
+      .prepare(
+        `
+        SELECT event_id, type, payload_json
+        FROM events
+        WHERE type IN (
+          'webhook.workflow_run_handled',
+          'webhook.workflow_run_ignored',
+          'webhook.delivery_duplicate'
+        )
+        ORDER BY id ASC
+      `
+      )
+      .all() as unknown as WebhookDeliveryEventRow[];
+
+    for (const row of rows) {
+      const payload = JSON.parse(row.payload_json) as Record<string, unknown>;
+
+      if (payload.delivery === options.delivery) {
+        return {
+          eventId: row.event_id,
+          type: row.type
+        };
+      }
+    }
+
+    return undefined;
+  } finally {
+    database.close();
+  }
+}
+
+function webhookAuditEventType(result: HandleGitHubWorkflowRunWebhookResult): string {
+  if (result.handled) {
+    return "webhook.workflow_run_handled";
+  }
+
+  return result.reason === "duplicate_delivery"
+    ? "webhook.delivery_duplicate"
+    : "webhook.workflow_run_ignored";
+}
+
+function webhookAuditAggregateType(
+  result: HandleGitHubWorkflowRunWebhookResult
+): string {
+  if (result.handled) {
+    return "github_workflow_run";
+  }
+
+  return result.reason === "duplicate_delivery"
+    ? "github_webhook_delivery"
+    : "github_webhook";
+}
+
+function webhookAuditAggregateId(
   event: string,
   result: HandleGitHubWorkflowRunWebhookResult
+): string {
+  if (result.handled) {
+    return result.runId;
+  }
+
+  return result.reason === "duplicate_delivery" ? result.delivery : event;
+}
+
+function webhookAuditPayload(
+  event: string,
+  delivery: string | undefined,
+  result: HandleGitHubWorkflowRunWebhookResult
 ): Record<string, unknown> {
+  const base = {
+    sourceEvent: event,
+    ...(delivery === undefined ? {} : { delivery })
+  };
+
   if (!result.handled) {
-    return {
-      sourceEvent: event,
-      handled: false,
-      reason: result.reason
-    };
+    return result.reason === "duplicate_delivery"
+      ? {
+          ...base,
+          handled: false,
+          reason: result.reason,
+          originalEventId: result.originalEventId,
+          originalEventType: result.originalEventType
+        }
+      : {
+          ...base,
+          handled: false,
+          reason: result.reason
+        };
   }
 
   if (result.mode === "intake") {
     return {
-      sourceEvent: event,
+      ...base,
       mode: result.mode,
       runId: result.runId,
       taskId: result.ciRepair.task.id,
@@ -197,7 +323,7 @@ function webhookAuditPayload(
   }
 
   return {
-    sourceEvent: event,
+    ...base,
     mode: result.mode,
     runId: result.runId,
     taskId: result.orchestration.ciRepair.task.id,

@@ -23,3 +23,8 @@ runstead daemon --status
 
 Use `--no-heartbeat` only for tests or wrapper environments that provide their
 own liveness signal.
+
+GitHub webhook deliveries are recorded with their `x-github-delivery` id. When
+the CLI server receives a repeated delivery id, Runstead records a
+`webhook.delivery_duplicate` audit event and skips intake/orchestration before
+any CI repair side effects run.

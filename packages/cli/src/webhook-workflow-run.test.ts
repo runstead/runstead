@@ -215,6 +215,91 @@ describe("handleGitHubWorkflowRunWebhook", () => {
     }
   });
 
+  it("skips duplicate GitHub deliveries before running side effects", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-webhook-dedupe-"));
+    const root = join(workspace, ".runstead");
+
+    try {
+      await mkdir(root, { recursive: true });
+      await writeFile(
+        join(root, "config.yaml"),
+        "version: 1\ndomain: repo-maintenance\n",
+        "utf8"
+      );
+      openRunsteadDatabase(join(root, "state.db")).close();
+
+      const first = await recordGitHubWorkflowRunWebhookEvent({
+        cwd: workspace,
+        event: "workflow_run",
+        delivery: "delivery_001",
+        result: {
+          handled: true,
+          mode: "intake",
+          runId: "123",
+          ciRepair: fakeCiRepair("123")
+        },
+        now: new Date("2026-05-14T08:25:00.000Z")
+      });
+      const result = await handleGitHubWorkflowRunWebhook({
+        cwd: workspace,
+        event: "workflow_run",
+        delivery: "delivery_001",
+        dedupeDelivery: true,
+        payload: repairablePayload,
+        intake: () => Promise.reject(new Error("intake should not run")),
+        audit: recordGitHubWorkflowRunWebhookEvent,
+        now: new Date("2026-05-14T08:26:00.000Z")
+      });
+
+      expect(result).toEqual({
+        handled: false,
+        reason: "duplicate_delivery",
+        delivery: "delivery_001",
+        originalEventId: first.eventId,
+        originalEventType: "webhook.workflow_run_handled"
+      });
+
+      const database = openRunsteadDatabase(join(root, "state.db"));
+
+      try {
+        const row = database
+          .prepare(
+            `
+            SELECT type, aggregate_type, aggregate_id, payload_json, created_at
+            FROM events
+            WHERE type = 'webhook.delivery_duplicate'
+          `
+          )
+          .get() as {
+          type: string;
+          aggregate_type: string;
+          aggregate_id: string;
+          payload_json: string;
+          created_at: string;
+        };
+
+        expect(row).toMatchObject({
+          type: "webhook.delivery_duplicate",
+          aggregate_type: "github_webhook_delivery",
+          aggregate_id: "delivery_001",
+          created_at: "2026-05-14T08:26:00.000Z"
+        });
+        expect(JSON.parse(row.payload_json)).toEqual({
+          sourceEvent: "workflow_run",
+          delivery: "delivery_001",
+          handled: false,
+          reason: "duplicate_delivery",
+          originalEventId: first.eventId,
+          originalEventType: "webhook.workflow_run_handled"
+        });
+      } finally {
+        database.close();
+      }
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
   it("records ignored webhook deliveries in the audit log", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "runstead-webhook-audit-"));
     const root = join(workspace, ".runstead");

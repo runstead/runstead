@@ -475,24 +475,25 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
               event.event,
               event.payload
             );
+            const authToken =
+              runId === undefined ? undefined : await resolveGitHubAuthToken(options);
 
-            if (runId !== undefined) {
-              const authToken = await resolveGitHubAuthToken(options);
-              await handleGitHubWorkflowRunWebhook({
-                event: event.event,
-                payload: event.payload,
-                ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-                ...(authToken === undefined ? {} : { authToken }),
-                mode: options.orchestrateRepair === true ? "orchestrate" : "intake",
-                worker: parseWrappedWorkerKind(options.worker),
-                ...(options.base === undefined ? {} : { base: options.base }),
-                draft: options.draft === true,
-                allowedPaths: options.allowed,
-                deniedPaths: options.denied,
-                verifierCommands,
-                audit: recordGitHubWorkflowRunWebhookEvent
-              });
-            }
+            await handleGitHubWorkflowRunWebhook({
+              event: event.event,
+              delivery: event.delivery,
+              payload: event.payload,
+              ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+              ...(authToken === undefined ? {} : { authToken }),
+              mode: options.orchestrateRepair === true ? "orchestrate" : "intake",
+              dedupeDelivery: true,
+              worker: parseWrappedWorkerKind(options.worker),
+              ...(options.base === undefined ? {} : { base: options.base }),
+              draft: options.draft === true,
+              allowedPaths: options.allowed,
+              deniedPaths: options.denied,
+              verifierCommands,
+              audit: recordGitHubWorkflowRunWebhookEvent
+            });
           }
         });
 
