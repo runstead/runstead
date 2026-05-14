@@ -1,3 +1,8 @@
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import { acquireManagerLock } from "@runstead/core";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -6,6 +11,7 @@ import {
   type DaemonRunner,
   type DaemonScheduler
 } from "./daemon.js";
+import { initRunstead } from "./init.js";
 
 describe("runDaemon", () => {
   it("runs bounded daemon ticks through injectable scheduler and runner", async () => {
@@ -55,5 +61,31 @@ describe("runDaemon", () => {
         maxTicks: 0
       })
     ).rejects.toThrow("maxTicks");
+  });
+
+  it("refuses default daemon ticks while another manager holds the workspace lock", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-daemon-lock-"));
+
+    try {
+      const initialized = await initRunstead({ cwd: workspace });
+      const lock = await acquireManagerLock({
+        lockPath: join(initialized.root, "manager.lock"),
+        ownerId: "test-manager"
+      });
+
+      try {
+        await expect(
+          runDaemon({
+            cwd: workspace,
+            intervalMs: 0,
+            maxTicks: 1
+          })
+        ).rejects.toThrow("Runstead manager lock is already held");
+      } finally {
+        await lock.release();
+      }
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
   });
 });

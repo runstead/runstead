@@ -47,7 +47,7 @@ export async function runOnce(options: RunOnceOptions = {}): Promise<RunOnceResu
   return withRunsteadManagerLock({ cwd }, async () => runOnceUnlocked(cwd, options));
 }
 
-async function runOnceUnlocked(
+export async function runOnceUnlocked(
   cwd: string,
   options: RunOnceOptions
 ): Promise<RunOnceResult> {

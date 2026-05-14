@@ -61,7 +61,7 @@ export async function scheduleDueTasks(
   );
 }
 
-async function scheduleDueTasksUnlocked(
+export async function scheduleDueTasksUnlocked(
   options: ScheduleDueTasksOptions
 ): Promise<ScheduleDueTasksResult> {
   const cwd = resolve(options.cwd ?? process.cwd());

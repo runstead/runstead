@@ -1,8 +1,15 @@
 import { resolve } from "node:path";
 
-import { runOnce, type RunOnceOptions, type RunOnceResult } from "./run.js";
+import {
+  runOnce,
+  runOnceUnlocked,
+  type RunOnceOptions,
+  type RunOnceResult
+} from "./run.js";
+import { withRunsteadManagerLock } from "./manager-lock.js";
 import {
   scheduleDueTasks,
+  scheduleDueTasksUnlocked,
   type ScheduleDueTasksOptions,
   type ScheduleDueTasksResult
 } from "./scheduler.js";
@@ -40,17 +47,41 @@ export async function runDaemon(
   const cwd = resolve(options.cwd ?? process.cwd());
   const intervalMs = options.intervalMs ?? 30_000;
   const maxTicks = options.maxTicks;
+  const usesDefaultRuntime =
+    options.runner === undefined && options.scheduler === undefined;
+
+  assertDaemonTiming({ intervalMs, maxTicks });
+
+  if (usesDefaultRuntime) {
+    return withRunsteadManagerLock({ cwd }, async () =>
+      runDaemonLoop({
+        ...options,
+        cwd,
+        scheduler: (schedulerOptions) =>
+          scheduleDueTasksUnlocked({
+            ...schedulerOptions,
+            cwd
+          }),
+        runner: (runnerOptions) => runOnceUnlocked(cwd, { ...runnerOptions, cwd })
+      })
+    );
+  }
+
+  return runDaemonLoop({
+    ...options,
+    cwd
+  });
+}
+
+async function runDaemonLoop(options: RunDaemonOptions): Promise<RunDaemonResult> {
+  const cwd = resolve(options.cwd ?? process.cwd());
+  const intervalMs = options.intervalMs ?? 30_000;
+  const maxTicks = options.maxTicks;
   const runner = options.runner ?? runOnce;
   const scheduler = options.scheduler ?? scheduleDueTasks;
   const ticks: DaemonTick[] = [];
 
-  if (intervalMs < 0 || !Number.isFinite(intervalMs)) {
-    throw new Error("Daemon interval must be a non-negative number");
-  }
-
-  if (maxTicks !== undefined && (!Number.isInteger(maxTicks) || maxTicks <= 0)) {
-    throw new Error("Daemon maxTicks must be a positive integer");
-  }
+  assertDaemonTiming({ intervalMs, maxTicks });
 
   while (maxTicks === undefined || ticks.length < maxTicks) {
     const scheduled =
@@ -81,6 +112,22 @@ export async function runDaemon(
     ticks,
     stoppedReason: "max_ticks"
   };
+}
+
+function assertDaemonTiming(input: {
+  intervalMs: number;
+  maxTicks: number | undefined;
+}): void {
+  if (input.intervalMs < 0 || !Number.isFinite(input.intervalMs)) {
+    throw new Error("Daemon interval must be a non-negative number");
+  }
+
+  if (
+    input.maxTicks !== undefined &&
+    (!Number.isInteger(input.maxTicks) || input.maxTicks <= 0)
+  ) {
+    throw new Error("Daemon maxTicks must be a positive integer");
+  }
 }
 
 export function formatDaemonReport(result: RunDaemonResult): string {
