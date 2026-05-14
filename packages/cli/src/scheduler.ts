@@ -34,10 +34,15 @@ export interface ScheduledTaskResult {
 export interface SkippedScheduledTask {
   goalId: string;
   type: string;
-  reason: "active_task_exists" | "not_due" | "unsupported_task_type";
+  reason:
+    | "active_task_exists"
+    | "not_due"
+    | "unsupported_task_type"
+    | "domain_pack_unavailable";
   dueAt?: string;
   intervalMs?: number;
   taskId?: string;
+  message?: string;
 }
 
 export interface ScheduleDueTasksResult {
@@ -45,6 +50,11 @@ export interface ScheduleDueTasksResult {
   stateDb: string;
   scheduledTasks: ScheduledTaskResult[];
   skippedTasks: SkippedScheduledTask[];
+}
+
+interface TaskTypesForGoalResult {
+  taskTypesById: Map<string, TaskType>;
+  error?: string;
 }
 
 const ACTIVE_TASK_STATUSES = new Set([
@@ -85,10 +95,23 @@ export async function scheduleDueTasksUnlocked(
 
   for (const goal of goals) {
     const recurringTasks = recurringTaskTypes(goal);
-    const taskTypesById = await taskTypesForGoal({
-      runsteadRoot: resolvedState.root,
-      goal
-    });
+    if (recurringTasks.length === 0) {
+      continue;
+    }
+
+    const domainTaskTypes = recurringTasks.filter(
+      (type) => type !== "run_local_verifiers"
+    );
+    const taskTypesResult =
+      domainTaskTypes.length === 0
+        ? ({
+            taskTypesById: new Map<string, TaskType>()
+          } satisfies TaskTypesForGoalResult)
+        : await loadTaskTypesForGoal({
+            runsteadRoot: resolvedState.root,
+            goal
+          });
+    const taskTypesById = taskTypesResult.taskTypesById;
 
     for (const type of recurringTasks) {
       const existingTasks = listTasks({ cwd, goalId: goal.id })
@@ -126,6 +149,18 @@ export async function scheduleDueTasksUnlocked(
       }
 
       const taskType = taskTypesById.get(type);
+
+      if (type !== "run_local_verifiers" && taskTypesResult.error !== undefined) {
+        skippedTasks.push({
+          goalId: goal.id,
+          type,
+          reason: "domain_pack_unavailable",
+          dueAt,
+          intervalMs,
+          message: taskTypesResult.error
+        });
+        continue;
+      }
 
       if (type !== "run_local_verifiers" && taskType === undefined) {
         skippedTasks.push({
@@ -190,6 +225,22 @@ async function taskTypesForGoal(input: {
   return new Map(bundle.taskTypes.map((taskType) => [taskType.id, taskType]));
 }
 
+async function loadTaskTypesForGoal(input: {
+  runsteadRoot: string;
+  goal: Goal;
+}): Promise<TaskTypesForGoalResult> {
+  try {
+    return {
+      taskTypesById: await taskTypesForGoal(input)
+    };
+  } catch (error) {
+    return {
+      taskTypesById: new Map(),
+      error: errorMessage(error)
+    };
+  }
+}
+
 export function formatSchedulerReport(result: ScheduleDueTasksResult): string {
   return [
     "Runstead scheduler",
@@ -205,7 +256,8 @@ export function formatSchedulerReport(result: ScheduleDueTasksResult): string {
         `  skipped ${item.goalId} ${item.type}`,
         `reason=${item.reason}`,
         item.dueAt === undefined ? undefined : `due=${item.dueAt}`,
-        item.taskId === undefined ? undefined : `task=${item.taskId}`
+        item.taskId === undefined ? undefined : `task=${item.taskId}`,
+        item.message === undefined ? undefined : `message=${item.message}`
       ]
         .filter((part) => part !== undefined)
         .join(" ")
@@ -467,4 +519,8 @@ function assertPositiveInterval(intervalMs: number): void {
 
 function isJsonObject(value: unknown): value is JsonObject {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }

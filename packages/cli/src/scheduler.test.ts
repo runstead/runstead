@@ -2,7 +2,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { createRunsteadId, type Task } from "@runstead/core";
+import { createRunsteadId, type Goal, type Task } from "@runstead/core";
 import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sqlite";
 import { describe, expect, it } from "vitest";
 
@@ -236,6 +236,51 @@ describe("scheduleDueTasks", () => {
       await rm(workspace, { force: true, recursive: true });
     }
   });
+
+  it("skips domain recurrences when the installed pack is unavailable", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-scheduler-missing-"));
+
+    try {
+      await initRunstead({ cwd: workspace });
+      const stateDb = join(workspace, ".runstead", "state.db");
+      const goal: Goal = {
+        id: "goal_missing_domain_pack",
+        domain: "missing-domain",
+        title: "Missing domain pack goal",
+        status: "active",
+        priority: "medium",
+        scope: {
+          repositoryPath: workspace,
+          recurringTasks: ["scan_sources"]
+        },
+        createdAt: "2026-05-14T00:00:00.000Z",
+        updatedAt: "2026-05-14T00:00:00.000Z"
+      };
+
+      insertGoal(stateDb, goal);
+
+      const result = await scheduleDueTasks({
+        cwd: workspace,
+        now: new Date("2026-05-14T00:01:00.000Z")
+      });
+
+      expect(result.scheduledTasks).toEqual([]);
+      expect(result.skippedTasks).toEqual([
+        expect.objectContaining({
+          goalId: goal.id,
+          type: "scan_sources",
+          reason: "domain_pack_unavailable",
+          dueAt: "2026-05-14T00:01:00.000Z"
+        })
+      ]);
+      expect(result.skippedTasks[0]?.message).toContain("missing-domain");
+      expect(formatSchedulerReport(result)).toContain(
+        `skipped ${goal.id} scan_sources reason=domain_pack_unavailable`
+      );
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
 });
 
 async function writePackageJson(workspace: string): Promise<void> {
@@ -289,6 +334,32 @@ function updateTaskStatus(
       projection: {
         type: "task",
         value: updatedTask
+      }
+    });
+  } finally {
+    database.close();
+  }
+}
+
+function insertGoal(stateDb: string, goal: Goal): void {
+  const database = openRunsteadDatabase(stateDb);
+
+  try {
+    appendEventAndProject(database, {
+      event: {
+        eventId: createRunsteadId("evt"),
+        type: "goal.created",
+        aggregateType: "goal",
+        aggregateId: goal.id,
+        payload: {
+          domain: goal.domain,
+          title: goal.title
+        },
+        createdAt: goal.createdAt
+      },
+      projection: {
+        type: "goal",
+        value: goal
       }
     });
   } finally {
