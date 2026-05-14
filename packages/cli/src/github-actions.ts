@@ -100,7 +100,7 @@ export async function getGitHubWorkflowRunStatus(
 
   if (result.exitCode !== 0) {
     throw new Error(
-      `gh run view failed with exit ${result.exitCode}: ${result.stderr}`
+      `gh run view failed with exit ${result.exitCode}: ${redactGitHubCliOutput(result.stderr, options.authToken)}`
     );
   }
 
@@ -146,7 +146,7 @@ export async function fetchGitHubWorkflowRunLog(
 
   if (result.exitCode !== 0) {
     throw new Error(
-      `gh run view --log failed with exit ${result.exitCode}: ${result.stderr}`
+      `gh run view --log failed with exit ${result.exitCode}: ${redactGitHubCliOutput(result.stderr, options.authToken)}`
     );
   }
 
@@ -182,6 +182,17 @@ export async function runGitHubCli(
       exitCode: commandExitCode(error)
     };
   }
+}
+
+export function redactGitHubCliOutput(value: string, authToken?: string): string {
+  const tokenRedacted =
+    authToken === undefined || authToken.length === 0
+      ? value
+      : value.split(authToken).join("[REDACTED_GITHUB_TOKEN]");
+
+  return tokenRedacted
+    .replace(/github_pat_[A-Za-z0-9_]+/g, "[REDACTED_GITHUB_TOKEN]")
+    .replace(/gh[pousr]_[A-Za-z0-9_]+/g, "[REDACTED_GITHUB_TOKEN]");
 }
 
 function githubCliRunnerOptions(

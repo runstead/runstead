@@ -88,4 +88,24 @@ describe("createGitHubPullRequest", () => {
       "runstead/task-1"
     ]);
   });
+
+  it("redacts GitHub tokens from PR creation failures", async () => {
+    const runner: GitHubCliRunner = () =>
+      Promise.resolve({
+        stdout: "",
+        stderr: "auth failed with ghs_app_token",
+        exitCode: 1
+      });
+
+    await expect(
+      createGitHubPullRequest({
+        cwd: "/repo",
+        title: "Fix CI",
+        base: "main",
+        head: "runstead/task-1",
+        authToken: "ghs_app_token",
+        runner
+      })
+    ).rejects.toThrow("auth failed with [REDACTED_GITHUB_TOKEN]");
+  });
 });

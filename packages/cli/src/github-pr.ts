@@ -2,6 +2,7 @@ import { resolve } from "node:path";
 
 import {
   DEFAULT_GITHUB_CLI_TIMEOUT_MS,
+  redactGitHubCliOutput,
   runGitHubCli,
   type GitHubCliCommandResult,
   type GitHubCliRunner
@@ -74,7 +75,7 @@ export async function createGitHubPullRequest(
 
   if (result.exitCode !== 0) {
     throw new Error(
-      `gh pr create failed with exit ${result.exitCode}: ${result.stderr}`
+      `gh pr create failed with exit ${result.exitCode}: ${redactGitHubCliOutput(result.stderr, options.authToken)}`
     );
   }
 

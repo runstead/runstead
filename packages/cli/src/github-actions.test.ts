@@ -4,6 +4,7 @@ import {
   fetchGitHubWorkflowRunLog,
   formatWorkflowRunStatus,
   getGitHubWorkflowRunStatus,
+  redactGitHubCliOutput,
   type GitHubCliRunner
 } from "./github-actions.js";
 
@@ -87,6 +88,29 @@ describe("getGitHubWorkflowRunStatus", () => {
         headBranch: "main"
       })
     ).toContain("Status: completed");
+  });
+
+  it("redacts GitHub tokens from CLI failure messages", async () => {
+    const runner: GitHubCliRunner = () =>
+      Promise.resolve({
+        stdout: "",
+        stderr: "request failed for ghs_app_token and ghp_abcdefghijklmnopqrstuvwxyz",
+        exitCode: 1
+      });
+
+    await expect(
+      getGitHubWorkflowRunStatus({
+        cwd: "/repo",
+        runId: "123",
+        authToken: "ghs_app_token",
+        runner
+      })
+    ).rejects.toThrow(
+      "request failed for [REDACTED_GITHUB_TOKEN] and [REDACTED_GITHUB_TOKEN]"
+    );
+    expect(
+      redactGitHubCliOutput("github_pat_abcdefghijklmnopqrstuvwxyz", undefined)
+    ).toBe("[REDACTED_GITHUB_TOKEN]");
   });
 
   it("fetches workflow run logs through gh", async () => {
