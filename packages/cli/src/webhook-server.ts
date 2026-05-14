@@ -65,9 +65,15 @@ export async function handleWebhookRequest(
     return jsonResponse(400, { error: "missing_github_headers" });
   }
 
-  try {
-    const payload = JSON.parse(request.body) as unknown;
+  let payload: unknown;
 
+  try {
+    payload = JSON.parse(request.body) as unknown;
+  } catch {
+    return jsonResponse(400, { error: "invalid_json" });
+  }
+
+  try {
     await handler({
       event,
       delivery,
@@ -80,7 +86,7 @@ export async function handleWebhookRequest(
       delivery
     });
   } catch {
-    return jsonResponse(400, { error: "invalid_json" });
+    return jsonResponse(500, { error: "handler_failed" });
   }
 }
 

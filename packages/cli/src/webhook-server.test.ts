@@ -90,6 +90,39 @@ describe("handleWebhookRequest", () => {
     expect(response.statusCode).toBe(202);
   });
 
+  it("reports malformed JSON separately from handler failures", async () => {
+    const invalidJson = await handleWebhookRequest({
+      method: "POST",
+      url: "/webhooks/github",
+      allowUnsigned: true,
+      headers: {
+        "x-github-event": "workflow_run",
+        "x-github-delivery": "delivery_001"
+      },
+      body: "{"
+    });
+    const handlerFailure = await handleWebhookRequest(
+      {
+        method: "POST",
+        url: "/webhooks/github",
+        allowUnsigned: true,
+        headers: {
+          "x-github-event": "workflow_run",
+          "x-github-delivery": "delivery_001"
+        },
+        body: "{}"
+      },
+      () => {
+        throw new Error("handler failed");
+      }
+    );
+
+    expect(invalidJson.statusCode).toBe(400);
+    expect(invalidJson.body).toContain("invalid_json");
+    expect(handlerFailure.statusCode).toBe(500);
+    expect(handlerFailure.body).toContain("handler_failed");
+  });
+
   it("rejects non-GitHub routes", async () => {
     const response = await handleWebhookRequest({
       method: "POST",
