@@ -8,6 +8,7 @@ export interface WebhookRequest {
   body: string;
   secret?: string;
   allowUnsigned?: boolean;
+  maxBodyBytes?: number;
 }
 
 export interface WebhookResponse {
@@ -26,8 +27,11 @@ export type WebhookEventHandler = (event: GitHubWebhookEvent) => void | Promise<
 export interface CreateWebhookServerOptions {
   secret?: string;
   allowUnsigned?: boolean;
+  maxBodyBytes?: number;
   handler?: WebhookEventHandler;
 }
+
+const DEFAULT_MAX_WEBHOOK_BODY_BYTES = 1024 * 1024;
 
 export async function handleWebhookRequest(
   request: WebhookRequest,
@@ -41,6 +45,12 @@ export async function handleWebhookRequest(
 
   if (url.pathname !== "/webhooks/github") {
     return jsonResponse(404, { error: "not_found" });
+  }
+
+  const maxBodyBytes = request.maxBodyBytes ?? DEFAULT_MAX_WEBHOOK_BODY_BYTES;
+
+  if (Buffer.byteLength(request.body, "utf8") > maxBodyBytes) {
+    return jsonResponse(413, { error: "body_too_large", maxBodyBytes });
   }
 
   if (request.secret === undefined && request.allowUnsigned !== true) {
@@ -103,7 +113,28 @@ async function handleHttpWebhookRequest(
   response: ServerResponse,
   options: CreateWebhookServerOptions
 ): Promise<void> {
-  const body = await readRequestBody(request);
+  let body: string;
+
+  try {
+    body = await readRequestBody(
+      request,
+      options.maxBodyBytes ?? DEFAULT_MAX_WEBHOOK_BODY_BYTES
+    );
+  } catch (error) {
+    if (error instanceof WebhookBodyTooLargeError) {
+      writeResponse(
+        response,
+        jsonResponse(413, {
+          error: "body_too_large",
+          maxBodyBytes: error.maxBodyBytes
+        })
+      );
+      return;
+    }
+
+    throw error;
+  }
+
   const result = await handleWebhookRequest(
     {
       method: request.method ?? "GET",
@@ -113,7 +144,10 @@ async function handleHttpWebhookRequest(
       ...(options.secret === undefined ? {} : { secret: options.secret }),
       ...(options.allowUnsigned === undefined
         ? {}
-        : { allowUnsigned: options.allowUnsigned })
+        : { allowUnsigned: options.allowUnsigned }),
+      ...(options.maxBodyBytes === undefined
+        ? {}
+        : { maxBodyBytes: options.maxBodyBytes })
     },
     options.handler
   );
@@ -151,15 +185,38 @@ function jsonResponse(statusCode: number, body: unknown): WebhookResponse {
   };
 }
 
-function readRequestBody(request: IncomingMessage): Promise<string> {
+function readRequestBody(
+  request: IncomingMessage,
+  maxBodyBytes: number
+): Promise<string> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
+    let totalBytes = 0;
+    let settled = false;
 
     request.on("data", (chunk: Buffer) => {
+      totalBytes += chunk.byteLength;
+      if (totalBytes > maxBodyBytes) {
+        settled = true;
+        request.destroy();
+        reject(new WebhookBodyTooLargeError(maxBodyBytes));
+        return;
+      }
+
       chunks.push(chunk);
     });
-    request.on("error", reject);
+    request.on("error", (error) => {
+      if (!settled) {
+        settled = true;
+        reject(error);
+      }
+    });
     request.on("end", () => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
       resolve(Buffer.concat(chunks).toString("utf8"));
     });
   });
@@ -169,4 +226,10 @@ function writeResponse(response: ServerResponse, result: WebhookResponse): void 
   response.statusCode = result.statusCode;
   response.setHeader("content-type", "application/json; charset=utf-8");
   response.end(result.body);
+}
+
+class WebhookBodyTooLargeError extends Error {
+  constructor(readonly maxBodyBytes: number) {
+    super(`Webhook body exceeds ${maxBodyBytes} bytes`);
+  }
 }

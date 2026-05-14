@@ -123,6 +123,23 @@ describe("handleWebhookRequest", () => {
     expect(handlerFailure.body).toContain("handler_failed");
   });
 
+  it("rejects GitHub webhook bodies above the configured byte limit", async () => {
+    const response = await handleWebhookRequest({
+      method: "POST",
+      url: "/webhooks/github",
+      allowUnsigned: true,
+      maxBodyBytes: 4,
+      headers: {
+        "x-github-event": "workflow_run",
+        "x-github-delivery": "delivery_001"
+      },
+      body: '{"too":"large"}'
+    });
+
+    expect(response.statusCode).toBe(413);
+    expect(response.body).toContain("body_too_large");
+  });
+
   it("rejects non-GitHub routes", async () => {
     const response = await handleWebhookRequest({
       method: "POST",
