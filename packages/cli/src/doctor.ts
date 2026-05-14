@@ -1,6 +1,6 @@
 import { constants } from "node:fs";
 import { access, stat } from "node:fs/promises";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 
 import { validateDomainPackDir } from "@runstead/domain-packs";
 
@@ -33,6 +33,7 @@ export async function doctorRunstead(
 ): Promise<DoctorResult> {
   const resolvedRoot = await resolveRunsteadRoot(options.cwd);
   const root = resolvedRoot.root;
+  const cwd = resolvedRoot.cwd;
   const checks: DoctorCheck[] = [];
 
   checks.push(
@@ -58,6 +59,9 @@ export async function doctorRunstead(
   checks.push(
     await checkPolicyValidation(join(root, "policies", "repo-maintenance.yaml"))
   );
+  checks.push(await checkRbacPolicy(cwd));
+  checks.push(await checkTeamPolicy(cwd));
+  checks.push(await checkGitHubAppConfig(cwd, root));
   checks.push(
     await checkDirectory("evidence-dir", "evidence directory", join(root, "evidence"))
   );
@@ -184,6 +188,56 @@ async function checkPolicyValidation(path: string): Promise<DoctorCheck> {
       "repo-maintenance policy validation",
       errorMessage(error)
     );
+  }
+}
+
+async function checkRbacPolicy(cwd: string): Promise<DoctorCheck> {
+  try {
+    const { loadRbacPolicy } = await import("./rbac.js");
+
+    await loadRbacPolicy({ cwd });
+
+    return pass("rbac-policy", "RBAC policy validation", "valid");
+  } catch (error) {
+    return fail("rbac-policy", "RBAC policy validation", errorMessage(error));
+  }
+}
+
+async function checkTeamPolicy(cwd: string): Promise<DoctorCheck> {
+  try {
+    const { compileTeamPolicyProfile, loadTeamPolicy } =
+      await import("./team-policy.js");
+    const policy = await loadTeamPolicy({ cwd });
+
+    compileTeamPolicyProfile(policy);
+
+    return pass("team-policy", "team policy validation", "valid");
+  } catch (error) {
+    return fail("team-policy", "team policy validation", errorMessage(error));
+  }
+}
+
+async function checkGitHubAppConfig(cwd: string, root: string): Promise<DoctorCheck> {
+  const path = join(root, "github-app.yaml");
+
+  try {
+    await access(path, constants.F_OK);
+  } catch {
+    return pass("github-app-config", "GitHub App config", "not configured");
+  }
+
+  try {
+    const { loadGitHubAppConfig } = await import("./github-app.js");
+    const config = await loadGitHubAppConfig({ cwd });
+    const privateKeyPath = isAbsolute(config.privateKeyPath)
+      ? config.privateKeyPath
+      : join(root, config.privateKeyPath);
+
+    await access(privateKeyPath, constants.R_OK);
+
+    return pass("github-app-config", "GitHub App config", `app ${config.appId}`);
+  } catch (error) {
+    return fail("github-app-config", "GitHub App config", errorMessage(error));
   }
 }
 

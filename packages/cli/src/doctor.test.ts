@@ -26,6 +26,9 @@ describe("doctorRunstead", () => {
           "domain-pack-validation",
           "policy",
           "policy-validation",
+          "rbac-policy",
+          "team-policy",
+          "github-app-config",
           "state-db"
         ])
       );
@@ -95,6 +98,56 @@ describe("doctorRunstead", () => {
       expect(result.ok).toBe(false);
       expect(
         result.checks.find((check) => check.id === "policy-validation")
+      ).toMatchObject({
+        status: "fail"
+      });
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("fails when RBAC policy is invalid", async () => {
+    const workspace = join(tmpdir(), `runstead-doctor-rbac-${process.pid}`);
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await mkdir(workspace, { recursive: true });
+      await initRunstead({ cwd: workspace });
+      await writeFile(
+        join(workspace, ".runstead", "rbac.yaml"),
+        "version: 2\nroles: []\nsubjects: []\n",
+        "utf8"
+      );
+
+      const result = await doctorRunstead({ cwd: workspace });
+
+      expect(result.ok).toBe(false);
+      expect(result.checks.find((check) => check.id === "rbac-policy")).toMatchObject({
+        status: "fail"
+      });
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("fails when GitHub App config points at an unreadable private key", async () => {
+    const workspace = join(tmpdir(), `runstead-doctor-github-app-${process.pid}`);
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await mkdir(workspace, { recursive: true });
+      await initRunstead({ cwd: workspace });
+      await writeFile(
+        join(workspace, ".runstead", "github-app.yaml"),
+        "app_id: 123\nprivate_key_path: missing-key.pem\n",
+        "utf8"
+      );
+
+      const result = await doctorRunstead({ cwd: workspace });
+
+      expect(result.ok).toBe(false);
+      expect(
+        result.checks.find((check) => check.id === "github-app-config")
       ).toMatchObject({
         status: "fail"
       });
