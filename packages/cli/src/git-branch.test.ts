@@ -6,6 +6,7 @@ import {
   createGitBranch,
   listGitChangedFiles,
   pushGitBranch,
+  redactGitOutput,
   type GitRunner
 } from "./git-branch.js";
 
@@ -95,6 +96,31 @@ describe("pushGitBranch", () => {
         args: ["push", "--set-upstream", "origin", "runstead/task-123"]
       }
     ]);
+  });
+
+  it("redacts credentials from git push failures and output", async () => {
+    await expect(
+      pushGitBranch({
+        cwd: "/repo",
+        branchName: "runstead/task-1",
+        runner: () =>
+          Promise.resolve({
+            stdout: "",
+            stderr:
+              "fatal: https://user:ghp_abcdefghijklmnopqrstuvwxyz@github.com/acme/repo.git rejected",
+            exitCode: 1
+          })
+      })
+    ).rejects.toThrow(
+      "https://[REDACTED_GIT_CREDENTIAL]@github.com/acme/repo.git rejected"
+    );
+    expect(
+      redactGitOutput(
+        "remote: github_pat_abcdefghijklmnopqrstuvwxyz from https://x:y@example.com/repo.git"
+      )
+    ).toBe(
+      "remote: [REDACTED_GITHUB_TOKEN] from https://[REDACTED_GIT_CREDENTIAL]@example.com/repo.git"
+    );
   });
 });
 

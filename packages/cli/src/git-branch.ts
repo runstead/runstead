@@ -111,7 +111,7 @@ export async function createGitBranch(
 
   if (result.exitCode !== 0) {
     throw new Error(
-      `git switch -c failed with exit ${result.exitCode}: ${result.stderr}`
+      `git switch -c failed with exit ${result.exitCode}: ${redactGitOutput(result.stderr)}`
     );
   }
 
@@ -137,14 +137,16 @@ export async function pushGitBranch(
   );
 
   if (result.exitCode !== 0) {
-    throw new Error(`git push failed with exit ${result.exitCode}: ${result.stderr}`);
+    throw new Error(
+      `git push failed with exit ${result.exitCode}: ${redactGitOutput(result.stderr)}`
+    );
   }
 
   return {
     cwd,
     branchName,
     remote,
-    stdout: result.stdout
+    stdout: redactGitOutput(result.stdout)
   };
 }
 
@@ -232,7 +234,7 @@ export async function commitGitChanges(
     commitSha: revParse.stdout.trim(),
     changedFiles,
     committedFiles,
-    stdout: commit.stdout
+    stdout: redactGitOutput(commit.stdout)
   };
 }
 
@@ -296,9 +298,16 @@ function commandExitCode(error: unknown): number {
 function assertGitCommand(result: GitCommandResult, description: string): void {
   if (result.exitCode !== 0) {
     throw new Error(
-      `${description} failed with exit ${result.exitCode}: ${result.stderr}`
+      `${description} failed with exit ${result.exitCode}: ${redactGitOutput(result.stderr)}`
     );
   }
+}
+
+export function redactGitOutput(value: string): string {
+  return value
+    .replace(/(https?:\/\/)([^@\s/]+)@/g, "$1[REDACTED_GIT_CREDENTIAL]@")
+    .replace(/github_pat_[A-Za-z0-9_]+/g, "[REDACTED_GITHUB_TOKEN]")
+    .replace(/gh[pousr]_[A-Za-z0-9_]+/g, "[REDACTED_GITHUB_TOKEN]");
 }
 
 function commandOutput(error: unknown, key: "stdout" | "stderr"): string {
