@@ -26,6 +26,7 @@ export interface StoreCommandVerifierEvidenceOptions {
   task: Task;
   command: CommandVerifierInput;
   timeoutMs?: number;
+  killGraceMs?: number;
   now?: Date;
 }
 
@@ -56,7 +57,8 @@ export async function storeCommandVerifierEvidence(
   const result = await runShellCommand({
     command: options.command.command,
     cwd,
-    ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs })
+    ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
+    ...(options.killGraceMs === undefined ? {} : { killGraceMs: options.killGraceMs })
   });
   const artifact: CommandVerifierArtifact = {
     schemaVersion: 1,

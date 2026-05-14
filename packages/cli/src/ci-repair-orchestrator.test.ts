@@ -803,6 +803,7 @@ function verifierRunner(
           verifier: "test",
           exitCode: 0,
           timedOut: false,
+          forceKilled: false,
           evidenceId: "ev_test"
         }
       ]

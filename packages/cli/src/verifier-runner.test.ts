@@ -85,6 +85,67 @@ describe("runTaskVerifiers", () => {
     }
   });
 
+  it.skipIf(process.platform === "win32")(
+    "records force-killed verifier commands",
+    async () => {
+      const workspace = await mkdtemp(join(tmpdir(), "runstead-verifier-timeout-"));
+      const command = `exec ${nodeCommand(
+        "process.on('SIGTERM', () => {}); setInterval(() => {}, 1000);"
+      )}`;
+
+      try {
+        const task = await createTaskWithRawCommand(workspace, command);
+        await allowVerifierCommand(workspace, command);
+
+        const result = await runTaskVerifiers({
+          cwd: workspace,
+          taskId: task.id,
+          timeoutMs: 1_000,
+          killGraceMs: 25,
+          now: new Date("2026-05-14T06:35:00.000Z")
+        });
+        const database = openRunsteadDatabase(join(workspace, ".runstead", "state.db"));
+
+        try {
+          const storedTask = database
+            .prepare("SELECT status, output_json FROM tasks WHERE id = ?")
+            .get(task.id) as { status: string; output_json: string };
+          const toolCall = database
+            .prepare(
+              "SELECT output_json FROM tool_calls WHERE action_type = 'shell.exec'"
+            )
+            .get() as { output_json: string };
+
+          expect(result.task.status).toBe("failed");
+          expect(result.commandResults).toMatchObject([
+            {
+              verifier: "test",
+              exitCode: null,
+              timedOut: true,
+              forceKilled: true
+            }
+          ]);
+          expect(JSON.parse(storedTask.output_json)).toMatchObject({
+            commands: [
+              {
+                timedOut: true,
+                forceKilled: true
+              }
+            ]
+          });
+          expect(JSON.parse(toolCall.output_json)).toMatchObject({
+            timedOut: true,
+            forceKilled: true
+          });
+        } finally {
+          database.close();
+        }
+      } finally {
+        await rm(workspace, { force: true, recursive: true });
+      }
+    }
+  );
+
   it("runs verifiers against a legacy .team workspace", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "runstead-verifier-team-"));
 

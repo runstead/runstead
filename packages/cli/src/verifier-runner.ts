@@ -42,6 +42,7 @@ export interface RunTaskVerifiersOptions {
   cwd?: string;
   taskId: string;
   timeoutMs?: number;
+  killGraceMs?: number;
   claim?: boolean;
   now?: Date;
 }
@@ -50,6 +51,7 @@ export interface RunTaskVerifierCommandResult {
   verifier: string;
   exitCode: number | null;
   timedOut: boolean;
+  forceKilled: boolean;
   evidenceId: string;
   policyDecisionId?: string;
   approvalId?: string;
@@ -320,6 +322,9 @@ export async function runTaskVerifiersUnlocked(
         task: currentTask,
         command,
         ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
+        ...(options.killGraceMs === undefined
+          ? {}
+          : { killGraceMs: options.killGraceMs }),
         ...(options.now === undefined ? {} : { now: options.now })
       });
 
@@ -327,6 +332,7 @@ export async function runTaskVerifiersUnlocked(
         verifier: evidenceResult.artifact.verifier,
         exitCode: evidenceResult.artifact.result.exitCode,
         timedOut: evidenceResult.artifact.result.timedOut,
+        forceKilled: evidenceResult.artifact.result.forceKilled,
         evidenceId: evidenceResult.evidence.id,
         policyDecisionId: recordedPolicy.decision.id,
         ...(approvedGrant === undefined ? {} : { approvalId: approvedGrant.id })
@@ -340,6 +346,7 @@ export async function runTaskVerifiersUnlocked(
           evidenceId: evidenceResult.evidence.id,
           exitCode: evidenceResult.artifact.result.exitCode,
           timedOut: evidenceResult.artifact.result.timedOut,
+          forceKilled: evidenceResult.artifact.result.forceKilled,
           ...approvalGrantOutput
         },
         ...(options.now === undefined ? {} : { now: options.now })
@@ -469,6 +476,7 @@ function policyCommandResult(
     verifier: command.name,
     exitCode: null,
     timedOut: false,
+    forceKilled: false,
     evidenceId: evidenceResult.evidence.id,
     policyDecisionId,
     ...(approvalId === undefined ? {} : { approvalId })
