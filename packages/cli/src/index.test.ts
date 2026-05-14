@@ -187,7 +187,7 @@ describe("cli entrypoint", () => {
     );
     const app = github?.commands.find((command) => command.name() === "app");
 
-    for (const commandName of ["init", "status", "jwt"]) {
+    for (const commandName of ["init", "status", "jwt", "token"]) {
       const command = app?.commands.find((item) => item.name() === commandName);
 
       expect(command?.options.map((option) => option.long)).toContain("--actor");

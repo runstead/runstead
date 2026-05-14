@@ -7,11 +7,13 @@ import { openRunsteadDatabase } from "@runstead/state-sqlite";
 import { describe, expect, it } from "vitest";
 
 import {
+  createGitHubAppInstallationTokenFromConfig,
   createGitHubAppJwt,
   createGitHubAppJwtFromConfig,
   formatGitHubAppConfigSummary,
   initGitHubAppMode,
-  loadGitHubAppConfig
+  loadGitHubAppConfig,
+  type GitHubAppFetch
 } from "./github-app.js";
 
 describe("github app mode", () => {
@@ -48,6 +50,41 @@ describe("github app mode", () => {
       const jwt = await createGitHubAppJwtFromConfig({
         cwd: workspace,
         now: new Date("2026-05-14T08:00:00.000Z")
+      });
+      const requests: {
+        url: string;
+        authorization: string | undefined;
+      }[] = [];
+      const fetchInstallationToken: GitHubAppFetch = (url, init) => {
+        requests.push({
+          url,
+          authorization: init.headers.Authorization
+        });
+
+        return Promise.resolve({
+          ok: true,
+          status: 201,
+          statusText: "Created",
+          json() {
+            return Promise.resolve({
+              token: "ghs_installation_token",
+              expires_at: "2026-05-14T09:00:00.000Z",
+              repository_selection: "selected",
+              permissions: {
+                contents: "write",
+                pull_requests: "write"
+              }
+            });
+          },
+          text() {
+            return Promise.resolve("");
+          }
+        });
+      };
+      const installationToken = await createGitHubAppInstallationTokenFromConfig({
+        cwd: workspace,
+        now: new Date("2026-05-14T08:00:00.000Z"),
+        fetch: fetchInstallationToken
       });
       const directJwt = createGitHubAppJwt({
         appId: "12345",
@@ -98,24 +135,49 @@ describe("github app mode", () => {
       );
       expect(directJwt.issuedAt).toBe(jwt.issuedAt);
       expect(directJwt.expiresAt).toBe(jwt.expiresAt);
+      expect(installationToken).toMatchObject({
+        installationId: "67890",
+        token: "ghs_installation_token",
+        expiresAt: "2026-05-14T09:00:00.000Z",
+        repositorySelection: "selected",
+        permissions: {
+          contents: "write",
+          pull_requests: "write"
+        }
+      });
+      expect(requests).toEqual([
+        {
+          url: "https://api.github.com/app/installations/67890/access_tokens",
+          authorization: `Bearer ${jwt.token}`
+        }
+      ]);
 
       const database = openRunsteadDatabase(configured.stateDb);
 
       try {
-        const event = database
+        const events = database
           .prepare(
             `
             SELECT type, aggregate_type, aggregate_id, payload_json
             FROM events
-            WHERE event_id = ?
+            WHERE event_id IN (?, ?)
+            ORDER BY created_at ASC, event_id ASC
           `
           )
-          .get(eventId) as {
+          .all(eventId, installationToken.event.eventId) as {
           type: string;
           aggregate_type: string;
           aggregate_id: string;
           payload_json: string;
-        };
+        }[];
+        const event = events.find((item) => item.type === "github_app.configured");
+        const tokenEvent = events.find(
+          (item) => item.type === "github_app.installation_token_created"
+        );
+
+        if (event === undefined || tokenEvent === undefined) {
+          throw new Error("Expected GitHub App config and token audit events");
+        }
 
         expect(event).toMatchObject({
           type: "github_app.configured",
@@ -125,6 +187,17 @@ describe("github app mode", () => {
         expect(JSON.parse(event.payload_json)).toMatchObject({
           appId: "12345",
           installationId: "67890"
+        });
+        expect(tokenEvent).toMatchObject({
+          type: "github_app.installation_token_created",
+          aggregate_type: "github_app_installation",
+          aggregate_id: "67890"
+        });
+        expect(JSON.parse(tokenEvent.payload_json)).toEqual({
+          appId: "12345",
+          installationId: "67890",
+          expiresAt: "2026-05-14T09:00:00.000Z",
+          repositorySelection: "selected"
         });
       } finally {
         database.close();

@@ -1637,6 +1637,34 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
       console.log(result.token);
     });
 
+  githubApp
+    .command("token")
+    .description("Print a GitHub App installation access token.")
+    .option("--cwd <path>", "Workspace directory")
+    .option("--installation-id <id>", "Override configured GitHub App installation id")
+    .option("--actor <id>", "RBAC subject for GitHub App management", "local-admin")
+    .action(
+      async (options: { cwd?: string; installationId?: string; actor: string }) => {
+        await requireRbacPermission({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          actor: options.actor,
+          permission: "daemon.manage",
+          action: "manage GitHub App mode"
+        });
+
+        const { createGitHubAppInstallationTokenFromConfig } =
+          await import("./github-app.js");
+        const result = await createGitHubAppInstallationTokenFromConfig({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          ...(options.installationId === undefined
+            ? {}
+            : { installationId: options.installationId })
+        });
+
+        console.log(result.token);
+      }
+    );
+
   githubRun
     .command("status")
     .description("Show GitHub workflow run status.")

@@ -56,6 +56,39 @@ export interface GitHubAppJwtResult {
   expiresAt: string;
 }
 
+export interface CreateGitHubAppInstallationTokenOptions {
+  cwd?: string;
+  installationId?: string;
+  now?: Date;
+  fetch?: GitHubAppFetch;
+}
+
+export interface GitHubAppInstallationTokenResult {
+  installationId: string;
+  token: string;
+  expiresAt?: string;
+  repositorySelection?: string;
+  permissions?: Record<string, unknown>;
+  event: RunsteadEvent;
+  stateDb: string;
+}
+
+export type GitHubAppFetch = (
+  url: string,
+  init: {
+    method: "POST";
+    headers: Record<string, string>;
+  }
+) => Promise<GitHubAppFetchResponse>;
+
+export interface GitHubAppFetchResponse {
+  ok: boolean;
+  status: number;
+  statusText: string;
+  json(): Promise<unknown>;
+  text(): Promise<string>;
+}
+
 const DEFAULT_GITHUB_API_BASE_URL = "https://api.github.com";
 
 const GitHubAppConfigYamlSchema = z.object({
@@ -63,6 +96,13 @@ const GitHubAppConfigYamlSchema = z.object({
   private_key_path: z.string().min(1),
   installation_id: z.union([z.string().min(1), z.number().int().positive()]).optional(),
   api_base_url: z.string().url().optional()
+});
+
+const GitHubAppInstallationTokenResponseSchema = z.object({
+  token: z.string().min(1),
+  expires_at: z.string().min(1).optional(),
+  repository_selection: z.string().min(1).optional(),
+  permissions: z.record(z.string(), z.unknown()).optional()
 });
 
 export async function initGitHubAppMode(
@@ -192,6 +232,86 @@ export function createGitHubAppJwt(
   };
 }
 
+export async function createGitHubAppInstallationTokenFromConfig(
+  options: CreateGitHubAppInstallationTokenOptions = {}
+): Promise<GitHubAppInstallationTokenResult> {
+  const config = await loadGitHubAppConfig(
+    options.cwd === undefined ? {} : { cwd: options.cwd }
+  );
+  const installationId = options.installationId ?? config.installationId;
+
+  if (installationId === undefined) {
+    throw new Error("GitHub App installation id is required");
+  }
+
+  const jwt = await createGitHubAppJwtFromConfig({
+    ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+    ...(options.now === undefined ? {} : { now: options.now })
+  });
+  const fetcher = options.fetch ?? defaultGitHubAppFetch;
+  const response = await fetcher(
+    `${trimTrailingSlashes(config.apiBaseUrl)}/app/installations/${encodeURIComponent(
+      installationId
+    )}/access_tokens`,
+    {
+      method: "POST",
+      headers: {
+        Accept: "application/vnd.github+json",
+        Authorization: `Bearer ${jwt.token}`,
+        "X-GitHub-Api-Version": "2022-11-28",
+        "User-Agent": "runstead"
+      }
+    }
+  );
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(
+      `GitHub App installation token request failed: ${response.status} ${response.statusText}${
+        body.length === 0 ? "" : `: ${body}`
+      }`
+    );
+  }
+
+  const parsed = GitHubAppInstallationTokenResponseSchema.parse(await response.json());
+  const stateDb = requireRunsteadStateDbSync(options.cwd ?? process.cwd()).stateDb;
+  const createdAt = (options.now ?? new Date()).toISOString();
+  const event: RunsteadEvent = {
+    eventId: createRunsteadId("evt"),
+    type: "github_app.installation_token_created",
+    aggregateType: "github_app_installation",
+    aggregateId: installationId,
+    payload: {
+      appId: config.appId,
+      installationId,
+      ...(parsed.expires_at === undefined ? {} : { expiresAt: parsed.expires_at }),
+      ...(parsed.repository_selection === undefined
+        ? {}
+        : { repositorySelection: parsed.repository_selection })
+    },
+    createdAt
+  };
+  const database = openRunsteadDatabase(stateDb);
+
+  try {
+    appendEventAndProject(database, { event });
+  } finally {
+    database.close();
+  }
+
+  return {
+    installationId,
+    token: parsed.token,
+    ...(parsed.expires_at === undefined ? {} : { expiresAt: parsed.expires_at }),
+    ...(parsed.repository_selection === undefined
+      ? {}
+      : { repositorySelection: parsed.repository_selection }),
+    ...(parsed.permissions === undefined ? {} : { permissions: parsed.permissions }),
+    event,
+    stateDb
+  };
+}
+
 export function formatGitHubAppConfigSummary(config: GitHubAppConfig): string {
   return [
     `GitHub App: ${config.appId}`,
@@ -214,6 +334,23 @@ function formatGitHubAppConfigYaml(config: GitHubAppConfig): string {
 
 function base64UrlJson(value: unknown): string {
   return Buffer.from(JSON.stringify(value), "utf8").toString("base64url");
+}
+
+function trimTrailingSlashes(value: string): string {
+  return value.replace(/\/+$/u, "");
+}
+
+async function defaultGitHubAppFetch(
+  url: string,
+  init: Parameters<GitHubAppFetch>[1]
+): Promise<GitHubAppFetchResponse> {
+  const fetcher = globalThis.fetch as GitHubAppFetch | undefined;
+
+  if (fetcher === undefined) {
+    throw new Error("global fetch is not available for GitHub App requests");
+  }
+
+  return await fetcher(url, init);
 }
 
 function resolveGitHubAppConfigPath(cwd = process.cwd()): string {
