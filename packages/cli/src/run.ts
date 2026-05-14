@@ -19,7 +19,11 @@ import {
 } from "./verifier-runner.js";
 import type { CommandVerifierInput } from "./verifier-evidence.js";
 
-const RUN_ONCE_SUPPORTED_TASK_TYPES = ["run_local_verifiers", "ci_repair"];
+const RUN_ONCE_SUPPORTED_TASK_TYPES = [
+  "run_local_verifiers",
+  "ci_repair",
+  "manual_review"
+];
 
 export interface RunOnceOptions {
   cwd?: string;
@@ -129,6 +133,26 @@ export async function runOnceUnlocked(
       ranTask: true,
       task: result.ciRepair.task,
       ciRepairResult: result
+    };
+  }
+
+  if (task?.type === "manual_review") {
+    const blocked = blockTask({
+      cwd,
+      task,
+      reason: "manual_review_required",
+      output: {
+        summary:
+          "Manual review tasks require a human evidence attachment before automation can continue.",
+        verifiers: task.verifiers
+      },
+      ...(options.now === undefined ? {} : { now: options.now })
+    });
+
+    return {
+      cwd,
+      ranTask: true,
+      task: blocked.task
     };
   }
 

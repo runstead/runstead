@@ -307,11 +307,67 @@ describe("runOnce", () => {
           status: "blocked",
           output: {
             reason: "unsupported_task_type",
-            supportedTaskTypes: ["run_local_verifiers", "ci_repair"]
+            supportedTaskTypes: ["run_local_verifiers", "ci_repair", "manual_review"]
           }
         }
       });
       expect(formatRunOnceReport(result)).toContain("Blocked: unsupported_task_type");
+      expect(runOnceExitCode(result)).toBe(1);
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("routes manual review tasks to an explicit human-evidence block", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-run-manual-review-"));
+
+    try {
+      await initRunstead({ cwd: workspace });
+      const goal = await createGoal({
+        cwd: workspace,
+        domain: "repo-maintenance",
+        now: new Date("2026-05-14T08:00:00.000Z")
+      });
+      const task: Task = {
+        id: "task_manual_review",
+        goalId: goal.goal.id,
+        domain: "customer-ops",
+        type: "manual_review",
+        status: "queued",
+        priority: "medium",
+        attempt: 0,
+        maxAttempts: 1,
+        input: {
+          taskType: "manual_review",
+          description: "Review the current domain state and attach evidence."
+        },
+        verifiers: ["manual_review:evidence_attached"],
+        createdAt: "2026-05-14T07:59:00.000Z",
+        updatedAt: "2026-05-14T07:59:00.000Z"
+      };
+
+      insertTask(goal.stateDb, task);
+
+      const result = await runOnce({
+        cwd: workspace,
+        now: new Date("2026-05-14T08:02:00.000Z")
+      });
+
+      expect(result).toMatchObject({
+        ranTask: true,
+        task: {
+          id: task.id,
+          type: "manual_review",
+          status: "blocked",
+          output: {
+            reason: "manual_review_required",
+            summary:
+              "Manual review tasks require a human evidence attachment before automation can continue.",
+            verifiers: ["manual_review:evidence_attached"]
+          }
+        }
+      });
+      expect(formatRunOnceReport(result)).toContain("Blocked: manual_review_required");
       expect(runOnceExitCode(result)).toBe(1);
     } finally {
       await rm(workspace, { force: true, recursive: true });

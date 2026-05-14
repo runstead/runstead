@@ -28,6 +28,10 @@ The generated pack is intentionally conservative. It creates a single goal
 template, one manual-review task type, and a default policy that allows local
 evidence collection while requiring approval before external writes.
 
+`manual_review` has a built-in runtime route. `runstead run --once` marks the
+task `blocked` with `manual_review_required` instead of treating the starter
+task as an unknown custom task.
+
 ## Directory Layout
 
 A domain pack directory must contain:
