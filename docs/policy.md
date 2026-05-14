@@ -19,3 +19,13 @@ attached to an approval request before it runs.
 Some ad-hoc CLI helpers are still explicitly labeled unmanaged. They are useful
 for local diagnosis, but the product path is the governed runtime and CI repair
 orchestrator.
+
+Mutating unmanaged helpers now require explicit acknowledgement with
+`--unmanaged`:
+
+- `runstead checkpoint restore`
+- `runstead github pr create`
+- `runstead git branch create`
+
+Use the governed CI repair path for normal repo-maintenance work. The flag is a
+local escape hatch, not a policy decision or approval grant.
