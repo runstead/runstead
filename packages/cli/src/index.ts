@@ -293,6 +293,7 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     .option("--cwd <path>", "Workspace directory")
     .option("--secret <secret>", "GitHub webhook secret")
     .option("--allow-unsigned", "Allow unsigned webhook requests")
+    .option("--actor <id>", "RBAC subject for webhook management", "local-admin")
     .action(
       async (options: {
         host: string;
@@ -300,7 +301,21 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
         cwd?: string;
         secret?: string;
         allowUnsigned?: boolean;
+        actor: string;
       }) => {
+        const { checkPermission } = await import("./rbac.js");
+        const permission = await checkPermission({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          subject: options.actor,
+          permission: "daemon.manage"
+        });
+
+        if (permission.decision !== "allow") {
+          throw new Error(
+            `Subject ${options.actor} cannot manage webhooks: ${permission.reason}`
+          );
+        }
+
         if (options.secret === undefined && options.allowUnsigned !== true) {
           throw new Error(
             "GitHub webhook secret is required unless --allow-unsigned is set"

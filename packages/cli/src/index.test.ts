@@ -48,4 +48,13 @@ describe("cli entrypoint", () => {
 
     expect(build?.options.map((option) => option.long)).toContain("--actor");
   });
+
+  it("exposes RBAC actor selection on webhook serving", () => {
+    const webhook = createProgram().commands.find(
+      (command) => command.name() === "webhook"
+    );
+    const serve = webhook?.commands.find((command) => command.name() === "serve");
+
+    expect(serve?.options.map((option) => option.long)).toContain("--actor");
+  });
 });
