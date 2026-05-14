@@ -1,0 +1,14 @@
+version: 1
+fixtures:
+  - id: js-test-failure
+    description: Minimal JavaScript test failure for CI repair smoke evals.
+    path: js-test-failure
+    task_type: ci_repair
+    goal_template: keep-ci-green
+    tags:
+      - smoke
+      - ci
+    acceptance_contracts:
+      - ci_repaired
+      - verifier_passed
+      - pr_report_contains_evidence

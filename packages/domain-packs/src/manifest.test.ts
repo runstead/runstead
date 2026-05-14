@@ -29,13 +29,16 @@ describe("buildDomainPackManifest", () => {
       defaultPolicy: "policies/repo-maintenance.yaml",
       goalTemplates: ["keep-ci-green"],
       taskTypes: ["repo_inspect", "run_local_verifiers", "ci_repair"],
-      fixtures: [],
-      evals: [],
+      fixtures: ["js-test-failure"],
+      evals: ["js-test-failure-smoke"],
       requiredTools: ["filesystem", "shell", "git", "github"],
       supportedWorkers: ["shell", "claude_code", "codex_cli"]
     });
     expect(manifest.files.map((file) => file.path)).toEqual([
       "domain.yaml",
+      "evals/benchmark.yaml",
+      "fixtures/js-test-failure/README.md",
+      "fixtures/manifest.yaml",
       "goal-templates/keep-ci-green.yaml",
       "policies/repo-maintenance.yaml",
       "task-types/ci_repair.yaml",

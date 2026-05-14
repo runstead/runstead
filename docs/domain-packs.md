@@ -10,6 +10,7 @@ The first built-in domain pack is `repo-maintenance`. It starts with:
 - shell plus wrapped coding-agent worker routing
 - command and diff-scope verifier defaults
 - protected-path security defaults
+- a `js-test-failure` CI repair smoke fixture and benchmark
 
 Runtime task and goal state belongs in SQLite under `.runstead/state.db`.
 Domain YAML remains configuration and template material only.

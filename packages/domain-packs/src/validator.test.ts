@@ -29,10 +29,12 @@ describe("validateDomainPackDir", () => {
       "run_local_verifiers",
       "ci_repair"
     ]);
-    expect(result.fixtures).toEqual([]);
-    expect(result.evals).toEqual([]);
+    expect(result.fixtures.map((fixture) => fixture.id)).toEqual(["js-test-failure"]);
+    expect(result.evals.map((evaluation) => evaluation.id)).toEqual([
+      "js-test-failure-smoke"
+    ]);
     expect(formatDomainPackValidationResult(result)).toContain("Status: valid");
-    expect(formatDomainPackValidationResult(result)).toContain("Fixtures: 0");
+    expect(formatDomainPackValidationResult(result)).toContain("Fixtures: 1");
   });
 
   it("validates the experimental research-monitor pack", async () => {

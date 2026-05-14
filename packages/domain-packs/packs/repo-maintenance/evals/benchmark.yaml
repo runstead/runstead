@@ -1,0 +1,8 @@
+version: 1
+benchmarks:
+  - id: js-test-failure-smoke
+    fixture: js-test-failure
+    acceptance_contracts:
+      - ci_repaired
+      - verifier_passed
+      - pr_report_contains_evidence
