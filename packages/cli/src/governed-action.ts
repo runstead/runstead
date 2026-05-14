@@ -139,6 +139,22 @@ export async function runGovernedToolAction<T>(
     );
   }
 
+  const approvalGrantOutput =
+    approvedGrant === undefined
+      ? {}
+      : {
+          approvalId: approvedGrant.id,
+          approvalGrant: "used"
+        };
+
+  if (approvedGrant !== undefined) {
+    expireApprovalGrant({
+      database: options.database,
+      approval: approvedGrant,
+      ...(options.now === undefined ? {} : { now: options.now })
+    });
+  }
+
   try {
     const executed = await options.run();
     const completedToolCall = finishToolCall({
@@ -148,23 +164,10 @@ export async function runGovernedToolAction<T>(
       policyDecisionId: recordedPolicy.decision.id,
       output: {
         ...(executed.output ?? {}),
-        ...(approvedGrant === undefined
-          ? {}
-          : {
-              approvalId: approvedGrant.id,
-              approvalGrant: "used"
-            })
+        ...approvalGrantOutput
       },
       ...(options.now === undefined ? {} : { now: options.now })
     });
-
-    if (approvedGrant !== undefined) {
-      expireApprovalGrant({
-        database: options.database,
-        approval: approvedGrant,
-        ...(options.now === undefined ? {} : { now: options.now })
-      });
-    }
 
     return {
       value: executed.value,
@@ -179,7 +182,8 @@ export async function runGovernedToolAction<T>(
       status: "failed",
       policyDecisionId: recordedPolicy.decision.id,
       output: {
-        error: error instanceof Error ? error.message : String(error)
+        error: error instanceof Error ? error.message : String(error),
+        ...approvalGrantOutput
       },
       ...(options.now === undefined ? {} : { now: options.now })
     });

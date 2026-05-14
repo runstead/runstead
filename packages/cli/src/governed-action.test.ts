@@ -199,6 +199,130 @@ describe("runGovernedToolAction", () => {
       await rm(workspace, { force: true, recursive: true });
     }
   });
+
+  it("consumes approved grants before running approved actions", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-governed-failure-"));
+
+    try {
+      const initialized = await initRunstead({ cwd: workspace });
+      const task = await firstGeneratedTask(workspace);
+      const policy = await loadPolicyProfileFromFile(
+        join(initialized.root, "policies", "repo-maintenance.yaml")
+      );
+      const action = {
+        actionId: "act_pr_task_failure",
+        actionType: "github.pr.create",
+        resource: {
+          type: "pull_request",
+          id: "main...runstead/task-failure"
+        }
+      };
+      let approvalId: string | undefined;
+
+      {
+        const database = openRunsteadDatabase(initialized.stateDb);
+
+        try {
+          const workerRun = startWorkerRun({
+            database,
+            task,
+            workerType: "test_worker",
+            enforcementLevel: "policy_enforced",
+            now: new Date("2026-05-14T12:10:00.000Z")
+          });
+
+          await expect(
+            runGovernedToolAction({
+              cwd: workspace,
+              stateDb: initialized.stateDb,
+              database,
+              policy,
+              task,
+              workerRun,
+              action,
+              requestedBy: "test",
+              now: new Date("2026-05-14T12:10:01.000Z"),
+              run: () => Promise.resolve({ value: "created" })
+            })
+          ).rejects.toBeInstanceOf(ToolActionApprovalRequiredError);
+          const approval = database
+            .prepare("SELECT id FROM approvals WHERE action_id = ?")
+            .get(action.actionId) as { id: string };
+
+          approvalId = approval.id;
+        } finally {
+          database.close();
+        }
+      }
+
+      if (approvalId === undefined) {
+        throw new Error("Expected approval id");
+      }
+
+      await decideApproval({
+        cwd: workspace,
+        id: approvalId,
+        decision: "approved",
+        decidedBy: "local-admin",
+        now: new Date("2026-05-14T12:11:00.000Z")
+      });
+
+      {
+        const database = openRunsteadDatabase(initialized.stateDb);
+
+        try {
+          const workerRun = startWorkerRun({
+            database,
+            task,
+            workerType: "test_worker",
+            enforcementLevel: "policy_enforced",
+            now: new Date("2026-05-14T12:12:00.000Z")
+          });
+
+          await expect(
+            runGovernedToolAction({
+              cwd: workspace,
+              stateDb: initialized.stateDb,
+              database,
+              policy,
+              task,
+              workerRun,
+              action,
+              requestedBy: "test",
+              now: new Date("2026-05-14T12:12:01.000Z"),
+              run: () => Promise.reject(new Error("network failed"))
+            })
+          ).rejects.toThrow("network failed");
+
+          const failedToolCall = database
+            .prepare(
+              "SELECT status, output_json FROM tool_calls WHERE action_type = ? ORDER BY started_at DESC, id DESC LIMIT 1"
+            )
+            .get(action.actionType) as { status: string; output_json: string };
+          const output = JSON.parse(failedToolCall.output_json) as {
+            approvalId?: string;
+            approvalGrant?: string;
+            error?: string;
+          };
+
+          expect(failedToolCall.status).toBe("failed");
+          expect(output).toMatchObject({
+            approvalId,
+            approvalGrant: "used",
+            error: "network failed"
+          });
+        } finally {
+          database.close();
+        }
+      }
+
+      expect(showApproval({ cwd: workspace, id: approvalId }).approval.status).toBe(
+        "expired"
+      );
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
 });
 
 async function firstGeneratedTask(workspace: string) {

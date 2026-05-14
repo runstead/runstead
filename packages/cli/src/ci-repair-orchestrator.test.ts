@@ -375,6 +375,9 @@ describe("runCiRepairOrchestrator", () => {
           "failed"
         ]);
         expect(failedPushOutput.error).toContain("git push failed");
+        expect(
+          showApproval({ cwd: workspace, id: first.approval.id }).approval.status
+        ).toBe("expired");
       } finally {
         database.close();
       }

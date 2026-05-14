@@ -276,6 +276,22 @@ export async function runTaskVerifiers(
       }
 
       currentTask = startExecutionAttempt();
+      const approvalGrantOutput =
+        approvedGrant === undefined
+          ? {}
+          : {
+              approvalId: approvedGrant.id,
+              approvalGrant: "used"
+            };
+
+      if (approvedGrant !== undefined) {
+        expireApprovalGrant({
+          database,
+          approval: approvedGrant,
+          ...(options.now === undefined ? {} : { now: options.now })
+        });
+      }
+
       const evidenceResult = await storeCommandVerifierEvidence({
         cwd,
         runsteadRoot: root,
@@ -303,22 +319,10 @@ export async function runTaskVerifiers(
           evidenceId: evidenceResult.evidence.id,
           exitCode: evidenceResult.artifact.result.exitCode,
           timedOut: evidenceResult.artifact.result.timedOut,
-          ...(approvedGrant === undefined
-            ? {}
-            : {
-                approvalId: approvedGrant.id,
-                approvalGrant: "used"
-              })
+          ...approvalGrantOutput
         },
         ...(options.now === undefined ? {} : { now: options.now })
       });
-      if (approvedGrant !== undefined) {
-        expireApprovalGrant({
-          database,
-          approval: approvedGrant,
-          ...(options.now === undefined ? {} : { now: options.now })
-        });
-      }
     }
 
     const passed =
