@@ -92,6 +92,9 @@ describe("cli entrypoint", () => {
       (command) => command.name() === "report"
     );
     const auditExport = audit?.commands.find((command) => command.name() === "export");
+    const auditTimeline = audit?.commands.find(
+      (command) => command.name() === "timeline"
+    );
     const weekly = report?.commands.find((command) => command.name() === "weekly");
 
     expect(auditExport?.options.map((option) => option.long)).toContain("--actor");
@@ -102,6 +105,8 @@ describe("cli entrypoint", () => {
     expect(auditExport?.options.map((option) => option.long)).toContain(
       "--aggregate-id"
     );
+    expect(auditTimeline?.options.map((option) => option.long)).toContain("--actor");
+    expect(auditTimeline?.options.map((option) => option.long)).toContain("--type");
     expect(weekly?.options.map((option) => option.long)).toContain("--actor");
   });
 

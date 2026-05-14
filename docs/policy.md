@@ -12,6 +12,7 @@ verifier and CI repair flows:
 - tool contract registry
 - shell verifier guard
 - governed GitHub, git, checkpoint, and wrapped-worker actions in CI repair
+- ordered audit timelines for replaying governed task lifecycles
 
 The product rule is strict: every side effect must be allowed, denied, or
 attached to an approval request before it runs.

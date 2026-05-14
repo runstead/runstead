@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { exportAuditLog } from "./audit-export.js";
+import { exportAuditLog, formatAuditTimeline } from "./audit-export.js";
 import { createGoal } from "./goals.js";
 import { initRunstead } from "./init.js";
 
@@ -79,6 +79,33 @@ describe("exportAuditLog", () => {
         aggregateId: created.goal.id
       });
       expect(byAggregate.contents.trim()).toBe(JSON.stringify(byAggregate.entries[0]));
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("formats filtered events as a replayable timeline", async () => {
+    const workspace = join(tmpdir(), `runstead-audit-timeline-${process.pid}`);
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await initRunstead({ cwd: workspace });
+      const created = await createGoal({
+        cwd: workspace,
+        domain: "repo-maintenance",
+        now: new Date("2026-05-14T08:00:00.000Z")
+      });
+
+      const result = await exportAuditLog({
+        cwd: workspace,
+        aggregateType: "goal",
+        aggregateId: created.goal.id
+      });
+      const timeline = formatAuditTimeline(result.entries);
+
+      expect(timeline).toContain("goal.created");
+      expect(timeline).toContain(`goal:${created.goal.id}`);
+      expect(timeline).toContain("2026-05-14T08:00:00.000Z");
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }

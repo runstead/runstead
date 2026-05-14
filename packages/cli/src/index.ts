@@ -723,6 +723,46 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
       }
     );
 
+  audit
+    .command("timeline")
+    .description("Print an ordered audit event timeline.")
+    .option("--cwd <path>", "Workspace directory")
+    .option("--type <event-type>", "Filter by event type", collectValues, [])
+    .option("--aggregate-type <type>", "Filter by aggregate type")
+    .option("--aggregate-id <id>", "Filter by aggregate id")
+    .option("--actor <id>", "RBAC subject for audit access", "local-admin")
+    .action(
+      async (options: {
+        cwd?: string;
+        type: string[];
+        aggregateType?: string;
+        aggregateId?: string;
+        actor: string;
+      }) => {
+        await requireRbacPermission({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          actor: options.actor,
+          permission: "audit.read",
+          action: "read audit timelines"
+        });
+
+        const { exportAuditLog, formatAuditTimeline } =
+          await import("./audit-export.js");
+        const result = await exportAuditLog({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          ...(options.type.length === 0 ? {} : { types: options.type }),
+          ...(options.aggregateType === undefined
+            ? {}
+            : { aggregateType: options.aggregateType }),
+          ...(options.aggregateId === undefined
+            ? {}
+            : { aggregateId: options.aggregateId })
+        });
+
+        console.log(formatAuditTimeline(result.entries));
+      }
+    );
+
   const report = program.command("report").description("Generate reports.");
 
   report
