@@ -29,7 +29,10 @@ describe("validateDomainPackDir", () => {
       "run_local_verifiers",
       "ci_repair"
     ]);
+    expect(result.fixtures).toEqual([]);
+    expect(result.evals).toEqual([]);
     expect(formatDomainPackValidationResult(result)).toContain("Status: valid");
+    expect(formatDomainPackValidationResult(result)).toContain("Fixtures: 0");
   });
 
   it("validates the experimental research-monitor pack", async () => {
@@ -69,6 +72,232 @@ describe("validateDomainPackDir", () => {
     expect(result.goalTemplates[0]?.generated.acceptanceContracts).toContain(
       "send_not_performed"
     );
+  });
+
+  it("validates fixture manifests and eval benchmarks", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-domain-pack-"));
+
+    try {
+      await mkdir(join(workspace, "evals"), { recursive: true });
+      await mkdir(join(workspace, "fixtures", "manual-review-smoke"), {
+        recursive: true
+      });
+      await mkdir(join(workspace, "goal-templates"), { recursive: true });
+      await mkdir(join(workspace, "policies"), { recursive: true });
+      await mkdir(join(workspace, "task-types"), { recursive: true });
+      await writeFile(
+        join(workspace, "domain.yaml"),
+        [
+          "id: custom-pack",
+          "version: 0.1.0",
+          "name: Custom Pack",
+          "description: Fixture test pack.",
+          "compatibility:",
+          "  runstead_min_version: 0.0.0",
+          "goal_templates:",
+          "  - default-goal",
+          "task_types:",
+          "  - manual_review",
+          "default_policy: policies/default.yaml",
+          "default_verifiers:",
+          "  - manual_review",
+          "required_tools:",
+          "  - filesystem",
+          "supported_workers:",
+          "  - shell"
+        ].join("\n"),
+        "utf8"
+      );
+      await writeFile(
+        join(workspace, "goal-templates", "default-goal.yaml"),
+        [
+          "id: default-goal",
+          "domain: custom-pack",
+          "title: Default Goal",
+          "description: Fixture validation goal.",
+          "generated:",
+          "  recurring_tasks:",
+          "    - manual_review",
+          "  acceptance_contracts:",
+          "    - manual_review_complete"
+        ].join("\n"),
+        "utf8"
+      );
+      await writeFile(
+        join(workspace, "task-types", "manual_review.yaml"),
+        [
+          "id: manual_review",
+          "domain: custom-pack",
+          "description: Manual review task.",
+          "default_priority: medium",
+          "max_attempts: 1",
+          "verifiers:",
+          "  required:",
+          "    - manual_review:evidence_attached",
+          "worker_routing:",
+          "  preferred: shell"
+        ].join("\n"),
+        "utf8"
+      );
+      await writeFile(
+        join(workspace, "policies", "default.yaml"),
+        [
+          "id: policy_custom_pack_v1",
+          "version: 1",
+          "default_decision: require_approval",
+          "default_risk: medium",
+          "rules: []"
+        ].join("\n"),
+        "utf8"
+      );
+      await writeFile(
+        join(workspace, "fixtures", "manifest.yaml"),
+        [
+          "version: 1",
+          "fixtures:",
+          "  - id: manual-review-smoke",
+          "    description: Manual review smoke fixture.",
+          "    path: manual-review-smoke",
+          "    task_type: manual_review",
+          "    goal_template: default-goal",
+          "    tags:",
+          "      - smoke",
+          "    acceptance_contracts:",
+          "      - manual_review_complete"
+        ].join("\n"),
+        "utf8"
+      );
+      await writeFile(
+        join(workspace, "evals", "benchmark.yaml"),
+        [
+          "version: 1",
+          "benchmarks:",
+          "  - id: manual-review-smoke",
+          "    fixture: manual-review-smoke",
+          "    acceptance_contracts:",
+          "      - manual_review_complete"
+        ].join("\n"),
+        "utf8"
+      );
+
+      const result = await validateDomainPackDir(workspace);
+
+      expect(result.valid).toBe(true);
+      expect(result.fixtures).toEqual([
+        {
+          id: "manual-review-smoke",
+          description: "Manual review smoke fixture.",
+          path: "manual-review-smoke",
+          taskType: "manual_review",
+          goalTemplate: "default-goal",
+          tags: ["smoke"],
+          acceptanceContracts: ["manual_review_complete"]
+        }
+      ]);
+      expect(result.evals).toEqual([
+        {
+          id: "manual-review-smoke",
+          fixture: "manual-review-smoke",
+          acceptanceContracts: ["manual_review_complete"]
+        }
+      ]);
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("reports inconsistent fixture and eval manifests", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-domain-pack-"));
+
+    try {
+      await mkdir(join(workspace, "evals"), { recursive: true });
+      await mkdir(join(workspace, "fixtures", "stray-fixture"), {
+        recursive: true
+      });
+      await mkdir(join(workspace, "policies"), { recursive: true });
+      await writeFile(
+        join(workspace, "domain.yaml"),
+        [
+          "id: custom-pack",
+          "version: 0.1.0",
+          "name: Custom Pack",
+          "description: Invalid fixture test pack.",
+          "compatibility:",
+          "  runstead_min_version: 0.0.0",
+          "goal_templates: []",
+          "task_types: []",
+          "default_policy: policies/default.yaml",
+          "default_verifiers: []",
+          "required_tools: []",
+          "supported_workers: []"
+        ].join("\n"),
+        "utf8"
+      );
+      await writeFile(
+        join(workspace, "policies", "default.yaml"),
+        [
+          "id: policy_custom_pack_v1",
+          "version: 1",
+          "default_decision: require_approval",
+          "default_risk: medium",
+          "rules: []"
+        ].join("\n"),
+        "utf8"
+      );
+      await writeFile(
+        join(workspace, "fixtures", "manifest.yaml"),
+        [
+          "version: 1",
+          "fixtures:",
+          "  - id: broken-fixture",
+          "    description: Bad fixture.",
+          "    path: ../outside",
+          "    task_type: missing_task",
+          "    goal_template: missing-goal",
+          "  - id: repeated-fixture",
+          "    description: Duplicate fixture.",
+          "    task_type: missing_task",
+          "  - id: repeated-fixture",
+          "    description: Duplicate fixture again.",
+          "    task_type: missing_task"
+        ].join("\n"),
+        "utf8"
+      );
+      await writeFile(
+        join(workspace, "evals", "benchmark.yaml"),
+        [
+          "version: 1",
+          "benchmarks:",
+          "  - id: repeated-eval",
+          "    fixture: missing-fixture",
+          "    acceptance_contracts:",
+          "      - manual_review_complete",
+          "  - id: repeated-eval",
+          "    fixture: missing-fixture",
+          "    acceptance_contracts:",
+          "      - manual_review_complete"
+        ].join("\n"),
+        "utf8"
+      );
+
+      const result = await validateDomainPackDir(workspace);
+
+      expect(result.valid).toBe(false);
+      expect(result.issues).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ code: "fixture_duplicate_id" }),
+          expect.objectContaining({ code: "fixture_task_type_unknown" }),
+          expect.objectContaining({ code: "fixture_goal_template_unknown" }),
+          expect.objectContaining({ code: "fixture_path_escapes_pack" }),
+          expect.objectContaining({ code: "fixture_path_missing" }),
+          expect.objectContaining({ code: "fixture_unregistered_directory" }),
+          expect.objectContaining({ code: "eval_duplicate_id" }),
+          expect.objectContaining({ code: "eval_fixture_unknown" })
+        ])
+      );
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
   });
 
   it("reports missing and mismatched pack references", async () => {

@@ -31,12 +31,17 @@ export async function createDomainPackTemplate(
     "domain.yaml",
     "goal-templates/default-goal.yaml",
     "task-types/manual_review.yaml",
-    "policies/default.yaml"
+    "policies/default.yaml",
+    "fixtures/manifest.yaml",
+    "fixtures/manual-review-smoke/README.md",
+    "evals/benchmark.yaml"
   ];
 
   await mkdir(join(root, "goal-templates"), { recursive: true });
   await mkdir(join(root, "task-types"), { recursive: true });
   await mkdir(join(root, "policies"), { recursive: true });
+  await mkdir(join(root, "fixtures", "manual-review-smoke"), { recursive: true });
+  await mkdir(join(root, "evals"), { recursive: true });
 
   await writeIfMissing(
     join(root, "domain.yaml"),
@@ -56,6 +61,21 @@ export async function createDomainPackTemplate(
   await writeIfMissing(
     join(root, "policies", "default.yaml"),
     policyYaml({ id }),
+    options.force
+  );
+  await writeIfMissing(
+    join(root, "fixtures", "manifest.yaml"),
+    fixtureManifestYaml(),
+    options.force
+  );
+  await writeIfMissing(
+    join(root, "fixtures", "manual-review-smoke", "README.md"),
+    fixtureReadme({ name }),
+    options.force
+  );
+  await writeIfMissing(
+    join(root, "evals", "benchmark.yaml"),
+    evalBenchmarkYaml(),
     options.force
   );
 
@@ -210,6 +230,39 @@ rules:
     risk: low
     obligations:
       - attach_as_evidence
+`;
+}
+
+function fixtureManifestYaml(): string {
+  return `version: 1
+fixtures:
+  - id: manual-review-smoke
+    description: Starter fixture for manual review evidence flow.
+    path: manual-review-smoke
+    task_type: manual_review
+    goal_template: default-goal
+    tags:
+      - smoke
+    acceptance_contracts:
+      - manual_review_complete
+`;
+}
+
+function fixtureReadme(input: { name: string }): string {
+  return `# ${input.name} manual review smoke fixture
+
+Use this fixture to capture representative inputs and expected evidence for the
+starter manual review task.
+`;
+}
+
+function evalBenchmarkYaml(): string {
+  return `version: 1
+benchmarks:
+  - id: manual-review-smoke
+    fixture: manual-review-smoke
+    acceptance_contracts:
+      - manual_review_complete
 `;
 }
 

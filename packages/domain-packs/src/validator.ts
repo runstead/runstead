@@ -14,6 +14,22 @@ import { loadTaskTypeFromFile } from "./task-type.js";
 
 export type DomainPackValidationSeverity = "error" | "warning";
 
+export interface DomainPackFixture {
+  id: string;
+  description: string;
+  taskType: string;
+  path: string;
+  goalTemplate?: string;
+  tags: string[];
+  acceptanceContracts: string[];
+}
+
+export interface DomainPackEval {
+  id: string;
+  fixture: string;
+  acceptanceContracts: string[];
+}
+
 export interface DomainPackValidationIssue {
   severity: DomainPackValidationSeverity;
   code: string;
@@ -28,8 +44,11 @@ export interface DomainPackValidationResult {
   domain?: DomainPack;
   goalTemplates: GoalTemplate[];
   taskTypes: TaskType[];
+  fixtures: DomainPackFixture[];
+  evals: DomainPackEval[];
 }
 
+const FIXTURE_ID_PATTERN = /^[a-z][a-z0-9-]*$/;
 const DomainPackPolicyDecisionSchema = z.enum(["allow", "deny", "require_approval"]);
 const DomainPackPolicyRiskSchema = z.enum(["low", "medium", "high", "critical"]);
 const DomainPackPolicyRuleSchema = z
@@ -51,6 +70,38 @@ const DomainPackPolicyYamlSchema = z
   })
   .passthrough();
 type DomainPackPolicyYaml = z.infer<typeof DomainPackPolicyYamlSchema>;
+const DomainPackFixtureYamlSchema = z
+  .object({
+    version: z.literal(1),
+    fixtures: z.array(
+      z
+        .object({
+          id: z.string().regex(FIXTURE_ID_PATTERN),
+          description: z.string().min(1),
+          path: z.string().min(1).optional(),
+          task_type: z.string().min(1),
+          goal_template: z.string().min(1).optional(),
+          tags: z.array(z.string().min(1)).optional(),
+          acceptance_contracts: z.array(z.string().min(1)).optional()
+        })
+        .passthrough()
+    )
+  })
+  .passthrough();
+const DomainPackEvalYamlSchema = z
+  .object({
+    version: z.literal(1),
+    benchmarks: z.array(
+      z
+        .object({
+          id: z.string().regex(FIXTURE_ID_PATTERN),
+          fixture: z.string().regex(FIXTURE_ID_PATTERN),
+          acceptance_contracts: z.array(z.string().min(1)).min(1)
+        })
+        .passthrough()
+    )
+  })
+  .passthrough();
 
 export async function validateDomainPackDir(
   root: string
@@ -59,6 +110,8 @@ export async function validateDomainPackDir(
   const issues: DomainPackValidationIssue[] = [];
   const goalTemplates: GoalTemplate[] = [];
   const taskTypes: TaskType[] = [];
+  let fixtures: DomainPackFixture[] = [];
+  let evals: DomainPackEval[] = [];
   const domainPath = join(resolvedRoot, "domain.yaml");
   const domain = await loadDomain(resolvedRoot, domainPath, issues);
 
@@ -163,6 +216,18 @@ export async function validateDomainPackDir(
       referencedPath: domain.defaultPolicy,
       issues
     });
+
+    fixtures = await collectFixtureManifest({
+      root: resolvedRoot,
+      goalTemplateIds: domain.goalTemplates,
+      taskTypeIds: domain.taskTypes,
+      issues
+    });
+    evals = await collectEvalBenchmark({
+      root: resolvedRoot,
+      fixtureIds: fixtures.map((fixture) => fixture.id),
+      issues
+    });
   }
 
   return {
@@ -171,7 +236,9 @@ export async function validateDomainPackDir(
     issues,
     ...(domain === undefined ? {} : { domain }),
     goalTemplates,
-    taskTypes
+    taskTypes,
+    fixtures,
+    evals
   };
 }
 
@@ -185,6 +252,8 @@ export function formatDomainPackValidationResult(
     ...(result.domain === undefined ? [] : [`Domain: ${result.domain.id}`]),
     `Goal templates: ${result.goalTemplates.length}`,
     `Task types: ${result.taskTypes.length}`,
+    `Fixtures: ${result.fixtures.length}`,
+    `Evals: ${result.evals.length}`,
     ...result.issues.map(
       (issue) =>
         `  ${issue.severity.toUpperCase()} ${issue.code}: ${issue.message}${
@@ -516,6 +585,274 @@ async function collectUnregisteredYamlDocuments(input: {
         code: `${input.codePrefix}_unregistered_yaml`,
         message: `Unregistered ${input.label} yaml is not referenced from domain.yaml: ${id}`,
         path: join(directoryPath, entry)
+      });
+    }
+  }
+}
+
+async function collectFixtureManifest(input: {
+  root: string;
+  goalTemplateIds: string[];
+  taskTypeIds: string[];
+  issues: DomainPackValidationIssue[];
+}): Promise<DomainPackFixture[]> {
+  const manifestPath = join(input.root, "fixtures", "manifest.yaml");
+
+  if (!(await fileExists(manifestPath))) {
+    return [];
+  }
+
+  let parsed: z.infer<typeof DomainPackFixtureYamlSchema>;
+
+  try {
+    parsed = DomainPackFixtureYamlSchema.parse(
+      parseYaml(await readFile(manifestPath, "utf8"))
+    );
+  } catch (error) {
+    input.issues.push({
+      severity: "error",
+      code: "fixture_manifest_invalid",
+      message: errorMessage(error),
+      path: relativeToRoot(input.root, manifestPath)
+    });
+    return [];
+  }
+
+  const fixtures = parsed.fixtures.map((fixture) => ({
+    id: fixture.id,
+    description: fixture.description,
+    taskType: fixture.task_type,
+    path: fixture.path ?? fixture.id,
+    ...(fixture.goal_template === undefined
+      ? {}
+      : { goalTemplate: fixture.goal_template }),
+    tags: fixture.tags ?? [],
+    acceptanceContracts: fixture.acceptance_contracts ?? []
+  }));
+
+  collectDuplicateFixtureIds({
+    fixtures,
+    path: manifestPath,
+    root: input.root,
+    issues: input.issues
+  });
+  await assertFixtureReferences({
+    fixtures,
+    root: input.root,
+    goalTemplateIds: input.goalTemplateIds,
+    taskTypeIds: input.taskTypeIds,
+    issues: input.issues
+  });
+  await collectUnregisteredFixtureDirectories({
+    root: input.root,
+    fixtures,
+    issues: input.issues
+  });
+
+  return fixtures;
+}
+
+async function collectEvalBenchmark(input: {
+  root: string;
+  fixtureIds: string[];
+  issues: DomainPackValidationIssue[];
+}): Promise<DomainPackEval[]> {
+  const benchmarkPath = join(input.root, "evals", "benchmark.yaml");
+
+  if (!(await fileExists(benchmarkPath))) {
+    return [];
+  }
+
+  let parsed: z.infer<typeof DomainPackEvalYamlSchema>;
+
+  try {
+    parsed = DomainPackEvalYamlSchema.parse(
+      parseYaml(await readFile(benchmarkPath, "utf8"))
+    );
+  } catch (error) {
+    input.issues.push({
+      severity: "error",
+      code: "eval_benchmark_invalid",
+      message: errorMessage(error),
+      path: relativeToRoot(input.root, benchmarkPath)
+    });
+    return [];
+  }
+
+  const evals = parsed.benchmarks.map((benchmark) => ({
+    id: benchmark.id,
+    fixture: benchmark.fixture,
+    acceptanceContracts: benchmark.acceptance_contracts
+  }));
+
+  collectDuplicateEvalIds({
+    evals,
+    path: benchmarkPath,
+    root: input.root,
+    issues: input.issues
+  });
+  assertEvalFixtureReferences({
+    evals,
+    fixtureIds: input.fixtureIds,
+    path: benchmarkPath,
+    root: input.root,
+    issues: input.issues
+  });
+
+  return evals;
+}
+
+function collectDuplicateFixtureIds(input: {
+  fixtures: DomainPackFixture[];
+  path: string;
+  root: string;
+  issues: DomainPackValidationIssue[];
+}): void {
+  const seen = new Set<string>();
+
+  for (const fixture of input.fixtures) {
+    if (seen.has(fixture.id)) {
+      input.issues.push({
+        severity: "error",
+        code: "fixture_duplicate_id",
+        message: `Duplicate fixture id: ${fixture.id}`,
+        path: relativeToRoot(input.root, input.path)
+      });
+    }
+
+    seen.add(fixture.id);
+  }
+}
+
+async function assertFixtureReferences(input: {
+  fixtures: DomainPackFixture[];
+  root: string;
+  goalTemplateIds: string[];
+  taskTypeIds: string[];
+  issues: DomainPackValidationIssue[];
+}): Promise<void> {
+  const fixturesRoot = join(input.root, "fixtures");
+  const knownGoalTemplates = new Set(input.goalTemplateIds);
+  const knownTaskTypes = new Set(input.taskTypeIds);
+
+  for (const fixture of input.fixtures) {
+    if (!knownTaskTypes.has(fixture.taskType)) {
+      input.issues.push({
+        severity: "error",
+        code: "fixture_task_type_unknown",
+        message: `Fixture ${fixture.id} references unknown task type: ${fixture.taskType}`,
+        path: "fixtures/manifest.yaml"
+      });
+    }
+
+    if (
+      fixture.goalTemplate !== undefined &&
+      !knownGoalTemplates.has(fixture.goalTemplate)
+    ) {
+      input.issues.push({
+        severity: "error",
+        code: "fixture_goal_template_unknown",
+        message: `Fixture ${fixture.id} references unknown goal template: ${fixture.goalTemplate}`,
+        path: "fixtures/manifest.yaml"
+      });
+    }
+
+    const fixturePath = resolve(fixturesRoot, fixture.path);
+
+    if (!isWithinRoot(fixturesRoot, fixturePath)) {
+      input.issues.push({
+        severity: "error",
+        code: "fixture_path_escapes_pack",
+        message: `Fixture ${fixture.id} path escapes fixtures/: ${fixture.path}`,
+        path: "fixtures/manifest.yaml"
+      });
+      continue;
+    }
+
+    if (!(await fileExists(fixturePath))) {
+      input.issues.push({
+        severity: "error",
+        code: "fixture_path_missing",
+        message: `Fixture ${fixture.id} path is missing: ${fixture.path}`,
+        path: relativeToRoot(input.root, fixturePath)
+      });
+    }
+  }
+}
+
+async function collectUnregisteredFixtureDirectories(input: {
+  root: string;
+  fixtures: DomainPackFixture[];
+  issues: DomainPackValidationIssue[];
+}): Promise<void> {
+  const fixturesRoot = join(input.root, "fixtures");
+  const registeredTopLevel = new Set(
+    input.fixtures.map((fixture) => fixture.path.split(/[\\/]/)[0] ?? fixture.path)
+  );
+
+  let directoryNames: string[];
+
+  try {
+    const entries = await readdir(fixturesRoot, { withFileTypes: true });
+    directoryNames = entries
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => String(entry.name));
+  } catch {
+    return;
+  }
+
+  for (const directoryName of directoryNames) {
+    if (registeredTopLevel.has(directoryName)) {
+      continue;
+    }
+
+    input.issues.push({
+      severity: "warning",
+      code: "fixture_unregistered_directory",
+      message: `Unregistered fixture directory is not referenced from fixtures/manifest.yaml: ${directoryName}`,
+      path: join(fixturesRoot, directoryName)
+    });
+  }
+}
+
+function collectDuplicateEvalIds(input: {
+  evals: DomainPackEval[];
+  path: string;
+  root: string;
+  issues: DomainPackValidationIssue[];
+}): void {
+  const seen = new Set<string>();
+
+  for (const evaluation of input.evals) {
+    if (seen.has(evaluation.id)) {
+      input.issues.push({
+        severity: "error",
+        code: "eval_duplicate_id",
+        message: `Duplicate eval id: ${evaluation.id}`,
+        path: relativeToRoot(input.root, input.path)
+      });
+    }
+
+    seen.add(evaluation.id);
+  }
+}
+
+function assertEvalFixtureReferences(input: {
+  evals: DomainPackEval[];
+  fixtureIds: string[];
+  path: string;
+  root: string;
+  issues: DomainPackValidationIssue[];
+}): void {
+  const knownFixtures = new Set(input.fixtureIds);
+
+  for (const evaluation of input.evals) {
+    if (!knownFixtures.has(evaluation.fixture)) {
+      input.issues.push({
+        severity: "error",
+        code: "eval_fixture_unknown",
+        message: `Eval ${evaluation.id} references unknown fixture: ${evaluation.fixture}`,
+        path: relativeToRoot(input.root, input.path)
       });
     }
   }

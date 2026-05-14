@@ -24,12 +24,21 @@ describe("createDomainPackTemplate", () => {
         "domain.yaml",
         "goal-templates/default-goal.yaml",
         "task-types/manual_review.yaml",
-        "policies/default.yaml"
+        "policies/default.yaml",
+        "fixtures/manifest.yaml",
+        "fixtures/manual-review-smoke/README.md",
+        "evals/benchmark.yaml"
       ]);
       expect(validation.valid).toBe(true);
       expect(validation.domain?.id).toBe("customer-ops");
       expect(validation.goalTemplates[0]?.domain).toBe("customer-ops");
       expect(validation.taskTypes[0]?.domain).toBe("customer-ops");
+      expect(validation.fixtures.map((fixture) => fixture.id)).toEqual([
+        "manual-review-smoke"
+      ]);
+      expect(validation.evals.map((evaluation) => evaluation.id)).toEqual([
+        "manual-review-smoke"
+      ]);
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }

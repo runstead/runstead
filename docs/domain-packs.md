@@ -39,6 +39,11 @@ task-types/
   <task-type-id>.yaml
 policies/
   <policy-id>.yaml
+fixtures/
+  manifest.yaml
+  <fixture-id>/
+evals/
+  benchmark.yaml
 ```
 
 File names for goal templates and task types must match the id referenced from
@@ -144,6 +149,38 @@ Keep task types side-effect explicit. If a task can send mail, create PRs, push
 branches, or call external APIs, policy must require approval unless the action
 is deliberately safe for the domain.
 
+## Fixtures And Evals
+
+Fixtures are optional, but published packs should include them once task
+contracts stabilize:
+
+```yaml
+version: 1
+fixtures:
+  - id: draft-followup-smoke
+    description: Representative follow-up draft input and expected evidence.
+    path: draft-followup-smoke
+    task_type: draft_followup
+    goal_template: weekly-triage
+    tags:
+      - smoke
+    acceptance_contracts:
+      - draft_reviewed
+      - recipient_checked
+```
+
+Evals reference fixture ids and acceptance contracts:
+
+```yaml
+version: 1
+benchmarks:
+  - id: draft-followup-smoke
+    fixture: draft-followup-smoke
+    acceptance_contracts:
+      - draft_reviewed
+      - recipient_checked
+```
+
 ## Validation
 
 Run validation before installing or committing a pack:
@@ -163,6 +200,8 @@ The validator checks that:
 - Task type worker routing must point at workers declared in `supported_workers`.
 - The default policy file exists.
 - The default policy declares `default_decision` and `default_risk`.
+- Fixture manifests reference known task types, templates, and local fixture paths.
+- Eval benchmarks reference known fixture ids.
 
 List discoverable packs with:
 
