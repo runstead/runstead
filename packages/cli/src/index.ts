@@ -109,6 +109,18 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     });
 
   program
+    .command("upgrade")
+    .description("Apply missing scaffold defaults to an existing .runstead state.")
+    .option("--cwd <path>", "Workspace directory")
+    .action(async (options: { cwd?: string }) => {
+      const { formatUpgradeRunsteadReport, upgradeRunsteadState } =
+        await import("./upgrade.js");
+      const result = await upgradeRunsteadState(options);
+
+      console.log(formatUpgradeRunsteadReport(result));
+    });
+
+  program
     .command("resume")
     .description("Resume interrupted local work by requeueing interrupted tasks.")
     .option("--cwd <path>", "Workspace directory")

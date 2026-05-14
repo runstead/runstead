@@ -32,6 +32,12 @@ describe("cli entrypoint", () => {
     );
   });
 
+  it("exposes explicit scaffold upgrades", () => {
+    expect(createProgram().commands.map((command) => command.name())).toContain(
+      "upgrade"
+    );
+  });
+
   it("exposes repository archiving", () => {
     const repo = createProgram().commands.find((command) => command.name() === "repo");
 
