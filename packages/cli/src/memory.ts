@@ -17,6 +17,8 @@ import {
 
 import { requireRunsteadStateDbSync } from "./runstead-root.js";
 
+const MAX_QUARANTINED_MEMORY_CONFIDENCE = 0.8;
+
 export interface QuarantineMemoryCandidateOptions {
   cwd?: string;
   scope: string;
@@ -91,7 +93,7 @@ export function quarantineMemoryCandidate(
     scope: options.scope,
     type: MemoryTypeSchema.parse(options.type),
     status: "quarantined",
-    confidence: options.confidence ?? 0.5,
+    confidence: quarantinedMemoryConfidence(options.confidence),
     content: options.content,
     sourceRefs: options.sourceRefs ?? [],
     provenance: provenance({
@@ -272,6 +274,16 @@ function provenance(input: { createdBy?: string; taskId?: string }): JsonObject 
     createdBy: input.createdBy ?? "runstead",
     ...(input.taskId === undefined ? {} : { createdFromTask: input.taskId })
   };
+}
+
+function quarantinedMemoryConfidence(confidence: number | undefined): number {
+  const value = confidence ?? 0.5;
+
+  if (value < 0 || value > 1) {
+    throw new Error("Memory confidence must be between 0 and 1");
+  }
+
+  return Math.min(value, MAX_QUARANTINED_MEMORY_CONFIDENCE);
 }
 
 function memoryEventPayload(memory: MemoryRecord): JsonObject {

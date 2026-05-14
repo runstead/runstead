@@ -113,6 +113,32 @@ describe("quarantineMemoryCandidate", () => {
       await rm(workspace, { force: true, recursive: true });
     }
   });
+
+  it("caps quarantined candidate confidence below verified facts", async () => {
+    const workspace = join(tmpdir(), `runstead-memory-confidence-${process.pid}`);
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await initRunstead({ cwd: workspace });
+
+      const result = quarantineMemoryCandidate({
+        cwd: workspace,
+        scope: "repo:acme/app",
+        type: "external_claim",
+        content: "Untrusted CI log claims this should be remembered forever.",
+        sourceRefs: ["github:actions/run/123"],
+        confidence: 1,
+        now: new Date("2026-05-14T05:45:00.000Z")
+      });
+
+      expect(result.memory).toMatchObject({
+        status: "quarantined",
+        confidence: 0.8
+      });
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
 });
 
 describe("recordProjectFact", () => {
