@@ -246,6 +246,9 @@ Runstead records `domain_pack.upgraded` with the previous and next manifest
 versions. Upgrades are refused while active goals or tasks reference the pack
 unless `--force` is used.
 
+Install and upgrade both enforce `compatibility.runstead_min_version` and
+`compatibility.runstead_max_version` against the current Runstead CLI version.
+
 Remove a locally installed pack when it is no longer referenced by active work:
 
 ```sh

@@ -98,6 +98,38 @@ describe("installDomainPack", () => {
     }
   });
 
+  it("rejects packs outside the current Runstead compatibility range", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-domain-install-"));
+    const packRoot = join(workspace, "packs", "future-ops");
+
+    try {
+      await initRunstead({ cwd: workspace });
+      await createDomainPackTemplate({
+        id: "future-ops",
+        outputDir: packRoot
+      });
+
+      const domainYaml = await readFile(join(packRoot, "domain.yaml"), "utf8");
+      await writeFile(
+        join(packRoot, "domain.yaml"),
+        domainYaml.replace(
+          "runstead_min_version: 0.0.0",
+          "runstead_min_version: 9.0.0"
+        ),
+        "utf8"
+      );
+
+      await expect(
+        installDomainPack({
+          cwd: workspace,
+          ref: packRoot
+        })
+      ).rejects.toThrow("not compatible");
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
   it("upgrades an installed pack and records version drift", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "runstead-domain-upgrade-"));
     const packRoot = join(workspace, "packs", "customer-ops");

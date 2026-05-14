@@ -5,6 +5,7 @@ import { dirname, join, resolve } from "node:path";
 import { createRunsteadId, type RunsteadEvent } from "@runstead/core";
 import {
   buildDomainPackManifest,
+  checkDomainPackCompatibility,
   resolveDomainPackRef,
   type DomainPackManifest,
   type DomainPackRegistryEntry
@@ -71,6 +72,7 @@ export interface UpgradeDomainPackResult {
 }
 
 const DOMAIN_PACK_ID_PATTERN = /^[a-z][a-z0-9-]*$/;
+const RUNSTEAD_CLI_VERSION = "0.0.0";
 
 export async function installDomainPack(
   options: InstallDomainPackOptions
@@ -84,6 +86,7 @@ export async function installDomainPack(
       : { includeBuiltIns: options.includeBuiltIns })
   });
   const manifest = await buildDomainPackManifest(entry.root);
+  assertCompatibleDomainPack(manifest);
   const destination = join(resolvedRoot.root, "domains", entry.id);
   const sourceRoot = resolve(entry.root);
   const destinationRoot = resolve(destination);
@@ -193,6 +196,7 @@ export async function upgradeDomainPack(
       : { includeBuiltIns: options.includeBuiltIns })
   });
   const manifest = await buildDomainPackManifest(entry.root);
+  assertCompatibleDomainPack(manifest);
   const destination = join(resolved.root, "domains", entry.id);
   const sourceRoot = resolve(entry.root);
   const destinationRoot = resolve(destination);
@@ -356,6 +360,24 @@ function domainPackUninstalledEvent(input: {
     },
     createdAt: input.createdAt
   };
+}
+
+function assertCompatibleDomainPack(manifest: DomainPackManifest): void {
+  const compatibility = checkDomainPackCompatibility(
+    {
+      id: manifest.domain.id,
+      compatibility: manifest.compatibility
+    },
+    RUNSTEAD_CLI_VERSION
+  );
+
+  if (!compatibility.compatible) {
+    throw new Error(
+      `Domain pack ${manifest.domain.id} is not compatible with Runstead ${RUNSTEAD_CLI_VERSION}: ${compatibility.issues
+        .map((issue) => issue.message)
+        .join("; ")}`
+    );
+  }
 }
 
 function domainPackUpgradedEvent(input: {

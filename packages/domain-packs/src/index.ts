@@ -1,3 +1,4 @@
+export * from "./compatibility.js";
 export * from "./domain-pack.js";
 export * from "./email-followup.js";
 export * from "./goal-template.js";
