@@ -28,9 +28,12 @@ export const SkillProvenanceSchema = z.object({
   author: z.string().min(1)
 });
 
+const SKILL_NAME_PATTERN = /^[a-z][a-z0-9-]*$/;
+const SEMVER_PATTERN = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
+
 export const SkillPackageSchema = z.object({
-  name: z.string().min(1),
-  version: z.string().min(1),
+  name: z.string().regex(SKILL_NAME_PATTERN),
+  version: z.string().regex(SEMVER_PATTERN),
   status: SkillStatusSchema,
   domain: z.string().min(1),
   description: z.string().min(1),
@@ -46,8 +49,8 @@ export const SkillPackageSchema = z.object({
 export type SkillPackage = z.infer<typeof SkillPackageSchema>;
 
 const SkillPackageYamlSchema = z.object({
-  name: z.string().min(1),
-  version: z.string().min(1),
+  name: z.string().regex(SKILL_NAME_PATTERN),
+  version: z.string().regex(SEMVER_PATTERN),
   status: SkillStatusSchema,
   domain: z.string().min(1),
   description: z.string().min(1),

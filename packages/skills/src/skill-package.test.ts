@@ -78,6 +78,29 @@ describe("parseSkillPackageYaml", () => {
       }
     });
   });
+
+  it("rejects unstable skill names and versions", () => {
+    expect(() =>
+      parseSkillPackageYaml({
+        name: "Fix_Pnpm_CI",
+        version: "latest",
+        status: "candidate",
+        domain: "repo-maintenance",
+        description: "Diagnose pnpm failures.",
+        triggers: ["ci_failure"],
+        allowed_tools: ["filesystem.read"],
+        denied_tools: ["secret.read"],
+        permissions: {
+          network: "deny_by_default"
+        },
+        verifiers: [{ command: "pnpm test" }],
+        provenance: {
+          created_from_tasks: ["task_001"],
+          author: "agent-curator"
+        }
+      })
+    ).toThrow();
+  });
 });
 
 describe("validateSkillPackageDir", () => {
