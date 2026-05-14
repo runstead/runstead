@@ -9,10 +9,12 @@ import { describe, expect, it } from "vitest";
 import { decideApproval, showApproval } from "./approvals.js";
 import { exportAuditLog } from "./audit-export.js";
 import { initRunstead } from "./init.js";
+import { createCiRepairTaskFromWorkflowRun } from "./ci-repair.js";
 import {
   formatCiRepairOrchestratorReport,
   runCiRepairOrchestrator
 } from "./ci-repair-orchestrator.js";
+import { startWorkerRun } from "./runtime-audit.js";
 import type { GitRunner } from "./git-branch.js";
 import type { GitHubCliRunner } from "./github-actions.js";
 import type {
@@ -268,6 +270,55 @@ describe("runCiRepairOrchestrator", () => {
       ).rejects.toThrow("CI repair diff scope failed");
 
       expect(gitCalls).toContainEqual(["reset", "--hard", "abc123"]);
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("does not start a duplicate orchestrator for an already running repair task", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-ci-duplicate-"));
+    const gitCalls: string[][] = [];
+
+    try {
+      await initRunstead({ cwd: workspace, createDefaultGoal: true });
+
+      const ciRepair = await createCiRepairTaskFromWorkflowRun({
+        cwd: workspace,
+        runId: "123",
+        runner: githubRunner([]),
+        verifierCommands: [{ name: "test", command: "pnpm test" }],
+        now: new Date("2026-05-14T12:00:00.000Z")
+      });
+      const database = openRunsteadDatabase(ciRepair.stateDb);
+
+      try {
+        startWorkerRun({
+          database,
+          task: ciRepair.task,
+          workerType: "ci_repair_orchestrator",
+          enforcementLevel: "policy_enforced",
+          now: new Date("2026-05-14T12:01:00.000Z")
+        });
+      } finally {
+        database.close();
+      }
+
+      await expect(
+        runCiRepairOrchestrator({
+          cwd: workspace,
+          runId: "123",
+          worker: "codex_cli",
+          base: "main",
+          verifierCommands: [{ name: "test", command: "pnpm test" }],
+          githubRunner: githubRunner([]),
+          gitRunner: gitRunner(gitCalls, { diffNameOnly: "src/fix.ts\n" }),
+          workerRunner: workerRunner([]),
+          verifierRunner: verifierRunner([]),
+          now: new Date("2026-05-14T12:02:00.000Z")
+        })
+      ).rejects.toThrow("already has a running CI repair orchestrator");
+
+      expect(gitCalls).toEqual([]);
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }

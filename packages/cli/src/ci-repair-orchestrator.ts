@@ -139,6 +139,13 @@ export async function runCiRepairOrchestrator(
     ...(options.githubRunner === undefined ? {} : { runner: options.githubRunner }),
     ...(options.now === undefined ? {} : { now: options.now })
   });
+
+  if (ciRepair.task.status !== "queued") {
+    throw new Error(
+      `CI repair task ${ciRepair.task.id} is ${ciRepair.task.status}, expected queued`
+    );
+  }
+
   const goal = showGoal({ cwd, id: ciRepair.task.goalId }).goal;
   const base = options.base ?? ciRepair.workflowRun.headBranch ?? "main";
   const branchName = buildRunsteadBranchName({
@@ -148,6 +155,11 @@ export async function runCiRepairOrchestrator(
   const database = openRunsteadDatabase(stateDb);
 
   try {
+    assertNoRunningCiRepairOrchestratorWorker({
+      database,
+      task: ciRepair.task
+    });
+
     const workerRun = startWorkerRun({
       database,
       task: ciRepair.task,
@@ -731,6 +743,11 @@ async function resumeCiRepairPullRequest(options: {
   });
 
   try {
+    assertNoRunningCiRepairOrchestratorWorker({
+      database,
+      task: options.task
+    });
+
     const workerRun = startWorkerRun({
       database,
       task: options.task,
@@ -1048,6 +1065,29 @@ function findPullRequestResumeTask(options: {
 
     return pullRequestResumeContext(task) !== undefined;
   });
+}
+
+function assertNoRunningCiRepairOrchestratorWorker(input: {
+  database: RunsteadDatabase;
+  task: Task;
+}): void {
+  const row = input.database
+    .prepare(
+      `
+      SELECT id
+      FROM worker_runs
+      WHERE task_id = ? AND worker_type = 'ci_repair_orchestrator' AND status = 'running'
+      ORDER BY started_at DESC, id ASC
+      LIMIT 1
+    `
+    )
+    .get(input.task.id) as { id: string } | undefined;
+
+  if (row !== undefined) {
+    throw new Error(
+      `CI repair task ${input.task.id} already has a running CI repair orchestrator: ${row.id}`
+    );
+  }
 }
 
 function buildPullRequestResumeContext(input: {
