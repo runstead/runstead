@@ -4,7 +4,11 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { acquireManagerLock, ManagerLockAlreadyHeldError } from "./manager-lock.js";
+import {
+  acquireManagerLock,
+  ManagerLockAlreadyHeldError,
+  ManagerLockLostError
+} from "./manager-lock.js";
 
 describe("acquireManagerLock", () => {
   it("creates and releases an exclusive lock file", async () => {
@@ -117,6 +121,49 @@ describe("acquireManagerLock", () => {
         acquiredAt: "2026-05-13T10:00:00.000Z",
         heartbeatAt: "2026-05-13T10:05:00.000Z"
       });
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("does not let a stale owner clobber a replacement lock", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-lock-replaced-"));
+    const lockPath = join(workspace, ".runstead", "lock");
+    let now = new Date("2026-05-13T10:00:00.000Z");
+
+    try {
+      const first = await acquireManagerLock({
+        lockPath,
+        ownerId: "first",
+        pid: 123,
+        now: () => now
+      });
+
+      now = new Date("2026-05-13T10:20:00.000Z");
+      const second = await acquireManagerLock({
+        lockPath,
+        ownerId: "second",
+        pid: 456,
+        staleAfterMs: 10 * 60 * 1000,
+        now: () => now,
+        processExists: () => false
+      });
+
+      await first.release();
+
+      expect(JSON.parse(await readFile(lockPath, "utf8"))).toMatchObject({
+        ownerId: "second",
+        pid: 456
+      });
+
+      now = new Date("2026-05-13T10:21:00.000Z");
+      await expect(first.heartbeat()).rejects.toThrow(ManagerLockLostError);
+      expect(JSON.parse(await readFile(lockPath, "utf8"))).toMatchObject({
+        ownerId: "second",
+        heartbeatAt: "2026-05-13T10:20:00.000Z"
+      });
+
+      await second.release();
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }

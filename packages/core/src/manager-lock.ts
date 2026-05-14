@@ -34,6 +34,15 @@ export class ManagerLockAlreadyHeldError extends Error {
   }
 }
 
+export class ManagerLockLostError extends Error {
+  constructor(lockPath: string, metadata: ManagerLockMetadata) {
+    super(
+      `Runstead manager lock at ${lockPath} is no longer held by ${metadata.ownerId}`
+    );
+    this.name = "ManagerLockLostError";
+  }
+}
+
 const DEFAULT_STALE_AFTER_MS = 10 * 60 * 1000;
 
 export async function acquireManagerLock(
@@ -80,11 +89,21 @@ function createManagerLock(
   return {
     metadata,
     heartbeat: async () => {
+      const current = await readLockMetadata(lockPath);
+
+      if (!isSameLockOwner(current, metadata)) {
+        throw new ManagerLockLostError(lockPath, metadata);
+      }
+
       metadata.heartbeatAt = now().toISOString();
       await writeFile(lockPath, `${JSON.stringify(metadata)}\n`, "utf8");
     },
     release: async () => {
-      await rm(lockPath, { force: true });
+      const current = await readLockMetadata(lockPath);
+
+      if (isSameLockOwner(current, metadata)) {
+        await rm(lockPath, { force: true });
+      }
     }
   };
 }
@@ -152,6 +171,18 @@ function isStaleLock(
   const heartbeatAt = new Date(metadata.heartbeatAt).getTime();
 
   return Number.isFinite(heartbeatAt) && now.getTime() - heartbeatAt > staleAfterMs;
+}
+
+function isSameLockOwner(
+  current: ManagerLockMetadata | null,
+  expected: ManagerLockMetadata
+): boolean {
+  return (
+    current !== null &&
+    current.ownerId === expected.ownerId &&
+    current.pid === expected.pid &&
+    current.acquiredAt === expected.acquiredAt
+  );
 }
 
 function defaultProcessExists(pid: number): boolean {
