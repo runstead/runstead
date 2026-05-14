@@ -21,6 +21,12 @@ Some ad-hoc CLI helpers are still explicitly labeled unmanaged. They are useful
 for local diagnosis, but the product path is the governed runtime and CI repair
 orchestrator.
 
+Wrapped external workers run in `policy_gated_wrapper` mode: Runstead gates the
+worker launch, records the action envelope and policy decision, checkpoints the
+workspace, verifies diff scope and command evidence after the worker exits, and
+audits the result. It does not yet hard-proxy each tool call made inside the
+external worker process.
+
 Mutating unmanaged helpers now require explicit acknowledgement with
 `--unmanaged`:
 

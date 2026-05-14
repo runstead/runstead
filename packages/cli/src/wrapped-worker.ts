@@ -35,7 +35,8 @@ export interface WrappedWorkerGovernanceManifest {
   domain: string;
   workspace: string;
   evidenceDir: string;
-  enforcement: "policy_enforced";
+  enforcement: "policy_gated_wrapper";
+  enforcementNotes: string[];
   allowedScope: string[];
   deniedActions: string[];
   approvalRequired: string[];
@@ -107,6 +108,9 @@ export function buildWrappedWorkerPrompt(input: WrappedWorkerPromptInput): strin
     "Runstead governance manifest:",
     JSON.stringify(governance, null, 2),
     "",
+    "Enforcement boundary:",
+    "Runstead policy-gates this worker launch and verifies the resulting diff; worker-internal tool calls are not hard-proxied in wrapper mode.",
+    "",
     ...(input.policySummary === undefined
       ? []
       : ["Policy summary:", input.policySummary, ""]),
@@ -147,7 +151,12 @@ export function buildWrappedWorkerGovernanceManifest(
     domain: input.goal.domain,
     workspace: input.workspace,
     evidenceDir: input.evidenceDir,
-    enforcement: "policy_enforced",
+    enforcement: "policy_gated_wrapper",
+    enforcementNotes: [
+      "Runstead policy-gates worker launch.",
+      "Runstead verifies diff scope and command evidence after the worker exits.",
+      "Worker-internal tool calls are not hard-proxied in wrapper mode."
+    ],
     allowedScope: input.allowedScope ?? ["repository working tree"],
     deniedActions: input.deniedActions ?? ["modify protected paths", "access secrets"],
     approvalRequired: input.approvalRequired ?? [

@@ -65,7 +65,8 @@ describe("buildWrappedWorkerPrompt", () => {
     expect(prompt).toContain("- modify .github/workflows/**");
     expect(prompt).toContain("- command:test");
     expect(prompt).toContain("Runstead governance manifest:");
-    expect(prompt).toContain('"enforcement": "policy_enforced"');
+    expect(prompt).toContain('"enforcement": "policy_gated_wrapper"');
+    expect(prompt).toContain("worker-internal tool calls are not hard-proxied");
     expect(prompt).toContain('"allowedScope":');
     expect(prompt).toContain("repo-maintenance policy");
     expect(prompt).toContain("Completion requires Runstead verifier success.");
@@ -93,7 +94,12 @@ describe("buildWrappedWorkerPrompt", () => {
       domain: "repo-maintenance",
       workspace: "/repo",
       evidenceDir: "/repo/.runstead/evidence",
-      enforcement: "policy_enforced",
+      enforcement: "policy_gated_wrapper",
+      enforcementNotes: [
+        "Runstead policy-gates worker launch.",
+        "Runstead verifies diff scope and command evidence after the worker exits.",
+        "Worker-internal tool calls are not hard-proxied in wrapper mode."
+      ],
       allowedScope: ["src/**"],
       deniedActions: [".env"],
       approvalRequired: ["external writes"],
@@ -149,7 +155,7 @@ describe("startWrappedWorker", () => {
     expect(result.governance).toMatchObject({
       worker: "codex_cli",
       taskId: "task_ci_001",
-      enforcement: "policy_enforced"
+      enforcement: "policy_gated_wrapper"
     });
     expect(calls).toEqual([
       {
