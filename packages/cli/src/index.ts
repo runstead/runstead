@@ -277,13 +277,21 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     .option("--port <number>", "Port to bind", "8787")
     .option("--cwd <path>", "Workspace directory")
     .option("--secret <secret>", "GitHub webhook secret")
+    .option("--allow-unsigned", "Allow unsigned webhook requests")
     .action(
       async (options: {
         host: string;
         port: string;
         cwd?: string;
         secret?: string;
+        allowUnsigned?: boolean;
       }) => {
+        if (options.secret === undefined && options.allowUnsigned !== true) {
+          throw new Error(
+            "GitHub webhook secret is required unless --allow-unsigned is set"
+          );
+        }
+
         const { createWebhookServer } = await import("./webhook-server.js");
         const {
           createCiRepairTaskFromWorkflowRun,
@@ -292,6 +300,9 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
         const port = parseRequiredInteger(options.port, "--port");
         const server = createWebhookServer({
           ...(options.secret === undefined ? {} : { secret: options.secret }),
+          ...(options.allowUnsigned === undefined
+            ? {}
+            : { allowUnsigned: options.allowUnsigned }),
           handler: async (event) => {
             const runId = repairableWorkflowRunIdFromWebhook(
               event.event,

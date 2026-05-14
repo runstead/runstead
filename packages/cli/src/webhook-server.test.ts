@@ -60,6 +60,36 @@ describe("handleWebhookRequest", () => {
     expect(response.statusCode).toBe(401);
   });
 
+  it("rejects unsigned GitHub webhook requests by default", async () => {
+    const response = await handleWebhookRequest({
+      method: "POST",
+      url: "/webhooks/github",
+      headers: {
+        "x-github-event": "workflow_run",
+        "x-github-delivery": "delivery_001"
+      },
+      body: "{}"
+    });
+
+    expect(response.statusCode).toBe(401);
+    expect(response.body).toContain("missing_signature_secret");
+  });
+
+  it("accepts unsigned requests only when explicitly allowed", async () => {
+    const response = await handleWebhookRequest({
+      method: "POST",
+      url: "/webhooks/github",
+      allowUnsigned: true,
+      headers: {
+        "x-github-event": "workflow_run",
+        "x-github-delivery": "delivery_001"
+      },
+      body: "{}"
+    });
+
+    expect(response.statusCode).toBe(202);
+  });
+
   it("rejects non-GitHub routes", async () => {
     const response = await handleWebhookRequest({
       method: "POST",

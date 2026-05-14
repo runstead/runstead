@@ -7,6 +7,7 @@ export interface WebhookRequest {
   headers: Record<string, string | string[] | undefined>;
   body: string;
   secret?: string;
+  allowUnsigned?: boolean;
 }
 
 export interface WebhookResponse {
@@ -24,6 +25,7 @@ export type WebhookEventHandler = (event: GitHubWebhookEvent) => void | Promise<
 
 export interface CreateWebhookServerOptions {
   secret?: string;
+  allowUnsigned?: boolean;
   handler?: WebhookEventHandler;
 }
 
@@ -39,6 +41,10 @@ export async function handleWebhookRequest(
 
   if (url.pathname !== "/webhooks/github") {
     return jsonResponse(404, { error: "not_found" });
+  }
+
+  if (request.secret === undefined && request.allowUnsigned !== true) {
+    return jsonResponse(401, { error: "missing_signature_secret" });
   }
 
   if (
@@ -98,7 +104,10 @@ async function handleHttpWebhookRequest(
       url: request.url ?? "/",
       headers: request.headers,
       body,
-      ...(options.secret === undefined ? {} : { secret: options.secret })
+      ...(options.secret === undefined ? {} : { secret: options.secret }),
+      ...(options.allowUnsigned === undefined
+        ? {}
+        : { allowUnsigned: options.allowUnsigned })
     },
     options.handler
   );
