@@ -81,6 +81,12 @@ describe("validateDomainPackDir", () => {
     expect(result.goalTemplates[0]?.generated.acceptanceContracts).toContain(
       "send_not_performed"
     );
+    expect(result.fixtures.map((fixture) => fixture.id)).toEqual([
+      "draft-followup-smoke"
+    ]);
+    expect(result.evals.map((evaluation) => evaluation.id)).toEqual([
+      "draft-followup-smoke"
+    ]);
   });
 
   it("validates fixture manifests and eval benchmarks", async () => {

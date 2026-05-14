@@ -1,0 +1,9 @@
+version: 1
+benchmarks:
+  - id: draft-followup-smoke
+    fixture: draft-followup-smoke
+    acceptance_contracts:
+      - draft_preview_attached
+      - recipients_checked
+      - send_not_performed
+      - user_approval_required_to_send

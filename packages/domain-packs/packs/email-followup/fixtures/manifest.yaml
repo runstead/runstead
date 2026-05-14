@@ -1,0 +1,15 @@
+version: 1
+fixtures:
+  - id: draft-followup-smoke
+    description: Draft-only follow-up input for smoke evals.
+    path: draft-followup-smoke
+    task_type: draft_followup
+    goal_template: draft-pending-followups
+    tags:
+      - smoke
+      - draft-only
+    acceptance_contracts:
+      - draft_preview_attached
+      - recipients_checked
+      - send_not_performed
+      - user_approval_required_to_send
