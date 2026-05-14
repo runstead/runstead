@@ -323,7 +323,14 @@ async function assertDefaultPolicy(input: {
   }
 
   try {
-    DomainPackPolicyYamlSchema.parse(parseYaml(await readFile(resolvedPath, "utf8")));
+    const policy = DomainPackPolicyYamlSchema.parse(
+      parseYaml(await readFile(resolvedPath, "utf8"))
+    );
+    collectDuplicatePolicyRuleIds({
+      ruleIds: policy.rules.map((rule) => rule.id),
+      path: relativeToRoot(input.root, resolvedPath),
+      issues: input.issues
+    });
   } catch (error) {
     input.issues.push({
       severity: "error",
@@ -331,6 +338,27 @@ async function assertDefaultPolicy(input: {
       message: errorMessage(error),
       path: relativeToRoot(input.root, resolvedPath)
     });
+  }
+}
+
+function collectDuplicatePolicyRuleIds(input: {
+  ruleIds: string[];
+  path: string;
+  issues: DomainPackValidationIssue[];
+}): void {
+  const seen = new Set<string>();
+
+  for (const ruleId of input.ruleIds) {
+    if (seen.has(ruleId)) {
+      input.issues.push({
+        severity: "error",
+        code: "default_policy_rule_duplicate_id",
+        message: `Duplicate default policy rule id: ${ruleId}`,
+        path: input.path
+      });
+    }
+
+    seen.add(ruleId);
   }
 }
 
