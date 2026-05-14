@@ -1206,7 +1206,8 @@ function ciRepairResultFromResume(input: {
       runId: input.context.runId,
       log: "",
       byteLength: 0
-    } satisfies GitHubWorkflowRunLog
+    } satisfies GitHubWorkflowRunLog,
+    created: false
   };
 }
 

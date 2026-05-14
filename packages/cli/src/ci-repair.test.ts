@@ -181,6 +181,83 @@ describe("createCiRepairTaskFromWorkflowRun", () => {
     }
   });
 
+  it("reuses an existing CI repair task for duplicate workflow run intake", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-ci-repair-dedupe-"));
+    const calls: string[][] = [];
+    const runner: GitHubCliRunner = (args) => {
+      calls.push(args);
+
+      if (args.includes("--log")) {
+        return Promise.resolve({
+          stdout: "build\tstep\tfailing test\n",
+          stderr: "",
+          exitCode: 0
+        });
+      }
+
+      return Promise.resolve({
+        stdout: JSON.stringify({
+          databaseId: 123,
+          workflowName: "Verify",
+          status: "completed",
+          conclusion: "failure"
+        }),
+        stderr: "",
+        exitCode: 0
+      });
+    };
+
+    try {
+      await initRunstead({
+        cwd: workspace,
+        createDefaultGoal: true
+      });
+
+      const first = await createCiRepairTaskFromWorkflowRun({
+        cwd: workspace,
+        runId: "123",
+        runner,
+        now: new Date("2026-05-14T11:10:00.000Z")
+      });
+      const second = await createCiRepairTaskFromWorkflowRun({
+        cwd: workspace,
+        runId: "123",
+        runner: () => {
+          throw new Error("duplicate intake should not call GitHub");
+        },
+        now: new Date("2026-05-14T11:11:00.000Z")
+      });
+      const database = openRunsteadDatabase(second.stateDb);
+
+      try {
+        const tasks = database
+          .prepare("SELECT id FROM tasks WHERE type = 'ci_repair'")
+          .all() as { id: string }[];
+        const evidence = database
+          .prepare("SELECT id FROM evidence WHERE type = 'github_workflow_run'")
+          .all() as { id: string }[];
+
+        expect(first.created).toBe(true);
+        expect(second.created).toBe(false);
+        expect(second.task.id).toBe(first.task.id);
+        expect(second.evidence.id).toBe(first.evidence.id);
+        expect(second.evidencePath).toBe(first.evidencePath);
+        expect(second.workflowRun).toEqual(first.workflowRun);
+        expect(second.log).toEqual(first.log);
+        expect(tasks).toEqual([{ id: first.task.id }]);
+        expect(evidence).toEqual([{ id: first.evidence.id }]);
+        expect(calls.map((args) => args.slice(0, 3))).toEqual([
+          ["run", "view", "123"],
+          ["run", "view", "123"]
+        ]);
+      } finally {
+        database.close();
+      }
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
   it("redacts secret-like strings before storing workflow log evidence", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "runstead-ci-repair-"));
     const runner: GitHubCliRunner = (args) => {
