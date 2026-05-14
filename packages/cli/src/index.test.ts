@@ -308,6 +308,9 @@ describe("cli entrypoint", () => {
     const github = createProgram().commands.find(
       (command) => command.name() === "github"
     );
+    const repairCi = createProgram().commands.find(
+      (command) => command.name() === "repair-ci"
+    );
     const run = github?.commands.find((command) => command.name() === "run");
     const pr = github?.commands.find((command) => command.name() === "pr");
 
@@ -323,6 +326,15 @@ describe("cli entrypoint", () => {
         .find((command) => command.name() === "repair")
         ?.options.map((option) => option.long)
     ).toContain("--verifier");
+    expect(repairCi?.options.map((option) => option.long)).toEqual(
+      expect.arrayContaining([
+        "--actor",
+        "--github-app",
+        "--installation-id",
+        "--verifier",
+        "--worker"
+      ])
+    );
 
     const prCreateOptions = pr?.commands
       .find((command) => command.name() === "create")
