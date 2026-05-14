@@ -6,6 +6,7 @@ import type { Goal, Task } from "@runstead/core";
 import { describe, expect, it } from "vitest";
 
 import {
+  buildWrappedWorkerLaunchGuardrails,
   buildWrappedWorkerGovernanceManifest,
   buildWrappedWorkerPrompt,
   startWrappedWorker,
@@ -66,7 +67,9 @@ describe("buildWrappedWorkerPrompt", () => {
     expect(prompt).toContain("- command:test");
     expect(prompt).toContain("Runstead governance manifest:");
     expect(prompt).toContain('"enforcement": "policy_gated_wrapper"');
-    expect(prompt).toContain("worker-internal tool calls are not hard-proxied");
+    expect(prompt).toContain("worker-native guardrails");
+    expect(prompt).toContain("worker-internal tool calls are not fully hard-proxied");
+    expect(prompt).toContain('"launchGuardrails":');
     expect(prompt).toContain('"allowedScope":');
     expect(prompt).toContain("repo-maintenance policy");
     expect(prompt).toContain("Completion requires Runstead verifier success.");
@@ -97,14 +100,41 @@ describe("buildWrappedWorkerPrompt", () => {
       enforcement: "policy_gated_wrapper",
       enforcementNotes: [
         "Runstead policy-gates worker launch.",
+        "Runstead starts wrapped workers with worker-native sandbox or permission guardrails.",
         "Runstead verifies diff scope and command evidence after the worker exits.",
-        "Worker-internal tool calls are not hard-proxied in wrapper mode."
+        "Worker-internal tool calls are not fully hard-proxied in wrapper mode."
       ],
       allowedScope: ["src/**"],
       deniedActions: [".env"],
       approvalRequired: ["external writes"],
-      verifierContract: ["test: pnpm test"]
+      verifierContract: ["test: pnpm test"],
+      launchGuardrails: {
+        worker: "codex_cli",
+        sandboxMode: "workspace-write",
+        disallowedTools: []
+      }
     });
+  });
+
+  it("builds worker-native launch guardrails", () => {
+    expect(buildWrappedWorkerLaunchGuardrails("codex_cli")).toEqual({
+      worker: "codex_cli",
+      sandboxMode: "workspace-write",
+      disallowedTools: []
+    });
+    const claudeGuardrails = buildWrappedWorkerLaunchGuardrails("claude_code");
+
+    expect(claudeGuardrails).toMatchObject({
+      worker: "claude_code",
+      permissionMode: "default"
+    });
+    expect(claudeGuardrails.disallowedTools).toEqual(
+      expect.arrayContaining([
+        "Bash(git push *)",
+        "Bash(gh pr create *)",
+        "Bash(pnpm add *)"
+      ])
+    );
   });
 });
 
@@ -112,11 +142,18 @@ describe("workerCommand", () => {
   it("maps worker kinds to their CLI invocations", () => {
     expect(workerCommand("claude_code", "prompt")).toEqual({
       command: "claude",
-      args: ["-p", "prompt"]
+      args: [
+        "-p",
+        "--permission-mode",
+        "default",
+        "--disallowedTools",
+        expect.stringContaining("Bash(git push *)"),
+        "prompt"
+      ]
     });
-    expect(workerCommand("codex_cli", "prompt")).toEqual({
+    expect(workerCommand("codex_cli", "prompt", { workspace: "/repo" })).toEqual({
       command: "codex",
-      args: ["exec", "prompt"]
+      args: ["exec", "--sandbox", "workspace-write", "--cd", "/repo", "prompt"]
     });
   });
 });
@@ -165,16 +202,27 @@ describe("startWrappedWorker", () => {
       exitCode: 0
     });
     expect(result.args[0]).toBe("exec");
-    expect(result.args[1]).toBe(result.prompt);
+    expect(result.args).toEqual([
+      "exec",
+      "--sandbox",
+      "workspace-write",
+      "--cd",
+      "/repo",
+      result.prompt
+    ]);
     expect(result.governance).toMatchObject({
       worker: "codex_cli",
       taskId: "task_ci_001",
-      enforcement: "policy_gated_wrapper"
+      enforcement: "policy_gated_wrapper",
+      launchGuardrails: {
+        worker: "codex_cli",
+        sandboxMode: "workspace-write"
+      }
     });
     expect(calls).toEqual([
       {
         command: "codex",
-        args: ["exec", result.prompt],
+        args: ["exec", "--sandbox", "workspace-write", "--cd", "/repo", result.prompt],
         cwd: "/repo",
         timeoutMs: 1_800_000,
         maxOutputBytes: 10485760

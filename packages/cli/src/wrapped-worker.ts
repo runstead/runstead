@@ -43,6 +43,14 @@ export interface WrappedWorkerGovernanceManifest {
   deniedActions: string[];
   approvalRequired: string[];
   verifierContract: string[];
+  launchGuardrails: WrappedWorkerLaunchGuardrails;
+}
+
+export interface WrappedWorkerLaunchGuardrails {
+  worker: WrappedWorkerKind;
+  sandboxMode?: "workspace-write";
+  permissionMode?: "default";
+  disallowedTools: string[];
 }
 
 export interface WrappedWorkerRunOptions extends WrappedWorkerPromptInput {
@@ -81,6 +89,19 @@ export interface WrappedWorkerRunResult extends WorkerProcessResult {
   checkpointBefore?: WorkspaceCheckpoint;
 }
 
+const CLAUDE_DISALLOWED_TOOLS = [
+  "Bash(git push *)",
+  "Bash(gh pr create *)",
+  "Bash(gh api --method POST *)",
+  "Bash(curl *)",
+  "Bash(wget *)",
+  "Bash(npm install *)",
+  "Bash(npm i *)",
+  "Bash(pnpm add *)",
+  "Bash(yarn add *)",
+  "Bash(bun add *)"
+];
+
 export function buildWrappedWorkerPrompt(input: WrappedWorkerPromptInput): string {
   const governance = buildWrappedWorkerGovernanceManifest(input);
 
@@ -118,7 +139,7 @@ export function buildWrappedWorkerPrompt(input: WrappedWorkerPromptInput): strin
     JSON.stringify(governance, null, 2),
     "",
     "Enforcement boundary:",
-    "Runstead policy-gates this worker launch and verifies the resulting diff; worker-internal tool calls are not hard-proxied in wrapper mode.",
+    "Runstead policy-gates this worker launch, starts it with worker-native guardrails, and verifies the resulting diff; worker-internal tool calls are not fully hard-proxied in wrapper mode.",
     "",
     ...(input.policySummary === undefined
       ? []
@@ -163,8 +184,9 @@ export function buildWrappedWorkerGovernanceManifest(
     enforcement: "policy_gated_wrapper",
     enforcementNotes: [
       "Runstead policy-gates worker launch.",
+      "Runstead starts wrapped workers with worker-native sandbox or permission guardrails.",
       "Runstead verifies diff scope and command evidence after the worker exits.",
-      "Worker-internal tool calls are not hard-proxied in wrapper mode."
+      "Worker-internal tool calls are not fully hard-proxied in wrapper mode."
     ],
     allowedScope: input.allowedScope ?? ["repository working tree"],
     deniedActions: input.deniedActions ?? ["modify protected paths", "access secrets"],
@@ -172,8 +194,28 @@ export function buildWrappedWorkerGovernanceManifest(
       "dependency changes",
       "external writes"
     ],
-    verifierContract: input.verifierContract ?? input.task.verifiers
+    verifierContract: input.verifierContract ?? input.task.verifiers,
+    launchGuardrails: buildWrappedWorkerLaunchGuardrails(input.worker)
   };
+}
+
+export function buildWrappedWorkerLaunchGuardrails(
+  worker: WrappedWorkerKind
+): WrappedWorkerLaunchGuardrails {
+  switch (worker) {
+    case "claude_code":
+      return {
+        worker,
+        permissionMode: "default",
+        disallowedTools: [...CLAUDE_DISALLOWED_TOOLS]
+      };
+    case "codex_cli":
+      return {
+        worker,
+        sandboxMode: "workspace-write",
+        disallowedTools: []
+      };
+  }
 }
 
 export async function startWrappedWorker(
@@ -181,7 +223,9 @@ export async function startWrappedWorker(
 ): Promise<WrappedWorkerRunResult> {
   const prompt = buildWrappedWorkerPrompt(options);
   const governance = buildWrappedWorkerGovernanceManifest(options);
-  const command = workerCommand(options.worker, prompt);
+  const command = workerCommand(options.worker, prompt, {
+    workspace: options.workspace
+  });
   const checkpointBefore =
     options.checkpointBefore ??
     (options.checkpointDir === undefined
@@ -219,18 +263,34 @@ export async function startWrappedWorker(
 
 export function workerCommand(
   worker: WrappedWorkerKind,
-  prompt: string
+  prompt: string,
+  options: { workspace?: string } = {}
 ): { command: string; args: string[] } {
   switch (worker) {
     case "claude_code":
       return {
         command: "claude",
-        args: ["-p", prompt]
+        args: [
+          "-p",
+          "--permission-mode",
+          "default",
+          "--disallowedTools",
+          CLAUDE_DISALLOWED_TOOLS.join(","),
+          prompt
+        ]
       };
     case "codex_cli":
       return {
         command: "codex",
-        args: ["exec", prompt]
+        args: [
+          "exec",
+          "--sandbox",
+          "workspace-write",
+          ...(options.workspace === undefined
+            ? []
+            : ["--cd", resolve(options.workspace)]),
+          prompt
+        ]
       };
   }
 }
