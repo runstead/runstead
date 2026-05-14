@@ -267,19 +267,40 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
       "86400000"
     )
     .option("--now <iso>", "Override the current timestamp")
-    .action(async (options: { cwd?: string; intervalMs: string; now?: string }) => {
-      const { formatSchedulerReport, scheduleDueTasks } =
-        await import("./scheduler.js");
-      const result = await scheduleDueTasks({
-        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-        defaultIntervalMs: parseRequiredInteger(options.intervalMs, "--interval-ms"),
-        ...(options.now === undefined
-          ? {}
-          : { now: parseDateOption(options.now, "--now") })
-      });
+    .option("--actor <id>", "RBAC subject for scheduler management", "local-admin")
+    .action(
+      async (options: {
+        cwd?: string;
+        intervalMs: string;
+        now?: string;
+        actor: string;
+      }) => {
+        const { checkPermission } = await import("./rbac.js");
+        const permission = await checkPermission({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          subject: options.actor,
+          permission: "daemon.manage"
+        });
 
-      console.log(formatSchedulerReport(result));
-    });
+        if (permission.decision !== "allow") {
+          throw new Error(
+            `Subject ${options.actor} cannot manage scheduler: ${permission.reason}`
+          );
+        }
+
+        const { formatSchedulerReport, scheduleDueTasks } =
+          await import("./scheduler.js");
+        const result = await scheduleDueTasks({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          defaultIntervalMs: parseRequiredInteger(options.intervalMs, "--interval-ms"),
+          ...(options.now === undefined
+            ? {}
+            : { now: parseDateOption(options.now, "--now") })
+        });
+
+        console.log(formatSchedulerReport(result));
+      }
+    );
 
   const webhook = program
     .command("webhook")

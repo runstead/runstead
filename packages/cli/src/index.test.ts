@@ -57,4 +57,13 @@ describe("cli entrypoint", () => {
 
     expect(serve?.options.map((option) => option.long)).toContain("--actor");
   });
+
+  it("exposes RBAC actor selection on scheduler ticks", () => {
+    const scheduler = createProgram().commands.find(
+      (command) => command.name() === "scheduler"
+    );
+    const tick = scheduler?.commands.find((command) => command.name() === "tick");
+
+    expect(tick?.options.map((option) => option.long)).toContain("--actor");
+  });
 });
