@@ -152,6 +152,10 @@ describe("cli entrypoint", () => {
 
     expect(serve?.options.map((option) => option.long)).toContain("--actor");
     expect(serve?.options.map((option) => option.long)).toContain("--github-app");
+    expect(serve?.options.map((option) => option.long)).toContain(
+      "--orchestrate-repair"
+    );
+    expect(serve?.options.map((option) => option.long)).toContain("--verifier");
   });
 
   it("exposes RBAC actor selection on scheduler ticks", () => {
