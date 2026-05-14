@@ -5,6 +5,7 @@ import { join, resolve } from "node:path";
 import { validateDomainPackDir } from "@runstead/domain-packs";
 
 import { loadPolicyProfileFromFile } from "./policy-loader.js";
+import { missingRequiredStateTables } from "./state-schema.js";
 
 export interface MigrateRunsteadOptions {
   cwd?: string;
@@ -285,9 +286,7 @@ async function checkStateDatabase(path: string): Promise<MigrationValidationChec
       const rows = database
         .prepare("SELECT name FROM sqlite_master WHERE type = 'table'")
         .all() as { name: string }[];
-      const tableNames = new Set(rows.map((row) => row.name));
-      const requiredTables = ["goals", "tasks", "evidence", "events"];
-      const missing = requiredTables.filter((table) => !tableNames.has(table));
+      const missing = missingRequiredStateTables(rows.map((row) => row.name));
 
       if (missing.length > 0) {
         return fail("state-db", "state.db", `missing tables: ${missing.join(", ")}`);

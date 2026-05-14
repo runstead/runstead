@@ -6,6 +6,7 @@ import { validateDomainPackDir } from "@runstead/domain-packs";
 
 import { loadPolicyProfileFromFile } from "./policy-loader.js";
 import { resolveRunsteadRoot } from "./runstead-root.js";
+import { missingRequiredStateTables } from "./state-schema.js";
 
 export type DoctorCheckStatus = "pass" | "fail";
 
@@ -25,19 +26,6 @@ export interface DoctorResult {
 export interface DoctorRunsteadOptions {
   cwd?: string;
 }
-
-const REQUIRED_TABLES = [
-  "goals",
-  "tasks",
-  "evidence",
-  "policy_decisions",
-  "approvals",
-  "worker_runs",
-  "tool_calls",
-  "memory_records",
-  "repositories",
-  "events"
-];
 
 export async function doctorRunstead(
   options: DoctorRunsteadOptions = {}
@@ -143,8 +131,7 @@ async function checkStateDatabase(path: string): Promise<DoctorCheck> {
       const rows = database
         .prepare("SELECT name FROM sqlite_master WHERE type = 'table'")
         .all() as { name: string }[];
-      const tableNames = new Set(rows.map((row) => row.name));
-      const missing = REQUIRED_TABLES.filter((table) => !tableNames.has(table));
+      const missing = missingRequiredStateTables(rows.map((row) => row.name));
 
       if (missing.length > 0) {
         return fail("state-db", "state.db", `missing tables: ${missing.join(", ")}`);

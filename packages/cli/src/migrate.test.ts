@@ -2,6 +2,7 @@ import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { openRunsteadDatabase } from "@runstead/state-sqlite";
 import { describe, expect, it } from "vitest";
 
 import { initRunstead } from "./init.js";
@@ -99,6 +100,28 @@ describe("migrateRunsteadState", () => {
       await expect(
         readFile(join(workspace, ".runstead", "config.yaml"), "utf8")
       ).resolves.toBe("old\n");
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("rejects legacy sources missing governance projection tables", async () => {
+    const workspace = join(tmpdir(), `runstead-migrate-schema-${process.pid}`);
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await createLegacyTeamState(workspace);
+      const database = openRunsteadDatabase(join(workspace, ".team", "state.db"));
+
+      try {
+        database.exec("DROP TABLE tool_calls");
+      } finally {
+        database.close();
+      }
+
+      await expect(migrateRunsteadState({ cwd: workspace })).rejects.toThrow(
+        "Migration source is not a complete Runstead state: state-db"
+      );
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }
