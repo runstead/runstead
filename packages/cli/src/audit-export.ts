@@ -8,6 +8,9 @@ import { requireRunsteadStateDbSync } from "./runstead-root.js";
 export interface ExportAuditLogOptions {
   cwd?: string;
   outputPath?: string;
+  types?: string[];
+  aggregateType?: string;
+  aggregateId?: string;
 }
 
 export interface AuditLogEntry {
@@ -47,7 +50,9 @@ export async function exportAuditLog(
   const database = openRunsteadDatabase(stateDb);
 
   try {
-    const entries = readAuditEntries(database);
+    const entries = readAuditEntries(database).filter((entry) =>
+      matchesAuditFilters(entry, options)
+    );
     const contents =
       entries.length === 0
         ? ""
@@ -93,4 +98,30 @@ function readAuditEntries(database: ReturnType<typeof openRunsteadDatabase>) {
     payload: JSON.parse(row.payload_json) as unknown,
     createdAt: row.created_at
   }));
+}
+
+function matchesAuditFilters(
+  entry: AuditLogEntry,
+  options: ExportAuditLogOptions
+): boolean {
+  if (
+    options.types !== undefined &&
+    options.types.length > 0 &&
+    !options.types.includes(entry.type)
+  ) {
+    return false;
+  }
+
+  if (
+    options.aggregateType !== undefined &&
+    entry.aggregateType !== options.aggregateType
+  ) {
+    return false;
+  }
+
+  if (options.aggregateId !== undefined && entry.aggregateId !== options.aggregateId) {
+    return false;
+  }
+
+  return true;
 }

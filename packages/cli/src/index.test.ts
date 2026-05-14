@@ -95,6 +95,13 @@ describe("cli entrypoint", () => {
     const weekly = report?.commands.find((command) => command.name() === "weekly");
 
     expect(auditExport?.options.map((option) => option.long)).toContain("--actor");
+    expect(auditExport?.options.map((option) => option.long)).toContain("--type");
+    expect(auditExport?.options.map((option) => option.long)).toContain(
+      "--aggregate-type"
+    );
+    expect(auditExport?.options.map((option) => option.long)).toContain(
+      "--aggregate-id"
+    );
     expect(weekly?.options.map((option) => option.long)).toContain("--actor");
   });
 

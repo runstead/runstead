@@ -672,29 +672,48 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     .description("Export the append-only event log as JSONL.")
     .option("--cwd <path>", "Workspace directory")
     .option("--output <path>", "Write JSONL to a file instead of stdout")
+    .option("--type <event-type>", "Filter by event type", collectValues, [])
+    .option("--aggregate-type <type>", "Filter by aggregate type")
+    .option("--aggregate-id <id>", "Filter by aggregate id")
     .option("--actor <id>", "RBAC subject for audit access", "local-admin")
-    .action(async (options: { cwd?: string; output?: string; actor: string }) => {
-      await requireRbacPermission({
-        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-        actor: options.actor,
-        permission: "audit.read",
-        action: "export audit logs"
-      });
+    .action(
+      async (options: {
+        cwd?: string;
+        output?: string;
+        type: string[];
+        aggregateType?: string;
+        aggregateId?: string;
+        actor: string;
+      }) => {
+        await requireRbacPermission({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          actor: options.actor,
+          permission: "audit.read",
+          action: "export audit logs"
+        });
 
-      const { exportAuditLog } = await import("./audit-export.js");
-      const result = await exportAuditLog({
-        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-        ...(options.output === undefined ? {} : { outputPath: options.output })
-      });
+        const { exportAuditLog } = await import("./audit-export.js");
+        const result = await exportAuditLog({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          ...(options.output === undefined ? {} : { outputPath: options.output }),
+          ...(options.type.length === 0 ? {} : { types: options.type }),
+          ...(options.aggregateType === undefined
+            ? {}
+            : { aggregateType: options.aggregateType }),
+          ...(options.aggregateId === undefined
+            ? {}
+            : { aggregateId: options.aggregateId })
+        });
 
-      if (result.outputPath === undefined) {
-        process.stdout.write(result.contents);
-        return;
+        if (result.outputPath === undefined) {
+          process.stdout.write(result.contents);
+          return;
+        }
+
+        console.log(`Exported audit log: ${result.outputPath}`);
+        console.log(`Events: ${result.entries.length}`);
       }
-
-      console.log(`Exported audit log: ${result.outputPath}`);
-      console.log(`Events: ${result.entries.length}`);
-    });
+    );
 
   const report = program.command("report").description("Generate reports.");
 

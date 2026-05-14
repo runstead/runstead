@@ -48,4 +48,39 @@ describe("exportAuditLog", () => {
       await rm(workspace, { force: true, recursive: true });
     }
   });
+
+  it("filters exported events by type and aggregate", async () => {
+    const workspace = join(tmpdir(), `runstead-audit-export-filter-${process.pid}`);
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await initRunstead({ cwd: workspace });
+      const created = await createGoal({
+        cwd: workspace,
+        domain: "repo-maintenance",
+        now: new Date("2026-05-14T07:30:00.000Z")
+      });
+
+      const byType = await exportAuditLog({
+        cwd: workspace,
+        types: ["goal.created"]
+      });
+      const byAggregate = await exportAuditLog({
+        cwd: workspace,
+        aggregateType: "goal",
+        aggregateId: created.goal.id
+      });
+
+      expect(byType.entries.map((entry) => entry.type)).toEqual(["goal.created"]);
+      expect(byAggregate.entries).toHaveLength(1);
+      expect(byAggregate.entries[0]).toMatchObject({
+        type: "goal.created",
+        aggregateType: "goal",
+        aggregateId: created.goal.id
+      });
+      expect(byAggregate.contents.trim()).toBe(JSON.stringify(byAggregate.entries[0]));
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
 });
