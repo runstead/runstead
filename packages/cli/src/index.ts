@@ -454,17 +454,25 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     .argument("<subject>", "Subject id")
     .argument("<role>", "Role name")
     .option("--cwd <path>", "Workspace directory")
-    .action(async (subject: string, role: string, options: { cwd?: string }) => {
-      const { grantRole } = await import("./rbac.js");
-      const result = await grantRole({
-        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-        subject,
-        role
-      });
+    .option("--actor <id>", "RBAC subject for RBAC management", "local-admin")
+    .action(
+      async (
+        subject: string,
+        role: string,
+        options: { cwd?: string; actor: string }
+      ) => {
+        const { grantRole } = await import("./rbac.js");
+        const result = await grantRole({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          actor: options.actor,
+          subject,
+          role
+        });
 
-      console.log(`Granted ${role} to ${subject}`);
-      console.log(`RBAC policy: ${result.path}`);
-    });
+        console.log(`Granted ${role} to ${subject}`);
+        console.log(`RBAC policy: ${result.path}`);
+      }
+    );
 
   rbac
     .command("check")

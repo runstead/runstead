@@ -155,6 +155,13 @@ describe("cli entrypoint", () => {
     }
   });
 
+  it("exposes RBAC actor selection on RBAC grant", () => {
+    const rbac = createProgram().commands.find((command) => command.name() === "rbac");
+    const grant = rbac?.commands.find((command) => command.name() === "grant");
+
+    expect(grant?.options.map((option) => option.long)).toContain("--actor");
+  });
+
   it("exposes RBAC actor selection on GitHub App mode", () => {
     const github = createProgram().commands.find(
       (command) => command.name() === "github"

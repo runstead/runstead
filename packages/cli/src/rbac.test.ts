@@ -23,8 +23,15 @@ describe("rbac", () => {
 
       const initialized = await initRbac({
         cwd: workspace,
+        subject: "local-admin",
+        role: "admin"
+      });
+      await grantRole({
+        cwd: workspace,
+        actor: "local-admin",
         subject: "alice",
-        role: "operator"
+        role: "operator",
+        now: new Date("2026-05-14T06:55:00.000Z")
       });
       const allowed = await checkPermission({
         cwd: workspace,
@@ -38,10 +45,20 @@ describe("rbac", () => {
       });
       const granted = await grantRole({
         cwd: workspace,
+        actor: "local-admin",
         subject: "bob",
         role: "approver",
         now: new Date("2026-05-14T07:00:00.000Z")
       });
+      await expect(
+        grantRole({
+          cwd: workspace,
+          actor: "alice",
+          subject: "mallory",
+          role: "approver",
+          now: new Date("2026-05-14T07:01:00.000Z")
+        })
+      ).rejects.toThrow("Subject alice cannot manage RBAC");
       const bob = await checkPermission({
         cwd: workspace,
         subject: "bob",
@@ -89,7 +106,8 @@ describe("rbac", () => {
         });
         expect(JSON.parse(event.payload_json)).toEqual({
           subject: "bob",
-          role: "approver"
+          role: "approver",
+          grantedBy: "local-admin"
         });
       } finally {
         database.close();

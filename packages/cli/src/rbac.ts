@@ -30,6 +30,7 @@ export interface InitRbacResult {
 
 export interface GrantRoleOptions {
   cwd?: string;
+  actor?: string;
   subject: string;
   role: string;
   now?: Date;
@@ -131,6 +132,17 @@ export async function initRbac(options: InitRbacOptions = {}): Promise<InitRbacR
 }
 
 export async function grantRole(options: GrantRoleOptions): Promise<GrantRoleResult> {
+  const actor = options.actor ?? "local-admin";
+  const permission = await checkPermission({
+    ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+    subject: actor,
+    permission: "rbac.manage"
+  });
+
+  if (permission.decision !== "allow") {
+    throw new Error(`Subject ${actor} cannot manage RBAC: ${permission.reason}`);
+  }
+
   const root = await resolveInitializedRoot(options.cwd);
   const path = join(root, "rbac.yaml");
   const policy = (await exists(path))
@@ -154,7 +166,8 @@ export async function grantRole(options: GrantRoleOptions): Promise<GrantRoleRes
     aggregateId: options.subject,
     payload: {
       subject: options.subject,
-      role: options.role
+      role: options.role,
+      grantedBy: actor
     },
     createdAt: grantedAt
   };
