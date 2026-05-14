@@ -1,4 +1,4 @@
-import { cp, mkdir, rm } from "node:fs/promises";
+import { cp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -20,7 +20,14 @@ describe("doctorRunstead", () => {
 
       expect(result.ok).toBe(true);
       expect(result.checks.map((check) => check.id)).toEqual(
-        expect.arrayContaining(["config", "domain-pack", "policy", "state-db"])
+        expect.arrayContaining([
+          "config",
+          "domain-pack",
+          "domain-pack-validation",
+          "policy",
+          "policy-validation",
+          "state-db"
+        ])
       );
       expect(result.checks.every((check) => check.status === "pass")).toBe(true);
     } finally {
@@ -65,6 +72,32 @@ describe("doctorRunstead", () => {
 
       expect(result.ok).toBe(true);
       expect(result.root).toBe(join(workspace, ".team"));
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("fails when the root policy is invalid", async () => {
+    const workspace = join(tmpdir(), `runstead-doctor-policy-${process.pid}`);
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await mkdir(workspace, { recursive: true });
+      await initRunstead({ cwd: workspace });
+      await writeFile(
+        join(workspace, ".runstead", "policies", "repo-maintenance.yaml"),
+        "id: invalid\nversion: 1\nrules:\n  - id: missing_decision\n",
+        "utf8"
+      );
+
+      const result = await doctorRunstead({ cwd: workspace });
+
+      expect(result.ok).toBe(false);
+      expect(
+        result.checks.find((check) => check.id === "policy-validation")
+      ).toMatchObject({
+        status: "fail"
+      });
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }

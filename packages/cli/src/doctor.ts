@@ -2,6 +2,9 @@ import { constants } from "node:fs";
 import { access, stat } from "node:fs/promises";
 import { join } from "node:path";
 
+import { validateDomainPackDir } from "@runstead/domain-packs";
+
+import { loadPolicyProfileFromFile } from "./policy-loader.js";
 import { resolveRunsteadRoot } from "./runstead-root.js";
 
 export type DoctorCheckStatus = "pass" | "fail";
@@ -43,11 +46,17 @@ export async function doctorRunstead(
     )
   );
   checks.push(
+    await checkDomainPackValidation(join(root, "domains", "repo-maintenance"))
+  );
+  checks.push(
     await checkReadableFile(
       "policy",
       "repo-maintenance policy",
       join(root, "policies", "repo-maintenance.yaml")
     )
+  );
+  checks.push(
+    await checkPolicyValidation(join(root, "policies", "repo-maintenance.yaml"))
   );
   checks.push(
     await checkDirectory("evidence-dir", "evidence directory", join(root, "evidence"))
@@ -132,6 +141,49 @@ async function checkStateDatabase(path: string): Promise<DoctorCheck> {
     }
   } catch (error) {
     return fail("state-db", "state.db", errorMessage(error));
+  }
+}
+
+async function checkDomainPackValidation(path: string): Promise<DoctorCheck> {
+  try {
+    const result = await validateDomainPackDir(path);
+
+    if (!result.valid) {
+      return fail(
+        "domain-pack-validation",
+        "repo-maintenance domain pack validation",
+        result.issues
+          .filter((issue) => issue.severity === "error")
+          .map((issue) => issue.code)
+          .join(", ")
+      );
+    }
+
+    return pass(
+      "domain-pack-validation",
+      "repo-maintenance domain pack validation",
+      path
+    );
+  } catch (error) {
+    return fail(
+      "domain-pack-validation",
+      "repo-maintenance domain pack validation",
+      errorMessage(error)
+    );
+  }
+}
+
+async function checkPolicyValidation(path: string): Promise<DoctorCheck> {
+  try {
+    await loadPolicyProfileFromFile(path);
+
+    return pass("policy-validation", "repo-maintenance policy validation", path);
+  } catch (error) {
+    return fail(
+      "policy-validation",
+      "repo-maintenance policy validation",
+      errorMessage(error)
+    );
   }
 }
 
