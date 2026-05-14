@@ -1,8 +1,11 @@
 import { constants } from "node:fs";
-import { access, readFile, stat } from "node:fs/promises";
+import { access, readFile, readdir, stat } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
 
-import { validateDomainPackDir } from "@runstead/domain-packs";
+import {
+  validateDomainPackDir,
+  verifyDomainPackManifest
+} from "@runstead/domain-packs";
 
 import { loadPolicyProfileFromFile } from "./policy-loader.js";
 import { resolveRunsteadRoot } from "./runstead-root.js";
@@ -48,6 +51,7 @@ export async function doctorRunstead(
   checks.push(
     await checkDomainPackValidation(join(root, "domains", "repo-maintenance"))
   );
+  checks.push(await checkInstalledDomainPackManifests(root));
   checks.push(
     await checkReadableFile(
       "policy",
@@ -174,6 +178,56 @@ async function checkDomainPackValidation(path: string): Promise<DoctorCheck> {
     return fail(
       "domain-pack-validation",
       "repo-maintenance domain pack validation",
+      errorMessage(error)
+    );
+  }
+}
+
+async function checkInstalledDomainPackManifests(root: string): Promise<DoctorCheck> {
+  const domainsRoot = join(root, "domains");
+
+  try {
+    const entries = await readdir(domainsRoot, { withFileTypes: true });
+    const domainDirs = entries
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => String(entry.name))
+      .sort();
+
+    if (domainDirs.length === 0) {
+      return fail(
+        "domain-pack-manifests",
+        "installed domain pack manifests",
+        "no installed domain packs"
+      );
+    }
+
+    const failed: string[] = [];
+
+    for (const id of domainDirs) {
+      const result = await verifyDomainPackManifest(join(domainsRoot, id));
+
+      if (!result.valid) {
+        failed.push(`${id}: ${result.issues.map((issue) => issue.code).join(", ")}`);
+      }
+    }
+
+    if (failed.length > 0) {
+      return fail(
+        "domain-pack-manifests",
+        "installed domain pack manifests",
+        failed.join("; ")
+      );
+    }
+
+    return pass(
+      "domain-pack-manifests",
+      "installed domain pack manifests",
+      `verified ${domainDirs.length} domain pack manifest(s)`
+    );
+  } catch (error) {
+    return fail(
+      "domain-pack-manifests",
+      "installed domain pack manifests",
       errorMessage(error)
     );
   }

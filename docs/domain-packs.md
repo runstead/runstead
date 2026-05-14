@@ -36,7 +36,9 @@ Installing, uninstalling, or upgrading a pack mutates the local
 `.runstead/domains` registry and requires the actor to have `domain.manage`.
 Read-only SDK commands such as `domain validate`, `domain manifest`, and
 `domain verify-manifest` operate on explicit directories and do not require
-registry access.
+registry access. `runstead doctor` verifies every installed pack against its
+stored manifest so local registry drift is surfaced before scheduled work uses
+the pack.
 
 ## Directory Layout
 

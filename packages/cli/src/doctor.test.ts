@@ -1,4 +1,4 @@
-import { cp, mkdir, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -25,6 +25,7 @@ describe("doctorRunstead", () => {
           "config",
           "domain-pack",
           "domain-pack-validation",
+          "domain-pack-manifests",
           "policy",
           "policy-validation",
           "rbac-policy",
@@ -104,6 +105,42 @@ describe("doctorRunstead", () => {
       ).toMatchObject({
         status: "fail"
       });
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("fails when an installed domain pack manifest drifts", async () => {
+    const workspace = join(tmpdir(), `runstead-doctor-domain-manifest-${process.pid}`);
+    const domainPath = join(
+      workspace,
+      ".runstead",
+      "domains",
+      "repo-maintenance",
+      "domain.yaml"
+    );
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await mkdir(workspace, { recursive: true });
+      await initRunstead({ cwd: workspace });
+      await writeFile(
+        domainPath,
+        `${await readFile(domainPath, "utf8")}\n# local drift\n`,
+        "utf8"
+      );
+
+      const result = await doctorRunstead({ cwd: workspace });
+
+      expect(result.ok).toBe(false);
+      expect(
+        result.checks.find((check) => check.id === "domain-pack-manifests")
+      ).toMatchObject({
+        status: "fail"
+      });
+      expect(
+        result.checks.find((check) => check.id === "domain-pack-manifests")?.message
+      ).toContain("manifest_file_hash_mismatch");
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }
