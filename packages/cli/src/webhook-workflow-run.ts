@@ -88,7 +88,10 @@ export async function handleGitHubWorkflowRunWebhook(
   const ciRepair = await (options.intake ?? createCiRepairTaskFromWorkflowRun)({
     ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
     runId,
-    ...(options.authToken === undefined ? {} : { authToken: options.authToken })
+    ...(options.authToken === undefined ? {} : { authToken: options.authToken }),
+    ...(options.verifierCommands === undefined
+      ? {}
+      : { verifierCommands: options.verifierCommands })
   });
 
   return {

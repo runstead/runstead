@@ -35,6 +35,7 @@ describe("handleGitHubWorkflowRunWebhook", () => {
       payload: repairablePayload,
       cwd: "/repo",
       authToken: "token",
+      verifierCommands: [{ name: "test", command: "pnpm test" }],
       intake: (options) => {
         calls.push(options);
         return Promise.resolve(ciRepair);
@@ -51,7 +52,8 @@ describe("handleGitHubWorkflowRunWebhook", () => {
       {
         cwd: "/repo",
         runId: "123",
-        authToken: "token"
+        authToken: "token",
+        verifierCommands: [{ name: "test", command: "pnpm test" }]
       }
     ]);
   });
