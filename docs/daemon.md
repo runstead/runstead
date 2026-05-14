@@ -8,6 +8,10 @@ contracts. `repo-maintenance` keeps a specialized `run_local_verifiers` path so
 test and lint commands are detected from the target repository before the task is
 queued.
 
+Long-running daemon loops refresh the manager lock heartbeat after each tick.
+This keeps stale-lock recovery tied to actual daemon progress instead of only
+the original acquisition time.
+
 For bounded local runs:
 
 ```sh

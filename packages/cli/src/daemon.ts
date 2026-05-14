@@ -1,7 +1,12 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 
-import { createRunsteadId, type JsonObject, type RunsteadEvent } from "@runstead/core";
+import {
+  createRunsteadId,
+  type JsonObject,
+  type ManagerLock,
+  type RunsteadEvent
+} from "@runstead/core";
 import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sqlite";
 
 import {
@@ -28,6 +33,7 @@ export interface RunDaemonOptions {
   schedulerEnabled?: boolean;
   audit?: boolean;
   heartbeat?: boolean;
+  managerLock?: Pick<ManagerLock, "heartbeat">;
   now?: Date;
 }
 
@@ -81,12 +87,13 @@ export async function runDaemon(
   assertDaemonTiming({ intervalMs, maxTicks });
 
   if (usesDefaultRuntime) {
-    return withRunsteadManagerLock({ cwd }, async () =>
+    return withRunsteadManagerLock({ cwd }, async (managerLock) =>
       runDaemonLoop({
         ...options,
         cwd,
         audit: options.audit ?? true,
         heartbeat: options.heartbeat ?? true,
+        managerLock,
         scheduler: (schedulerOptions) =>
           scheduleDueTasksUnlocked({
             ...schedulerOptions,
@@ -148,6 +155,7 @@ async function runDaemonLoop(options: RunDaemonOptions): Promise<RunDaemonResult
       ...(event === undefined ? {} : { event }),
       ...(heartbeat === undefined ? {} : { heartbeat })
     });
+    await options.managerLock?.heartbeat();
 
     if (maxTicks !== undefined && ticks.length >= maxTicks) {
       return {

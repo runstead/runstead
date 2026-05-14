@@ -67,6 +67,39 @@ describe("runDaemon", () => {
     ).rejects.toThrow("maxTicks");
   });
 
+  it("refreshes the manager lock after each daemon tick", async () => {
+    const heartbeats: number[] = [];
+    const scheduler: DaemonScheduler = (options) =>
+      Promise.resolve({
+        cwd: options.cwd ?? "",
+        stateDb: "/repo/.runstead/state.db",
+        scheduledTasks: [],
+        skippedTasks: []
+      });
+    const runner: DaemonRunner = (options) =>
+      Promise.resolve({
+        cwd: options.cwd ?? "",
+        ranTask: false,
+        reason: "no_queued_task"
+      });
+
+    await runDaemon({
+      cwd: "/repo",
+      intervalMs: 0,
+      maxTicks: 2,
+      scheduler,
+      runner,
+      managerLock: {
+        heartbeat: () => {
+          heartbeats.push(heartbeats.length + 1);
+          return Promise.resolve();
+        }
+      }
+    });
+
+    expect(heartbeats).toEqual([1, 2]);
+  });
+
   it("records daemon ticks when audit is enabled", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "runstead-daemon-audit-"));
     const scheduler: DaemonScheduler = (options) =>
