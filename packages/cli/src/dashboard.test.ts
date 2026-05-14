@@ -190,4 +190,98 @@ describe("buildDashboard", () => {
       await rm(workspace, { force: true, recursive: true });
     }
   });
+
+  it("counts dashboard summary from all rows, not only displayed rows", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-dashboard-counts-"));
+    const root = join(workspace, ".runstead");
+    const stateDb = join(root, "state.db");
+
+    try {
+      await mkdir(root, { recursive: true });
+      await writeFile(
+        join(root, "config.yaml"),
+        "version: 1\ndomain: repo-maintenance\n",
+        "utf8"
+      );
+
+      const database = openRunsteadDatabase(stateDb);
+
+      try {
+        appendEventAndProject(database, {
+          event: {
+            eventId: "evt_dashboard_goal_many",
+            type: "goal.created",
+            aggregateType: "goal",
+            aggregateId: "goal_many",
+            payload: {
+              title: "Keep many tasks healthy"
+            },
+            createdAt: "2026-05-14T05:00:00.000Z"
+          },
+          projection: {
+            type: "goal",
+            value: {
+              id: "goal_many",
+              domain: "repo-maintenance",
+              title: "Keep many tasks healthy",
+              status: "active",
+              priority: "medium",
+              scope: {},
+              createdAt: "2026-05-14T05:00:00.000Z",
+              updatedAt: "2026-05-14T05:00:00.000Z"
+            }
+          }
+        });
+
+        for (let index = 0; index < 60; index += 1) {
+          const taskId = `task_many_${index.toString().padStart(2, "0")}`;
+
+          appendEventAndProject(database, {
+            event: {
+              eventId: `evt_${taskId}`,
+              type: "task.created",
+              aggregateType: "task",
+              aggregateId: taskId,
+              payload: {
+                goalId: "goal_many"
+              },
+              createdAt: `2026-05-14T05:${index.toString().padStart(2, "0")}:00.000Z`
+            },
+            projection: {
+              type: "task",
+              value: {
+                id: taskId,
+                goalId: "goal_many",
+                domain: "repo-maintenance",
+                type: "run_local_verifiers",
+                status: "queued",
+                priority: "medium",
+                attempt: 0,
+                maxAttempts: 1,
+                input: {},
+                verifiers: [],
+                createdAt: `2026-05-14T05:${index.toString().padStart(2, "0")}:00.000Z`,
+                updatedAt: `2026-05-14T05:${index.toString().padStart(2, "0")}:00.000Z`
+              }
+            }
+          });
+        }
+      } finally {
+        database.close();
+      }
+
+      const result = await buildDashboard({
+        cwd: workspace,
+        now: new Date("2026-05-14T06:10:00.000Z")
+      });
+
+      expect(result.snapshot.tasks).toHaveLength(50);
+      expect(result.snapshot.summary).toMatchObject({
+        activeGoals: 1,
+        queuedTasks: 60
+      });
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
 });

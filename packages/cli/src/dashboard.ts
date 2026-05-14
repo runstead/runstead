@@ -202,23 +202,34 @@ function readDashboardSnapshot(
 
   return {
     generatedAt,
-    summary: {
-      repositories: repositories.length,
-      activeGoals: goals.filter((goal) => goal.status === "active").length,
-      queuedTasks: tasks.filter((task) => task.status === "queued").length,
-      runningTasks: tasks.filter(
-        (task) => task.status === "claimed" || task.status === "running"
-      ).length,
-      failedTasks: tasks.filter((task) => task.status === "failed").length,
-      pendingApprovals: approvals.filter((approval) => approval.status === "pending")
-        .length
-    },
+    summary: readDashboardSummary(database),
     repositories,
     goals,
     tasks,
     approvals,
     events
   };
+}
+
+function readDashboardSummary(database: RunsteadDatabase): DashboardSummary {
+  return {
+    repositories: countRows(database, "repositories"),
+    activeGoals: countRows(database, "goals", "status = 'active'"),
+    queuedTasks: countRows(database, "tasks", "status = 'queued'"),
+    runningTasks: countRows(database, "tasks", "status IN ('claimed', 'running')"),
+    failedTasks: countRows(database, "tasks", "status = 'failed'"),
+    pendingApprovals: countRows(database, "approvals", "status = 'pending'")
+  };
+}
+
+function countRows(database: RunsteadDatabase, table: string, where?: string): number {
+  const row = database
+    .prepare(
+      `SELECT COUNT(*) AS count FROM ${table}${where === undefined ? "" : ` WHERE ${where}`}`
+    )
+    .get() as { count: number };
+
+  return row.count;
 }
 
 function formatDashboardHtml(snapshot: DashboardSnapshot): string {
