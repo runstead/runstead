@@ -1,5 +1,7 @@
 id: policy_email_followup_draft_only_v1
 version: 1
+default_decision: require_approval
+default_risk: medium
 
 rules:
   - id: allow_reading_mailbox_threads

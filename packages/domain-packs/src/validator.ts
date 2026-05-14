@@ -50,6 +50,7 @@ const DomainPackPolicyYamlSchema = z
     rules: z.array(DomainPackPolicyRuleSchema)
   })
   .passthrough();
+type DomainPackPolicyYaml = z.infer<typeof DomainPackPolicyYamlSchema>;
 
 export async function validateDomainPackDir(
   root: string
@@ -326,6 +327,11 @@ async function assertDefaultPolicy(input: {
     const policy = DomainPackPolicyYamlSchema.parse(
       parseYaml(await readFile(resolvedPath, "utf8"))
     );
+    assertDefaultPolicyDefaults({
+      policy,
+      path: relativeToRoot(input.root, resolvedPath),
+      issues: input.issues
+    });
     collectDuplicatePolicyRuleIds({
       ruleIds: policy.rules.map((rule) => rule.id),
       path: relativeToRoot(input.root, resolvedPath),
@@ -337,6 +343,30 @@ async function assertDefaultPolicy(input: {
       code: "default_policy_invalid",
       message: errorMessage(error),
       path: relativeToRoot(input.root, resolvedPath)
+    });
+  }
+}
+
+function assertDefaultPolicyDefaults(input: {
+  policy: DomainPackPolicyYaml;
+  path: string;
+  issues: DomainPackValidationIssue[];
+}): void {
+  if (input.policy.default_decision === undefined) {
+    input.issues.push({
+      severity: "error",
+      code: "default_policy_default_decision_missing",
+      message: "Default policy must declare default_decision for policy-by-default",
+      path: input.path
+    });
+  }
+
+  if (input.policy.default_risk === undefined) {
+    input.issues.push({
+      severity: "error",
+      code: "default_policy_default_risk_missing",
+      message: "Default policy must declare default_risk for policy-by-default",
+      path: input.path
     });
   }
 }

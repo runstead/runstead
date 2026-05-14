@@ -187,6 +187,8 @@ worker_routing:
 function policyYaml(input: { id: string }): string {
   return `id: policy_${input.id.replaceAll("-", "_")}_default_v1
 version: 1
+default_decision: require_approval
+default_risk: medium
 
 rules:
   - id: require_review_before_external_write

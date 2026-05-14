@@ -155,6 +155,7 @@ The validator checks that:
 - Extra task type YAML files that are not registered in `domain.yaml` are warned.
 - Task type worker routing must point at workers declared in `supported_workers`.
 - The default policy file exists.
+- The default policy declares `default_decision` and `default_risk`.
 
 List discoverable packs with:
 

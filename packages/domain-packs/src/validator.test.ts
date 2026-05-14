@@ -235,6 +235,60 @@ describe("validateDomainPackDir", () => {
     }
   });
 
+  it("requires explicit default policy decisions and risk", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-domain-pack-"));
+
+    try {
+      await mkdir(join(workspace, "policies"), { recursive: true });
+      await writeFile(
+        join(workspace, "domain.yaml"),
+        [
+          "id: custom-pack",
+          "version: 0.1.0",
+          "name: Custom Pack",
+          "description: Missing policy defaults test pack.",
+          "goal_templates: []",
+          "task_types: []",
+          "default_policy: policies/default.yaml",
+          "default_verifiers: []",
+          "required_tools: []",
+          "supported_workers: []"
+        ].join("\n"),
+        "utf8"
+      );
+      await writeFile(
+        join(workspace, "policies", "default.yaml"),
+        [
+          "id: policy_custom_pack_v1",
+          "version: 1",
+          "rules:",
+          "  - id: allow_evidence_collection",
+          "    decision: allow",
+          "    risk: low"
+        ].join("\n"),
+        "utf8"
+      );
+
+      const result = await validateDomainPackDir(workspace);
+
+      expect(result.valid).toBe(false);
+      expect(result.issues).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            severity: "error",
+            code: "default_policy_default_decision_missing"
+          }),
+          expect.objectContaining({
+            severity: "error",
+            code: "default_policy_default_risk_missing"
+          })
+        ])
+      );
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
   it("rejects duplicate default policy rule ids", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "runstead-domain-pack-"));
 

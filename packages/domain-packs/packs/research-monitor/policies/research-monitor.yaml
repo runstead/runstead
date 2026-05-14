@@ -1,5 +1,7 @@
 id: policy_research_monitor_v1
 version: 1
+default_decision: require_approval
+default_risk: medium
 
 rules:
   - id: allow_source_reading
