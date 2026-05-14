@@ -2,7 +2,11 @@ import { readFile } from "node:fs/promises";
 
 import { describe, expect, it } from "vitest";
 
-import { createProgram, inferProgramName } from "./index.js";
+import {
+  createProgram,
+  inferProgramName,
+  requireUnmanagedHelperAcknowledgement
+} from "./index.js";
 
 describe("cli entrypoint", () => {
   it("exposes runstead and legacy team binaries", async () => {
@@ -250,6 +254,7 @@ describe("cli entrypoint", () => {
 
     expect(prCreateOptions).toContain("--actor");
     expect(prCreateOptions).toContain("--github-app");
+    expect(prCreateOptions).toContain("--unmanaged");
   });
 
   it("exposes RBAC actor selection on git branch helpers", () => {
@@ -258,6 +263,28 @@ describe("cli entrypoint", () => {
     const create = branch?.commands.find((command) => command.name() === "create");
 
     expect(create?.options.map((option) => option.long)).toContain("--actor");
+    expect(create?.options.map((option) => option.long)).toContain("--unmanaged");
+  });
+
+  it("requires explicit acknowledgement for unmanaged mutating helpers", () => {
+    const program = createProgram();
+    const checkpoint = program.commands.find(
+      (command) => command.name() === "checkpoint"
+    );
+    const restore = checkpoint?.commands.find(
+      (command) => command.name() === "restore"
+    );
+
+    expect(restore?.options.map((option) => option.long)).toContain("--unmanaged");
+    expect(() =>
+      requireUnmanagedHelperAcknowledgement({}, "create GitHub pull requests")
+    ).toThrow("Refusing to create GitHub pull requests");
+    expect(() =>
+      requireUnmanagedHelperAcknowledgement(
+        { unmanaged: true },
+        "create GitHub pull requests"
+      )
+    ).not.toThrow();
   });
 
   it("labels ad-hoc side-effect helpers as unmanaged", () => {

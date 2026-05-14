@@ -162,11 +162,18 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
       "Restore even when the current HEAD differs from the checkpoint HEAD"
     )
     .option("--actor <id>", "RBAC subject for checkpoint restore", "local-admin")
+    .option("--unmanaged", "Acknowledge this helper bypasses governed runtime")
     .action(
       async (
         id: string,
-        options: { cwd?: string; allowHeadMismatch?: boolean; actor: string }
+        options: {
+          cwd?: string;
+          allowHeadMismatch?: boolean;
+          actor: string;
+          unmanaged?: boolean;
+        }
       ) => {
+        requireUnmanagedHelperAcknowledgement(options, "restore checkpoints");
         await requireRbacPermission({
           ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
           actor: options.actor,
@@ -1962,6 +1969,7 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     .option("--github-app", "Use configured GitHub App installation auth")
     .option("--installation-id <id>", "Override configured GitHub App installation id")
     .option("--actor <id>", "RBAC subject for pull request creation", "local-admin")
+    .option("--unmanaged", "Acknowledge this helper bypasses governed runtime")
     .action(
       async (options: {
         cwd?: string;
@@ -1976,7 +1984,9 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
         githubApp?: boolean;
         installationId?: string;
         actor: string;
+        unmanaged?: boolean;
       }) => {
+        requireUnmanagedHelperAcknowledgement(options, "create GitHub pull requests");
         await requireRbacPermission({
           ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
           actor: options.actor,
@@ -2015,11 +2025,18 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     .option("--cwd <path>", "Workspace directory")
     .option("--base <ref>", "Base ref")
     .option("--actor <id>", "RBAC subject for git branch management", "local-admin")
+    .option("--unmanaged", "Acknowledge this helper bypasses governed runtime")
     .action(
       async (
         branchName: string,
-        options: { cwd?: string; base?: string; actor: string }
+        options: {
+          cwd?: string;
+          base?: string;
+          actor: string;
+          unmanaged?: boolean;
+        }
       ) => {
+        requireUnmanagedHelperAcknowledgement(options, "manage git branches");
         await requireRbacPermission({
           ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
           actor: options.actor,
@@ -2158,6 +2175,17 @@ async function requireRbacPermission(options: {
   if (result.decision !== "allow") {
     throw new Error(
       `Subject ${options.actor} cannot ${options.action}: ${result.reason}`
+    );
+  }
+}
+
+export function requireUnmanagedHelperAcknowledgement(
+  options: { unmanaged?: boolean },
+  action: string
+): void {
+  if (options.unmanaged !== true) {
+    throw new Error(
+      `Refusing to ${action} through an unmanaged helper. Use the governed runtime, or pass --unmanaged to acknowledge this bypass.`
     );
   }
 }
