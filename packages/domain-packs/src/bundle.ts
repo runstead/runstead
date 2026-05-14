@@ -8,8 +8,10 @@ import { z } from "zod";
 import {
   buildDomainPackManifest,
   type DomainPackManifest,
-  type DomainPackManifestFile
+  type DomainPackManifestFile,
+  verifyDomainPackManifest
 } from "./manifest.js";
+import { validateDomainPackDir } from "./validator.js";
 
 export interface DomainPackBundleArtifactFile extends DomainPackManifestFile {
   contentsBase64: string;
@@ -176,12 +178,36 @@ export async function extractDomainPackBundle(
     `${JSON.stringify(bundle.manifest, null, 2)}\n`,
     "utf8"
   );
+  await assertExtractedBundleValid(outputDir);
 
   return {
     outputDir,
     manifestPath,
     files: destinationFiles.map((destination) => destination.file.path)
   };
+}
+
+async function assertExtractedBundleValid(outputDir: string): Promise<void> {
+  const validation = await validateDomainPackDir(outputDir);
+
+  if (!validation.valid) {
+    throw new Error(
+      `Extracted domain pack bundle is invalid: ${validation.issues
+        .filter((issue) => issue.severity === "error")
+        .map((issue) => issue.code)
+        .join(", ")}`
+    );
+  }
+
+  const verification = await verifyDomainPackManifest(outputDir);
+
+  if (!verification.valid) {
+    throw new Error(
+      `Extracted domain pack manifest verification failed: ${verification.issues
+        .map((issue) => issue.code)
+        .join(", ")}`
+    );
+  }
 }
 
 function assertMatchingBundleFile(

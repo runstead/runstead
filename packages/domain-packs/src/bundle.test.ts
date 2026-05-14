@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -7,7 +8,8 @@ import { describe, expect, it } from "vitest";
 import {
   buildDomainPackBundle,
   extractDomainPackBundle,
-  serializeDomainPackBundle
+  serializeDomainPackBundle,
+  type DomainPackBundleArtifact
 } from "./bundle.js";
 import { createDomainPackTemplate } from "./template.js";
 import { validateDomainPackDir } from "./validator.js";
@@ -137,4 +139,63 @@ describe("domain pack bundles", () => {
       await rm(workspace, { force: true, recursive: true });
     }
   });
+
+  it("rejects extracted packs that do not verify against the bundled manifest", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-domain-bundle-"));
+
+    try {
+      const template = await createDomainPackTemplate({
+        id: "customer-ops",
+        outputDir: join(workspace, "customer-ops"),
+        name: "Customer Ops"
+      });
+      const bundle = await buildDomainPackBundle(template.root);
+      const domainYaml = await readFile(join(template.root, "domain.yaml"), "utf8");
+      const driftedBundle = replaceBundleFileContents(
+        bundle,
+        "domain.yaml",
+        domainYaml.replace('name: "Customer Ops"', 'name: "Customer Ops Drift"')
+      );
+
+      await expect(
+        extractDomainPackBundle({
+          bundle: driftedBundle,
+          outputDir: join(workspace, "drifted")
+        })
+      ).rejects.toThrow("manifest verification failed");
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
 });
+
+function replaceBundleFileContents(
+  bundle: DomainPackBundleArtifact,
+  path: string,
+  contents: string
+): DomainPackBundleArtifact {
+  const bytes = Buffer.byteLength(contents, "utf8");
+  const sha256 = createHash("sha256").update(contents).digest("hex");
+  const updateFile = <T extends { path: string; bytes: number; sha256: string }>(
+    file: T
+  ): T =>
+    file.path === path
+      ? {
+          ...file,
+          bytes,
+          sha256,
+          ...("contentsBase64" in file
+            ? { contentsBase64: Buffer.from(contents).toString("base64") }
+            : {})
+        }
+      : file;
+
+  return {
+    ...bundle,
+    manifest: {
+      ...bundle.manifest,
+      files: bundle.manifest.files.map(updateFile)
+    },
+    files: bundle.files.map(updateFile)
+  };
+}
