@@ -1,3 +1,4 @@
+export * from "./bundle.js";
 export * from "./compatibility.js";
 export * from "./domain-pack.js";
 export * from "./email-followup.js";

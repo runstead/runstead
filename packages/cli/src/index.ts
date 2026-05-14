@@ -1592,6 +1592,48 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
       }
     });
 
+  domain
+    .command("pack")
+    .description("Build a deterministic domain pack bundle.")
+    .argument("<path>", "Domain pack directory")
+    .requiredOption("--output <path>", "Write bundle JSON to a file")
+    .action(async (path: string, options: { output: string }) => {
+      const { buildDomainPackBundle, serializeDomainPackBundle } =
+        await import("@runstead/domain-packs");
+      const { writeFile } = await import("node:fs/promises");
+      const bundle = await buildDomainPackBundle(path);
+
+      await writeFile(options.output, serializeDomainPackBundle(bundle), "utf8");
+      console.log(`Wrote domain pack bundle: ${options.output}`);
+      console.log(
+        `Domain: ${bundle.manifest.domain.id}@${bundle.manifest.domain.version}`
+      );
+      console.log(`Files: ${bundle.files.length}`);
+    });
+
+  domain
+    .command("unpack")
+    .description("Extract a deterministic domain pack bundle.")
+    .argument("<bundle>", "Domain pack bundle JSON")
+    .requiredOption("--output <path>", "Destination domain pack directory")
+    .option("--force", "Overwrite existing extracted files")
+    .action(
+      async (bundlePath: string, options: { output: string; force?: boolean }) => {
+        const { extractDomainPackBundle } = await import("@runstead/domain-packs");
+        const { readFile } = await import("node:fs/promises");
+        const bundle = JSON.parse(await readFile(bundlePath, "utf8")) as unknown;
+        const result = await extractDomainPackBundle({
+          bundle,
+          outputDir: options.output,
+          force: options.force === true
+        });
+
+        console.log(`Extracted domain pack bundle: ${result.outputDir}`);
+        console.log(`Manifest: ${result.manifestPath}`);
+        console.log(`Files: ${result.files.length}`);
+      }
+    );
+
   const goal = program.command("goal").description("Manage durable goals.");
 
   goal

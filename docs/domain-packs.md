@@ -228,6 +228,25 @@ runstead domain verify-manifest ./customer-ops
 Manifest verification rebuilds the current manifest and compares domain metadata,
 file sizes, and sha256 hashes against `runstead-manifest.json`.
 
+## Package And Share
+
+Build a deterministic JSON bundle when a pack needs to move between workspaces:
+
+```sh
+runstead domain pack ./customer-ops --output customer-ops.runstead-pack.json
+```
+
+The bundle embeds the manifest plus base64 file contents. Unpack it into a new
+directory with:
+
+```sh
+runstead domain unpack customer-ops.runstead-pack.json --output ./customer-ops
+```
+
+Unpacking verifies every file against the embedded manifest hashes, rejects
+unsafe paths, and writes `runstead-manifest.json` next to the extracted pack
+files. Use `--force` only when replacing an existing extracted pack.
+
 List discoverable packs with:
 
 ```sh

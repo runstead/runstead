@@ -36,11 +36,26 @@ describe("cli entrypoint", () => {
       expect.arrayContaining([
         "install",
         "manifest",
+        "pack",
         "show",
         "uninstall",
+        "unpack",
         "upgrade",
         "verify-manifest"
       ])
+    );
+  });
+
+  it("exposes deterministic domain pack bundle commands", () => {
+    const domain = createProgram().commands.find(
+      (command) => command.name() === "domain"
+    );
+    const pack = domain?.commands.find((command) => command.name() === "pack");
+    const unpack = domain?.commands.find((command) => command.name() === "unpack");
+
+    expect(pack?.options.map((option) => option.long)).toContain("--output");
+    expect(unpack?.options.map((option) => option.long)).toEqual(
+      expect.arrayContaining(["--force", "--output"])
     );
   });
 
