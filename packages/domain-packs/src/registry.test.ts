@@ -1,3 +1,6 @@
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
@@ -67,5 +70,45 @@ describe("domain pack registry", () => {
       id: "repo-maintenance",
       source: "path"
     });
+  });
+
+  it("reports duplicate pack ids across registry sources", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-pack-registry-"));
+
+    try {
+      const duplicateRoot = join(workspace, "repo-maintenance-copy");
+
+      await mkdir(duplicateRoot, { recursive: true });
+      await writeFile(
+        join(duplicateRoot, "domain.yaml"),
+        [
+          "id: repo-maintenance",
+          "version: 0.1.0",
+          "name: Repo Maintenance Copy",
+          "description: Duplicate id test pack.",
+          "goal_templates: []",
+          "task_types: []",
+          "default_policy: policies/default.yaml",
+          "default_verifiers: []",
+          "required_tools: []",
+          "supported_workers: []"
+        ].join("\n"),
+        "utf8"
+      );
+
+      const registry = await listDomainPacks({
+        roots: [workspace]
+      });
+
+      expect(registry.issues).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            message: "Duplicate domain pack id found in registry: repo-maintenance"
+          })
+        ])
+      );
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
   });
 });

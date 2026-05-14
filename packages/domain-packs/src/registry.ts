@@ -66,8 +66,11 @@ export async function listDomainPacks(
     entries.push(...discovered);
   }
 
+  const dedupedEntries = dedupeEntries(entries);
+  collectDuplicatePackIds(dedupedEntries, issues);
+
   return {
-    entries: dedupeEntries(entries),
+    entries: dedupedEntries,
     issues
   };
 }
@@ -193,6 +196,28 @@ function dedupeEntries(entries: DomainPackRegistryEntry[]): DomainPackRegistryEn
   return [...seen.values()].sort((left, right) =>
     `${left.id}:${left.root}`.localeCompare(`${right.id}:${right.root}`)
   );
+}
+
+function collectDuplicatePackIds(
+  entries: DomainPackRegistryEntry[],
+  issues: DomainPackRegistryIssue[]
+): void {
+  const entriesById = new Map<string, DomainPackRegistryEntry[]>();
+
+  for (const entry of entries) {
+    entriesById.set(entry.id, [...(entriesById.get(entry.id) ?? []), entry]);
+  }
+
+  for (const [id, matches] of entriesById) {
+    if (matches.length < 2) {
+      continue;
+    }
+
+    issues.push({
+      root: matches.map((entry) => entry.root).join(", "),
+      message: `Duplicate domain pack id found in registry: ${id}`
+    });
+  }
 }
 
 async function hasDomainYaml(root: string): Promise<boolean> {
