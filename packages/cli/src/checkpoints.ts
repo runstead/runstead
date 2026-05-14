@@ -66,6 +66,13 @@ export interface RecordWorkspaceCheckpointRestoreEventOptions {
   now?: Date;
 }
 
+export interface RecordWorkspaceCheckpointCreatedEventOptions {
+  stateDb: string;
+  checkpoint: WorkspaceCheckpoint;
+  actor?: string;
+  now?: Date;
+}
+
 export async function createWorkspaceCheckpoint(
   options: CreateWorkspaceCheckpointOptions
 ): Promise<WorkspaceCheckpoint> {
@@ -287,6 +294,34 @@ export function recordWorkspaceCheckpointRestoreEvent(
       restoredTrackedPatch: options.result.restoredTrackedPatch,
       restoredUntrackedFiles: options.result.restoredUntrackedFiles,
       removedUntrackedFiles: options.result.removedUntrackedFiles,
+      ...(options.actor === undefined ? {} : { actor: options.actor })
+    },
+    createdAt: (options.now ?? new Date()).toISOString()
+  };
+  const database = openRunsteadDatabase(options.stateDb);
+
+  try {
+    appendEventAndProject(database, { event });
+  } finally {
+    database.close();
+  }
+
+  return event;
+}
+
+export function recordWorkspaceCheckpointCreatedEvent(
+  options: RecordWorkspaceCheckpointCreatedEventOptions
+): RunsteadEvent {
+  const event: RunsteadEvent = {
+    eventId: createRunsteadId("evt"),
+    type: "checkpoint.created",
+    aggregateType: "checkpoint",
+    aggregateId: options.checkpoint.id,
+    payload: {
+      workspace: options.checkpoint.workspace,
+      checkpointId: options.checkpoint.id,
+      head: options.checkpoint.head ?? "",
+      untrackedFiles: options.checkpoint.untrackedFiles,
       ...(options.actor === undefined ? {} : { actor: options.actor })
     },
     createdAt: (options.now ?? new Date()).toISOString()

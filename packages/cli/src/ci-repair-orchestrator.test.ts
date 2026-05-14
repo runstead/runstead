@@ -98,6 +98,15 @@ describe("runCiRepairOrchestrator", () => {
         const taskState = database
           .prepare("SELECT output_json FROM tasks WHERE id = ?")
           .get(first.ciRepair.task.id) as { output_json: string };
+        const checkpointCreatedEvent = database
+          .prepare(
+            `
+            SELECT payload_json
+            FROM events
+            WHERE type = 'checkpoint.created'
+          `
+          )
+          .get() as { payload_json: string };
 
         expect(toolCalls).toEqual(
           expect.arrayContaining([
@@ -145,6 +154,10 @@ describe("runCiRepairOrchestrator", () => {
         expect(JSON.stringify(workerToolOutput)).not.toContain("fixed");
         expect(taskState.output_json).not.toContain("fixed");
         expect(taskState.output_json).toContain("omitted from Runstead durable state");
+        expect(JSON.parse(checkpointCreatedEvent.payload_json)).toMatchObject({
+          checkpointId: first.workerResult?.checkpointBefore?.id,
+          actor: "runstead:ci-repair"
+        });
       } finally {
         database.close();
       }
@@ -336,6 +349,28 @@ describe("runCiRepairOrchestrator", () => {
       ).rejects.toThrow("CI repair diff scope failed");
 
       expect(gitCalls).toContainEqual(["reset", "--hard", "abc123"]);
+
+      const database = openRunsteadDatabase(join(workspace, ".runstead", "state.db"));
+
+      try {
+        const restoredEvent = database
+          .prepare(
+            `
+            SELECT payload_json
+            FROM events
+            WHERE type = 'checkpoint.restored'
+          `
+          )
+          .get() as { payload_json: string };
+
+        expect(JSON.parse(restoredEvent.payload_json)).toMatchObject({
+          currentHead: "abc123",
+          restoredTrackedPatch: false,
+          actor: "runstead:ci-repair"
+        });
+      } finally {
+        database.close();
+      }
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }

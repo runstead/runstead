@@ -20,6 +20,8 @@ import {
 } from "./ci-repair.js";
 import {
   createWorkspaceCheckpoint,
+  recordWorkspaceCheckpointCreatedEvent,
+  recordWorkspaceCheckpointRestoreEvent,
   restoreWorkspaceCheckpoint,
   type WorkspaceCheckpoint,
   type RestoreWorkspaceCheckpointResult
@@ -250,7 +252,14 @@ export async function runCiRepairOrchestratorUnlocked(
           const value = await createWorkspaceCheckpoint({
             workspace: cwd,
             checkpointDir: join(root, "checkpoints"),
+            ...(options.now === undefined ? {} : { now: options.now }),
             ...(options.gitRunner === undefined ? {} : { runner: options.gitRunner })
+          });
+          recordWorkspaceCheckpointCreatedEvent({
+            stateDb,
+            checkpoint: value,
+            actor: "runstead:ci-repair",
+            ...(options.now === undefined ? {} : { now: options.now })
           });
 
           return {
@@ -1018,6 +1027,12 @@ async function rollbackWorkerChanges(options: {
         checkpointId: checkpoint.id,
         allowHeadMismatch: true,
         ...(options.gitRunner === undefined ? {} : { runner: options.gitRunner })
+      });
+      recordWorkspaceCheckpointRestoreEvent({
+        stateDb: options.stateDb,
+        result: value,
+        actor: "runstead:ci-repair",
+        ...(options.now === undefined ? {} : { now: options.now })
       });
 
       return {
