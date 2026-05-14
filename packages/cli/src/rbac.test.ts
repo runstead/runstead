@@ -64,6 +64,21 @@ describe("rbac", () => {
         subject: "bob",
         permission: "approval.decide"
       });
+      const webhook = await checkPermission({
+        cwd: workspace,
+        subject: "alice",
+        permission: "webhook.manage"
+      });
+      const teamPolicy = await checkPermission({
+        cwd: workspace,
+        subject: "alice",
+        permission: "team_policy.manage"
+      });
+      const githubApp = await checkPermission({
+        cwd: workspace,
+        subject: "alice",
+        permission: "github_app.manage"
+      });
       const rbacYaml = await readFile(initialized.path, "utf8");
 
       expect(initialized.overwritten).toBe(false);
@@ -78,6 +93,18 @@ describe("rbac", () => {
       expect(bob).toMatchObject({
         decision: "allow",
         roles: ["approver"]
+      });
+      expect(webhook).toMatchObject({
+        decision: "allow",
+        roles: ["operator"]
+      });
+      expect(teamPolicy).toMatchObject({
+        decision: "allow",
+        roles: ["operator"]
+      });
+      expect(githubApp).toMatchObject({
+        decision: "allow",
+        roles: ["operator"]
       });
       expect(rbacYaml).toContain("bob");
 
@@ -112,6 +139,65 @@ describe("rbac", () => {
       } finally {
         database.close();
       }
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("supports narrow operational permissions without daemon management", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-rbac-narrow-"));
+    const root = join(workspace, ".runstead");
+
+    try {
+      await mkdir(root, { recursive: true });
+      await writeFile(
+        join(root, "config.yaml"),
+        "version: 1\ndomain: repo-maintenance\n",
+        "utf8"
+      );
+      await writeFile(
+        join(root, "rbac.yaml"),
+        [
+          "version: 1",
+          "roles:",
+          "  webhooker:",
+          "    - webhook.manage",
+          "subjects:",
+          "  webhook-bot:",
+          "    roles:",
+          "      - webhooker"
+        ].join("\n"),
+        "utf8"
+      );
+
+      const webhook = await checkPermission({
+        cwd: workspace,
+        subject: "webhook-bot",
+        permission: "webhook.manage"
+      });
+      const daemon = await checkPermission({
+        cwd: workspace,
+        subject: "webhook-bot",
+        permission: "daemon.manage"
+      });
+      const teamPolicy = await checkPermission({
+        cwd: workspace,
+        subject: "webhook-bot",
+        permission: "team_policy.manage"
+      });
+
+      expect(webhook).toMatchObject({
+        decision: "allow",
+        roles: ["webhooker"]
+      });
+      expect(daemon).toMatchObject({
+        decision: "deny",
+        roles: ["webhooker"]
+      });
+      expect(teamPolicy).toMatchObject({
+        decision: "deny",
+        roles: ["webhooker"]
+      });
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }

@@ -416,7 +416,7 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
         const permission = await checkPermission({
           ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
           subject: options.actor,
-          permission: "daemon.manage"
+          permission: "webhook.manage"
         });
 
         if (permission.decision !== "allow") {
@@ -603,7 +603,7 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
       await requireRbacPermission({
         ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
         actor: options.actor,
-        permission: "daemon.manage",
+        permission: "team_policy.manage",
         action: "manage team policy"
       });
 
@@ -627,7 +627,7 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
       await requireRbacPermission({
         ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
         actor: options.actor,
-        permission: "daemon.manage",
+        permission: "team_policy.read",
         action: "inspect team policy"
       });
 
@@ -650,7 +650,7 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
       await requireRbacPermission({
         ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
         actor: options.actor,
-        permission: "daemon.manage",
+        permission: "team_policy.manage",
         action: "manage team policy"
       });
 
@@ -1652,7 +1652,7 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
         const permission = await checkPermission({
           ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
           subject: options.actor,
-          permission: "daemon.manage"
+          permission: "github_app.manage"
         });
 
         if (permission.decision !== "allow") {
@@ -1691,7 +1691,7 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
       const permission = await checkPermission({
         ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
         subject: options.actor,
-        permission: "daemon.manage"
+        permission: "github_app.read"
       });
 
       if (permission.decision !== "allow") {
@@ -1719,7 +1719,7 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
       const permission = await checkPermission({
         ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
         subject: options.actor,
-        permission: "daemon.manage"
+        permission: "github_app.manage"
       });
 
       if (permission.decision !== "allow") {
@@ -1747,7 +1747,7 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
         await requireRbacPermission({
           ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
           actor: options.actor,
-          permission: "daemon.manage",
+          permission: "github_app.manage",
           action: "manage GitHub App mode"
         });
 

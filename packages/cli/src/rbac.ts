@@ -78,6 +78,11 @@ roles:
     - memory.read
     - memory.write
     - daemon.manage
+    - webhook.manage
+    - team_policy.read
+    - team_policy.manage
+    - github_app.read
+    - github_app.manage
   approver:
     - dashboard.read
     - repo.read
