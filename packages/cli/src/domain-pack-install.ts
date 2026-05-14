@@ -1,15 +1,17 @@
 import { constants } from "node:fs";
-import { access, copyFile, mkdir, rm, writeFile } from "node:fs/promises";
+import { access, copyFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 
+import { createRunsteadId, type RunsteadEvent } from "@runstead/core";
 import {
   buildDomainPackManifest,
   resolveDomainPackRef,
   type DomainPackManifest,
   type DomainPackRegistryEntry
 } from "@runstead/domain-packs";
+import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sqlite";
 
-import { requireRunsteadRoot } from "./runstead-root.js";
+import { requireRunsteadRoot, requireRunsteadStateDb } from "./runstead-root.js";
 
 export interface InstallDomainPackOptions {
   cwd?: string;
@@ -28,6 +30,25 @@ export interface InstallDomainPackResult {
   installedFiles: string[];
   overwritten: boolean;
 }
+
+export interface UninstallDomainPackOptions {
+  cwd?: string;
+  id: string;
+  force?: boolean;
+  now?: Date;
+}
+
+export interface UninstallDomainPackResult {
+  id: string;
+  destination: string;
+  manifestPath: string;
+  activeGoals: number;
+  activeTasks: number;
+  removed: boolean;
+  manifest?: DomainPackManifest;
+}
+
+const DOMAIN_PACK_ID_PATTERN = /^[a-z][a-z0-9-]*$/;
 
 export async function installDomainPack(
   options: InstallDomainPackOptions
@@ -86,6 +107,63 @@ export async function installDomainPack(
   };
 }
 
+export async function uninstallDomainPack(
+  options: UninstallDomainPackOptions
+): Promise<UninstallDomainPackResult> {
+  if (!DOMAIN_PACK_ID_PATTERN.test(options.id)) {
+    throw new Error(`Invalid domain pack id: ${options.id}`);
+  }
+
+  const resolved = await requireRunsteadStateDb(resolve(options.cwd ?? process.cwd()));
+  const destination = resolve(resolved.root, "domains", options.id);
+  const manifestPath = join(destination, "runstead-manifest.json");
+
+  if (!(await exists(destination))) {
+    throw new Error(`Domain pack is not installed: ${options.id}`);
+  }
+
+  const manifest = await readInstalledManifest(manifestPath);
+  const database = openRunsteadDatabase(resolved.stateDb);
+
+  try {
+    const usage = readDomainUsage(database, options.id);
+
+    if (options.force !== true && (usage.activeGoals > 0 || usage.activeTasks > 0)) {
+      throw new Error(
+        `Domain pack ${options.id} is still in use by ${usage.activeGoals} active goal(s) and ${usage.activeTasks} active task(s)`
+      );
+    }
+
+    await rm(destination, { force: true, recursive: true });
+
+    const uninstalledAt = (options.now ?? new Date()).toISOString();
+    const event = domainPackUninstalledEvent({
+      id: options.id,
+      destination,
+      manifestPath,
+      activeGoals: usage.activeGoals,
+      activeTasks: usage.activeTasks,
+      forced: options.force === true,
+      createdAt: uninstalledAt,
+      ...(manifest === undefined ? {} : { manifest })
+    });
+
+    appendEventAndProject(database, { event });
+
+    return {
+      id: options.id,
+      destination,
+      manifestPath,
+      activeGoals: usage.activeGoals,
+      activeTasks: usage.activeTasks,
+      removed: true,
+      ...(manifest === undefined ? {} : { manifest })
+    };
+  } finally {
+    database.close();
+  }
+}
+
 async function exists(path: string): Promise<boolean> {
   try {
     await access(path, constants.F_OK);
@@ -93,4 +171,74 @@ async function exists(path: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+async function readInstalledManifest(
+  manifestPath: string
+): Promise<DomainPackManifest | undefined> {
+  try {
+    return JSON.parse(await readFile(manifestPath, "utf8")) as DomainPackManifest;
+  } catch {
+    return undefined;
+  }
+}
+
+function readDomainUsage(
+  database: ReturnType<typeof openRunsteadDatabase>,
+  domainId: string
+): { activeGoals: number; activeTasks: number } {
+  const activeGoals = database
+    .prepare(
+      `
+      SELECT COUNT(*) AS count
+      FROM goals
+      WHERE domain = ?
+        AND status IN ('active', 'paused')
+    `
+    )
+    .get(domainId) as { count: number };
+  const activeTasks = database
+    .prepare(
+      `
+      SELECT COUNT(*) AS count
+      FROM tasks
+      WHERE domain = ?
+        AND status IN ('queued', 'claimed', 'running', 'waiting_approval', 'blocked')
+    `
+    )
+    .get(domainId) as { count: number };
+
+  return {
+    activeGoals: activeGoals.count,
+    activeTasks: activeTasks.count
+  };
+}
+
+function domainPackUninstalledEvent(input: {
+  id: string;
+  destination: string;
+  manifestPath: string;
+  manifest?: DomainPackManifest;
+  activeGoals: number;
+  activeTasks: number;
+  forced: boolean;
+  createdAt: string;
+}): RunsteadEvent {
+  return {
+    eventId: createRunsteadId("evt"),
+    type: "domain_pack.uninstalled",
+    aggregateType: "domain_pack",
+    aggregateId: input.id,
+    payload: {
+      id: input.id,
+      destination: input.destination,
+      manifestPath: input.manifestPath,
+      version: input.manifest?.domain.version ?? null,
+      files: input.manifest?.files.length ?? null,
+      activeGoals: input.activeGoals,
+      activeTasks: input.activeTasks,
+      forced: input.forced
+    },
+    createdAt: input.createdAt
+  };
 }

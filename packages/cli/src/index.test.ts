@@ -32,7 +32,7 @@ describe("cli entrypoint", () => {
     );
 
     expect(domain?.commands.map((command) => command.name())).toEqual(
-      expect.arrayContaining(["install", "manifest", "show"])
+      expect.arrayContaining(["install", "manifest", "show", "uninstall"])
     );
   });
 

@@ -226,6 +226,16 @@ runstead domain validate .runstead/domains/customer-ops
 runstead goal create customer-ops --template weekly-triage
 ```
 
+Remove a locally installed pack when it is no longer referenced by active work:
+
+```sh
+runstead domain uninstall customer-ops
+```
+
+Runstead refuses to uninstall a pack while active goals or tasks still reference
+it. Use `--force` only after you have archived or otherwise accounted for that
+work; forced uninstalls are still recorded in the audit log.
+
 Do not put runtime state, generated reports, or task outputs inside the domain
 pack. Those belong under `.runstead/state.db`, `.runstead/evidence`, and
 `.runstead/reports`.

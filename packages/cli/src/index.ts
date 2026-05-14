@@ -1351,6 +1351,26 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     );
 
   domain
+    .command("uninstall")
+    .description("Remove an installed domain pack from .runstead/domains.")
+    .argument("<id>", "Installed domain pack id")
+    .option("--cwd <path>", "Workspace directory")
+    .option("--force", "Remove even when active goals or tasks still reference it")
+    .action(async (id: string, options: { cwd?: string; force?: boolean }) => {
+      const { uninstallDomainPack } = await import("./domain-pack-install.js");
+      const result = await uninstallDomainPack({
+        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+        id,
+        force: options.force === true
+      });
+
+      console.log(`Uninstalled domain pack: ${result.id}`);
+      console.log(`Destination: ${result.destination}`);
+      console.log(`Active goals: ${result.activeGoals}`);
+      console.log(`Active tasks: ${result.activeTasks}`);
+    });
+
+  domain
     .command("validate")
     .description("Validate a domain pack directory.")
     .argument("<path>", "Domain pack directory")
