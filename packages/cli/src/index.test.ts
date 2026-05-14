@@ -115,4 +115,12 @@ describe("cli entrypoint", () => {
         ?.options.map((option) => option.long)
     ).toContain("--actor");
   });
+
+  it("exposes RBAC actor selection on git branch helpers", () => {
+    const git = createProgram().commands.find((command) => command.name() === "git");
+    const branch = git?.commands.find((command) => command.name() === "branch");
+    const create = branch?.commands.find((command) => command.name() === "create");
+
+    expect(create?.options.map((option) => option.long)).toContain("--actor");
+  });
 });

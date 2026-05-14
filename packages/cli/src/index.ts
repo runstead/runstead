@@ -1625,16 +1625,29 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     .argument("<branch-name>", "Branch name")
     .option("--cwd <path>", "Workspace directory")
     .option("--base <ref>", "Base ref")
-    .action(async (branchName: string, options: { cwd?: string; base?: string }) => {
-      const { createGitBranch } = await import("./git-branch.js");
-      const result = await createGitBranch({
-        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-        branchName,
-        ...(options.base === undefined ? {} : { baseRef: options.base })
-      });
+    .option("--actor <id>", "RBAC subject for git branch management", "local-admin")
+    .action(
+      async (
+        branchName: string,
+        options: { cwd?: string; base?: string; actor: string }
+      ) => {
+        await requireRbacPermission({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          actor: options.actor,
+          permission: "repo.manage",
+          action: "manage git branches"
+        });
 
-      console.log(`Created branch: ${result.branchName}`);
-    });
+        const { createGitBranch } = await import("./git-branch.js");
+        const result = await createGitBranch({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          branchName,
+          ...(options.base === undefined ? {} : { baseRef: options.base })
+        });
+
+        console.log(`Created branch: ${result.branchName}`);
+      }
+    );
 
   const policy = program.command("policy").description("Evaluate policies.");
 
