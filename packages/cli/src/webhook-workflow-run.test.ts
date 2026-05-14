@@ -304,6 +304,96 @@ describe("handleGitHubWorkflowRunWebhook", () => {
     }
   });
 
+  it("reserves GitHub deliveries before orchestration side effects run", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-webhook-reserve-"));
+    const root = join(workspace, ".runstead");
+    let observedReservation = false;
+
+    try {
+      await mkdir(root, { recursive: true });
+      await writeFile(
+        join(root, "config.yaml"),
+        "version: 1\ndomain: repo-maintenance\n",
+        "utf8"
+      );
+      openRunsteadDatabase(join(root, "state.db")).close();
+
+      const result = await handleGitHubWorkflowRunWebhook({
+        cwd: workspace,
+        event: "workflow_run",
+        delivery: "delivery_002",
+        dedupeDelivery: true,
+        payload: repairablePayload,
+        mode: "orchestrate",
+        verifierCommands: [{ name: "test", command: "pnpm test" }],
+        orchestrate: () => {
+          const database = openRunsteadDatabase(join(root, "state.db"));
+
+          try {
+            const row = database
+              .prepare(
+                `
+                SELECT type, aggregate_type, aggregate_id, payload_json
+                FROM events
+                WHERE type = 'webhook.delivery_received'
+              `
+              )
+              .get() as {
+              type: string;
+              aggregate_type: string;
+              aggregate_id: string;
+              payload_json: string;
+            };
+
+            expect(row).toMatchObject({
+              type: "webhook.delivery_received",
+              aggregate_type: "github_webhook_delivery",
+              aggregate_id: "delivery_002"
+            });
+            expect(JSON.parse(row.payload_json)).toEqual({
+              sourceEvent: "workflow_run",
+              delivery: "delivery_002"
+            });
+            observedReservation = true;
+          } finally {
+            database.close();
+          }
+
+          return Promise.resolve(fakeOrchestration("123"));
+        },
+        audit: recordGitHubWorkflowRunWebhookEvent,
+        now: new Date("2026-05-14T08:27:00.000Z")
+      });
+
+      expect(result).toMatchObject({
+        handled: true,
+        mode: "orchestrate",
+        runId: "123"
+      });
+      expect(observedReservation).toBe(true);
+
+      const duplicate = await handleGitHubWorkflowRunWebhook({
+        cwd: workspace,
+        event: "workflow_run",
+        delivery: "delivery_002",
+        dedupeDelivery: true,
+        payload: repairablePayload,
+        orchestrate: () => Promise.reject(new Error("orchestration should not run")),
+        audit: recordGitHubWorkflowRunWebhookEvent,
+        now: new Date("2026-05-14T08:28:00.000Z")
+      });
+
+      expect(duplicate).toMatchObject({
+        handled: false,
+        reason: "duplicate_delivery",
+        delivery: "delivery_002",
+        originalEventType: "webhook.workflow_run_handled"
+      });
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
   it("records ignored webhook deliveries in the audit log", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "runstead-webhook-audit-"));
     const root = join(workspace, ".runstead");

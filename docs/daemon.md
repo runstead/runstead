@@ -38,4 +38,7 @@ own liveness signal.
 GitHub webhook deliveries are recorded with their `x-github-delivery` id. When
 the CLI server receives a repeated delivery id, Runstead records a
 `webhook.delivery_duplicate` audit event and skips intake/orchestration before
-any CI repair side effects run.
+any CI repair side effects run. With delivery dedupe enabled, Runstead also
+records `webhook.delivery_received` before starting intake or orchestration so a
+concurrent duplicate delivery sees an in-flight reservation instead of starting
+a second repair loop.

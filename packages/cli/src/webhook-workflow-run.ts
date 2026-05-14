@@ -54,6 +54,13 @@ export interface RecordGitHubWorkflowRunWebhookEventOptions {
   now?: Date;
 }
 
+export interface RecordGitHubWebhookDeliveryReceivedEventOptions {
+  cwd?: string;
+  event: string;
+  delivery: string;
+  now?: Date;
+}
+
 export interface HandleGitHubWorkflowRunWebhookOptions {
   event: string;
   delivery?: string;
@@ -104,6 +111,13 @@ export async function handleGitHubWorkflowRunWebhook(
 
       return result;
     }
+
+    recordGitHubWebhookDeliveryReceivedEvent({
+      ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+      event: options.event,
+      delivery: options.delivery,
+      ...(options.now === undefined ? {} : { now: options.now })
+    });
   }
 
   const runId = repairableWorkflowRunIdFromWebhook(options.event, options.payload);
@@ -197,6 +211,33 @@ export function recordGitHubWorkflowRunWebhookEvent(
   return Promise.resolve(event);
 }
 
+export function recordGitHubWebhookDeliveryReceivedEvent(
+  options: RecordGitHubWebhookDeliveryReceivedEventOptions
+): RunsteadEvent {
+  const root = requireRunsteadRootSync(resolve(options.cwd ?? process.cwd())).root;
+  const stateDb = join(root, "state.db");
+  const event: RunsteadEvent = {
+    eventId: createRunsteadId("evt"),
+    type: "webhook.delivery_received",
+    aggregateType: "github_webhook_delivery",
+    aggregateId: options.delivery,
+    payload: {
+      sourceEvent: options.event,
+      delivery: options.delivery
+    },
+    createdAt: (options.now ?? new Date()).toISOString()
+  };
+  const database = openRunsteadDatabase(stateDb);
+
+  try {
+    appendEventAndProject(database, { event });
+  } finally {
+    database.close();
+  }
+
+  return event;
+}
+
 async function auditWebhookResult(
   options: HandleGitHubWorkflowRunWebhookOptions,
   result: HandleGitHubWorkflowRunWebhookResult
@@ -228,11 +269,12 @@ function findRecordedGitHubWebhookDelivery(options: {
         SELECT event_id, type, payload_json
         FROM events
         WHERE type IN (
+          'webhook.delivery_received',
           'webhook.workflow_run_handled',
           'webhook.workflow_run_ignored',
           'webhook.delivery_duplicate'
         )
-        ORDER BY id ASC
+        ORDER BY id DESC
       `
       )
       .all() as unknown as WebhookDeliveryEventRow[];
