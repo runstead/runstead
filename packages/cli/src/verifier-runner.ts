@@ -16,7 +16,11 @@ import {
 } from "./approvals.js";
 import { withRunsteadManagerLock } from "./manager-lock.js";
 import { loadPolicyProfileFromFile } from "./policy-loader.js";
-import type { ActionEnvelope, PolicyProfile } from "./policy.js";
+import {
+  fingerprintPolicyProfile,
+  type ActionEnvelope,
+  type PolicyProfile
+} from "./policy.js";
 import { recordPolicyDecision } from "./policy-log.js";
 import { requireRunsteadStateDbSync } from "./runstead-root.js";
 import {
@@ -165,6 +169,7 @@ export async function runTaskVerifiersUnlocked(
         cwd,
         stateDb,
         policyId: policy.id,
+        policyFingerprint: fingerprintPolicyProfile(policy),
         action: preflight.action,
         result: preflight.policyResult,
         ...(options.now === undefined ? {} : { now: options.now })

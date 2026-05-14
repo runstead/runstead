@@ -13,7 +13,11 @@ import {
   findApprovedApprovalForAction,
   requestApproval
 } from "./approvals.js";
-import type { ActionEnvelope, PolicyProfile } from "./policy.js";
+import {
+  fingerprintPolicyProfile,
+  type ActionEnvelope,
+  type PolicyProfile
+} from "./policy.js";
 import { recordPolicyDecision } from "./policy-log.js";
 import { finishToolCall, startToolCall } from "./runtime-audit.js";
 import { preflightToolAction } from "./tool-proxy.js";
@@ -77,6 +81,7 @@ export async function runGovernedToolAction<T>(
     cwd: options.cwd,
     stateDb: options.stateDb,
     policyId: options.policy.id,
+    policyFingerprint: fingerprintPolicyProfile(options.policy),
     action: preflight.action,
     result: preflight.policyResult,
     ...(options.now === undefined ? {} : { now: options.now })

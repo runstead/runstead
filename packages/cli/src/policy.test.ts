@@ -13,7 +13,8 @@ import {
   createReadWorkspaceAllowPolicy,
   createRepoMaintenanceMinimumPolicy,
   createVerifierCommandAllowPolicy,
-  evaluatePolicy
+  evaluatePolicy,
+  fingerprintPolicyProfile
 } from "./policy.js";
 
 const protectedPathPolicy = createProtectedPathDenyPolicy([
@@ -375,5 +376,20 @@ describe("evaluatePolicy dependency change rules", () => {
       risk: "critical",
       ruleId: "deny_protected_paths"
     });
+  });
+});
+
+describe("fingerprintPolicyProfile", () => {
+  it("creates a stable sha256 fingerprint for policy content", () => {
+    const reorderedPolicy = {
+      rules: externalWritePolicy.rules,
+      version: externalWritePolicy.version,
+      id: externalWritePolicy.id
+    };
+
+    expect(fingerprintPolicyProfile(externalWritePolicy)).toMatch(/^[a-f0-9]{64}$/);
+    expect(fingerprintPolicyProfile(reorderedPolicy)).toBe(
+      fingerprintPolicyProfile(externalWritePolicy)
+    );
   });
 });

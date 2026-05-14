@@ -12,6 +12,7 @@ import {
 } from "./governed-action.js";
 import { createGoal } from "./goals.js";
 import { initRunstead } from "./init.js";
+import { fingerprintPolicyProfile } from "./policy.js";
 import { loadPolicyProfileFromFile } from "./policy-loader.js";
 import { startWorkerRun } from "./runtime-audit.js";
 
@@ -67,17 +68,26 @@ describe("runGovernedToolAction", () => {
           policy_decision_id: string;
         };
         const policyDecision = database
-          .prepare("SELECT decision, rule_id FROM policy_decisions WHERE id = ?")
-          .get(result.policyDecision.id) as { decision: string; rule_id: string };
+          .prepare(
+            "SELECT decision, rule_id, result_json FROM policy_decisions WHERE id = ?"
+          )
+          .get(result.policyDecision.id) as {
+          decision: string;
+          rule_id: string;
+          result_json: string;
+        };
 
         expect(result.value).toBe("ok");
         expect(toolCall).toMatchObject({
           status: "completed",
           policy_decision_id: result.policyDecision.id
         });
-        expect(policyDecision).toEqual({
+        expect(policyDecision).toMatchObject({
           decision: "allow",
           rule_id: "allow_read_workspace"
+        });
+        expect(JSON.parse(policyDecision.result_json)).toMatchObject({
+          policyFingerprint: fingerprintPolicyProfile(policy)
         });
       } finally {
         database.close();

@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { isAbsolute, relative } from "node:path";
 
 export type PolicyDecision = "allow" | "deny" | "require_approval";
@@ -169,6 +170,10 @@ export function createProtectedPathDenyPolicy(
       }
     ]
   };
+}
+
+export function fingerprintPolicyProfile(policy: PolicyProfile): string {
+  return createHash("sha256").update(stableJson(policy)).digest("hex");
 }
 
 export function createRepoMaintenanceMinimumPolicy(
@@ -660,4 +665,24 @@ function defaultRiskForDecision(decision: PolicyDecision): PolicyRisk {
     case "deny":
       return "critical";
   }
+}
+
+function stableJson(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => stableJson(item)).join(",")}]`;
+  }
+
+  if (isRecord(value)) {
+    return `{${Object.keys(value)
+      .sort()
+      .filter((key) => value[key] !== undefined)
+      .map((key) => `${JSON.stringify(key)}:${stableJson(value[key])}`)
+      .join(",")}}`;
+  }
+
+  return JSON.stringify(value);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
 }

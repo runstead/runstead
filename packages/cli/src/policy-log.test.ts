@@ -6,7 +6,11 @@ import { openRunsteadDatabase } from "@runstead/state-sqlite";
 import { describe, expect, it } from "vitest";
 
 import { recordPolicyDecision } from "./policy-log.js";
-import { createExternalWriteApprovalPolicy, evaluatePolicy } from "./policy.js";
+import {
+  createExternalWriteApprovalPolicy,
+  evaluatePolicy,
+  fingerprintPolicyProfile
+} from "./policy.js";
 
 describe("recordPolicyDecision", () => {
   it("stores a policy decision projection and appends an audit event", async () => {
@@ -26,6 +30,7 @@ describe("recordPolicyDecision", () => {
       const recorded = recordPolicyDecision({
         stateDb,
         policyId: policy.id,
+        policyFingerprint: fingerprintPolicyProfile(policy),
         action,
         result,
         now: new Date("2026-05-14T03:07:00.000Z")
@@ -77,7 +82,8 @@ describe("recordPolicyDecision", () => {
           created_at: "2026-05-14T03:07:00.000Z"
         });
         expect(JSON.parse(decision.result_json)).toMatchObject({
-          matchedSideEffect: "github_pr_create"
+          matchedSideEffect: "github_pr_create",
+          policyFingerprint: fingerprintPolicyProfile(policy)
         });
         expect(event).toMatchObject({
           type: "policy.decision_recorded",
@@ -87,6 +93,7 @@ describe("recordPolicyDecision", () => {
         expect(JSON.parse(event.payload_json)).toMatchObject({
           actionId: "act_external_write",
           policyId: policy.id,
+          policyFingerprint: fingerprintPolicyProfile(policy),
           decision: "require_approval"
         });
       } finally {

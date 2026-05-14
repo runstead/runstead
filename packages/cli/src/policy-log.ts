@@ -15,6 +15,7 @@ export interface RecordPolicyDecisionOptions {
   cwd?: string;
   stateDb?: string;
   policyId: string;
+  policyFingerprint?: string;
   action: ActionEnvelope;
   result: PolicyEvaluationResult;
   now?: Date;
@@ -42,7 +43,12 @@ export function recordPolicyDecision(
     reason: options.result.reason,
     obligations: options.result.obligations,
     action: jsonObject(options.action),
-    result: jsonObject(options.result),
+    result: jsonObject({
+      ...options.result,
+      ...(options.policyFingerprint === undefined
+        ? {}
+        : { policyFingerprint: options.policyFingerprint })
+    }),
     createdAt
   };
   const event: RunsteadEvent = {
@@ -75,10 +81,13 @@ export function recordPolicyDecision(
 }
 
 function policyDecisionEventPayload(decision: PolicyDecisionRecord): JsonObject {
+  const policyFingerprint = decision.result.policyFingerprint;
+
   return {
     decisionId: decision.id,
     actionId: decision.actionId,
     policyId: decision.policyId,
+    ...(typeof policyFingerprint === "string" ? { policyFingerprint } : {}),
     decision: decision.decision,
     risk: decision.risk,
     ...(decision.ruleId === undefined ? {} : { ruleId: decision.ruleId })
