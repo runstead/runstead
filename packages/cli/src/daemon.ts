@@ -1,4 +1,5 @@
-import { resolve } from "node:path";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { dirname, join, resolve } from "node:path";
 
 import { createRunsteadId, type JsonObject, type RunsteadEvent } from "@runstead/core";
 import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sqlite";
@@ -16,7 +17,7 @@ import {
   type ScheduleDueTasksOptions,
   type ScheduleDueTasksResult
 } from "./scheduler.js";
-import { requireRunsteadStateDbSync } from "./runstead-root.js";
+import { requireRunsteadRoot, requireRunsteadStateDbSync } from "./runstead-root.js";
 
 export interface RunDaemonOptions {
   cwd?: string;
@@ -26,6 +27,7 @@ export interface RunDaemonOptions {
   scheduler?: DaemonScheduler;
   schedulerEnabled?: boolean;
   audit?: boolean;
+  heartbeat?: boolean;
   now?: Date;
 }
 
@@ -39,6 +41,7 @@ export interface DaemonTick {
   scheduled?: ScheduleDueTasksResult;
   result: RunOnceResult;
   event?: RunsteadEvent;
+  heartbeat?: DaemonHeartbeatStatus;
 }
 
 export interface RunDaemonResult {
@@ -46,6 +49,22 @@ export interface RunDaemonResult {
   intervalMs: number;
   ticks: DaemonTick[];
   stoppedReason: "max_ticks";
+}
+
+export interface DaemonHeartbeatStatus {
+  cwd: string;
+  pid: number;
+  tick: number;
+  intervalMs: number;
+  updatedAt: string;
+  scheduledTasks: number;
+  skippedTasks: number;
+  ranTask: boolean;
+  reason?: string;
+  taskId?: string;
+  taskType?: string;
+  taskStatus?: string;
+  eventId?: string;
 }
 
 export async function runDaemon(
@@ -65,6 +84,7 @@ export async function runDaemon(
         ...options,
         cwd,
         audit: options.audit ?? true,
+        heartbeat: options.heartbeat ?? true,
         scheduler: (schedulerOptions) =>
           scheduleDueTasksUnlocked({
             ...schedulerOptions,
@@ -106,12 +126,25 @@ async function runDaemonLoop(options: RunDaemonOptions): Promise<RunDaemonResult
             ...(options.now === undefined ? {} : { now: options.now })
           })
         : undefined;
+    const heartbeat =
+      options.heartbeat === true
+        ? await writeDaemonHeartbeat({
+            cwd,
+            tick: tickNumber,
+            intervalMs,
+            result,
+            ...(scheduled === undefined ? {} : { scheduled }),
+            ...(event === undefined ? {} : { event }),
+            ...(options.now === undefined ? {} : { now: options.now })
+          })
+        : undefined;
 
     ticks.push({
       tick: tickNumber,
       ...(scheduled === undefined ? {} : { scheduled }),
       result,
-      ...(event === undefined ? {} : { event })
+      ...(event === undefined ? {} : { event }),
+      ...(heartbeat === undefined ? {} : { heartbeat })
     });
 
     if (maxTicks !== undefined && ticks.length >= maxTicks) {
@@ -132,6 +165,33 @@ async function runDaemonLoop(options: RunDaemonOptions): Promise<RunDaemonResult
     ticks,
     stoppedReason: "max_ticks"
   };
+}
+
+export async function readDaemonStatus(
+  options: {
+    cwd?: string;
+  } = {}
+): Promise<DaemonHeartbeatStatus> {
+  const path = await daemonStatusPath(resolve(options.cwd ?? process.cwd()));
+
+  return JSON.parse(await readFile(path, "utf8")) as DaemonHeartbeatStatus;
+}
+
+export function formatDaemonStatus(status: DaemonHeartbeatStatus): string {
+  return [
+    "Runstead daemon status",
+    `Cwd: ${status.cwd}`,
+    `Updated: ${status.updatedAt}`,
+    `Pid: ${status.pid}`,
+    `Tick: ${status.tick}`,
+    `Interval: ${status.intervalMs}ms`,
+    `Scheduled: ${status.scheduledTasks}`,
+    `Skipped: ${status.skippedTasks}`,
+    status.ranTask
+      ? `Last result: ran ${status.taskId ?? "unknown"} type=${status.taskType ?? "unknown"} status=${status.taskStatus ?? "unknown"}`
+      : `Last result: idle (${status.reason ?? "unknown"})`,
+    ...(status.eventId === undefined ? [] : [`Audit event: ${status.eventId}`])
+  ].join("\n");
 }
 
 function assertDaemonTiming(input: {
@@ -259,6 +319,66 @@ function formatDaemonTick(tick: DaemonTick): string {
 
 function scheduledCount(tick: DaemonTick): number {
   return tick.scheduled?.scheduledTasks.length ?? 0;
+}
+
+async function writeDaemonHeartbeat(input: {
+  cwd: string;
+  tick: number;
+  intervalMs: number;
+  scheduled?: ScheduleDueTasksResult;
+  result: RunOnceResult;
+  event?: RunsteadEvent;
+  now?: Date;
+}): Promise<DaemonHeartbeatStatus> {
+  const status = daemonHeartbeatStatus(input);
+  const path = await daemonStatusPath(input.cwd);
+
+  await mkdir(dirname(path), { recursive: true });
+  await writeFile(path, `${JSON.stringify(status, null, 2)}\n`, "utf8");
+
+  return status;
+}
+
+function daemonHeartbeatStatus(input: {
+  cwd: string;
+  tick: number;
+  intervalMs: number;
+  scheduled?: ScheduleDueTasksResult;
+  result: RunOnceResult;
+  event?: RunsteadEvent;
+  now?: Date;
+}): DaemonHeartbeatStatus {
+  const base = {
+    cwd: input.cwd,
+    pid: process.pid,
+    tick: input.tick,
+    intervalMs: input.intervalMs,
+    updatedAt: (input.now ?? new Date()).toISOString(),
+    scheduledTasks: input.scheduled?.scheduledTasks.length ?? 0,
+    skippedTasks: input.scheduled?.skippedTasks.length ?? 0,
+    ...(input.event === undefined ? {} : { eventId: input.event.eventId })
+  };
+
+  if (!input.result.ranTask) {
+    return {
+      ...base,
+      ranTask: false,
+      reason: input.result.reason
+    };
+  }
+
+  return {
+    ...base,
+    ranTask: true,
+    taskId: input.result.task.id,
+    taskType: input.result.task.type,
+    taskStatus: input.result.task.status
+  };
+}
+
+async function daemonStatusPath(cwd: string): Promise<string> {
+  const resolved = await requireRunsteadRoot(cwd);
+  return join(resolved.root, "daemon", "status.json");
 }
 
 function sleep(ms: number): Promise<void> {

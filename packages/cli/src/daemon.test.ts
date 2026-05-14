@@ -8,6 +8,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   formatDaemonReport,
+  formatDaemonStatus,
+  readDaemonStatus,
   runDaemon,
   type DaemonRunner,
   type DaemonScheduler
@@ -133,6 +135,54 @@ describe("runDaemon", () => {
       } finally {
         database.close();
       }
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("writes daemon heartbeat status when enabled", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-daemon-heartbeat-"));
+    const scheduler: DaemonScheduler = (options) =>
+      Promise.resolve({
+        cwd: options.cwd ?? "",
+        stateDb: join(workspace, ".runstead", "state.db"),
+        scheduledTasks: [],
+        skippedTasks: []
+      });
+    const runner: DaemonRunner = (options) =>
+      Promise.resolve({
+        cwd: options.cwd ?? "",
+        ranTask: false,
+        reason: "no_queued_task"
+      });
+
+    try {
+      await initRunstead({ cwd: workspace });
+      const result = await runDaemon({
+        cwd: workspace,
+        intervalMs: 0,
+        maxTicks: 1,
+        scheduler,
+        runner,
+        heartbeat: true,
+        now: new Date("2026-05-14T09:05:00.000Z")
+      });
+      const status = await readDaemonStatus({ cwd: workspace });
+
+      expect(result.ticks[0]?.heartbeat).toMatchObject({
+        cwd: workspace,
+        tick: 1,
+        intervalMs: 0,
+        updatedAt: "2026-05-14T09:05:00.000Z",
+        scheduledTasks: 0,
+        skippedTasks: 0,
+        ranTask: false,
+        reason: "no_queued_task"
+      });
+      expect(status).toMatchObject(result.ticks[0]?.heartbeat ?? {});
+      expect(formatDaemonStatus(status)).toContain(
+        "Last result: idle (no_queued_task)"
+      );
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }

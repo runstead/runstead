@@ -266,17 +266,21 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     .description("Run the local Runstead daemon loop.")
     .option("--cwd <path>", "Workspace directory")
     .option("--once", "Run one daemon tick and exit")
+    .option("--status", "Print the last daemon heartbeat and exit")
     .option("--max-ticks <number>", "Stop after this many ticks")
     .option("--interval-ms <number>", "Delay between ticks", "30000")
     .option("--no-scheduler", "Disable background scheduling before each tick")
+    .option("--no-heartbeat", "Disable daemon heartbeat status writes")
     .option("--actor <id>", "RBAC subject for daemon management", "local-admin")
     .action(
       async (options: {
         cwd?: string;
         once?: boolean;
+        status?: boolean;
         maxTicks?: string;
         intervalMs: string;
         scheduler?: boolean;
+        heartbeat?: boolean;
         actor: string;
       }) => {
         const { checkPermission } = await import("./rbac.js");
@@ -292,7 +296,17 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
           );
         }
 
-        const { formatDaemonReport, runDaemon } = await import("./daemon.js");
+        const { formatDaemonReport, formatDaemonStatus, readDaemonStatus, runDaemon } =
+          await import("./daemon.js");
+
+        if (options.status === true) {
+          const status = await readDaemonStatus({
+            ...(options.cwd === undefined ? {} : { cwd: options.cwd })
+          });
+          console.log(formatDaemonStatus(status));
+          return;
+        }
+
         const maxTicks =
           options.once === true
             ? 1
@@ -302,7 +316,8 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
           ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
           ...(maxTicks === undefined ? {} : { maxTicks }),
           intervalMs,
-          schedulerEnabled: options.scheduler !== false
+          schedulerEnabled: options.scheduler !== false,
+          heartbeat: options.heartbeat !== false
         });
 
         console.log(formatDaemonReport(result));

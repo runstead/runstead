@@ -161,6 +161,8 @@ describe("cli entrypoint", () => {
     );
 
     expect(daemon?.options.map((option) => option.long)).toContain("--actor");
+    expect(daemon?.options.map((option) => option.long)).toContain("--status");
+    expect(daemon?.options.map((option) => option.long)).toContain("--no-heartbeat");
   });
 
   it("exposes RBAC actor selection on dashboard build", () => {
