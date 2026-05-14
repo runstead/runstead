@@ -8,8 +8,10 @@ import { describe, expect, it } from "vitest";
 import {
   buildWrappedWorkerLaunchGuardrails,
   buildWrappedWorkerGovernanceManifest,
+  buildWrappedWorkerInternalToolProxyStatus,
   buildWrappedWorkerPrompt,
   startWrappedWorker,
+  WrappedWorkerHardProxyUnavailableError,
   workerCommand,
   type WorkerProcessRunner
 } from "./wrapped-worker.js";
@@ -67,6 +69,8 @@ describe("buildWrappedWorkerPrompt", () => {
     expect(prompt).toContain("- command:test");
     expect(prompt).toContain("Runstead governance manifest:");
     expect(prompt).toContain('"enforcement": "policy_gated_wrapper"');
+    expect(prompt).toContain('"internalToolProxy":');
+    expect(prompt).toContain('"mode": "none"');
     expect(prompt).toContain("worker-native guardrails");
     expect(prompt).toContain("worker-internal tool calls are not fully hard-proxied");
     expect(prompt).toContain('"launchGuardrails":');
@@ -98,6 +102,18 @@ describe("buildWrappedWorkerPrompt", () => {
       workspace: "/repo",
       evidenceDir: "/repo/.runstead/evidence",
       enforcement: "policy_gated_wrapper",
+      capabilities: {
+        launchPolicyGate: true,
+        workerNativeGuardrails: true,
+        workspaceCheckpoint: true,
+        postRunDiffVerification: true,
+        hardProxyToolCalls: false
+      },
+      internalToolProxy: {
+        mode: "none",
+        required: "none",
+        hardProxyAvailable: false
+      },
       enforcementNotes: [
         "Runstead policy-gates worker launch.",
         "Runstead starts wrapped workers with worker-native sandbox or permission guardrails.",
@@ -135,6 +151,29 @@ describe("buildWrappedWorkerPrompt", () => {
         "Bash(pnpm add *)"
       ])
     );
+  });
+
+  it("fails closed when hard tool proxy enforcement is required", () => {
+    expect(
+      buildWrappedWorkerInternalToolProxyStatus({
+        worker: "codex_cli",
+        requiredInternalToolProxy: "none"
+      })
+    ).toEqual({
+      mode: "none",
+      required: "none",
+      hardProxyAvailable: false
+    });
+    expect(() =>
+      buildWrappedWorkerGovernanceManifest({
+        worker: "codex_cli",
+        goal,
+        task,
+        workspace: "/repo",
+        evidenceDir: "/repo/.runstead/evidence",
+        requiredInternalToolProxy: "hard_proxy"
+      })
+    ).toThrow(WrappedWorkerHardProxyUnavailableError);
   });
 });
 
@@ -214,6 +253,11 @@ describe("startWrappedWorker", () => {
       worker: "codex_cli",
       taskId: "task_ci_001",
       enforcement: "policy_gated_wrapper",
+      internalToolProxy: {
+        mode: "none",
+        required: "none",
+        hardProxyAvailable: false
+      },
       launchGuardrails: {
         worker: "codex_cli",
         sandboxMode: "workspace-write"

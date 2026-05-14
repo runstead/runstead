@@ -15,6 +15,7 @@ export const DEFAULT_WORKER_TIMEOUT_MS = 30 * 60_000;
 export const DEFAULT_WORKER_MAX_OUTPUT_BYTES = 1024 * 1024 * 10;
 
 export type WrappedWorkerKind = "claude_code" | "codex_cli";
+export type WrappedWorkerInternalToolProxyMode = "none" | "hard_proxy";
 
 export interface WrappedWorkerPromptInput {
   worker: WrappedWorkerKind;
@@ -28,6 +29,7 @@ export interface WrappedWorkerPromptInput {
   approvalRequired?: string[];
   verifierContract?: string[];
   instructions?: string[];
+  requiredInternalToolProxy?: WrappedWorkerInternalToolProxyMode;
 }
 
 export interface WrappedWorkerGovernanceManifest {
@@ -38,12 +40,28 @@ export interface WrappedWorkerGovernanceManifest {
   workspace: string;
   evidenceDir: string;
   enforcement: "policy_gated_wrapper";
+  capabilities: WrappedWorkerEnforcementCapabilities;
+  internalToolProxy: WrappedWorkerInternalToolProxyStatus;
   enforcementNotes: string[];
   allowedScope: string[];
   deniedActions: string[];
   approvalRequired: string[];
   verifierContract: string[];
   launchGuardrails: WrappedWorkerLaunchGuardrails;
+}
+
+export interface WrappedWorkerEnforcementCapabilities {
+  launchPolicyGate: boolean;
+  workerNativeGuardrails: boolean;
+  workspaceCheckpoint: boolean;
+  postRunDiffVerification: boolean;
+  hardProxyToolCalls: boolean;
+}
+
+export interface WrappedWorkerInternalToolProxyStatus {
+  mode: "none";
+  required: WrappedWorkerInternalToolProxyMode;
+  hardProxyAvailable: boolean;
 }
 
 export interface WrappedWorkerLaunchGuardrails {
@@ -87,6 +105,13 @@ export interface WrappedWorkerRunResult extends WorkerProcessResult {
   args: string[];
   governance: WrappedWorkerGovernanceManifest;
   checkpointBefore?: WorkspaceCheckpoint;
+}
+
+export class WrappedWorkerHardProxyUnavailableError extends Error {
+  constructor(worker: WrappedWorkerKind) {
+    super(`Hard tool proxy enforcement is not available for wrapped worker: ${worker}`);
+    this.name = "WrappedWorkerHardProxyUnavailableError";
+  }
 }
 
 const CLAUDE_DISALLOWED_TOOLS = [
@@ -174,6 +199,8 @@ export function buildWrappedWorkerPrompt(input: WrappedWorkerPromptInput): strin
 export function buildWrappedWorkerGovernanceManifest(
   input: WrappedWorkerPromptInput
 ): WrappedWorkerGovernanceManifest {
+  const internalToolProxy = buildWrappedWorkerInternalToolProxyStatus(input);
+
   return {
     worker: input.worker,
     taskId: input.task.id,
@@ -182,6 +209,14 @@ export function buildWrappedWorkerGovernanceManifest(
     workspace: input.workspace,
     evidenceDir: input.evidenceDir,
     enforcement: "policy_gated_wrapper",
+    capabilities: {
+      launchPolicyGate: true,
+      workerNativeGuardrails: true,
+      workspaceCheckpoint: true,
+      postRunDiffVerification: true,
+      hardProxyToolCalls: internalToolProxy.hardProxyAvailable
+    },
+    internalToolProxy,
     enforcementNotes: [
       "Runstead policy-gates worker launch.",
       "Runstead starts wrapped workers with worker-native sandbox or permission guardrails.",
@@ -197,6 +232,23 @@ export function buildWrappedWorkerGovernanceManifest(
     verifierContract: input.verifierContract ?? input.task.verifiers,
     launchGuardrails: buildWrappedWorkerLaunchGuardrails(input.worker)
   };
+}
+
+export function buildWrappedWorkerInternalToolProxyStatus(
+  input: Pick<WrappedWorkerPromptInput, "worker" | "requiredInternalToolProxy">
+): WrappedWorkerInternalToolProxyStatus {
+  const required = input.requiredInternalToolProxy ?? "none";
+  const status: WrappedWorkerInternalToolProxyStatus = {
+    mode: "none",
+    required,
+    hardProxyAvailable: false
+  };
+
+  if (required === "hard_proxy" && !status.hardProxyAvailable) {
+    throw new WrappedWorkerHardProxyUnavailableError(input.worker);
+  }
+
+  return status;
 }
 
 export function buildWrappedWorkerLaunchGuardrails(

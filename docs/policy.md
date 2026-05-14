@@ -33,7 +33,9 @@ worker with native sandbox or permission guardrails, checkpoints the workspace,
 commits worker changes through a governed `git.commit` action, verifies diff
 scope and command evidence after the worker exits, and audits the result. It
 does not yet fully hard-proxy each tool call made inside the external worker
-process.
+process. The worker governance manifest records this as
+`internalToolProxy.mode: none`; callers that require `hard_proxy` enforcement
+fail before the external worker process is launched.
 
 Mutating unmanaged helpers now require explicit acknowledgement with
 `--unmanaged`:
