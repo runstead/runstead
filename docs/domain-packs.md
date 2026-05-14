@@ -204,6 +204,16 @@ The validator checks that:
 - Fixture manifests reference known task types, templates, and local fixture paths.
 - Eval benchmarks reference known fixture ids.
 
+For packaged or installed packs, verify the stored manifest before trusting it:
+
+```sh
+runstead domain manifest ./customer-ops --output ./customer-ops/runstead-manifest.json
+runstead domain verify-manifest ./customer-ops
+```
+
+Manifest verification rebuilds the current manifest and compares domain metadata,
+file sizes, and sha256 hashes against `runstead-manifest.json`.
+
 List discoverable packs with:
 
 ```sh

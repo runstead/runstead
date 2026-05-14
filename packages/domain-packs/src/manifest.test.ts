@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
 
-import { buildDomainPackManifest } from "./manifest.js";
+import { buildDomainPackManifest, verifyDomainPackManifest } from "./manifest.js";
 import { createDomainPackTemplate } from "./template.js";
 
 describe("buildDomainPackManifest", () => {
@@ -109,6 +109,79 @@ describe("buildDomainPackManifest", () => {
 
       await expect(buildDomainPackManifest(workspace)).rejects.toThrow(
         "Cannot build manifest for invalid domain pack"
+      );
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("verifies a stored manifest against current pack files", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-domain-manifest-"));
+
+    try {
+      const template = await createDomainPackTemplate({
+        id: "customer-ops",
+        outputDir: join(workspace, "customer-ops")
+      });
+      const manifest = await buildDomainPackManifest(template.root);
+
+      await writeFile(
+        join(template.root, "runstead-manifest.json"),
+        `${JSON.stringify(manifest, null, 2)}\n`,
+        "utf8"
+      );
+
+      await expect(verifyDomainPackManifest(template.root)).resolves.toMatchObject({
+        valid: true,
+        issues: []
+      });
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("reports manifest drift when pack files change after packaging", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-domain-manifest-"));
+
+    try {
+      const template = await createDomainPackTemplate({
+        id: "customer-ops",
+        outputDir: join(workspace, "customer-ops")
+      });
+      const manifest = await buildDomainPackManifest(template.root);
+
+      await writeFile(
+        join(template.root, "runstead-manifest.json"),
+        `${JSON.stringify(manifest, null, 2)}\n`,
+        "utf8"
+      );
+      await writeFile(
+        join(template.root, "task-types", "manual_review.yaml"),
+        [
+          "id: manual_review",
+          "domain: customer-ops",
+          "description: Mutated task contract.",
+          "default_priority: medium",
+          "max_attempts: 1",
+          "verifiers:",
+          "  required:",
+          "    - manual:evidence_attached",
+          "worker_routing:",
+          "  preferred: shell"
+        ].join("\n"),
+        "utf8"
+      );
+
+      const result = await verifyDomainPackManifest(template.root);
+
+      expect(result.valid).toBe(false);
+      expect(result.issues).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            code: "manifest_file_hash_mismatch",
+            path: "task-types/manual_review.yaml"
+          })
+        ])
       );
     } finally {
       await rm(workspace, { force: true, recursive: true });

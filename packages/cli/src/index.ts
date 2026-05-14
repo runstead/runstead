@@ -1405,6 +1405,21 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
       console.log(`Wrote domain pack manifest: ${options.output}`);
     });
 
+  domain
+    .command("verify-manifest")
+    .description("Verify a domain pack against its stored runstead-manifest.json.")
+    .argument("<path>", "Domain pack directory")
+    .action(async (path: string) => {
+      const { formatDomainPackManifestVerificationResult, verifyDomainPackManifest } =
+        await import("@runstead/domain-packs");
+      const result = await verifyDomainPackManifest(path);
+
+      console.log(formatDomainPackManifestVerificationResult(result));
+      if (!result.valid) {
+        process.exitCode = 1;
+      }
+    });
+
   const goal = program.command("goal").description("Manage durable goals.");
 
   goal
