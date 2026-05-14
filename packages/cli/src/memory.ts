@@ -1,4 +1,4 @@
-import { accessSync, constants } from "node:fs";
+import { accessSync, constants, lstatSync, realpathSync } from "node:fs";
 import { isAbsolute, relative, resolve } from "node:path";
 
 import {
@@ -329,17 +329,34 @@ function validateProjectFactSources(cwd: string, sourceRefs: string[]): void {
     throw new Error("Project facts require at least one file: source reference");
   }
 
+  const workspaceRoot = realpathSync(cwd);
+
   for (const sourceRef of sourceRefs) {
     const filePath = sourceRefPath(sourceRef);
     const resolvedPath = resolve(cwd, filePath);
     const relativePath = relative(cwd, resolvedPath);
 
-    if (relativePath.startsWith("..") || isAbsolute(relativePath)) {
+    if (escapesWorkspace(relativePath)) {
       throw new Error(`Project fact source escapes the workspace: ${sourceRef}`);
     }
 
-    accessSync(resolvedPath, constants.R_OK);
+    if (lstatSync(resolvedPath).isSymbolicLink()) {
+      throw new Error(`Project fact source cannot be a symlink: ${sourceRef}`);
+    }
+
+    const realPath = realpathSync(resolvedPath);
+    const realRelativePath = relative(workspaceRoot, realPath);
+
+    if (escapesWorkspace(realRelativePath)) {
+      throw new Error(`Project fact source escapes the workspace: ${sourceRef}`);
+    }
+
+    accessSync(realPath, constants.R_OK);
   }
+}
+
+function escapesWorkspace(relativePath: string): boolean {
+  return relativePath.startsWith("..") || isAbsolute(relativePath);
 }
 
 function rejectDuplicateProjectFact(

@@ -1,4 +1,4 @@
-import { rm, writeFile } from "node:fs/promises";
+import { rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -260,6 +260,34 @@ describe("recordProjectFact", () => {
       ).toThrow("file:");
     } finally {
       await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("rejects project fact sources that are symlinks", async () => {
+    const workspace = join(tmpdir(), `runstead-project-fact-symlink-${process.pid}`);
+    const outsideSource = join(
+      tmpdir(),
+      `runstead-project-fact-outside-${process.pid}.txt`
+    );
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await rm(outsideSource, { force: true });
+      await initRunstead({ cwd: workspace });
+      await writeFile(outsideSource, "Outside workspace fact source.\n", "utf8");
+      await symlink(outsideSource, join(workspace, "linked-source.txt"));
+
+      expect(() =>
+        recordProjectFact({
+          cwd: workspace,
+          scope: "repo:acme/app",
+          content: "This fact comes from a symlink.",
+          sourceRefs: ["file:linked-source.txt"]
+        })
+      ).toThrow("symlink");
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+      await rm(outsideSource, { force: true });
     }
   });
 
