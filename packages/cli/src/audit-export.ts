@@ -31,6 +31,19 @@ export interface ExportAuditLogResult {
   outputPath?: string;
 }
 
+export interface ReplayAuditLifecycleOptions {
+  cwd?: string;
+  taskId: string;
+}
+
+export interface ReplayAuditLifecycleResult {
+  root: string;
+  stateDb: string;
+  taskId: string;
+  relatedIds: string[];
+  entries: AuditLogEntry[];
+}
+
 interface AuditEventRow {
   id: number;
   event_id: string;
@@ -95,6 +108,112 @@ export function formatAuditTimeline(entries: AuditLogEntry[]): string {
         .join(" ")
     )
     .join("\n");
+}
+
+export async function replayAuditLifecycle(
+  options: ReplayAuditLifecycleOptions
+): Promise<ReplayAuditLifecycleResult> {
+  const audit = await exportAuditLog({
+    ...(options.cwd === undefined ? {} : { cwd: options.cwd })
+  });
+  const { entries, relatedIds } = collectAuditLifecycleEntries(
+    audit.entries,
+    options.taskId
+  );
+
+  return {
+    root: audit.root,
+    stateDb: audit.stateDb,
+    taskId: options.taskId,
+    relatedIds,
+    entries
+  };
+}
+
+export function formatAuditReplay(result: ReplayAuditLifecycleResult): string {
+  if (result.entries.length === 0) {
+    return `No audit events found for task ${result.taskId}.`;
+  }
+
+  return [
+    `Replay task: ${result.taskId}`,
+    `Related ids: ${result.relatedIds.join(", ")}`,
+    formatAuditTimeline(result.entries)
+  ].join("\n");
+}
+
+function collectAuditLifecycleEntries(
+  entries: AuditLogEntry[],
+  taskId: string
+): { entries: AuditLogEntry[]; relatedIds: string[] } {
+  const relatedIds = new Set<string>([taskId]);
+  const selectedIds = new Set<number>();
+  let changed = true;
+
+  while (changed) {
+    changed = false;
+
+    for (const entry of entries) {
+      if (selectedIds.has(entry.id) || !entryReferencesAnyId(entry, relatedIds)) {
+        continue;
+      }
+
+      selectedIds.add(entry.id);
+      changed = true;
+      relatedIds.add(entry.aggregateId);
+
+      for (const id of collectReferenceIds(entry.payload)) {
+        relatedIds.add(id);
+      }
+    }
+  }
+
+  return {
+    entries: entries.filter((entry) => selectedIds.has(entry.id)),
+    relatedIds: [...relatedIds].sort()
+  };
+}
+
+function entryReferencesAnyId(entry: AuditLogEntry, ids: Set<string>): boolean {
+  return (
+    ids.has(entry.aggregateId) ||
+    collectReferenceIds(entry.payload).some((id) => ids.has(id))
+  );
+}
+
+function collectReferenceIds(value: unknown): string[] {
+  const ids: string[] = [];
+  collectReferenceIdsInto(value, ids);
+  return ids;
+}
+
+function collectReferenceIdsInto(value: unknown, ids: string[]): void {
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      collectReferenceIdsInto(item, ids);
+    }
+    return;
+  }
+
+  if (typeof value !== "object" || value === null) {
+    return;
+  }
+
+  for (const [key, child] of Object.entries(value)) {
+    if (isReferenceIdKey(key)) {
+      if (typeof child === "string") {
+        ids.push(child);
+      } else if (Array.isArray(child)) {
+        ids.push(...child.filter((item): item is string => typeof item === "string"));
+      }
+    }
+
+    collectReferenceIdsInto(child, ids);
+  }
+}
+
+function isReferenceIdKey(key: string): boolean {
+  return key === "id" || key.endsWith("Id") || key.endsWith("Ids");
 }
 
 function readAuditEntries(database: ReturnType<typeof openRunsteadDatabase>) {

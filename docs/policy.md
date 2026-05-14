@@ -14,6 +14,11 @@ verifier and CI repair flows:
 - governed GitHub, git, checkpoint, and wrapped-worker actions in CI repair
 - ordered audit timelines for replaying governed task lifecycles
 
+Use `runstead audit replay <task-id>` to reconstruct a task lifecycle from the
+append-only event log. Replay follows related worker run, tool call, policy
+decision, approval, evidence, and task ids instead of requiring each aggregate
+filter to be selected manually.
+
 The product rule is strict: every side effect must be allowed, denied, or
 attached to an approval request before it runs.
 

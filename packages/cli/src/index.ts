@@ -779,6 +779,30 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
       }
     );
 
+  audit
+    .command("replay")
+    .description("Replay related audit events for a task lifecycle.")
+    .argument("<task-id>", "Task id")
+    .option("--cwd <path>", "Workspace directory")
+    .option("--actor <id>", "RBAC subject for audit access", "local-admin")
+    .action(async (taskId: string, options: { cwd?: string; actor: string }) => {
+      await requireRbacPermission({
+        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+        actor: options.actor,
+        permission: "audit.read",
+        action: "replay audit lifecycles"
+      });
+
+      const { formatAuditReplay, replayAuditLifecycle } =
+        await import("./audit-export.js");
+      const result = await replayAuditLifecycle({
+        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+        taskId
+      });
+
+      console.log(formatAuditReplay(result));
+    });
+
   const report = program.command("report").description("Generate reports.");
 
   report

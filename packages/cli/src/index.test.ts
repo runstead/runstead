@@ -101,6 +101,7 @@ describe("cli entrypoint", () => {
     const auditTimeline = audit?.commands.find(
       (command) => command.name() === "timeline"
     );
+    const auditReplay = audit?.commands.find((command) => command.name() === "replay");
     const weekly = report?.commands.find((command) => command.name() === "weekly");
 
     expect(auditExport?.options.map((option) => option.long)).toContain("--actor");
@@ -113,6 +114,7 @@ describe("cli entrypoint", () => {
     );
     expect(auditTimeline?.options.map((option) => option.long)).toContain("--actor");
     expect(auditTimeline?.options.map((option) => option.long)).toContain("--type");
+    expect(auditReplay?.options.map((option) => option.long)).toContain("--actor");
     expect(weekly?.options.map((option) => option.long)).toContain("--actor");
   });
 
