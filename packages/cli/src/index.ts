@@ -1148,7 +1148,9 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
       }
 
       for (const issue of result.issues) {
-        console.error(`WARN ${issue.root}: ${issue.message}`);
+        console.error(
+          `${issue.severity.toUpperCase()} ${issue.code} ${issue.root}: ${issue.message}`
+        );
       }
     });
 

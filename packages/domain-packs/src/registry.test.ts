@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 import { listDomainPacks, resolveDomainPackRef } from "./registry.js";
+import { createDomainPackTemplate } from "./template.js";
 
 describe("domain pack registry", () => {
   it("lists built-in domain packs", async () => {
@@ -78,14 +79,43 @@ describe("domain pack registry", () => {
     try {
       const duplicateRoot = join(workspace, "repo-maintenance-copy");
 
-      await mkdir(duplicateRoot, { recursive: true });
+      await createDomainPackTemplate({
+        id: "repo-maintenance",
+        outputDir: duplicateRoot
+      });
+
+      const registry = await listDomainPacks({
+        roots: [workspace]
+      });
+
+      expect(registry.issues).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            severity: "error",
+            code: "domain_pack_duplicate_id",
+            message: "Duplicate domain pack id found in registry: repo-maintenance"
+          })
+        ])
+      );
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("excludes invalid workspace packs with validator issues", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-pack-invalid-"));
+
+    try {
+      const invalidRoot = join(workspace, "broken-pack");
+
+      await mkdir(invalidRoot, { recursive: true });
       await writeFile(
-        join(duplicateRoot, "domain.yaml"),
+        join(invalidRoot, "domain.yaml"),
         [
-          "id: repo-maintenance",
+          "id: broken-pack",
           "version: 0.1.0",
-          "name: Repo Maintenance Copy",
-          "description: Duplicate id test pack.",
+          "name: Broken Pack",
+          "description: Invalid registry test pack.",
           "goal_templates: []",
           "task_types: []",
           "default_policy: policies/default.yaml",
@@ -97,13 +127,16 @@ describe("domain pack registry", () => {
       );
 
       const registry = await listDomainPacks({
+        includeBuiltIns: false,
         roots: [workspace]
       });
 
+      expect(registry.entries.map((entry) => entry.id)).not.toContain("broken-pack");
       expect(registry.issues).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
-            message: "Duplicate domain pack id found in registry: repo-maintenance"
+            severity: "error",
+            code: "default_policy_missing"
           })
         ])
       );

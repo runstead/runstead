@@ -3,10 +3,10 @@ import { access, readdir, stat } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
 import type { DomainPack } from "./domain-pack.js";
-import { loadDomainPackFromFile } from "./domain-pack.js";
 import { getEmailFollowupPackDir } from "./email-followup.js";
 import { getResearchMonitorPackDir } from "./research-monitor.js";
 import { getRepoMaintenancePackDir } from "./repo-maintenance.js";
+import { validateDomainPackDir } from "./validator.js";
 
 export type DomainPackRegistrySource = "built_in" | "workspace" | "path";
 
@@ -19,6 +19,8 @@ export interface DomainPackRegistryEntry {
 
 export interface DomainPackRegistryIssue {
   root: string;
+  severity: "error" | "warning";
+  code: string;
   message: string;
 }
 
@@ -124,6 +126,8 @@ async function discoverRegistryEntries(
   if (!(await directoryExists(root))) {
     issues.push({
       root,
+      severity: "warning",
+      code: "registry_root_missing",
       message: "Domain pack registry root does not exist"
     });
     return [];
@@ -157,32 +161,36 @@ async function loadRegistryEntry(input: {
   issues: DomainPackRegistryIssue[];
 }): Promise<DomainPackRegistryEntry | undefined> {
   const root = resolve(input.root);
-  const domainPath = join(root, "domain.yaml");
+  const validation = await validateDomainPackDir(root);
 
-  if (!(await fileExists(domainPath))) {
+  for (const issue of validation.issues) {
     input.issues.push({
-      root,
-      message: "Domain pack is missing domain.yaml"
+      root: issue.path ?? root,
+      severity: issue.severity,
+      code: issue.code,
+      message: issue.message
     });
+  }
+
+  if (!validation.valid || validation.domain === undefined) {
+    if (validation.issues.length === 0) {
+      input.issues.push({
+        root,
+        severity: "error",
+        code: "domain_pack_invalid",
+        message: "Domain pack validation failed"
+      });
+    }
+
     return undefined;
   }
 
-  try {
-    const domain = await loadDomainPackFromFile(domainPath);
-
-    return {
-      id: domain.id,
-      root,
-      source: input.source,
-      domain
-    };
-  } catch (error) {
-    input.issues.push({
-      root,
-      message: error instanceof Error ? error.message : String(error)
-    });
-    return undefined;
-  }
+  return {
+    id: validation.domain.id,
+    root,
+    source: input.source,
+    domain: validation.domain
+  };
 }
 
 function dedupeEntries(entries: DomainPackRegistryEntry[]): DomainPackRegistryEntry[] {
@@ -215,6 +223,8 @@ function collectDuplicatePackIds(
 
     issues.push({
       root: matches.map((entry) => entry.root).join(", "),
+      severity: "error",
+      code: "domain_pack_duplicate_id",
       message: `Duplicate domain pack id found in registry: ${id}`
     });
   }
