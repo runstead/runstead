@@ -10,6 +10,7 @@ import {
 } from "@runstead/core";
 import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sqlite";
 
+import { checkPermission } from "./rbac.js";
 import { requireRunsteadStateDbSync } from "./runstead-root.js";
 
 export interface RequestApprovalOptions {
@@ -166,7 +167,20 @@ export function showApproval(options: ShowApprovalOptions): ShowApprovalResult {
   }
 }
 
-export function decideApproval(options: DecideApprovalOptions): DecideApprovalResult {
+export async function decideApproval(
+  options: DecideApprovalOptions
+): Promise<DecideApprovalResult> {
+  const subject = options.decidedBy ?? "local-admin";
+  const permission = await checkPermission({
+    ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+    subject,
+    permission: "approval.decide"
+  });
+
+  if (permission.decision !== "allow") {
+    throw new Error(`Subject ${subject} cannot decide approvals: ${permission.reason}`);
+  }
+
   const current = showApproval(options);
 
   if (current.approval.status !== "pending") {
@@ -180,7 +194,7 @@ export function decideApproval(options: DecideApprovalOptions): DecideApprovalRe
     ...current.approval,
     status: options.decision,
     decidedAt,
-    decidedBy: options.decidedBy ?? "runstead",
+    decidedBy: subject,
     updatedAt: decidedAt
   };
   const event = approvalEvent(

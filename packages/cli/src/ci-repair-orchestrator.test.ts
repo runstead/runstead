@@ -147,11 +147,11 @@ describe("runCiRepairOrchestrator", () => {
         throw new Error("Expected PR approval request");
       }
 
-      decideApproval({
+      await decideApproval({
         cwd: workspace,
         id: first.approval.id,
         decision: "approved",
-        decidedBy: "alice",
+        decidedBy: "local-admin",
         now: new Date("2026-05-14T12:01:00.000Z")
       });
 
@@ -193,11 +193,11 @@ describe("runCiRepairOrchestrator", () => {
         throw new Error("Expected PR approval request");
       }
 
-      decideApproval({
+      await decideApproval({
         cwd: workspace,
         id: second.approval.id,
         decision: "approved",
-        decidedBy: "alice",
+        decidedBy: "local-admin",
         now: new Date("2026-05-14T12:03:00.000Z")
       });
 

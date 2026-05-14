@@ -64,29 +64,83 @@ describe("approvals", () => {
         database.close();
       }
 
-      const decided = decideApproval({
+      const decided = await decideApproval({
         cwd: workspace,
         id: approvalId,
         decision: "approved",
-        decidedBy: "alice",
+        decidedBy: "local-admin",
         now: new Date("2026-05-14T10:02:00.000Z")
       });
 
       expect(decided.approval).toMatchObject({
         status: "approved",
-        decidedBy: "alice",
+        decidedBy: "local-admin",
         decidedAt: "2026-05-14T10:02:00.000Z"
       });
       expect(listApprovals({ cwd: workspace, status: "pending" }).approvals).toEqual(
         []
       );
-      expect(() =>
+      await expect(
         decideApproval({
           cwd: workspace,
           id: decided.approval.id,
           decision: "denied"
         })
-      ).toThrow(`Approval ${decided.approval.id} is approved, expected pending`);
+      ).rejects.toThrow(
+        `Approval ${decided.approval.id} is approved, expected pending`
+      );
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("requires approval.decide permission for explicit approvers", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-approval-rbac-"));
+
+    try {
+      const initialized = await initRunstead({ cwd: workspace });
+      const policy = createExternalWriteApprovalPolicy();
+      const action = {
+        actionId: "act_approval_rbac_test",
+        actionType: "github.pr.create",
+        context: {
+          sideEffects: ["github_pr_create"]
+        }
+      };
+      const policyResult = evaluatePolicy({ policy, action });
+      const recorded = recordPolicyDecision({
+        cwd: workspace,
+        policyId: policy.id,
+        action,
+        result: policyResult,
+        now: new Date("2026-05-14T10:10:00.000Z")
+      });
+      const database = openRunsteadDatabase(initialized.stateDb);
+      let approvalId = "";
+
+      try {
+        approvalId = requestApproval({
+          database,
+          policyDecision: recorded.decision,
+          requestedBy: "worker:test",
+          now: new Date("2026-05-14T10:11:00.000Z")
+        }).id;
+      } finally {
+        database.close();
+      }
+
+      await expect(
+        decideApproval({
+          cwd: workspace,
+          id: approvalId,
+          decision: "approved",
+          decidedBy: "mallory",
+          now: new Date("2026-05-14T10:12:00.000Z")
+        })
+      ).rejects.toThrow("Subject mallory cannot decide approvals");
+      expect(showApproval({ cwd: workspace, id: approvalId }).approval.status).toBe(
+        "pending"
+      );
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }

@@ -243,11 +243,11 @@ describe("runTaskVerifiers", () => {
         throw new Error("Expected approval id");
       }
 
-      decideApproval({
+      await decideApproval({
         cwd: workspace,
         id: approvalId,
         decision: "approved",
-        decidedBy: "alice",
+        decidedBy: "local-admin",
         now: new Date("2026-05-14T06:57:00.000Z")
       });
       expect(showTask({ cwd: workspace, id: task.id }).task.status).toBe("queued");

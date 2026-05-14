@@ -1083,7 +1083,7 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     .option("--decided-by <id>", "Approver id")
     .action(async (id: string, options: { cwd?: string; decidedBy?: string }) => {
       const { decideApproval } = await import("./approvals.js");
-      const result = decideApproval({
+      const result = await decideApproval({
         ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
         id,
         decision: "approved",
@@ -1101,7 +1101,7 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     .option("--decided-by <id>", "Approver id")
     .action(async (id: string, options: { cwd?: string; decidedBy?: string }) => {
       const { decideApproval } = await import("./approvals.js");
-      const result = decideApproval({
+      const result = await decideApproval({
         ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
         id,
         decision: "denied",
