@@ -9,11 +9,17 @@ import {
 
 describe("getGitHubWorkflowRunStatus", () => {
   it("loads workflow run status through gh", async () => {
-    const calls: { args: string[]; cwd: string; env?: Record<string, string> }[] = [];
+    const calls: {
+      args: string[];
+      cwd: string;
+      env?: Record<string, string>;
+      timeoutMs?: number;
+    }[] = [];
     const runner: GitHubCliRunner = (args, options) => {
       calls.push({
         args,
         cwd: options.cwd,
+        ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
         ...(options.env === undefined ? {} : { env: options.env })
       });
 
@@ -56,6 +62,7 @@ describe("getGitHubWorkflowRunStatus", () => {
     expect(calls).toEqual([
       {
         cwd: "/repo",
+        timeoutMs: 60000,
         env: {
           GH_TOKEN: "ghs_app_token"
         },
@@ -83,9 +90,13 @@ describe("getGitHubWorkflowRunStatus", () => {
   });
 
   it("fetches workflow run logs through gh", async () => {
-    const calls: { args: string[]; cwd: string }[] = [];
+    const calls: { args: string[]; cwd: string; timeoutMs?: number }[] = [];
     const runner: GitHubCliRunner = (args, options) => {
-      calls.push({ args, cwd: options.cwd });
+      calls.push({
+        args,
+        cwd: options.cwd,
+        ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs })
+      });
 
       return Promise.resolve({
         stdout: "build\tstep\tfailing test\n",
@@ -108,6 +119,7 @@ describe("getGitHubWorkflowRunStatus", () => {
     expect(calls).toEqual([
       {
         cwd: "/repo",
+        timeoutMs: 60000,
         args: ["run", "view", "123", "--log"]
       }
     ]);

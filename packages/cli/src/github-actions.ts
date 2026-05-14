@@ -5,6 +5,8 @@ import { promisify } from "node:util";
 import { z } from "zod";
 
 const execFileAsync = promisify(execFile);
+export const DEFAULT_GITHUB_CLI_TIMEOUT_MS = 60_000;
+export const DEFAULT_GITHUB_CLI_MAX_BUFFER_BYTES = 1024 * 1024 * 10;
 
 export interface GitHubCliCommandResult {
   stdout: string;
@@ -15,6 +17,8 @@ export interface GitHubCliCommandResult {
 export interface GitHubCliRunnerOptions {
   cwd: string;
   env?: Record<string, string>;
+  timeoutMs?: number;
+  maxBufferBytes?: number;
 }
 
 export type GitHubCliRunner = (
@@ -26,6 +30,7 @@ export interface GetWorkflowRunStatusOptions {
   cwd?: string;
   runId: string;
   authToken?: string;
+  timeoutMs?: number;
   runner?: GitHubCliRunner;
 }
 
@@ -33,6 +38,7 @@ export interface FetchWorkflowRunLogOptions {
   cwd?: string;
   runId: string;
   authToken?: string;
+  timeoutMs?: number;
   runner?: GitHubCliRunner;
 }
 
@@ -89,7 +95,7 @@ export async function getGitHubWorkflowRunStatus(
         "url"
       ].join(",")
     ],
-    githubCliRunnerOptions(cwd, options.authToken)
+    githubCliRunnerOptions(cwd, options.authToken, options.timeoutMs)
   );
 
   if (result.exitCode !== 0) {
@@ -135,7 +141,7 @@ export async function fetchGitHubWorkflowRunLog(
   const cwd = resolve(options.cwd ?? process.cwd());
   const result = await (options.runner ?? runGitHubCli)(
     ["run", "view", options.runId, "--log"],
-    githubCliRunnerOptions(cwd, options.authToken)
+    githubCliRunnerOptions(cwd, options.authToken, options.timeoutMs)
   );
 
   if (result.exitCode !== 0) {
@@ -159,7 +165,8 @@ export async function runGitHubCli(
     const result = await execFileAsync("gh", args, {
       cwd: options.cwd,
       ...(options.env === undefined ? {} : { env: { ...process.env, ...options.env } }),
-      maxBuffer: 1024 * 1024 * 10,
+      maxBuffer: options.maxBufferBytes ?? DEFAULT_GITHUB_CLI_MAX_BUFFER_BYTES,
+      timeout: options.timeoutMs ?? DEFAULT_GITHUB_CLI_TIMEOUT_MS,
       windowsHide: true
     });
 
@@ -179,12 +186,18 @@ export async function runGitHubCli(
 
 function githubCliRunnerOptions(
   cwd: string,
-  authToken: string | undefined
+  authToken: string | undefined,
+  timeoutMs: number | undefined
 ): GitHubCliRunnerOptions {
+  const base = {
+    cwd,
+    timeoutMs: timeoutMs ?? DEFAULT_GITHUB_CLI_TIMEOUT_MS
+  };
+
   return authToken === undefined
-    ? { cwd }
+    ? base
     : {
-        cwd,
+        ...base,
         env: {
           GH_TOKEN: authToken
         }

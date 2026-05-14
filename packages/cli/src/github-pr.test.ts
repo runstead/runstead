@@ -25,11 +25,17 @@ describe("buildPullRequestBody", () => {
 
 describe("createGitHubPullRequest", () => {
   it("creates a PR with an evidence-backed body", async () => {
-    const calls: { args: string[]; cwd: string; env?: Record<string, string> }[] = [];
+    const calls: {
+      args: string[];
+      cwd: string;
+      env?: Record<string, string>;
+      timeoutMs?: number;
+    }[] = [];
     const runner: GitHubCliRunner = (args, options) => {
       calls.push({
         args,
         cwd: options.cwd,
+        ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
         ...(options.env === undefined ? {} : { env: options.env })
       });
 
@@ -68,6 +74,7 @@ describe("createGitHubPullRequest", () => {
     expect(calls[0]?.env).toEqual({
       GH_TOKEN: "ghs_app_token"
     });
+    expect(calls[0]?.timeoutMs).toBe(60000);
     expect(calls[0]?.args).toEqual([
       "pr",
       "create",

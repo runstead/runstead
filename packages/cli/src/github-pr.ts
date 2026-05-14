@@ -1,6 +1,7 @@
 import { resolve } from "node:path";
 
 import {
+  DEFAULT_GITHUB_CLI_TIMEOUT_MS,
   runGitHubCli,
   type GitHubCliCommandResult,
   type GitHubCliRunner
@@ -24,6 +25,7 @@ export interface CreateGitHubPullRequestOptions {
   goalId?: string;
   evidence?: PullRequestEvidenceSummary[];
   authToken?: string;
+  timeoutMs?: number;
   runner?: GitHubCliRunner;
 }
 
@@ -57,9 +59,13 @@ export async function createGitHubPullRequest(
   const result = await (options.runner ?? runGitHubCli)(
     args,
     options.authToken === undefined
-      ? { cwd }
+      ? {
+          cwd,
+          timeoutMs: options.timeoutMs ?? DEFAULT_GITHUB_CLI_TIMEOUT_MS
+        }
       : {
           cwd,
+          timeoutMs: options.timeoutMs ?? DEFAULT_GITHUB_CLI_TIMEOUT_MS,
           env: {
             GH_TOKEN: options.authToken
           }
