@@ -734,6 +734,18 @@ function buildCiRepairPullRequestBody(
               `- ${result.verifier}: exit=${result.exitCode ?? "unknown"} evidence=${result.evidenceId}`
           )
         ].join("\n"),
+    context === undefined
+      ? ""
+      : [
+          "## Evidence",
+          `- CI log: ${ciRepair.evidence.id}`,
+          ...(ciRepair.evidence.summary === undefined
+            ? []
+            : [`- CI summary: ${ciRepair.evidence.summary}`]),
+          ...context.verifierCommandResults.map(
+            (result) => `- ${result.verifier}: ${result.evidenceId}`
+          )
+        ].join("\n"),
     [
       "## Policy",
       approval === undefined

@@ -241,6 +241,19 @@ describe("runCiRepairOrchestrator", () => {
       expect(githubCalls.some((args) => args[0] === "pr" && args[1] === "create")).toBe(
         true
       );
+      const prCreateArgs = githubCalls.find(
+        (args) => args[0] === "pr" && args[1] === "create"
+      );
+      const bodyIndex = prCreateArgs?.indexOf("--body") ?? -1;
+      const pullRequestBody =
+        bodyIndex === -1 ? undefined : prCreateArgs?.[bodyIndex + 1];
+
+      expect(pullRequestBody).toContain("## Evidence");
+      expect(pullRequestBody).toContain(`- CI log: ${third.ciRepair.evidence.id}`);
+      expect(pullRequestBody).toContain("- test: ev_test");
+      expect(pullRequestBody).toContain(
+        `- Approval: ${second.approval.id} approved by local-admin`
+      );
       expect(gitCalls.filter((args) => args[0] === "push")).toHaveLength(1);
       expect(
         showApproval({ cwd: workspace, id: second.approval.id }).approval.status
