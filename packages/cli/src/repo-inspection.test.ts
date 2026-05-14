@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -7,6 +7,8 @@ import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
 
 import {
+  DEFAULT_REPO_INSPECTION_GIT_MAX_OUTPUT_BYTES,
+  DEFAULT_REPO_INSPECTION_GIT_TIMEOUT_MS,
   inspectCiProvider,
   inspectGitRepository,
   inspectLintCommand,
@@ -61,6 +63,31 @@ describe("inspectGitRepository", () => {
       await rm(workspace, { force: true, recursive: true });
     }
   }, 10000);
+
+  it("bounds git inspection commands with a timeout", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-git-timeout-"));
+    const bin = join(workspace, "bin");
+    const originalPath = process.env.PATH;
+
+    try {
+      await mkdir(bin, { recursive: true });
+      const fakeGitPath = join(bin, "git");
+      await writeFile(fakeGitPath, "#!/usr/bin/env sh\nsleep 2\n", "utf8");
+      await chmod(fakeGitPath, 0o755);
+      process.env.PATH = `${bin}:${originalPath ?? ""}`;
+
+      const inspection = await inspectGitRepository(workspace, {
+        gitMaxOutputBytes: DEFAULT_REPO_INSPECTION_GIT_MAX_OUTPUT_BYTES,
+        gitTimeoutMs: 25
+      });
+
+      expect(DEFAULT_REPO_INSPECTION_GIT_TIMEOUT_MS).toBeGreaterThan(25);
+      expect(inspection).toEqual({ isGitRepo: false });
+    } finally {
+      process.env.PATH = originalPath;
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
 });
 
 describe("inspectPackageManager", () => {

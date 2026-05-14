@@ -5,11 +5,19 @@ import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
 
+export const DEFAULT_REPO_INSPECTION_GIT_TIMEOUT_MS = 30_000;
+export const DEFAULT_REPO_INSPECTION_GIT_MAX_OUTPUT_BYTES = 1024 * 1024;
+
 export interface GitInspection {
   isGitRepo: boolean;
   root?: string;
   branch?: string;
   headSha?: string;
+}
+
+export interface InspectGitRepositoryOptions {
+  gitTimeoutMs?: number;
+  gitMaxOutputBytes?: number;
 }
 
 export type PackageManager = "pnpm" | "npm" | "yarn" | "bun";
@@ -55,10 +63,16 @@ export interface CiProviderInspection {
 }
 
 export async function inspectGitRepository(
-  cwd = process.cwd()
+  cwd = process.cwd(),
+  options: InspectGitRepositoryOptions = {}
 ): Promise<GitInspection> {
   const workspace = resolve(cwd);
-  const root = await runGit(["rev-parse", "--show-toplevel"], workspace);
+  const gitOptions = {
+    maxOutputBytes:
+      options.gitMaxOutputBytes ?? DEFAULT_REPO_INSPECTION_GIT_MAX_OUTPUT_BYTES,
+    timeoutMs: options.gitTimeoutMs ?? DEFAULT_REPO_INSPECTION_GIT_TIMEOUT_MS
+  };
+  const root = await runGit(["rev-parse", "--show-toplevel"], workspace, gitOptions);
 
   if (!root.ok) {
     return {
@@ -66,8 +80,12 @@ export async function inspectGitRepository(
     };
   }
 
-  const branch = await runGit(["branch", "--show-current"], workspace);
-  const headSha = await runGit(["rev-parse", "--verify", "HEAD"], workspace);
+  const branch = await runGit(["branch", "--show-current"], workspace, gitOptions);
+  const headSha = await runGit(
+    ["rev-parse", "--verify", "HEAD"],
+    workspace,
+    gitOptions
+  );
   const inspection: GitInspection = {
     isGitRepo: true,
     root: await realpath(root.stdout)
@@ -181,10 +199,16 @@ interface GitCommandResult {
   stdout: string;
 }
 
-async function runGit(args: string[], cwd: string): Promise<GitCommandResult> {
+async function runGit(
+  args: string[],
+  cwd: string,
+  options: { maxOutputBytes: number; timeoutMs: number }
+): Promise<GitCommandResult> {
   try {
     const result = await execFileAsync("git", args, {
       cwd,
+      maxBuffer: options.maxOutputBytes,
+      timeout: options.timeoutMs,
       windowsHide: true
     });
 
