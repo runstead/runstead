@@ -273,8 +273,14 @@ describe("createCiRepairTaskFromWorkflowRun", () => {
         return Promise.resolve({
           stdout: [
             "AUTH_TOKEN=secret-value",
+            "api_key: sk-live-123456",
+            "AWS_ACCESS_KEY_ID=AKIA1234567890ABCDEF",
             "curl -H 'Authorization: Bearer abc.def.ghi'",
-            "token ghp_abcdefghijklmnopqrstuvwxyz"
+            "curl -H 'Authorization: Basic dXNlcjpwYXNz'",
+            "token ghp_abcdefghijklmnopqrstuvwxyz",
+            "-----BEGIN PRIVATE KEY-----",
+            "private-key-material",
+            "-----END PRIVATE KEY-----"
           ].join("\n"),
           stderr: "",
           exitCode: 0
@@ -310,10 +316,17 @@ describe("createCiRepairTaskFromWorkflowRun", () => {
       };
 
       expect(artifact.log.log).toContain("AUTH_TOKEN=[REDACTED]");
+      expect(artifact.log.log).toContain("api_key: [REDACTED]");
+      expect(artifact.log.log).toContain("AWS_ACCESS_KEY_ID=[REDACTED]");
       expect(artifact.log.log).toContain("Bearer [REDACTED]");
+      expect(artifact.log.log).toContain("Basic [REDACTED]");
       expect(artifact.log.log).toContain("[REDACTED_GITHUB_TOKEN]");
+      expect(artifact.log.log).toContain("[REDACTED_PRIVATE_KEY]");
       expect(artifact.log.log).not.toContain("secret-value");
+      expect(artifact.log.log).not.toContain("sk-live-123456");
+      expect(artifact.log.log).not.toContain("AKIA1234567890ABCDEF");
       expect(artifact.log.log).not.toContain("ghp_abcdefghijklmnopqrstuvwxyz");
+      expect(artifact.log.log).not.toContain("private-key-material");
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }
