@@ -439,7 +439,7 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
 
         const { createWebhookServer } = await import("./webhook-server.js");
         const { repairableWorkflowRunIdFromWebhook } = await import("./ci-repair.js");
-        const { handleGitHubWorkflowRunWebhook } =
+        const { handleGitHubWorkflowRunWebhook, recordGitHubWorkflowRunWebhookEvent } =
           await import("./webhook-workflow-run.js");
         const port = parseRequiredInteger(options.port, "--port");
         const server = createWebhookServer({
@@ -466,7 +466,8 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
                 draft: options.draft === true,
                 allowedPaths: options.allowed,
                 deniedPaths: options.denied,
-                verifierCommands
+                verifierCommands,
+                audit: recordGitHubWorkflowRunWebhookEvent
               });
             }
           }
