@@ -9,9 +9,13 @@ import {
 
 describe("getGitHubWorkflowRunStatus", () => {
   it("loads workflow run status through gh", async () => {
-    const calls: { args: string[]; cwd: string }[] = [];
+    const calls: { args: string[]; cwd: string; env?: Record<string, string> }[] = [];
     const runner: GitHubCliRunner = (args, options) => {
-      calls.push({ args, cwd: options.cwd });
+      calls.push({
+        args,
+        cwd: options.cwd,
+        ...(options.env === undefined ? {} : { env: options.env })
+      });
 
       return Promise.resolve({
         stdout: JSON.stringify({
@@ -34,6 +38,7 @@ describe("getGitHubWorkflowRunStatus", () => {
       getGitHubWorkflowRunStatus({
         cwd: "/repo",
         runId: "123",
+        authToken: "ghs_app_token",
         runner
       })
     ).resolves.toEqual({
@@ -51,6 +56,9 @@ describe("getGitHubWorkflowRunStatus", () => {
     expect(calls).toEqual([
       {
         cwd: "/repo",
+        env: {
+          GH_TOKEN: "ghs_app_token"
+        },
         args: [
           "run",
           "view",

@@ -23,6 +23,7 @@ export interface CreateGitHubPullRequestOptions {
   taskId?: string;
   goalId?: string;
   evidence?: PullRequestEvidenceSummary[];
+  authToken?: string;
   runner?: GitHubCliRunner;
 }
 
@@ -53,7 +54,17 @@ export async function createGitHubPullRequest(
     options.head,
     ...(options.draft === true ? ["--draft"] : [])
   ];
-  const result = await (options.runner ?? runGitHubCli)(args, { cwd });
+  const result = await (options.runner ?? runGitHubCli)(
+    args,
+    options.authToken === undefined
+      ? { cwd }
+      : {
+          cwd,
+          env: {
+            GH_TOKEN: options.authToken
+          }
+        }
+  );
 
   if (result.exitCode !== 0) {
     throw new Error(

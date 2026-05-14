@@ -12,20 +12,27 @@ export interface GitHubCliCommandResult {
   exitCode: number;
 }
 
+export interface GitHubCliRunnerOptions {
+  cwd: string;
+  env?: Record<string, string>;
+}
+
 export type GitHubCliRunner = (
   args: string[],
-  options: { cwd: string }
+  options: GitHubCliRunnerOptions
 ) => Promise<GitHubCliCommandResult>;
 
 export interface GetWorkflowRunStatusOptions {
   cwd?: string;
   runId: string;
+  authToken?: string;
   runner?: GitHubCliRunner;
 }
 
 export interface FetchWorkflowRunLogOptions {
   cwd?: string;
   runId: string;
+  authToken?: string;
   runner?: GitHubCliRunner;
 }
 
@@ -82,7 +89,7 @@ export async function getGitHubWorkflowRunStatus(
         "url"
       ].join(",")
     ],
-    { cwd }
+    githubCliRunnerOptions(cwd, options.authToken)
   );
 
   if (result.exitCode !== 0) {
@@ -128,7 +135,7 @@ export async function fetchGitHubWorkflowRunLog(
   const cwd = resolve(options.cwd ?? process.cwd());
   const result = await (options.runner ?? runGitHubCli)(
     ["run", "view", options.runId, "--log"],
-    { cwd }
+    githubCliRunnerOptions(cwd, options.authToken)
   );
 
   if (result.exitCode !== 0) {
@@ -146,11 +153,12 @@ export async function fetchGitHubWorkflowRunLog(
 
 export async function runGitHubCli(
   args: string[],
-  options: { cwd: string }
+  options: GitHubCliRunnerOptions
 ): Promise<GitHubCliCommandResult> {
   try {
     const result = await execFileAsync("gh", args, {
       cwd: options.cwd,
+      ...(options.env === undefined ? {} : { env: { ...process.env, ...options.env } }),
       maxBuffer: 1024 * 1024 * 10,
       windowsHide: true
     });
@@ -167,6 +175,20 @@ export async function runGitHubCli(
       exitCode: commandExitCode(error)
     };
   }
+}
+
+function githubCliRunnerOptions(
+  cwd: string,
+  authToken: string | undefined
+): GitHubCliRunnerOptions {
+  return authToken === undefined
+    ? { cwd }
+    : {
+        cwd,
+        env: {
+          GH_TOKEN: authToken
+        }
+      };
 }
 
 function normalizeDatabaseId(

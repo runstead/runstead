@@ -25,9 +25,13 @@ describe("buildPullRequestBody", () => {
 
 describe("createGitHubPullRequest", () => {
   it("creates a PR with an evidence-backed body", async () => {
-    const calls: { args: string[]; cwd: string }[] = [];
+    const calls: { args: string[]; cwd: string; env?: Record<string, string> }[] = [];
     const runner: GitHubCliRunner = (args, options) => {
-      calls.push({ args, cwd: options.cwd });
+      calls.push({
+        args,
+        cwd: options.cwd,
+        ...(options.env === undefined ? {} : { env: options.env })
+      });
 
       return Promise.resolve({
         stdout: "https://github.com/acme/widgets/pull/42\n",
@@ -43,6 +47,7 @@ describe("createGitHubPullRequest", () => {
         base: "main",
         head: "runstead/task-1",
         taskId: "task_1",
+        authToken: "ghs_app_token",
         evidence: [
           {
             id: "ev_1",
@@ -59,6 +64,9 @@ describe("createGitHubPullRequest", () => {
       head: "runstead/task-1",
       url: "https://github.com/acme/widgets/pull/42",
       stdout: "https://github.com/acme/widgets/pull/42\n"
+    });
+    expect(calls[0]?.env).toEqual({
+      GH_TOKEN: "ghs_app_token"
     });
     expect(calls[0]?.args).toEqual([
       "pr",
