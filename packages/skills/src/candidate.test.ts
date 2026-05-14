@@ -71,4 +71,32 @@ describe("createSkillCandidatePackage", () => {
       await rm(join(root, ".."), { force: true, recursive: true });
     }
   });
+
+  it("rejects candidate names that do not start with a letter", async () => {
+    const root = join(
+      tmpdir(),
+      `runstead-skill-candidate-name-${process.pid}`,
+      "1-fix-pnpm"
+    );
+
+    try {
+      await rm(join(root, ".."), { force: true, recursive: true });
+
+      await expect(
+        createSkillCandidatePackage({
+          root,
+          name: "1-fix-pnpm",
+          domain: "repo-maintenance",
+          description: "Diagnose and repair pnpm-related CI failures.",
+          triggers: ["ci_failure"],
+          allowedTools: ["filesystem.read"],
+          deniedTools: ["secret.read"],
+          verifierCommands: ["pnpm test"],
+          provenanceTasks: ["task_001"]
+        })
+      ).rejects.toThrow("must start with a lowercase letter");
+    } finally {
+      await rm(join(root, ".."), { force: true, recursive: true });
+    }
+  });
 });

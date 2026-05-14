@@ -101,8 +101,10 @@ export async function createSkillCandidatePackage(
 }
 
 function validateCandidateOptions(options: CreateSkillCandidateOptions): void {
-  if (!/^[a-z0-9][a-z0-9-]*$/.test(options.name)) {
-    throw new Error("Skill candidate name must use lowercase kebab-case");
+  if (!/^[a-z][a-z0-9-]*$/.test(options.name)) {
+    throw new Error(
+      "Skill candidate name must start with a lowercase letter and use lowercase kebab-case"
+    );
   }
 
   if (basename(options.root) !== options.name) {
