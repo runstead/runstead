@@ -1,14 +1,21 @@
 # Policy
 
 Policy decisions must be based on structured action envelopes, not natural
-language. The M0 scaffold only stores the first policy template. M1 should add:
+language. Runstead now has a deterministic policy path for the main local
+verifier and CI repair flows:
 
 - action envelope schema
-- policy DSL parser
-- deterministic evaluator
+- policy DSL parser with load-time validation
+- deterministic evaluator with deny > approval > allow precedence
 - risk scorer
-- approval request model
-- shell/filesystem/git tool guards
+- approval request model and reusable approval grants
+- tool contract registry
+- shell verifier guard
+- governed GitHub, git, checkpoint, and wrapped-worker actions in CI repair
 
 The product rule is strict: every side effect must be allowed, denied, or
 attached to an approval request before it runs.
+
+Some ad-hoc CLI helpers are still explicitly labeled unmanaged. They are useful
+for local diagnosis, but the product path is the governed runtime and CI repair
+orchestrator.
