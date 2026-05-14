@@ -80,6 +80,24 @@ describe("runCiRepairOrchestrator", () => {
         const toolCalls = database
           .prepare("SELECT action_type, status FROM tool_calls ORDER BY started_at, id")
           .all() as { action_type: string; status: string }[];
+        const workerToolCall = database
+          .prepare(
+            `
+            SELECT output_json
+            FROM tool_calls
+            WHERE action_type = 'worker.external.start' AND status = 'completed'
+          `
+          )
+          .get() as { output_json: string };
+        const workerToolOutput = JSON.parse(workerToolCall.output_json) as {
+          stdout?: string;
+          stdoutBytes: number;
+          stdoutOmitted: boolean;
+          args: string[];
+        };
+        const taskState = database
+          .prepare("SELECT output_json FROM tasks WHERE id = ?")
+          .get(first.ciRepair.task.id) as { output_json: string };
 
         expect(toolCalls).toEqual(
           expect.arrayContaining([
@@ -113,6 +131,12 @@ describe("runCiRepairOrchestrator", () => {
             })
           ])
         );
+        expect(workerToolOutput.stdout).toBeUndefined();
+        expect(workerToolOutput.stdoutBytes).toBeGreaterThan(0);
+        expect(workerToolOutput.stdoutOmitted).toBe(true);
+        expect(JSON.stringify(workerToolOutput)).not.toContain("fixed");
+        expect(taskState.output_json).not.toContain("fixed");
+        expect(taskState.output_json).toContain("omitted from Runstead durable state");
       } finally {
         database.close();
       }

@@ -326,7 +326,8 @@ export async function runCiRepairOrchestratorUnlocked(
           output: {
             summary: "CI repair worker failed",
             exitCode: workerResult.exitCode,
-            stderr: workerResult.stderr
+            stderrBytes: Buffer.byteLength(workerResult.stderr, "utf8"),
+            stderrOmitted: workerResult.stderr.length > 0
           },
           ...(options.now === undefined ? {} : { now: options.now })
         });
@@ -1281,7 +1282,7 @@ function buildPullRequestResumeContext(input: {
     evidence,
     verifierTask: input.verifierResult.task,
     verifierCommandResults: input.verifierResult.commandResults,
-    workerResult: input.workerResult,
+    workerResult: durableWorkerResult(input.workerResult),
     diffScope: input.diffScope
   };
 }
@@ -1583,15 +1584,37 @@ function workerOutput(workerResult: WrappedWorkerRunResult): JsonObject {
   return {
     worker: workerResult.worker,
     command: workerResult.command,
-    args: workerResult.args,
+    args: redactedWorkerArgs(workerResult),
     governance: workerResult.governance,
     exitCode: workerResult.exitCode,
-    stdout: workerResult.stdout,
-    stderr: workerResult.stderr,
+    stdoutBytes: Buffer.byteLength(workerResult.stdout, "utf8"),
+    stderrBytes: Buffer.byteLength(workerResult.stderr, "utf8"),
+    stdoutOmitted: workerResult.stdout.length > 0,
+    stderrOmitted: workerResult.stderr.length > 0,
     ...(workerResult.checkpointBefore === undefined
       ? {}
       : { checkpointBefore: workerResult.checkpointBefore.id })
   };
+}
+
+function durableWorkerResult(
+  workerResult: WrappedWorkerRunResult
+): WrappedWorkerRunResult {
+  const omitted = "[omitted from Runstead durable state]";
+
+  return {
+    ...workerResult,
+    prompt: omitted,
+    args: redactedWorkerArgs(workerResult),
+    stdout: workerResult.stdout.length === 0 ? "" : omitted,
+    stderr: workerResult.stderr.length === 0 ? "" : omitted
+  };
+}
+
+function redactedWorkerArgs(workerResult: WrappedWorkerRunResult): string[] {
+  const omitted = "[omitted from Runstead durable state]";
+
+  return workerResult.args.map((arg) => (arg === workerResult.prompt ? omitted : arg));
 }
 
 function diffScopeOutput(diffScope: GitDiffScopeVerification): JsonObject {
