@@ -48,3 +48,34 @@ any CI repair side effects run. With delivery dedupe enabled, Runstead also
 records `webhook.delivery_received` before starting intake or orchestration so a
 concurrent duplicate delivery sees an in-flight reservation instead of starting
 a second repair loop.
+
+## GitHub App Auth
+
+Webhook intake and CI repair orchestration can use a configured GitHub App
+installation instead of ambient `gh` credentials:
+
+```sh
+runstead github app init \
+  --app-id 12345 \
+  --installation-id 67890 \
+  --private-key ./github-app.pem
+
+runstead webhook serve \
+  --secret "$GITHUB_WEBHOOK_SECRET" \
+  --github-app \
+  --orchestrate-repair \
+  --verifier test="pnpm test"
+```
+
+`--github-app` is also available on `runstead github run status`,
+`runstead github run logs`, `runstead github run repair`,
+`runstead github run orchestrate-repair`, `runstead github pr create`, and the
+top-level `runstead repair-ci` helper. Passing `--installation-id` overrides the
+configured installation id for that invocation.
+
+Installation tokens are minted just in time and passed to `gh` through
+`GH_TOKEN`. Runstead records that a token was created, including app id,
+installation id, expiry, and repository selection when available, but it does
+not store the token value in SQLite, audit exports, or PR bodies. Commands that
+print credentials directly, `runstead github app jwt` and
+`runstead github app token`, require `--print-secret`.
