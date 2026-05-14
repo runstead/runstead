@@ -52,6 +52,19 @@ export interface ShowRepositoryResult {
   stateDb: string;
 }
 
+export interface ArchiveRepositoryOptions {
+  cwd?: string;
+  ref: string;
+  now?: Date;
+}
+
+export interface ArchiveRepositoryResult {
+  repository: RepositoryRecord;
+  event: RunsteadEvent;
+  stateDb: string;
+  previousStatus: RepositoryStatus;
+}
+
 export async function registerRepository(
   options: RegisterRepositoryOptions = {}
 ): Promise<RegisterRepositoryResult> {
@@ -208,6 +221,56 @@ export function resolveRepositoryReference(
   options: ShowRepositoryOptions
 ): ShowRepositoryResult {
   return showRepository(options);
+}
+
+export function archiveRepository(
+  options: ArchiveRepositoryOptions
+): ArchiveRepositoryResult {
+  const stateDb = resolveStateDb(options.cwd);
+  const database = openRunsteadDatabase(stateDb);
+
+  try {
+    const current = resolveRepositoryFromDatabase(database, options.ref, options.cwd);
+
+    if (current === undefined) {
+      throw new Error(`Repository not found: ${options.ref}`);
+    }
+
+    const archivedAt = (options.now ?? new Date()).toISOString();
+    const repository: RepositoryRecord = {
+      ...current,
+      status: "archived",
+      updatedAt: archivedAt
+    };
+    const event: RunsteadEvent = {
+      eventId: createRunsteadId("evt"),
+      type: "repository.archived",
+      aggregateType: "repository",
+      aggregateId: repository.id,
+      payload: {
+        ...repositoryPayload(repository),
+        previousStatus: current.status
+      },
+      createdAt: archivedAt
+    };
+
+    appendEventAndProject(database, {
+      event,
+      projection: {
+        type: "repository",
+        value: repository
+      }
+    });
+
+    return {
+      repository,
+      event,
+      stateDb,
+      previousStatus: current.status
+    };
+  } finally {
+    database.close();
+  }
 }
 
 function resolveStateDb(cwd = process.cwd()): string {

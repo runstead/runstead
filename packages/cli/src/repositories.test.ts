@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
+  archiveRepository,
   listRepositories,
   registerRepository,
   showRepository
@@ -56,6 +57,27 @@ describe("registerRepository", () => {
       expect(updated.repository.id).toBe(registered.repository.id);
       expect(updated.repository.alias).toBe("widgets");
       expect(updated.repository.tags).toEqual(["backend"]);
+
+      const archived = archiveRepository({
+        cwd: workspace,
+        ref: "widgets",
+        now: new Date("2026-05-14T05:32:00.000Z")
+      });
+
+      expect(archived.previousStatus).toBe("active");
+      expect(archived.repository.status).toBe("archived");
+      expect(archived.event.type).toBe("repository.archived");
+      expect(showRepository({ cwd: workspace, ref: "widgets" }).repository.status).toBe(
+        "archived"
+      );
+      expect(
+        listRepositories({ cwd: workspace, status: "active" }).repositories
+      ).toEqual([]);
+      expect(
+        listRepositories({ cwd: workspace, status: "archived" }).repositories.map(
+          (item) => item.alias
+        )
+      ).toEqual(["widgets"]);
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }

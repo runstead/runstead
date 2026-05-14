@@ -907,6 +907,20 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
       console.log(`Tags: ${result.repository.tags.join(", ") || "none"}`);
     });
 
+  repo
+    .command("archive")
+    .description("Archive a registered repository without deleting audit history.")
+    .argument("<ref>", "Repository id, alias, or path")
+    .option("--cwd <path>", "Runstead control workspace directory")
+    .action(async (ref: string, options: { cwd?: string }) => {
+      const { archiveRepository } = await import("./repositories.js");
+      const result = archiveRepository({ ...options, ref });
+
+      console.log(`Archived repository: ${result.repository.alias}`);
+      console.log(`Previous status: ${result.previousStatus}`);
+      console.log(`Path: ${result.repository.localPath}`);
+    });
+
   const domain = program
     .command("domain")
     .description("Manage domain packs. Experimental.");
