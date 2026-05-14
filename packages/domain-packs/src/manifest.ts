@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { readdir, readFile, stat } from "node:fs/promises";
+import { lstat, readdir, readFile } from "node:fs/promises";
 import { join, relative, sep } from "node:path";
 
 import { z } from "zod";
@@ -226,7 +226,11 @@ async function collectManifestFilePath(input: {
   }
 
   const fullPath = join(input.root, input.relativePath);
-  const stats = await stat(fullPath);
+  const stats = await lstat(fullPath);
+
+  if (stats.isSymbolicLink()) {
+    throw new Error(`Domain pack manifest cannot include symlinks: ${normalizedPath}`);
+  }
 
   if (stats.isDirectory()) {
     const entries = await readdir(fullPath, { withFileTypes: true });

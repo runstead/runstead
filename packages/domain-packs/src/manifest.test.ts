@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -109,6 +109,31 @@ describe("buildDomainPackManifest", () => {
 
       await expect(buildDomainPackManifest(workspace)).rejects.toThrow(
         "Cannot build manifest for invalid domain pack"
+      );
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("rejects symlinks in manifest-controlled pack contents", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-domain-manifest-"));
+
+    try {
+      const template = await createDomainPackTemplate({
+        id: "customer-ops",
+        outputDir: join(workspace, "customer-ops")
+      });
+      await writeFile(join(workspace, "outside-secret.txt"), "secret\n", "utf8");
+      await rm(join(template.root, "fixtures", "manual-review-smoke", "README.md"), {
+        force: true
+      });
+      await symlink(
+        join(workspace, "outside-secret.txt"),
+        join(template.root, "fixtures", "manual-review-smoke", "README.md")
+      );
+
+      await expect(buildDomainPackManifest(template.root)).rejects.toThrow(
+        "Domain pack manifest cannot include symlinks: fixtures/manual-review-smoke/README.md"
       );
     } finally {
       await rm(workspace, { force: true, recursive: true });
