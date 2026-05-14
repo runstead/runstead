@@ -210,6 +210,7 @@ List discoverable packs with:
 runstead domain list
 runstead domain list --root ./domains
 runstead domain list --cwd /path/to/runstead-workspace
+runstead domain show repo-maintenance
 ```
 
 ## Install Locally

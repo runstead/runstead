@@ -1251,6 +1251,30 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     });
 
   domain
+    .command("show")
+    .description("Show resolved domain pack metadata.")
+    .argument("<ref>", "Domain pack id or path")
+    .option("--cwd <path>", "Workspace directory")
+    .option("--root <path>", "Additional domain pack root", collectValues, [])
+    .option("--no-built-ins", "Exclude built-in domain packs")
+    .action(
+      async (
+        ref: string,
+        options: { cwd?: string; root: string[]; builtIns?: boolean }
+      ) => {
+        const { formatDomainPackShowResult, showDomainPack } =
+          await import("./domain-pack-command.js");
+        const result = await showDomainPack(ref, {
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          roots: options.root,
+          includeBuiltIns: options.builtIns !== false
+        });
+
+        console.log(formatDomainPackShowResult(result));
+      }
+    );
+
+  domain
     .command("validate")
     .description("Validate a domain pack directory.")
     .argument("<path>", "Domain pack directory")
