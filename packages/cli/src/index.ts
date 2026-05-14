@@ -1427,6 +1427,7 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     .option("--root <path>", "Additional domain pack root", collectValues, [])
     .option("--no-built-ins", "Exclude built-in domain packs")
     .option("--force", "Overwrite an installed domain pack")
+    .option("--actor <id>", "RBAC subject for domain pack management", "local-admin")
     .action(
       async (
         ref: string,
@@ -1435,8 +1436,16 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
           root: string[];
           builtIns?: boolean;
           force?: boolean;
+          actor: string;
         }
       ) => {
+        await requireRbacPermission({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          actor: options.actor,
+          permission: "domain.manage",
+          action: "install domain packs"
+        });
+
         const { installDomainPack } = await import("./domain-pack-install.js");
         const result = await installDomainPack({
           ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
@@ -1461,19 +1470,29 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     .argument("<id>", "Installed domain pack id")
     .option("--cwd <path>", "Workspace directory")
     .option("--force", "Remove even when active goals or tasks still reference it")
-    .action(async (id: string, options: { cwd?: string; force?: boolean }) => {
-      const { uninstallDomainPack } = await import("./domain-pack-install.js");
-      const result = await uninstallDomainPack({
-        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-        id,
-        force: options.force === true
-      });
+    .option("--actor <id>", "RBAC subject for domain pack management", "local-admin")
+    .action(
+      async (id: string, options: { cwd?: string; force?: boolean; actor: string }) => {
+        await requireRbacPermission({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          actor: options.actor,
+          permission: "domain.manage",
+          action: "uninstall domain packs"
+        });
 
-      console.log(`Uninstalled domain pack: ${result.id}`);
-      console.log(`Destination: ${result.destination}`);
-      console.log(`Active goals: ${result.activeGoals}`);
-      console.log(`Active tasks: ${result.activeTasks}`);
-    });
+        const { uninstallDomainPack } = await import("./domain-pack-install.js");
+        const result = await uninstallDomainPack({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          id,
+          force: options.force === true
+        });
+
+        console.log(`Uninstalled domain pack: ${result.id}`);
+        console.log(`Destination: ${result.destination}`);
+        console.log(`Active goals: ${result.activeGoals}`);
+        console.log(`Active tasks: ${result.activeTasks}`);
+      }
+    );
 
   domain
     .command("upgrade")
@@ -1483,6 +1502,7 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     .option("--root <path>", "Additional domain pack root", collectValues, [])
     .option("--no-built-ins", "Exclude built-in domain packs")
     .option("--force", "Upgrade even when active goals or tasks still reference it")
+    .option("--actor <id>", "RBAC subject for domain pack management", "local-admin")
     .action(
       async (
         ref: string,
@@ -1491,8 +1511,16 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
           root: string[];
           builtIns?: boolean;
           force?: boolean;
+          actor: string;
         }
       ) => {
+        await requireRbacPermission({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          actor: options.actor,
+          permission: "domain.manage",
+          action: "upgrade domain packs"
+        });
+
         const { upgradeDomainPack } = await import("./domain-pack-install.js");
         const result = await upgradeDomainPack({
           ...(options.cwd === undefined ? {} : { cwd: options.cwd }),

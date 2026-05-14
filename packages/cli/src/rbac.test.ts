@@ -79,6 +79,16 @@ describe("rbac", () => {
         subject: "alice",
         permission: "github_app.manage"
       });
+      const domainManage = await checkPermission({
+        cwd: workspace,
+        subject: "alice",
+        permission: "domain.manage"
+      });
+      const domainRead = await checkPermission({
+        cwd: workspace,
+        subject: "bob",
+        permission: "domain.read"
+      });
       const rbacYaml = await readFile(initialized.path, "utf8");
 
       expect(initialized.overwritten).toBe(false);
@@ -105,6 +115,14 @@ describe("rbac", () => {
       expect(githubApp).toMatchObject({
         decision: "allow",
         roles: ["operator"]
+      });
+      expect(domainManage).toMatchObject({
+        decision: "allow",
+        roles: ["operator"]
+      });
+      expect(domainRead).toMatchObject({
+        decision: "allow",
+        roles: ["approver"]
       });
       expect(rbacYaml).toContain("bob");
 

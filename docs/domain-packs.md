@@ -32,6 +32,12 @@ evidence collection while requiring approval before external writes.
 task `blocked` with `manual_review_required` instead of treating the starter
 task as an unknown custom task.
 
+Installing, uninstalling, or upgrading a pack mutates the local
+`.runstead/domains` registry and requires the actor to have `domain.manage`.
+Read-only SDK commands such as `domain validate`, `domain manifest`, and
+`domain verify-manifest` operate on explicit directories and do not require
+registry access.
+
 ## Directory Layout
 
 A domain pack directory must contain:

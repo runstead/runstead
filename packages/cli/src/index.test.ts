@@ -44,6 +44,18 @@ describe("cli entrypoint", () => {
     );
   });
 
+  it("exposes RBAC actor selection on domain registry commands", () => {
+    const domain = createProgram().commands.find(
+      (command) => command.name() === "domain"
+    );
+
+    for (const commandName of ["install", "uninstall", "upgrade"]) {
+      const command = domain?.commands.find((item) => item.name() === commandName);
+
+      expect(command?.options.map((option) => option.long)).toContain("--actor");
+    }
+  });
+
   it("exposes explicit scaffold upgrades", () => {
     expect(createProgram().commands.map((command) => command.name())).toContain(
       "upgrade"

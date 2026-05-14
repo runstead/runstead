@@ -62,6 +62,7 @@ export const DEFAULT_RBAC_YAML = `version: 1
 roles:
   viewer:
     - dashboard.read
+    - domain.read
     - repo.read
     - goal.read
     - task.read
@@ -69,6 +70,8 @@ roles:
     - audit.read
   operator:
     - dashboard.read
+    - domain.read
+    - domain.manage
     - repo.read
     - repo.manage
     - goal.read
@@ -85,6 +88,7 @@ roles:
     - github_app.manage
   approver:
     - dashboard.read
+    - domain.read
     - repo.read
     - goal.read
     - task.read
