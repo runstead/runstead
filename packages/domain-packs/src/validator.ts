@@ -109,6 +109,12 @@ export async function validateDomainPackDir(
       });
     }
 
+    assertGoalTemplateRecurringTasks({
+      goalTemplates,
+      taskTypeIds: domain.taskTypes,
+      issues
+    });
+
     await collectUnregisteredYamlDocuments({
       root: resolvedRoot,
       directory: "goal-templates",
@@ -362,6 +368,26 @@ function assertDeclaredWorkerRouting(input: {
         message: `Task type ${input.taskType.id} routes to undeclared worker: ${worker}`,
         path: input.path
       });
+    }
+  }
+}
+
+function assertGoalTemplateRecurringTasks(input: {
+  goalTemplates: GoalTemplate[];
+  taskTypeIds: string[];
+  issues: DomainPackValidationIssue[];
+}): void {
+  const declaredTaskTypes = new Set(input.taskTypeIds);
+
+  for (const template of input.goalTemplates) {
+    for (const taskTypeId of template.generated.recurringTasks) {
+      if (!declaredTaskTypes.has(taskTypeId)) {
+        input.issues.push({
+          severity: "error",
+          code: "goal_template_recurring_task_unknown",
+          message: `Goal template ${template.id} references unknown recurring task type: ${taskTypeId}`
+        });
+      }
     }
   }
 }
