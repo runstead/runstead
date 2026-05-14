@@ -380,18 +380,22 @@ export async function createCiRepairTaskFromWorkflowRunUnlocked(
         created: true
       };
     } catch (error) {
-      markCiRepairTaskFailed({
+      const notRepairable = error instanceof NonRepairableWorkflowRunError;
+
+      markCiRepairTaskTerminal({
         database,
         task,
+        status: notRepairable ? "cancelled" : "failed",
         error,
         ...(options.now === undefined ? {} : { now: options.now })
       });
       finishWorkerRun({
         database,
         workerRun,
-        status: "failed",
+        status: notRepairable ? "completed" : "failed",
         output: {
-          error: errorMessage(error)
+          error: errorMessage(error),
+          ...(notRepairable ? { reason: "workflow_not_repairable" } : {})
         },
         ...(options.now === undefined ? {} : { now: options.now })
       });
@@ -588,7 +592,7 @@ export function repairableWorkflowRunIdFromWebhook(
 
 function assertRepairableWorkflowRun(status: GitHubWorkflowRunStatus): void {
   if (status.status !== "completed") {
-    throw new Error(
+    throw new NonRepairableWorkflowRunError(
       `Workflow run ${status.runId} is ${status.status}, expected completed`
     );
   }
@@ -597,11 +601,13 @@ function assertRepairableWorkflowRun(status: GitHubWorkflowRunStatus): void {
     status.conclusion === undefined ||
     !REPAIRABLE_CONCLUSIONS.has(status.conclusion)
   ) {
-    throw new Error(
+    throw new NonRepairableWorkflowRunError(
       `Workflow run ${status.runId} conclusion is ${status.conclusion ?? "none"}, expected repairable failure`
     );
   }
 }
+
+class NonRepairableWorkflowRunError extends Error {}
 
 function workflowRunSummary(
   status: GitHubWorkflowRunStatus,
@@ -707,9 +713,10 @@ function sha256(contents: string): string {
   return createHash("sha256").update(contents).digest("hex");
 }
 
-function markCiRepairTaskFailed(input: {
+function markCiRepairTaskTerminal(input: {
   database: RunsteadDatabase;
   task: Task;
+  status: "cancelled" | "failed";
   error: unknown;
   now?: Date;
 }): Task {
@@ -719,7 +726,7 @@ function markCiRepairTaskFailed(input: {
   };
   const task: Task = {
     ...input.task,
-    status: "failed",
+    status: input.status,
     output,
     updatedAt
   };
@@ -727,7 +734,7 @@ function markCiRepairTaskFailed(input: {
   appendEventAndProject(input.database, {
     event: {
       eventId: createRunsteadId("evt"),
-      type: "task.failed",
+      type: `task.${input.status}`,
       aggregateType: "task",
       aggregateId: task.id,
       payload: output,

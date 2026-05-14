@@ -370,7 +370,7 @@ describe("createCiRepairTaskFromWorkflowRun", () => {
 
         expect(tasks).toHaveLength(1);
         expect(tasks[0]).toMatchObject({
-          status: "failed"
+          status: "cancelled"
         });
         const failedTaskOutput = JSON.parse(tasks[0]?.output_json ?? "{}") as {
           error?: string;
@@ -379,9 +379,14 @@ describe("createCiRepairTaskFromWorkflowRun", () => {
         expect(workerRuns).toEqual([
           expect.objectContaining({
             worker_type: "ci_repair_intake",
-            status: "failed"
+            status: "completed"
           })
         ]);
+        const workerOutput = JSON.parse(workerRuns[0]?.output_json ?? "{}") as {
+          reason?: string;
+        };
+
+        expect(workerOutput.reason).toBe("workflow_not_repairable");
       } finally {
         database.close();
       }
