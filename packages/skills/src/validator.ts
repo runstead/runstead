@@ -1,6 +1,6 @@
 import { constants } from "node:fs";
-import { access, readFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { access, lstat, readFile, realpath } from "node:fs/promises";
+import { isAbsolute, join, relative, resolve } from "node:path";
 
 import { parse as parseYaml } from "yaml";
 import { ZodError, z } from "zod";
@@ -41,14 +41,23 @@ export async function validateSkillPackageDir(
   let skill: SkillPackage | undefined;
 
   for (const file of REQUIRED_FILES) {
-    if (!(await isReadable(join(resolvedRoot, file)))) {
+    const filePath = join(resolvedRoot, file);
+
+    if (!(await isReadable(filePath))) {
       issues.push({
         severity: "error",
         code: "missing_required_file",
         message: `Missing required skill package file: ${file}`,
         path: file
       });
+      continue;
     }
+
+    await validateRequiredFilePath({
+      root: resolvedRoot,
+      relativePath: file,
+      issues
+    });
   }
 
   if (
@@ -89,6 +98,41 @@ export async function validateSkillPackageDir(
     ...(skill === undefined ? {} : { skill }),
     issues
   };
+}
+
+async function validateRequiredFilePath(input: {
+  root: string;
+  relativePath: string;
+  issues: SkillValidationIssue[];
+}): Promise<void> {
+  const path = join(input.root, input.relativePath);
+
+  try {
+    if ((await lstat(path)).isSymbolicLink()) {
+      input.issues.push({
+        severity: "error",
+        code: "required_file_symlink",
+        message: `Skill package file must not be a symlink: ${input.relativePath}`,
+        path: input.relativePath
+      });
+      return;
+    }
+
+    const rootRealPath = await realpath(input.root);
+    const fileRealPath = await realpath(path);
+    const relativePath = relative(rootRealPath, fileRealPath);
+
+    if (relativePath.startsWith("..") || isAbsolute(relativePath)) {
+      input.issues.push({
+        severity: "error",
+        code: "required_file_escapes_package",
+        message: `Skill package file resolves outside the package: ${input.relativePath}`,
+        path: input.relativePath
+      });
+    }
+  } catch {
+    return;
+  }
 }
 
 export function formatSkillValidationReport(

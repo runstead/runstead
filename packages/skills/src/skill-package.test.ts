@@ -1,4 +1,4 @@
-import { chmod, mkdir, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -160,6 +160,32 @@ describe("validateSkillPackageDir", () => {
       );
     } finally {
       await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("rejects required files that are symlinks", async () => {
+    const root = await createSkillPackageFixture("symlink");
+    const outsideSkillDoc = join(tmpdir(), `runstead-skill-outside-${process.pid}.md`);
+
+    try {
+      await writeFile(outsideSkillDoc, "# Outside skill doc\n", "utf8");
+      await rm(join(root, "SKILL.md"), { force: true });
+      await symlink(outsideSkillDoc, join(root, "SKILL.md"));
+
+      const result = await validateSkillPackageDir(root);
+
+      expect(result.valid).toBe(false);
+      expect(result.issues).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            code: "required_file_symlink",
+            path: "SKILL.md"
+          })
+        ])
+      );
+    } finally {
+      await rm(root, { force: true, recursive: true });
+      await rm(outsideSkillDoc, { force: true });
     }
   });
 });
