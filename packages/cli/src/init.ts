@@ -163,6 +163,7 @@ export async function initRunstead(
   await mkdir(join(root, "logs", "tool-calls"), { recursive: true });
   await mkdir(join(root, "logs", "verifiers"), { recursive: true });
   await mkdir(join(root, "checkpoints"), { recursive: true });
+  await mkdir(join(root, "daemon"), { recursive: true });
   await mkdir(join(root, "reports"), { recursive: true });
 
   const repoMaintenanceDomainDir = join(root, "domains", "repo-maintenance");

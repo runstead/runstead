@@ -44,6 +44,7 @@ describe("initRunstead", () => {
       ) as { domain: { id: string }; fixtures: string[]; evals: string[] };
       const database = await stat(result.stateDb);
       const evidenceFiles = await readdir(join(result.root, "evidence"));
+      const daemonDir = await stat(join(result.root, "daemon"));
 
       expect(config).toContain("domain: repo-maintenance");
       expect(config).toContain("events:\n  source: sqlite");
@@ -60,6 +61,7 @@ describe("initRunstead", () => {
       expect(rbacPolicy).toContain("local-admin");
       expect(teamPolicy).toContain("team_policy_repo_maintenance_v1");
       expect(database.isFile()).toBe(true);
+      expect(daemonDir.isDirectory()).toBe(true);
       expect(evidenceFiles).toEqual([
         expect.stringMatching(/^repo-inspection-ev_[a-f0-9]+\.json$/)
       ]);
