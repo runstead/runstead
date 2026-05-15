@@ -14,6 +14,7 @@ import {
   isCreatedCiRepairTaskResult
 } from "./ci-repair.js";
 import {
+  ciRepairProgressStageAtLeast,
   formatCiRepairOrchestratorReport,
   runCiRepairOrchestrator
 } from "./ci-repair-orchestrator.js";
@@ -29,6 +30,13 @@ import type {
 import type { WorkerProcessRunner } from "./wrapped-worker.js";
 
 describe("runCiRepairOrchestrator", () => {
+  it("does not rank terminal stages as completed progress", () => {
+    expect(ciRepairProgressStageAtLeast("completed", "branch_pushed")).toBe(true);
+    expect(ciRepairProgressStageAtLeast("failed", "branch_pushed")).toBe(false);
+    expect(ciRepairProgressStageAtLeast("blocked", "branch_pushed")).toBe(false);
+    expect(ciRepairProgressStageAtLeast("cancelled", "branch_pushed")).toBe(false);
+  });
+
   it("pauses PR creation for approval and resumes after approval", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "runstead-ci-orchestrator-"));
     const now = new Date("2026-05-14T12:00:00.000Z");

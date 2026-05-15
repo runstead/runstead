@@ -1893,7 +1893,7 @@ function buildPullRequestResumeContext(input: {
   };
 }
 
-type CiRepairOrchestratorStage =
+type CiRepairOrchestratorProgressStage =
   | "created"
   | "intake_completed"
   | "claimed"
@@ -1907,12 +1907,18 @@ type CiRepairOrchestratorStage =
   | "push_approval_requested"
   | "branch_pushed"
   | "pr_approval_requested"
-  | "completed"
+  | "completed";
+
+type CiRepairOrchestratorTerminalStage =
   | "failed"
   | "blocked"
   | "cancelled";
 
-const CI_REPAIR_STAGE_ORDER: CiRepairOrchestratorStage[] = [
+type CiRepairOrchestratorStage =
+  | CiRepairOrchestratorProgressStage
+  | CiRepairOrchestratorTerminalStage;
+
+const CI_REPAIR_PROGRESS_STAGE_ORDER: CiRepairOrchestratorProgressStage[] = [
   "created",
   "intake_completed",
   "claimed",
@@ -1926,10 +1932,7 @@ const CI_REPAIR_STAGE_ORDER: CiRepairOrchestratorStage[] = [
   "push_approval_requested",
   "branch_pushed",
   "pr_approval_requested",
-  "completed",
-  "failed",
-  "blocked",
-  "cancelled"
+  "completed"
 ];
 
 interface CiRepairOrchestratorStageContext extends JsonObject {
@@ -2057,12 +2060,27 @@ function writeCiRepairStage(input: {
   };
 }
 
-function stageAtLeast(stage: string, target: CiRepairOrchestratorStage): boolean {
-  return ciRepairStageRank(stage) >= ciRepairStageRank(target);
+function stageAtLeast(
+  stage: string,
+  target: CiRepairOrchestratorProgressStage
+): boolean {
+  return ciRepairProgressStageAtLeast(stage, target);
 }
 
-function ciRepairStageRank(stage: string): number {
-  return CI_REPAIR_STAGE_ORDER.indexOf(stage as CiRepairOrchestratorStage);
+export function ciRepairProgressStageAtLeast(
+  stage: string,
+  target: CiRepairOrchestratorProgressStage
+): boolean {
+  const stageRank = ciRepairProgressStageRank(stage);
+  const targetRank = ciRepairProgressStageRank(target);
+
+  return stageRank >= 0 && targetRank >= 0 && stageRank >= targetRank;
+}
+
+function ciRepairProgressStageRank(stage: string): number {
+  return CI_REPAIR_PROGRESS_STAGE_ORDER.indexOf(
+    stage as CiRepairOrchestratorProgressStage
+  );
 }
 
 interface EvidenceSummary extends JsonObject {
