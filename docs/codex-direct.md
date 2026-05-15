@@ -79,3 +79,24 @@ repair stages: branch creation, checkpointing, diff-scope verification,
 verifiers, commit, and PR publication. The only changed stage is worker
 execution: `codex_direct` produces governed tool-call audit records while
 `codex_cli` remains the Level 1 external wrapper.
+
+## Post-MVP Considerations
+
+Credential pooling is intentionally deferred. Runstead keeps a single
+Runstead-owned Codex OAuth session in the local auth store and does not
+automatically reuse Codex CLI credentials, because refresh tokens can conflict
+across clients. A future pool should be explicit about account ownership,
+refresh locking, and per-worker assignment.
+
+Model discovery uses the live Codex models endpoint, writes a token-free local
+cache, and can fall back to configured model ids. That is enough for the first
+direct worker path without adding a larger provider catalog.
+
+Streaming is also deferred. The MVP transport uses request/response calls so
+each model request has one `model.inference.request` policy decision and one
+auditable outcome. Streaming should only be added when streamed chunks can be
+summarized without persisting raw model output.
+
+Quota and failover should stay outside the first CI repair integration. The
+initial worker should fail clearly on provider errors; later failover can be
+layered on top of recorded model-call outcomes and explicit operator policy.
