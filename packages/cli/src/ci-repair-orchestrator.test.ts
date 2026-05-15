@@ -99,6 +99,11 @@ describe("runCiRepairOrchestrator", () => {
         const taskState = database
           .prepare("SELECT output_json FROM tasks WHERE id = ?")
           .get(first.ciRepair.task.id) as { output_json: string };
+        const stageRows = database
+          .prepare(
+            "SELECT payload_json FROM events WHERE aggregate_id = ? AND type = 'task.updated' ORDER BY id ASC"
+          )
+          .all(first.ciRepair.task.id) as { payload_json: string }[];
         const checkpointCreatedEvent = database
           .prepare(
             `
@@ -155,6 +160,47 @@ describe("runCiRepairOrchestrator", () => {
         expect(JSON.stringify(workerToolOutput)).not.toContain("fixed");
         expect(taskState.output_json).not.toContain("fixed");
         expect(taskState.output_json).toContain("omitted from Runstead durable state");
+        const taskOutput = JSON.parse(taskState.output_json) as {
+          ciRepairOrchestrator?: {
+            stage?: string;
+            checkpointBefore?: { id?: string };
+            workerResult?: { worker?: string };
+            commit?: { commitSha?: string };
+            diffScope?: { passed?: boolean };
+            verifierCommandResults?: unknown[];
+          };
+        };
+        const stages = stageRows
+          .map((row) => JSON.parse(row.payload_json) as Record<string, unknown>)
+          .map((payload) =>
+            typeof payload.ciRepairOrchestrator === "object" &&
+            payload.ciRepairOrchestrator !== null &&
+            "stage" in payload.ciRepairOrchestrator
+              ? payload.ciRepairOrchestrator.stage
+              : undefined
+          )
+          .filter((stage): stage is string => typeof stage === "string");
+
+        expect(taskOutput.ciRepairOrchestrator).toMatchObject({
+          stage: "push_approval_requested",
+          checkpointBefore: { id: first.workerResult?.checkpointBefore?.id },
+          workerResult: { worker: "codex_cli" },
+          commit: { commitSha: "abc123" },
+          diffScope: { passed: true }
+        });
+        expect(taskOutput.ciRepairOrchestrator?.verifierCommandResults).toHaveLength(1);
+        expect(stages).toEqual(
+          expect.arrayContaining([
+            "intake_completed",
+            "claimed",
+            "branch_created",
+            "checkpoint_created",
+            "worker_completed",
+            "committed",
+            "verified",
+            "ready_for_push"
+          ])
+        );
         expect(JSON.parse(checkpointCreatedEvent.payload_json)).toMatchObject({
           checkpointId: first.workerResult?.checkpointBefore?.id,
           actor: "runstead:ci-repair"
