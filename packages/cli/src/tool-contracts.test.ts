@@ -27,6 +27,8 @@ describe("tool contract registry", () => {
         "github.pr.create",
         "repo.publish_repair",
         "worker.external.start",
+        "worker.native.start",
+        "model.inference.request",
         "checkpoint.create",
         "checkpoint.restore"
       ])
@@ -60,6 +62,23 @@ describe("tool contract registry", () => {
       actionType: "repo.publish_repair",
       tool: "runstead",
       sideEffects: ["network_write_external", "git_push", "github_pr_create"],
+      evidenceRequired: true,
+      policyRequired: true
+    });
+    expect(getToolContract("model.inference.request")).toMatchObject({
+      actionType: "model.inference.request",
+      tool: "model-provider",
+      sideEffects: ["network_write_external", "llm_data_egress"],
+      evidenceRequired: true,
+      policyRequired: true
+    });
+  });
+
+  it("describes native worker proxy side effects", () => {
+    expect(getToolContract("worker.native.start")).toMatchObject({
+      actionType: "worker.native.start",
+      tool: "worker",
+      sideEffects: ["execute_process", "write_workspace", "governed_tool_proxy"],
       evidenceRequired: true,
       policyRequired: true
     });

@@ -129,6 +129,22 @@ const TOOL_CONTRACTS: ToolContract[] = [
     policyRequired: true
   },
   {
+    actionType: "worker.native.start",
+    tool: "worker",
+    resourceTypes: ["process", "repository"],
+    sideEffects: ["execute_process", "write_workspace", "governed_tool_proxy"],
+    evidenceRequired: true,
+    policyRequired: true
+  },
+  {
+    actionType: "model.inference.request",
+    tool: "model-provider",
+    resourceTypes: ["model_provider", "model"],
+    sideEffects: ["network_write_external", "llm_data_egress"],
+    evidenceRequired: true,
+    policyRequired: true
+  },
+  {
     actionType: "checkpoint.create",
     tool: "checkpoint",
     resourceTypes: ["repository"],

@@ -118,6 +118,10 @@ export const DEFAULT_CI_REPAIR_WORKSPACE_ACTION_TYPES = [
 ];
 export const DEFAULT_EXTERNAL_WORKER_ACTION_TYPES = ["worker.external.start"];
 export const TRUSTED_LOCAL_EXTERNAL_WORKER_IDS = ["codex_cli", "claude_code"];
+export const DEFAULT_NATIVE_WORKER_ACTION_TYPES = ["worker.native.start"];
+export const TRUSTED_LOCAL_NATIVE_WORKER_IDS = ["codex_direct"];
+export const DEFAULT_MODEL_INFERENCE_ACTION_TYPES = ["model.inference.request"];
+export const TRUSTED_LOCAL_MODEL_INFERENCE_RESOURCE_IDS = ["chatgpt_codex"];
 export const CI_REPAIR_WORKSPACE_OBLIGATIONS = [
   "capture_output",
   "attach_as_evidence",
@@ -160,6 +164,10 @@ export interface CreateRepoMaintenanceMinimumPolicyOptions {
   dependencyChangePaths?: string[];
   externalWorkerStartMode?: "require_approval" | "trusted_local_allow";
   trustedExternalWorkerIds?: string[];
+  nativeWorkerStartMode?: "require_approval" | "trusted_local_allow";
+  trustedNativeWorkerIds?: string[];
+  modelInferenceMode?: "require_approval" | "trusted_local_allow";
+  trustedModelInferenceResourceIds?: string[];
   id?: string;
 }
 
@@ -211,6 +219,14 @@ export function createRepoMaintenanceMinimumPolicy(
       ...(options.externalWorkerStartMode === "trusted_local_allow"
         ? createExternalWorkerStartAllowPolicy(options.trustedExternalWorkerIds).rules
         : createExternalWorkerStartApprovalPolicy().rules),
+      ...(options.nativeWorkerStartMode === "trusted_local_allow"
+        ? createNativeWorkerStartAllowPolicy(options.trustedNativeWorkerIds).rules
+        : createNativeWorkerStartApprovalPolicy().rules),
+      ...(options.modelInferenceMode === "trusted_local_allow"
+        ? createModelInferenceRequestAllowPolicy(
+            options.trustedModelInferenceResourceIds
+          ).rules
+        : createModelInferenceRequestApprovalPolicy().rules),
       ...createReadWorkspaceAllowPolicy().rules,
       ...createCiRepairWorkspaceActionAllowPolicy().rules,
       ...createVerifierCommandAllowPolicy(options.verifierCommandPatterns).rules,
@@ -356,6 +372,90 @@ export function createExternalWorkerStartAllowPolicy(
         when: {
           actionType: actionTypes,
           resourceId: workerIds
+        },
+        decision: "allow",
+        risk: "medium"
+      }
+    ]
+  };
+}
+
+export function createNativeWorkerStartApprovalPolicy(
+  actionTypes = DEFAULT_NATIVE_WORKER_ACTION_TYPES,
+  id = "policy_native_worker_start_approval_v1"
+): PolicyProfile {
+  return {
+    id,
+    version: 1,
+    rules: [
+      {
+        id: "require_approval_native_worker_start",
+        when: {
+          actionType: actionTypes
+        },
+        decision: "require_approval",
+        risk: "high"
+      }
+    ]
+  };
+}
+
+export function createNativeWorkerStartAllowPolicy(
+  workerIds = TRUSTED_LOCAL_NATIVE_WORKER_IDS,
+  actionTypes = DEFAULT_NATIVE_WORKER_ACTION_TYPES,
+  id = "policy_native_worker_start_allow_v1"
+): PolicyProfile {
+  return {
+    id,
+    version: 1,
+    rules: [
+      {
+        id: "allow_trusted_local_native_worker_start",
+        when: {
+          actionType: actionTypes,
+          resourceId: workerIds
+        },
+        decision: "allow",
+        risk: "medium"
+      }
+    ]
+  };
+}
+
+export function createModelInferenceRequestApprovalPolicy(
+  actionTypes = DEFAULT_MODEL_INFERENCE_ACTION_TYPES,
+  id = "policy_model_inference_request_approval_v1"
+): PolicyProfile {
+  return {
+    id,
+    version: 1,
+    rules: [
+      {
+        id: "require_approval_model_inference_request",
+        when: {
+          actionType: actionTypes
+        },
+        decision: "require_approval",
+        risk: "high"
+      }
+    ]
+  };
+}
+
+export function createModelInferenceRequestAllowPolicy(
+  resourceIds = TRUSTED_LOCAL_MODEL_INFERENCE_RESOURCE_IDS,
+  actionTypes = DEFAULT_MODEL_INFERENCE_ACTION_TYPES,
+  id = "policy_model_inference_request_allow_v1"
+): PolicyProfile {
+  return {
+    id,
+    version: 1,
+    rules: [
+      {
+        id: "allow_trusted_local_model_inference_request",
+        when: {
+          actionType: actionTypes,
+          resourceId: resourceIds
         },
         decision: "allow",
         risk: "medium"

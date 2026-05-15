@@ -13,6 +13,7 @@ verifier and CI repair flows:
 - shell verifier guard
 - governed filesystem read/write proxy
 - governed GitHub, git branch/commit/push, checkpoint, and wrapped-worker actions in CI repair
+- native worker and model inference action contracts for future tool-proxied workers
 - ordered audit timelines for replaying governed task lifecycles
 
 Use `runstead audit replay <task-id>` to reconstruct a task lifecycle from the
@@ -50,6 +51,17 @@ Level 2 tool-proxied execution, where every internal worker tool call passes
 through Runstead, is future work. The worker governance manifest records this
 as `internalToolProxy.mode: none`; callers that require `hard_proxy`
 enforcement fail before the external worker process is launched.
+
+Native workers use a separate `worker.native.start` action contract. The
+contract is reserved for Runstead-owned worker loops whose internal tool calls
+are routed through governed actions such as `filesystem.read`,
+`filesystem.write`, `shell.exec`, `git.status`, and `git.diff`. Model calls use
+`model.inference.request`, which records `network_write_external` and
+`llm_data_egress` side effects. The default policy requires approval for both
+contracts. `runstead init --profile trusted-local` may allow the built-in
+`codex_direct` worker and the `chatgpt_codex` model resource, but protected
+paths, dependency changes, publishing, and other external writes still keep
+their stricter rules.
 
 Mutating unmanaged helpers now require explicit acknowledgement with
 `--unmanaged`:

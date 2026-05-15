@@ -11,6 +11,10 @@ import {
   createExternalWriteApprovalPolicy,
   createExternalWorkerStartAllowPolicy,
   createExternalWorkerStartApprovalPolicy,
+  createModelInferenceRequestAllowPolicy,
+  createModelInferenceRequestApprovalPolicy,
+  createNativeWorkerStartAllowPolicy,
+  createNativeWorkerStartApprovalPolicy,
   createProtectedPathDenyPolicy,
   createReadWorkspaceAllowPolicy,
   createRepoMaintenanceMinimumPolicy,
@@ -29,6 +33,10 @@ const verifierCommandPolicy = createVerifierCommandAllowPolicy();
 const externalWritePolicy = createExternalWriteApprovalPolicy();
 const externalWorkerStartPolicy = createExternalWorkerStartApprovalPolicy();
 const trustedExternalWorkerStartPolicy = createExternalWorkerStartAllowPolicy();
+const nativeWorkerStartPolicy = createNativeWorkerStartApprovalPolicy();
+const trustedNativeWorkerStartPolicy = createNativeWorkerStartAllowPolicy();
+const modelInferencePolicy = createModelInferenceRequestApprovalPolicy();
+const trustedModelInferencePolicy = createModelInferenceRequestAllowPolicy();
 const dangerousShellPolicy = createDangerousShellDenyPolicy();
 const dependencyChangePolicy = createDependencyChangeApprovalPolicy();
 const readWorkspacePolicy = createReadWorkspaceAllowPolicy();
@@ -341,6 +349,120 @@ describe("evaluatePolicy CI repair workspace action rules", () => {
       risk: "medium",
       ruleId: "allow_trusted_local_external_worker_start",
       matchedResourceId: "codex_cli"
+    });
+    expect(unknown).toMatchObject({
+      decision: "require_approval",
+      risk: "medium"
+    });
+    expect(unknown.ruleId).toBeUndefined();
+  });
+
+  it("requires approval for native workers by default", () => {
+    const result = evaluatePolicy({
+      policy: nativeWorkerStartPolicy,
+      action: {
+        actionId: "act_native_worker",
+        actionType: "worker.native.start",
+        resource: {
+          type: "process",
+          id: "codex_direct"
+        }
+      }
+    });
+
+    expect(result).toMatchObject({
+      decision: "require_approval",
+      risk: "high",
+      ruleId: "require_approval_native_worker_start"
+    });
+  });
+
+  it("allows only configured trusted local native workers", () => {
+    const trusted = evaluatePolicy({
+      policy: trustedNativeWorkerStartPolicy,
+      action: {
+        actionId: "act_native_codex",
+        actionType: "worker.native.start",
+        resource: {
+          type: "process",
+          id: "codex_direct"
+        }
+      }
+    });
+    const unknown = evaluatePolicy({
+      policy: trustedNativeWorkerStartPolicy,
+      action: {
+        actionId: "act_native_unknown",
+        actionType: "worker.native.start",
+        resource: {
+          type: "process",
+          id: "unknown_worker"
+        }
+      }
+    });
+
+    expect(trusted).toMatchObject({
+      decision: "allow",
+      risk: "medium",
+      ruleId: "allow_trusted_local_native_worker_start",
+      matchedResourceId: "codex_direct"
+    });
+    expect(unknown).toMatchObject({
+      decision: "require_approval",
+      risk: "medium"
+    });
+    expect(unknown.ruleId).toBeUndefined();
+  });
+
+  it("requires approval for model inference requests by default", () => {
+    const result = evaluatePolicy({
+      policy: modelInferencePolicy,
+      action: {
+        actionId: "act_model_inference",
+        actionType: "model.inference.request",
+        resource: {
+          type: "model_provider",
+          id: "chatgpt_codex"
+        }
+      }
+    });
+
+    expect(result).toMatchObject({
+      decision: "require_approval",
+      risk: "high",
+      ruleId: "require_approval_model_inference_request"
+    });
+  });
+
+  it("allows only configured trusted local model inference resources", () => {
+    const trusted = evaluatePolicy({
+      policy: trustedModelInferencePolicy,
+      action: {
+        actionId: "act_model_trusted",
+        actionType: "model.inference.request",
+        resource: {
+          type: "model_provider",
+          id: "chatgpt_codex"
+        }
+      }
+    });
+    const unknown = evaluatePolicy({
+      policy: trustedModelInferencePolicy,
+      action: {
+        actionId: "act_model_unknown",
+        actionType: "model.inference.request",
+        resource: {
+          type: "model_provider",
+          id: "unknown_provider"
+        }
+      }
+    });
+
+    expect(trusted).toMatchObject({
+      decision: "allow",
+      risk: "medium",
+      ruleId: "allow_trusted_local_model_inference_request",
+      matchedResourceId: "chatgpt_codex"
     });
     expect(unknown).toMatchObject({
       decision: "require_approval",

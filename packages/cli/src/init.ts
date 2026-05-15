@@ -89,6 +89,10 @@ rules:
 
 ${externalWorkerStartPolicyRuleYaml(profile)}
 
+${nativeWorkerStartPolicyRuleYaml(profile)}
+
+${modelInferencePolicyRuleYaml(profile)}
+
   - id: allow_verifier_commands
     when:
       action_type: shell.exec
@@ -204,6 +208,44 @@ function externalWorkerStartPolicyRuleYaml(profile: InitPolicyProfile): string {
   return `  - id: require_approval_external_worker_start
     when:
       action_type: worker.external.start
+    decision: require_approval
+    risk: high`;
+}
+
+function nativeWorkerStartPolicyRuleYaml(profile: InitPolicyProfile): string {
+  if (profile === "trusted-local") {
+    return `  - id: allow_trusted_local_native_worker_start
+    when:
+      action_type: worker.native.start
+      resource_id:
+        in:
+          - codex_direct
+    decision: allow
+    risk: medium`;
+  }
+
+  return `  - id: require_approval_native_worker_start
+    when:
+      action_type: worker.native.start
+    decision: require_approval
+    risk: high`;
+}
+
+function modelInferencePolicyRuleYaml(profile: InitPolicyProfile): string {
+  if (profile === "trusted-local") {
+    return `  - id: allow_trusted_local_model_inference_request
+    when:
+      action_type: model.inference.request
+      resource_id:
+        in:
+          - chatgpt_codex
+    decision: allow
+    risk: medium`;
+  }
+
+  return `  - id: require_approval_model_inference_request
+    when:
+      action_type: model.inference.request
     decision: require_approval
     risk: high`;
 }

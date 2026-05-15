@@ -37,6 +37,18 @@ rules:
     decision: require_approval
     risk: high
 
+  - id: require_approval_native_worker_start
+    when:
+      action_type: worker.native.start
+    decision: require_approval
+    risk: high
+
+  - id: require_approval_model_inference_request
+    when:
+      action_type: model.inference.request
+    decision: require_approval
+    risk: high
+
   - id: allow_verifier_commands
     when:
       action_type: shell.exec
