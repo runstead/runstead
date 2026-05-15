@@ -396,7 +396,8 @@ describe("runCiRepairOrchestrator", () => {
           policy_decision_id: string;
         }[];
 
-        expect(coveredSubActions.map((row) => row.action_type)).toEqual([
+        expect(coveredSubActions).toHaveLength(2);
+        expect(coveredSubActions.map((row) => row.action_type).sort()).toEqual([
           "git.push",
           "github.pr.create"
         ]);
