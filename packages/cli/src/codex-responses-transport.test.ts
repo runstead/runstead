@@ -41,9 +41,9 @@ describe("CodexResponsesTransport", () => {
         effort: "high",
         summary: "auto"
       },
-      include: ["reasoning.encrypted_content"],
-      max_output_tokens: 4096
+      include: ["reasoning.encrypted_content"]
     });
+    expect(payload).not.toHaveProperty("max_output_tokens");
     expect(JSON.stringify(payload)).not.toContain("Bearer");
   });
 

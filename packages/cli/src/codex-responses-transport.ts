@@ -117,10 +117,7 @@ export function buildCodexResponsesPayload(
       effort: normalizeReasoningEffort(request.reasoningEffort),
       summary: "auto"
     },
-    include: ["reasoning.encrypted_content"],
-    ...(request.maxOutputTokens === undefined
-      ? {}
-      : { max_output_tokens: request.maxOutputTokens })
+    include: ["reasoning.encrypted_content"]
   };
 }
 
