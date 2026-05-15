@@ -521,6 +521,7 @@ export async function runCiRepairOrchestratorUnlocked(
           cwd,
           taskId: ciRepair.task.id,
           claim: false,
+          mode: "evidence_only",
           ...(options.now === undefined ? {} : { now: options.now })
         }
       );
@@ -572,11 +573,16 @@ export async function runCiRepairOrchestratorUnlocked(
         diffScope,
         verifierResult: normalizedVerifierResult
       });
+      const ciRepairTaskAfterVerification: Task = {
+        ...ciRepair.task,
+        output: normalizedVerifierResult.task.output,
+        updatedAt: normalizedVerifierResult.task.updatedAt
+      };
       const taskWithResume = writeTaskOutput({
         database,
-        task: normalizedVerifierResult.task,
+        task: ciRepairTaskAfterVerification,
         output: {
-          ...(normalizedVerifierResult.task.output ?? {}),
+          ...(ciRepairTaskAfterVerification.output ?? {}),
           ciRepairOrchestrator: resumeContext
         },
         eventType: "task.updated",

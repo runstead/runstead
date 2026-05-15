@@ -9,7 +9,7 @@ import { describe, expect, it } from "vitest";
 import { decideApproval, showApproval } from "./approvals.js";
 import { createGoal } from "./goals.js";
 import { initRunstead } from "./init.js";
-import { showTask } from "./tasks.js";
+import { claimTask, showTask } from "./tasks.js";
 import { runTaskVerifiers } from "./verifier-runner.js";
 
 describe("runTaskVerifiers", () => {
@@ -80,6 +80,64 @@ describe("runTaskVerifiers", () => {
           timedOut: false
         }
       ]);
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("records verifier evidence without finalizing the task in evidence-only mode", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-verifier-evidence-"));
+
+    try {
+      const task = await createTaskWithCommand(workspace, "process.exit(0)");
+      const claimedTask = claimTask({
+        cwd: workspace,
+        id: task.id,
+        now: new Date("2026-05-14T06:20:00.000Z")
+      }).task;
+
+      const result = await runTaskVerifiers({
+        cwd: workspace,
+        taskId: claimedTask.id,
+        claim: false,
+        mode: "evidence_only",
+        now: new Date("2026-05-14T06:21:00.000Z")
+      });
+      const database = openRunsteadDatabase(join(workspace, ".runstead", "state.db"));
+
+      try {
+        const storedTask = database
+          .prepare("SELECT status, attempt, output_json FROM tasks WHERE id = ?")
+          .get(task.id) as {
+          status: string;
+          attempt: number;
+          output_json: string | null;
+        };
+        const terminalTaskEventCount = database
+          .prepare(
+            "SELECT COUNT(*) AS count FROM events WHERE aggregate_id = ? AND type IN ('task.completed', 'task.failed', 'task.blocked', 'task.waiting_approval')"
+          )
+          .get(task.id) as { count: number };
+        const evidenceCount = database
+          .prepare("SELECT COUNT(*) AS count FROM evidence WHERE subject_id = ?")
+          .get(task.id) as { count: number };
+
+        expect(result.task.status).toBe("completed");
+        expect(result.commandResults).toMatchObject([
+          {
+            verifier: "test",
+            exitCode: 0,
+            timedOut: false
+          }
+        ]);
+        expect(storedTask.status).toBe("claimed");
+        expect(storedTask.attempt).toBe(0);
+        expect(storedTask.output_json).toBeNull();
+        expect(terminalTaskEventCount.count).toBe(0);
+        expect(evidenceCount.count).toBe(1);
+      } finally {
+        database.close();
+      }
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }

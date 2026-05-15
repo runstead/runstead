@@ -69,6 +69,7 @@ describe("runCiRepairOrchestrator", () => {
       expect(verifierCalls).toHaveLength(1);
       expect(verifierCalls[0]?.taskId).toBe(first.ciRepair.task.id);
       expect(verifierCalls[0]?.claim).toBe(false);
+      expect(verifierCalls[0]?.mode).toBe("evidence_only");
       expect(workerCalls[0]).toContain("Repair GitHub Actions run 123.");
       expect(formatCiRepairOrchestratorReport(first)).toContain(
         `waiting approval ${first.approval?.id}`

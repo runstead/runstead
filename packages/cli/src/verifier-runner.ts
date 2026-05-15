@@ -44,6 +44,7 @@ export interface RunTaskVerifiersOptions {
   timeoutMs?: number;
   killGraceMs?: number;
   claim?: boolean;
+  mode?: "finalize_task" | "evidence_only";
   now?: Date;
 }
 
@@ -83,6 +84,7 @@ export async function runTaskVerifiersUnlocked(
   const root = resolvedState.root;
   const stateDb = resolvedState.stateDb;
   const createdAt = (options.now ?? new Date()).toISOString();
+  const projectTaskState = options.mode !== "evidence_only";
   const policy = await loadVerifierPolicy(root);
   const task = loadVerifierTask({
     cwd,
@@ -99,18 +101,20 @@ export async function runTaskVerifiersUnlocked(
   const database = openRunsteadDatabase(stateDb);
 
   try {
-    appendEventAndProject(database, {
-      event: taskEvent(
-        "task.started",
-        runningTask,
-        { attempt: runningTask.attempt },
-        createdAt
-      ),
-      projection: {
-        type: "task",
-        value: runningTask
-      }
-    });
+    if (projectTaskState) {
+      appendEventAndProject(database, {
+        event: taskEvent(
+          "task.started",
+          runningTask,
+          { attempt: runningTask.attempt },
+          createdAt
+        ),
+        projection: {
+          type: "task",
+          value: runningTask
+        }
+      });
+    }
     let currentTask = runningTask;
     let executionAttemptStarted = false;
     const startExecutionAttempt = (): Task => {
@@ -124,21 +128,23 @@ export async function runTaskVerifiersUnlocked(
         attempt: currentTask.attempt + 1,
         updatedAt: createdAt
       };
-      appendEventAndProject(database, {
-        event: taskEvent(
-          "task.execution_started",
-          currentTask,
-          {
-            previousAttempt: task.attempt,
-            attempt: currentTask.attempt
-          },
-          createdAt
-        ),
-        projection: {
-          type: "task",
-          value: currentTask
-        }
-      });
+      if (projectTaskState) {
+        appendEventAndProject(database, {
+          event: taskEvent(
+            "task.execution_started",
+            currentTask,
+            {
+              previousAttempt: task.attempt,
+              attempt: currentTask.attempt
+            },
+            createdAt
+          ),
+          projection: {
+            type: "task",
+            value: currentTask
+          }
+        });
+      }
 
       return currentTask;
     };
@@ -226,7 +232,8 @@ export async function runTaskVerifiersUnlocked(
           status: "blocked",
           output: verifierOutput(commandResults, false),
           updatedAt: createdAt,
-          database
+          database,
+          projectTaskState
         });
 
         return {
@@ -289,7 +296,8 @@ export async function runTaskVerifiersUnlocked(
           status: "waiting_approval",
           output: verifierOutput(commandResults, false),
           updatedAt: createdAt,
-          database
+          database,
+          projectTaskState
         });
 
         return {
@@ -366,18 +374,20 @@ export async function runTaskVerifiersUnlocked(
       updatedAt: createdAt
     };
 
-    appendEventAndProject(database, {
-      event: taskEvent(
-        passed ? "task.completed" : "task.failed",
-        finalTask,
-        finalTask.output ?? {},
-        createdAt
-      ),
-      projection: {
-        type: "task",
-        value: finalTask
-      }
-    });
+    if (projectTaskState) {
+      appendEventAndProject(database, {
+        event: taskEvent(
+          passed ? "task.completed" : "task.failed",
+          finalTask,
+          finalTask.output ?? {},
+          createdAt
+        ),
+        projection: {
+          type: "task",
+          value: finalTask
+        }
+      });
+    }
     finishWorkerRun({
       database,
       workerRun,
@@ -489,6 +499,7 @@ function finalizeTask(input: {
   output: JsonObject;
   updatedAt: string;
   database: ReturnType<typeof openRunsteadDatabase>;
+  projectTaskState: boolean;
 }): Task {
   const finalTask: Task = {
     ...input.runningTask,
@@ -497,18 +508,20 @@ function finalizeTask(input: {
     updatedAt: input.updatedAt
   };
 
-  appendEventAndProject(input.database, {
-    event: taskEvent(
-      `task.${input.status}`,
-      finalTask,
-      finalTask.output ?? {},
-      input.updatedAt
-    ),
-    projection: {
-      type: "task",
-      value: finalTask
-    }
-  });
+  if (input.projectTaskState) {
+    appendEventAndProject(input.database, {
+      event: taskEvent(
+        `task.${input.status}`,
+        finalTask,
+        finalTask.output ?? {},
+        input.updatedAt
+      ),
+      projection: {
+        type: "task",
+        value: finalTask
+      }
+    });
+  }
 
   return finalTask;
 }
