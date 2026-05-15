@@ -1062,7 +1062,9 @@ export function formatCiRepairOrchestratorReport(
 ): string {
   if (result.status === "ignored") {
     if (result.ciRepair.status !== "ignored") {
-      throw new Error("Ignored CI repair orchestrator result is missing ignored intake");
+      throw new Error(
+        "Ignored CI repair orchestrator result is missing ignored intake"
+      );
     }
 
     return [
@@ -1594,79 +1596,6 @@ async function resumeCiRepairPullRequest(options: {
   }
 }
 
-async function createGovernedPullRequest(options: {
-  cwd: string;
-  stateDb: string;
-  database: RunsteadDatabase;
-  policy: PolicyProfile;
-  task: Task;
-  workerRun: ReturnType<typeof startWorkerRun>;
-  ciRepair: CreateCiRepairTaskResult;
-  branchName: string;
-  base: string;
-  draft: boolean;
-  actionId: string;
-  authToken?: string;
-  githubRunner?: GitHubCliRunner;
-  now?: Date;
-}): Promise<CreateGitHubPullRequestResult> {
-  const title = `Repair CI run ${options.ciRepair.workflowRun.runId}`;
-
-  return runGovernedToolAction({
-    cwd: options.cwd,
-    stateDb: options.stateDb,
-    database: options.database,
-    policy: options.policy,
-    task: options.task,
-    workerRun: options.workerRun,
-    action: githubPullRequestCreateAction({
-      task: options.task,
-      actionId: options.actionId,
-      title,
-      base: options.base,
-      head: options.branchName
-    }),
-    requestedBy: "runstead:ci-repair",
-    ...(options.now === undefined ? {} : { now: options.now }),
-    run: async () => {
-      const auditSummary = readCiRepairPullRequestAuditSummary(
-        options.database,
-        options.task.id
-      );
-      const value = await createGitHubPullRequest({
-        cwd: options.cwd,
-        title,
-        body: buildCiRepairPullRequestBody(
-          options.ciRepair,
-          options.task,
-          auditSummary
-        ),
-        base: options.base,
-        head: options.branchName,
-        draft: options.draft,
-        taskId: options.task.id,
-        goalId: options.task.goalId,
-        evidence: [
-          {
-            id: options.ciRepair.evidence.id,
-            type: options.ciRepair.evidence.type,
-            summary:
-              options.ciRepair.evidence.summary ?? "GitHub workflow run evidence",
-            uri: options.ciRepair.evidence.uri
-          }
-        ],
-        ...(options.authToken === undefined ? {} : { authToken: options.authToken }),
-        ...(options.githubRunner === undefined ? {} : { runner: options.githubRunner })
-      });
-
-      return {
-        value,
-        output: pullRequestOutput(value)
-      };
-    }
-  }).then((result) => result.value);
-}
-
 async function ensureGovernedRepairPublishApproval(options: {
   cwd: string;
   stateDb: string;
@@ -1692,15 +1621,16 @@ async function ensureGovernedRepairPublishApproval(options: {
     }),
     requestedBy: "runstead:ci-repair",
     ...(options.now === undefined ? {} : { now: options.now }),
-    run: async () => ({
-      value: undefined,
-      output: {
-        branchName: options.context.branchName,
-        base: options.context.base,
-        draft: options.context.draft,
-        includes: ["git.push", "github.pr.create"]
-      }
-    })
+    run: () =>
+      Promise.resolve({
+        value: undefined,
+        output: {
+          branchName: options.context.branchName,
+          base: options.context.base,
+          draft: options.context.draft,
+          includes: ["git.push", "github.pr.create"]
+        }
+      })
   });
 }
 
@@ -1857,52 +1787,6 @@ async function runPublishCoveredToolAction<T>(options: {
 
     throw error;
   }
-}
-
-async function pushGovernedBranch(options: {
-  cwd: string;
-  stateDb: string;
-  database: RunsteadDatabase;
-  policy: PolicyProfile;
-  task: Task;
-  workerRun: ReturnType<typeof startWorkerRun>;
-  branchName: string;
-  base: string;
-  actionId: string;
-  gitRunner?: CiRepairGitRunner;
-  now?: Date;
-}): Promise<void> {
-  await runGovernedToolAction({
-    cwd: options.cwd,
-    stateDb: options.stateDb,
-    database: options.database,
-    policy: options.policy,
-    task: options.task,
-    workerRun: options.workerRun,
-    action: gitPushAction({
-      task: options.task,
-      actionId: options.actionId,
-      branchName: options.branchName,
-      base: options.base
-    }),
-    requestedBy: "runstead:ci-repair",
-    ...(options.now === undefined ? {} : { now: options.now }),
-    run: async () => {
-      const value = await pushGitBranch({
-        cwd: options.cwd,
-        branchName: options.branchName,
-        ...(options.gitRunner === undefined ? {} : { runner: options.gitRunner })
-      });
-
-      return {
-        value,
-        output: {
-          branchName: value.branchName,
-          remote: value.remote
-        }
-      };
-    }
-  });
 }
 
 function findPullRequestResumeTask(options: {

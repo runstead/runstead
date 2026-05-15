@@ -437,12 +437,15 @@ describe("createCiRepairTaskFromWorkflowRun", () => {
         runner
       });
 
-      expect(result).toMatchObject({
-        status: "ignored",
-        reason: "workflow_not_repairable",
-        taskStatus: "cancelled",
-        error: expect.stringContaining("expected repairable failure")
-      });
+      expect(result.status).toBe("ignored");
+
+      if (result.status !== "ignored") {
+        throw new Error(`Expected ignored CI repair result, got ${result.status}`);
+      }
+
+      expect(result.reason).toBe("workflow_not_repairable");
+      expect(result.taskStatus).toBe("cancelled");
+      expect(result.error).toContain("expected repairable failure");
       expect(formatCiRepairTaskReport(result)).toContain("Status: ignored");
 
       const database = openRunsteadDatabase(join(workspace, ".runstead", "state.db"));

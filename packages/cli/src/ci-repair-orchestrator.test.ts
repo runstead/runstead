@@ -341,7 +341,9 @@ describe("runCiRepairOrchestrator", () => {
         bodyIndex === -1 ? undefined : prCreateArgs?.[bodyIndex + 1];
 
       if (!isCreatedCiRepairTaskResult(second.ciRepair)) {
-        throw new Error(`Expected created CI repair result, got ${second.ciRepair.status}`);
+        throw new Error(
+          `Expected created CI repair result, got ${second.ciRepair.status}`
+        );
       }
 
       expect(pullRequestBody).toContain("## Evidence");
@@ -1237,15 +1239,10 @@ async function approveResultApproval(input: {
 }
 
 async function allowExternalWorkerStartForTest(workspace: string): Promise<void> {
-  const policyPath = join(
-    workspace,
-    ".runstead",
-    "policies",
-    "repo-maintenance.yaml"
-  );
+  const policyPath = join(workspace, ".runstead", "policies", "repo-maintenance.yaml");
   const raw = await readFile(policyPath, "utf8");
   const withoutApprovalRule = raw.replace(
-    /\n  - id: require_approval_external_worker_start\n    when:\n      action_type: worker\.external\.start\n    decision: require_approval\n    risk: high\n/s,
+    /\n {2}- id: require_approval_external_worker_start\n {4}when:\n {6}action_type: worker\.external\.start\n {4}decision: require_approval\n {4}risk: high\n/s,
     ""
   );
 
