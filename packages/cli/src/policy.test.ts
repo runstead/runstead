@@ -471,6 +471,32 @@ describe("evaluatePolicy CI repair workspace action rules", () => {
     expect(unknown.ruleId).toBeUndefined();
   });
 
+  it("allows trusted local model inference even with model egress side effects", () => {
+    const policy = createRepoMaintenanceMinimumPolicy({
+      protectedPaths: [".env", ".env.*", "**/secrets/**", "infra/prod/**"],
+      modelInferenceMode: "trusted_local_allow"
+    });
+    const result = evaluatePolicy({
+      policy,
+      action: {
+        actionId: "act_model_trusted_egress",
+        actionType: "model.inference.request",
+        resource: {
+          type: "model_provider",
+          id: "chatgpt_codex"
+        },
+        context: {
+          sideEffects: ["network_write_external", "llm_data_egress"]
+        }
+      }
+    });
+
+    expect(result).toMatchObject({
+      decision: "allow",
+      ruleId: "allow_trusted_local_model_inference_request"
+    });
+  });
+
   it("allows governed CI repair commits unless protected files are touched", () => {
     const allowed = evaluatePolicy({
       policy: minimumPolicy,

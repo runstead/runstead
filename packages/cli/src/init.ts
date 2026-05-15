@@ -181,6 +181,14 @@ ${modelInferencePolicyRuleYaml(profile)}
 
   - id: require_approval_external_write
     when:
+      action_type:
+        in:
+          - shell.exec
+          - git.push
+          - github.pr.create
+          - repo.publish_repair
+          - package.install
+          - package.update
       side_effects:
         contains_any:
           - network_write_external

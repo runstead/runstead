@@ -103,6 +103,14 @@ export const DEFAULT_EXTERNAL_WRITE_SIDE_EFFECTS = [
   "git_push",
   "github_pr_create"
 ];
+export const DEFAULT_EXTERNAL_WRITE_ACTION_TYPES = [
+  "shell.exec",
+  "git.push",
+  "github.pr.create",
+  "repo.publish_repair",
+  "package.install",
+  "package.update"
+];
 export const DEFAULT_READ_WORKSPACE_ACTION_TYPES = [
   "filesystem.read",
   "git.status",
@@ -159,6 +167,7 @@ export interface CreateRepoMaintenanceMinimumPolicyOptions {
   protectedPaths: string[];
   verifierCommandPatterns?: string[];
   externalWriteSideEffects?: string[];
+  externalWriteActionTypes?: string[];
   dangerousShellCommandPatterns?: string[];
   dependencyChangeActionTypes?: string[];
   dependencyChangePaths?: string[];
@@ -230,7 +239,14 @@ export function createRepoMaintenanceMinimumPolicy(
       ...createReadWorkspaceAllowPolicy().rules,
       ...createCiRepairWorkspaceActionAllowPolicy().rules,
       ...createVerifierCommandAllowPolicy(options.verifierCommandPatterns).rules,
-      ...createExternalWriteApprovalPolicy(options.externalWriteSideEffects).rules
+      ...createExternalWriteApprovalPolicy({
+        ...(options.externalWriteSideEffects === undefined
+          ? {}
+          : { sideEffects: options.externalWriteSideEffects }),
+        ...(options.externalWriteActionTypes === undefined
+          ? {}
+          : { actionTypes: options.externalWriteActionTypes })
+      }).rules
     ]
   };
 }
@@ -490,19 +506,25 @@ export function createVerifierCommandAllowPolicy(
   };
 }
 
+export interface CreateExternalWriteApprovalPolicyOptions {
+  sideEffects?: string[];
+  actionTypes?: string[];
+  id?: string;
+}
+
 export function createExternalWriteApprovalPolicy(
-  sideEffects = DEFAULT_EXTERNAL_WRITE_SIDE_EFFECTS,
-  id = "policy_external_write_approval_v1"
+  options: CreateExternalWriteApprovalPolicyOptions = {}
 ): PolicyProfile {
   return {
-    id,
+    id: options.id ?? "policy_external_write_approval_v1",
     version: 1,
     rules: [
       {
         id: "require_approval_external_write",
         when: {
+          actionType: options.actionTypes ?? DEFAULT_EXTERNAL_WRITE_ACTION_TYPES,
           sideEffects: {
-            containsAny: sideEffects
+            containsAny: options.sideEffects ?? DEFAULT_EXTERNAL_WRITE_SIDE_EFFECTS
           }
         },
         decision: "require_approval",
