@@ -376,6 +376,49 @@ describe("runCiRepairOrchestrator", () => {
       expect(finalRequestedActions).toEqual(
         expect.arrayContaining(["repo.publish_repair", "git.push", "github.pr.create"])
       );
+      const finalDatabase = openRunsteadDatabase(
+        join(workspace, ".runstead", "state.db")
+      );
+
+      try {
+        const coveredSubActions = finalDatabase
+          .prepare(
+            `
+            SELECT action_type, output_json, policy_decision_id
+            FROM tool_calls
+            WHERE action_type IN ('git.push', 'github.pr.create')
+            ORDER BY started_at ASC, id ASC
+          `
+          )
+          .all() as {
+          action_type: string;
+          output_json: string;
+          policy_decision_id: string;
+        }[];
+
+        expect(coveredSubActions.map((row) => row.action_type)).toEqual([
+          "git.push",
+          "github.pr.create"
+        ]);
+        for (const row of coveredSubActions) {
+          const output = JSON.parse(row.output_json) as {
+            coveredByActionType?: string;
+            coveredByToolCallId?: string;
+            coveredByPolicyDecisionId?: string;
+            coveredByApprovalId?: string;
+          };
+
+          expect(row.policy_decision_id).toMatch(/^poldec_/);
+          expect(output).toMatchObject({
+            coveredByActionType: "repo.publish_repair",
+            coveredByApprovalId: first.approval.id
+          });
+          expect(output.coveredByToolCallId).toMatch(/^tool_/);
+          expect(output.coveredByPolicyDecisionId).toMatch(/^poldec_/);
+        }
+      } finally {
+        finalDatabase.close();
+      }
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }

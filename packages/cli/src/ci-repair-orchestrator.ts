@@ -806,7 +806,7 @@ export async function runCiRepairOrchestratorUnlocked(
 
       try {
         if (!stageAtLeast(publishContext.stage, "branch_pushed")) {
-          await ensureGovernedRepairPublishApproval({
+          const publishCoverage = await ensureGovernedRepairPublishApproval({
             cwd,
             stateDb,
             database,
@@ -824,6 +824,7 @@ export async function runCiRepairOrchestratorUnlocked(
             task: publishTask,
             workerRun,
             context: publishContext,
+            coverage: publishCoverage,
             ...(publishContext.approvalId === undefined
               ? {}
               : { approvalId: publishContext.approvalId }),
@@ -838,7 +839,12 @@ export async function runCiRepairOrchestratorUnlocked(
             context: publishContext,
             stage: "branch_pushed",
             patch: {
-              branchPushed: true
+              branchPushed: true,
+              publishToolCallId: publishCoverage.toolCallId,
+              publishPolicyDecisionId: publishCoverage.policyDecisionId,
+              ...(publishCoverage.approvalId === undefined
+                ? {}
+                : { publishApprovalId: publishCoverage.approvalId })
             },
             ...(options.onStagePersisted === undefined
               ? {}
@@ -850,6 +856,7 @@ export async function runCiRepairOrchestratorUnlocked(
           });
         }
 
+        const publishCoverage = publishCoverageFromContext(publishContext);
         const pullRequest = await createRepairPullRequestWithPublishApproval({
           cwd,
           stateDb,
@@ -859,6 +866,7 @@ export async function runCiRepairOrchestratorUnlocked(
           workerRun,
           ciRepair,
           context: publishContext,
+          ...(publishCoverage === undefined ? {} : { coverage: publishCoverage }),
           ...(publishContext.approvalId === undefined
             ? {}
             : { approvalId: publishContext.approvalId }),
@@ -1412,7 +1420,7 @@ async function resumeCiRepairPullRequest(options: {
 
     try {
       if (!stageAtLeast(resumeContext.stage, "branch_pushed")) {
-        await ensureGovernedRepairPublishApproval({
+        const publishCoverage = await ensureGovernedRepairPublishApproval({
           cwd: options.cwd,
           stateDb,
           database,
@@ -1430,6 +1438,7 @@ async function resumeCiRepairPullRequest(options: {
           task: resumeTask,
           workerRun,
           context: resumeContext,
+          coverage: publishCoverage,
           ...(resumeContext.approvalId === undefined
             ? {}
             : { approvalId: resumeContext.approvalId }),
@@ -1442,7 +1451,12 @@ async function resumeCiRepairPullRequest(options: {
           context: resumeContext,
           stage: "branch_pushed",
           patch: {
-            branchPushed: true
+            branchPushed: true,
+            publishToolCallId: publishCoverage.toolCallId,
+            publishPolicyDecisionId: publishCoverage.policyDecisionId,
+            ...(publishCoverage.approvalId === undefined
+              ? {}
+              : { publishApprovalId: publishCoverage.approvalId })
           },
           ...(options.onStagePersisted === undefined
             ? {}
@@ -1454,6 +1468,7 @@ async function resumeCiRepairPullRequest(options: {
         });
       }
 
+      const publishCoverage = publishCoverageFromContext(resumeContext);
       const pullRequest = await createRepairPullRequestWithPublishApproval({
         cwd: options.cwd,
         stateDb,
@@ -1463,6 +1478,7 @@ async function resumeCiRepairPullRequest(options: {
         workerRun,
         ciRepair,
         context: resumeContext,
+        ...(publishCoverage === undefined ? {} : { coverage: publishCoverage }),
         ...(resumeContext.approvalId === undefined
           ? {}
           : { approvalId: resumeContext.approvalId }),
@@ -1619,8 +1635,8 @@ async function ensureGovernedRepairPublishApproval(options: {
   workerRun: ReturnType<typeof startWorkerRun>;
   context: CiRepairOrchestratorResumeContext;
   now?: Date;
-}): Promise<void> {
-  await runGovernedToolAction({
+}): Promise<PublishCoverage> {
+  const result = await runGovernedToolAction({
     cwd: options.cwd,
     stateDb: options.stateDb,
     database: options.database,
@@ -1646,6 +1662,16 @@ async function ensureGovernedRepairPublishApproval(options: {
         }
       })
   });
+
+  return {
+    toolCallId: result.toolCall.id,
+    policyDecisionId: result.policyDecision.id,
+    ...(result.approval === undefined
+      ? options.context.approvalId === undefined
+        ? {}
+        : { approvalId: options.context.approvalId }
+      : { approvalId: result.approval.id })
+  };
 }
 
 async function pushRepairBranchWithPublishApproval(options: {
@@ -1656,6 +1682,7 @@ async function pushRepairBranchWithPublishApproval(options: {
   task: Task;
   workerRun: ReturnType<typeof startWorkerRun>;
   context: CiRepairOrchestratorResumeContext;
+  coverage?: PublishCoverage;
   approvalId?: string;
   gitRunner?: CiRepairGitRunner;
   now?: Date;
@@ -1673,6 +1700,7 @@ async function pushRepairBranchWithPublishApproval(options: {
       branchName: options.context.branchName,
       base: options.context.base
     }),
+    ...(options.coverage === undefined ? {} : { coverage: options.coverage }),
     ...(options.approvalId === undefined ? {} : { approvalId: options.approvalId }),
     ...(options.now === undefined ? {} : { now: options.now }),
     run: async () => {
@@ -1702,6 +1730,7 @@ async function createRepairPullRequestWithPublishApproval(options: {
   workerRun: ReturnType<typeof startWorkerRun>;
   ciRepair: CreateCiRepairTaskResult;
   context: CiRepairOrchestratorResumeContext;
+  coverage?: PublishCoverage;
   approvalId?: string;
   authToken?: string;
   githubRunner?: GitHubCliRunner;
@@ -1723,6 +1752,7 @@ async function createRepairPullRequestWithPublishApproval(options: {
       base: options.context.base,
       head: options.context.branchName
     }),
+    ...(options.coverage === undefined ? {} : { coverage: options.coverage }),
     ...(options.approvalId === undefined ? {} : { approvalId: options.approvalId }),
     ...(options.now === undefined ? {} : { now: options.now }),
     run: async () => {
@@ -1772,6 +1802,7 @@ async function runPublishCoveredToolAction<T>(options: {
   task: Task;
   workerRun: ReturnType<typeof startWorkerRun>;
   action: ActionEnvelope;
+  coverage?: PublishCoverage;
   approvalId?: string;
   now?: Date;
   run: () => Promise<{ value: T; output?: JsonObject }>;
@@ -1807,6 +1838,9 @@ async function runPublishCoveredToolAction<T>(options: {
         decision: preflight.policyResult.decision,
         reason: preflight.policyResult.reason,
         coveredByActionType: "repo.publish_repair",
+        ...(options.coverage === undefined
+          ? {}
+          : coveredByOutput(options.coverage)),
         ...(options.approvalId === undefined ? {} : { approvalId: options.approvalId })
       },
       ...(options.now === undefined ? {} : { now: options.now })
@@ -1829,6 +1863,9 @@ async function runPublishCoveredToolAction<T>(options: {
       output: {
         ...(executed.output ?? {}),
         coveredByActionType: "repo.publish_repair",
+        ...(options.coverage === undefined
+          ? {}
+          : coveredByOutput(options.coverage)),
         ...(options.approvalId === undefined ? {} : { approvalId: options.approvalId })
       },
       ...(options.now === undefined ? {} : { now: options.now })
@@ -1844,6 +1881,9 @@ async function runPublishCoveredToolAction<T>(options: {
       output: {
         error: errorMessage(error),
         coveredByActionType: "repo.publish_repair",
+        ...(options.coverage === undefined
+          ? {}
+          : coveredByOutput(options.coverage)),
         ...(options.approvalId === undefined ? {} : { approvalId: options.approvalId })
       },
       ...(options.now === undefined ? {} : { now: options.now })
@@ -1851,6 +1891,16 @@ async function runPublishCoveredToolAction<T>(options: {
 
     throw error;
   }
+}
+
+function coveredByOutput(coverage: PublishCoverage): JsonObject {
+  return {
+    coveredByToolCallId: coverage.toolCallId,
+    coveredByPolicyDecisionId: coverage.policyDecisionId,
+    ...(coverage.approvalId === undefined
+      ? {}
+      : { coveredByApprovalId: coverage.approvalId })
+  };
 }
 
 function findPullRequestResumeTask(options: {
@@ -2018,6 +2068,9 @@ interface CiRepairOrchestratorStageContext extends JsonObject {
   commit?: CommitGitChangesResult;
   diffScope?: GitDiffScopeVerification;
   approvalId?: string;
+  publishToolCallId?: string;
+  publishPolicyDecisionId?: string;
+  publishApprovalId?: string;
 }
 
 interface CiRepairOrchestratorResumeContext extends JsonObject {
@@ -2037,6 +2090,15 @@ interface CiRepairOrchestratorResumeContext extends JsonObject {
   workerResult: WrappedWorkerRunResult;
   commit?: CommitGitChangesResult;
   diffScope: GitDiffScopeVerification;
+  approvalId?: string;
+  publishToolCallId?: string;
+  publishPolicyDecisionId?: string;
+  publishApprovalId?: string;
+}
+
+interface PublishCoverage {
+  toolCallId: string;
+  policyDecisionId: string;
   approvalId?: string;
 }
 
@@ -2215,6 +2277,25 @@ function ciRepairOrchestratorContext(
   }
 
   return value as unknown as CiRepairOrchestratorResumeContext;
+}
+
+function publishCoverageFromContext(
+  context: CiRepairOrchestratorResumeContext
+): PublishCoverage | undefined {
+  if (
+    context.publishToolCallId === undefined ||
+    context.publishPolicyDecisionId === undefined
+  ) {
+    return undefined;
+  }
+
+  return {
+    toolCallId: context.publishToolCallId,
+    policyDecisionId: context.publishPolicyDecisionId,
+    ...(context.publishApprovalId === undefined
+      ? {}
+      : { approvalId: context.publishApprovalId })
+  };
 }
 
 function ciRepairResultFromResume(input: {
