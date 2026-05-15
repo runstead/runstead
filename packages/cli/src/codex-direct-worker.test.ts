@@ -309,13 +309,13 @@ const modelAllowedRepoMaintenancePolicy: PolicyProfile = {
 };
 
 function scriptedTransport(
-  responses: Array<Awaited<ReturnType<CodexDirectTransport["createResponse"]>>>
+  responses: Awaited<ReturnType<CodexDirectTransport["createResponse"]>>[]
 ): CodexDirectTransport & { requests: CodexResponsesRequest[] } {
   const requests: CodexResponsesRequest[] = [];
 
   return {
     requests,
-    async createResponse(request) {
+    createResponse(request) {
       requests.push(request);
       const response = responses.shift();
 
@@ -323,7 +323,7 @@ function scriptedTransport(
         throw new Error("No scripted Codex response left");
       }
 
-      return response;
+      return Promise.resolve(response);
     }
   };
 }

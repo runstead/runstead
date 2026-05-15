@@ -455,11 +455,11 @@ describe("runCiRepairOrchestrator", () => {
     const verifierCalls: RunTaskVerifiersOptions[] = [];
     const codexRequests: unknown[] = [];
     const codexDirectTransport: CodexDirectTransport = {
-      async createResponse(request) {
+      createResponse(request) {
         codexRequests.push(request);
 
         if (codexRequests.length === 1) {
-          return {
+          return Promise.resolve({
             outputText: "",
             toolCalls: [
               {
@@ -474,15 +474,15 @@ describe("runCiRepairOrchestrator", () => {
             ],
             finishReason: "tool_calls",
             outputItems: []
-          };
+          });
         }
 
-        return {
+        return Promise.resolve({
           outputText: "Patched the failing file.",
           toolCalls: [],
           finishReason: "stop",
           outputItems: []
-        };
+        });
       }
     };
 

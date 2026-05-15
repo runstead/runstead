@@ -118,14 +118,16 @@ describe("codex auth store", () => {
       const credentials = await resolveCodexRuntimeCredentials({
         runsteadHome,
         now: new Date("2026-05-16T00:00:00.000Z"),
-        fetch: async (input, init) => {
+        fetch: (input, init) => {
           expect(String(input)).toBe(CODEX_OAUTH_TOKEN_URL);
-          bodies.push(String(init?.body));
+          bodies.push(requireUrlSearchParamsBody(init).toString());
 
-          return jsonResponse({
-            access_token: refreshedAccessToken,
-            refresh_token: "new-refresh"
-          });
+          return Promise.resolve(
+            jsonResponse({
+              access_token: refreshedAccessToken,
+              refresh_token: "new-refresh"
+            })
+          );
         }
       });
 
@@ -170,7 +172,7 @@ describe("codex auth store", () => {
       const models = await listCodexModels({
         runsteadHome,
         now: new Date("2026-05-16T00:00:00.000Z"),
-        fetch: async (input, init) => {
+        fetch: (input, init) => {
           expect(String(input)).toBe(
             "https://chatgpt.com/backend-api/codex/models?client_version=1.0.0"
           );
@@ -178,22 +180,24 @@ describe("codex auth store", () => {
             `Bearer ${accessToken}`
           );
 
-          return jsonResponse({
-            models: [
-              {
-                slug: "gpt-5.1-codex",
-                context_window: 272000
-              }
-            ]
-          });
+          return Promise.resolve(
+            jsonResponse({
+              models: [
+                {
+                  slug: "gpt-5.1-codex",
+                  context_window: 272000
+                }
+              ]
+            })
+          );
         }
       });
       const cached = JSON.parse(
         await readFile(codexModelCachePath({ runsteadHome }), "utf8")
-      ) as { models: Array<{ id: string }> };
+      ) as { models: { id: string }[] };
       const cachedFallback = await listCodexModels({
         runsteadHome,
-        fetch: async () => jsonResponse({ error: "down" }, 503)
+        fetch: () => Promise.resolve(jsonResponse({ error: "down" }, 503))
       });
       const formatted = formatCodexModels(models);
 
@@ -235,7 +239,7 @@ describe("codex auth store", () => {
 
       const models = await listCodexModels({
         runsteadHome,
-        fetch: async () => jsonResponse({ error: "down" }, 503)
+        fetch: () => Promise.resolve(jsonResponse({ error: "down" }, 503))
       });
 
       expect(models.map((model) => model.id)).toEqual(["codex-a", "codex-b"]);
@@ -273,4 +277,14 @@ function jsonResponse(body: unknown, status = 200): Response {
       "content-type": "application/json"
     }
   });
+}
+
+function requireUrlSearchParamsBody(init: RequestInit | undefined): URLSearchParams {
+  const body = init?.body;
+
+  if (!(body instanceof URLSearchParams)) {
+    throw new Error("Expected URLSearchParams request body");
+  }
+
+  return body;
 }

@@ -48,30 +48,32 @@ describe("CodexResponsesTransport", () => {
   });
 
   it("sends authenticated requests to the Codex backend without storing responses", async () => {
-    const requests: Array<{
+    const requests: {
       input: string | URL;
       init?: RequestInit;
-    }> = [];
+    }[] = [];
     const transport = new CodexResponsesTransport({
       baseUrl: "https://codex.example/api/",
       accessToken: "secret-token",
-      fetch: async (input, init) => {
+      fetch: (input, init) => {
         requests.push({
           input,
           ...(init === undefined ? {} : { init })
         });
 
-        return jsonResponse({
-          id: "resp_1",
-          status: "completed",
-          output: [
-            {
-              type: "message",
-              status: "completed",
-              content: [{ type: "output_text", text: "Done." }]
-            }
-          ]
-        });
+        return Promise.resolve(
+          jsonResponse({
+            id: "resp_1",
+            status: "completed",
+            output: [
+              {
+                type: "message",
+                status: "completed",
+                content: [{ type: "output_text", text: "Done." }]
+              }
+            ]
+          })
+        );
       }
     });
 
@@ -82,7 +84,10 @@ describe("CodexResponsesTransport", () => {
       sessionId: "session-1"
     });
     const request = requests[0];
-    const body = JSON.parse(String(request?.init?.body)) as Record<string, unknown>;
+    const body = JSON.parse(requireStringBody(request?.init)) as Record<
+      string,
+      unknown
+    >;
 
     expect(String(request?.input)).toBe("https://codex.example/api/responses");
     expect(request?.init?.headers).toMatchObject({
@@ -135,7 +140,7 @@ describe("CodexResponsesTransport", () => {
   it("does not include bearer tokens in transport errors", async () => {
     const transport = new CodexResponsesTransport({
       accessToken: "secret-token",
-      fetch: async () => jsonResponse({ error: "bad" }, 500)
+      fetch: () => Promise.resolve(jsonResponse({ error: "bad" }, 500))
     });
 
     await expect(
@@ -155,4 +160,14 @@ function jsonResponse(body: unknown, status = 200): Response {
       "content-type": "application/json"
     }
   });
+}
+
+function requireStringBody(init: RequestInit | undefined): string {
+  const body = init?.body;
+
+  if (typeof body !== "string") {
+    throw new Error("Expected string request body");
+  }
+
+  return body;
 }

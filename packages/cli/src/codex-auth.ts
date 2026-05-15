@@ -518,7 +518,7 @@ async function requestCodexDeviceCode(options: {
     throw new Error(`Codex device-code request failed with status ${response.status}`);
   }
 
-  const payload = await response.json();
+  const payload = (await response.json()) as unknown;
 
   if (!isRecord(payload)) {
     throw new Error("Codex device-code response was not an object");
@@ -580,7 +580,7 @@ async function pollCodexDeviceAuthorization(options: {
       );
     }
 
-    const payload = await response.json();
+    const payload = (await response.json()) as unknown;
 
     if (!isRecord(payload)) {
       throw new Error("Codex device-code polling response was not an object");
@@ -699,7 +699,9 @@ async function withCodexAuthLock<T>(
       }
 
       if (Date.now() - startedAt > lockTimeoutMs) {
-        throw new Error(`Timed out waiting for Codex auth lock at ${lockPath}`);
+        throw new Error(`Timed out waiting for Codex auth lock at ${lockPath}`, {
+          cause: error
+        });
       }
 
       try {
