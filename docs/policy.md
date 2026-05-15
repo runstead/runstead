@@ -23,6 +23,13 @@ filter to be selected manually.
 The product rule is strict: every side effect must be allowed, denied, or
 attached to an approval request before it runs.
 
+`runstead init` writes the safe default policy profile, which requires approval
+before starting an external wrapped worker. `runstead init --profile
+trusted-local` is for trusted local workstations: it allows the built-in
+`codex_cli` and `claude_code` wrapped workers for that repo, but still requires
+approval for dependency changes and publishing, and still denies protected
+paths.
+
 Some ad-hoc CLI helpers are still explicitly labeled unmanaged. They are useful
 for local diagnosis, but the product path is the governed runtime and CI repair
 orchestrator.

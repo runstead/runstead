@@ -27,6 +27,12 @@ describe("cli entrypoint", () => {
     expect(createProgram({ entrypoint: "/usr/local/bin/team" }).name()).toBe("team");
   });
 
+  it("exposes init policy profile selection", () => {
+    const init = createProgram().commands.find((command) => command.name() === "init");
+
+    expect(init?.options.map((option) => option.long)).toContain("--profile");
+  });
+
   it("exposes domain pack manifest generation", () => {
     const domain = createProgram().commands.find(
       (command) => command.name() === "domain"

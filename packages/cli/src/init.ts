@@ -14,15 +14,19 @@ import { storeRepoInspectionEvidence } from "./inspection-evidence.js";
 import { DEFAULT_RBAC_YAML } from "./rbac.js";
 import { DEFAULT_TEAM_POLICY_YAML } from "./team-policy.js";
 
+export type InitPolicyProfile = "default" | "trusted-local";
+
 export interface InitRunsteadOptions {
   cwd?: string;
   force?: boolean;
   createDefaultGoal?: boolean;
+  profile?: InitPolicyProfile;
 }
 
 export interface InitRunsteadResult {
   root: string;
   domain: "repo-maintenance";
+  profile: InitPolicyProfile;
   stateDb: string;
   defaultGoal?: Goal;
   generatedTasks: Task[];
@@ -45,7 +49,12 @@ workers:
   default: shell
 `;
 
-const DEFAULT_POLICY = `id: policy_repo_maintenance_v1
+const DEFAULT_POLICY = repoMaintenancePolicyYaml("default");
+const TRUSTED_LOCAL_POLICY = repoMaintenancePolicyYaml("trusted-local");
+const INIT_POLICY_PROFILES: InitPolicyProfile[] = ["default", "trusted-local"];
+
+function repoMaintenancePolicyYaml(profile: InitPolicyProfile): string {
+  return `id: policy_repo_maintenance_v1
 version: 1
 default_decision: require_approval
 default_risk: medium
@@ -78,11 +87,7 @@ rules:
       - attach_as_evidence
       - verify_diff_scope
 
-  - id: require_approval_external_worker_start
-    when:
-      action_type: worker.external.start
-    decision: require_approval
-    risk: high
+${externalWorkerStartPolicyRuleYaml(profile)}
 
   - id: allow_verifier_commands
     when:
@@ -181,6 +186,27 @@ rules:
     decision: require_approval
     risk: high
 `;
+}
+
+function externalWorkerStartPolicyRuleYaml(profile: InitPolicyProfile): string {
+  if (profile === "trusted-local") {
+    return `  - id: allow_trusted_local_external_worker_start
+    when:
+      action_type: worker.external.start
+      resource_id:
+        in:
+          - codex_cli
+          - claude_code
+    decision: allow
+    risk: medium`;
+  }
+
+  return `  - id: require_approval_external_worker_start
+    when:
+      action_type: worker.external.start
+    decision: require_approval
+    risk: high`;
+}
 
 export async function initRunstead(
   options: InitRunsteadOptions = {}
@@ -188,6 +214,7 @@ export async function initRunstead(
   const cwd = resolve(options.cwd ?? process.cwd());
   const root = join(cwd, ".runstead");
   const stateDb = join(root, "state.db");
+  const profile = resolveInitPolicyProfile(options.profile);
 
   await mkdir(join(root, "domains", "repo-maintenance"), { recursive: true });
   await mkdir(join(root, "policies"), { recursive: true });
@@ -210,7 +237,7 @@ export async function initRunstead(
   await writeIfMissing(join(root, "config.yaml"), DEFAULT_CONFIG, options.force);
   await writeIfMissing(
     join(root, "policies", "repo-maintenance.yaml"),
-    DEFAULT_POLICY,
+    policyYamlForProfile(profile),
     options.force
   );
   await writeIfMissing(join(root, "rbac.yaml"), DEFAULT_RBAC_YAML, options.force);
@@ -242,10 +269,29 @@ export async function initRunstead(
   return {
     root,
     domain: "repo-maintenance",
+    profile,
     stateDb,
     ...(createdGoal === undefined ? {} : { defaultGoal: createdGoal.goal }),
     generatedTasks: createdGoal?.generatedTasks ?? []
   };
+}
+
+function policyYamlForProfile(profile: InitPolicyProfile): string {
+  return profile === "trusted-local" ? TRUSTED_LOCAL_POLICY : DEFAULT_POLICY;
+}
+
+function resolveInitPolicyProfile(
+  profile: InitPolicyProfile | undefined
+): InitPolicyProfile {
+  if (profile === undefined) {
+    return "default";
+  }
+
+  if (INIT_POLICY_PROFILES.includes(profile)) {
+    return profile;
+  }
+
+  throw new Error(`Unsupported init profile: ${profile}`);
 }
 
 async function writeDomainPackManifest(packDir: string, force = false): Promise<void> {

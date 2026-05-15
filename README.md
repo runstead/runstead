@@ -19,6 +19,11 @@ runstead audit export
 runstead report weekly --print
 ```
 
+Use `runstead init --profile trusted-local --create-default-goal` on a trusted
+local workstation when you want CI repair to start the built-in wrapped coding
+workers without the first approval prompt while still requiring approval for
+dependency changes and publishing.
+
 ## Setup
 
 This repository is a pnpm workspace monorepo targeting Node.js 24 LTS.

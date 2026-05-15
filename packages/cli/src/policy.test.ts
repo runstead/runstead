@@ -9,6 +9,7 @@ import {
   createDangerousShellDenyPolicy,
   createDependencyChangeApprovalPolicy,
   createExternalWriteApprovalPolicy,
+  createExternalWorkerStartAllowPolicy,
   createExternalWorkerStartApprovalPolicy,
   createProtectedPathDenyPolicy,
   createReadWorkspaceAllowPolicy,
@@ -27,6 +28,7 @@ const protectedPathPolicy = createProtectedPathDenyPolicy([
 const verifierCommandPolicy = createVerifierCommandAllowPolicy();
 const externalWritePolicy = createExternalWriteApprovalPolicy();
 const externalWorkerStartPolicy = createExternalWorkerStartApprovalPolicy();
+const trustedExternalWorkerStartPolicy = createExternalWorkerStartAllowPolicy();
 const dangerousShellPolicy = createDangerousShellDenyPolicy();
 const dependencyChangePolicy = createDependencyChangeApprovalPolicy();
 const readWorkspacePolicy = createReadWorkspaceAllowPolicy();
@@ -308,6 +310,43 @@ describe("evaluatePolicy CI repair workspace action rules", () => {
       risk: "high",
       ruleId: "require_approval_external_worker_start"
     });
+  });
+
+  it("allows only configured trusted local external workers", () => {
+    const trusted = evaluatePolicy({
+      policy: trustedExternalWorkerStartPolicy,
+      action: {
+        actionId: "act_worker_codex",
+        actionType: "worker.external.start",
+        resource: {
+          type: "process",
+          id: "codex_cli"
+        }
+      }
+    });
+    const unknown = evaluatePolicy({
+      policy: trustedExternalWorkerStartPolicy,
+      action: {
+        actionId: "act_worker_unknown",
+        actionType: "worker.external.start",
+        resource: {
+          type: "process",
+          id: "unknown_worker"
+        }
+      }
+    });
+
+    expect(trusted).toMatchObject({
+      decision: "allow",
+      risk: "medium",
+      ruleId: "allow_trusted_local_external_worker_start",
+      matchedResourceId: "codex_cli"
+    });
+    expect(unknown).toMatchObject({
+      decision: "require_approval",
+      risk: "medium"
+    });
+    expect(unknown.ruleId).toBeUndefined();
   });
 
   it("allows governed CI repair commits unless protected files are touched", () => {

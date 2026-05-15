@@ -5,6 +5,8 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { initRunstead } from "./init.js";
+import { loadPolicyProfileFromFile } from "./policy-loader.js";
+import { evaluatePolicy } from "./policy.js";
 
 describe("initRunstead", () => {
   it("creates the local .runstead scaffold", async () => {
@@ -34,6 +36,10 @@ describe("initRunstead", () => {
         ),
         "utf8"
       );
+      const rootPolicy = await readFile(
+        join(result.root, "policies", "repo-maintenance.yaml"),
+        "utf8"
+      );
       const rbacPolicy = await readFile(join(result.root, "rbac.yaml"), "utf8");
       const teamPolicy = await readFile(join(result.root, "team-policy.yaml"), "utf8");
       const domainManifest = JSON.parse(
@@ -49,6 +55,9 @@ describe("initRunstead", () => {
       expect(config).toContain("domain: repo-maintenance");
       expect(config).toContain("events:\n  source: sqlite");
       expect(goalTemplate).toContain("id: keep-ci-green");
+      expect(result.profile).toBe("default");
+      expect(rootPolicy).toContain("id: require_approval_external_worker_start");
+      expect(rootPolicy).not.toContain("allow_trusted_local_external_worker_start");
       expect(domainPolicy).toContain("id: policy_repo_maintenance_v1");
       expect(domainPolicy).toContain("default_decision: require_approval");
       expect(domainManifest).toMatchObject({
@@ -66,6 +75,113 @@ describe("initRunstead", () => {
         expect.stringMatching(/^repo-inspection-ev_[a-f0-9]+\.json$/)
       ]);
       await expect(access(join(result.root, "events.jsonl"))).rejects.toThrow();
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("can generate a trusted-local policy profile", async () => {
+    const workspace = join(tmpdir(), `runstead-cli-trusted-${process.pid}`);
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      const result = await initRunstead({
+        cwd: workspace,
+        profile: "trusted-local"
+      });
+      const policyPath = join(result.root, "policies", "repo-maintenance.yaml");
+      const policyText = await readFile(policyPath, "utf8");
+      const policy = await loadPolicyProfileFromFile(policyPath);
+
+      const trustedWorker = evaluatePolicy({
+        policy,
+        action: {
+          actionId: "act_worker_codex",
+          actionType: "worker.external.start",
+          resource: {
+            type: "process",
+            id: "codex_cli"
+          },
+          context: {
+            cwd: workspace
+          }
+        }
+      });
+      const unknownWorker = evaluatePolicy({
+        policy,
+        action: {
+          actionId: "act_worker_unknown",
+          actionType: "worker.external.start",
+          resource: {
+            type: "process",
+            id: "unknown_worker"
+          },
+          context: {
+            cwd: workspace
+          }
+        }
+      });
+      const dependencyCommit = evaluatePolicy({
+        policy,
+        action: {
+          actionId: "act_commit_dependency",
+          actionType: "git.commit",
+          context: {
+            cwd: workspace,
+            filesTouched: ["src/index.ts", "pnpm-lock.yaml"]
+          }
+        }
+      });
+      const publish = evaluatePolicy({
+        policy,
+        action: {
+          actionId: "act_publish",
+          actionType: "github.pr.create",
+          context: {
+            cwd: workspace,
+            sideEffects: ["github_pr_create"]
+          }
+        }
+      });
+      const protectedPath = evaluatePolicy({
+        policy,
+        action: {
+          actionId: "act_secret",
+          actionType: "git.commit",
+          context: {
+            cwd: workspace,
+            filesTouched: [".env"]
+          }
+        }
+      });
+
+      expect(result.profile).toBe("trusted-local");
+      expect(policyText).toContain("resource_id:");
+      expect(policyText).toContain("allow_trusted_local_external_worker_start");
+      expect(trustedWorker).toMatchObject({
+        decision: "allow",
+        ruleId: "allow_trusted_local_external_worker_start",
+        matchedResourceId: "codex_cli"
+      });
+      expect(unknownWorker).toMatchObject({
+        decision: "require_approval",
+        risk: "medium"
+      });
+      expect(dependencyCommit).toMatchObject({
+        decision: "require_approval",
+        risk: "high",
+        ruleId: "require_approval_dependency_file_commit"
+      });
+      expect(publish).toMatchObject({
+        decision: "require_approval",
+        risk: "high",
+        ruleId: "require_approval_external_write"
+      });
+      expect(protectedPath).toMatchObject({
+        decision: "deny",
+        risk: "critical",
+        ruleId: "deny_secret_files"
+      });
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }

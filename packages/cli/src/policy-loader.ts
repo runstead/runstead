@@ -13,16 +13,18 @@ const MatchesAnyYamlSchema = z.object({
 const ContainsAnyYamlSchema = z.object({
   contains_any: z.array(z.string().min(1))
 });
-const ActionTypeYamlSchema = z.union([
+const StringOrInYamlSchema = z.union([
   z.string().min(1),
   z.object({
     in: z.array(z.string().min(1))
   })
 ]);
+const ActionTypeYamlSchema = StringOrInYamlSchema;
 const PolicyRuleYamlSchema = z.object({
   id: z.string().min(1),
   when: z.object({
     action_type: ActionTypeYamlSchema.optional(),
+    resource_id: StringOrInYamlSchema.optional(),
     path: MatchesAnyYamlSchema.optional(),
     command: MatchesAnyYamlSchema.optional(),
     side_effects: ContainsAnyYamlSchema.optional()
@@ -85,6 +87,9 @@ export function parsePolicyProfileYaml(input: unknown): PolicyProfile {
         ...(rule.when.action_type === undefined
           ? {}
           : { actionType: actionTypeFromYaml(rule.when.action_type) }),
+        ...(rule.when.resource_id === undefined
+          ? {}
+          : { resourceId: stringOrInFromYaml(rule.when.resource_id) }),
         ...(rule.when.path === undefined
           ? {}
           : { path: { matchesAny: rule.when.path.matches_any } }),
@@ -184,5 +189,11 @@ export function parseActionEnvelopeYaml(input: unknown): ActionEnvelope {
 function actionTypeFromYaml(
   actionType: z.infer<typeof ActionTypeYamlSchema>
 ): string | string[] {
-  return typeof actionType === "string" ? actionType : actionType.in;
+  return stringOrInFromYaml(actionType);
+}
+
+function stringOrInFromYaml(
+  value: z.infer<typeof StringOrInYamlSchema>
+): string | string[] {
+  return typeof value === "string" ? value : value.in;
 }

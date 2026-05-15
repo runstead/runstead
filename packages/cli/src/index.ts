@@ -28,11 +28,17 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     .description("Initialize .runstead state and the repo-maintenance domain pack.")
     .option("--cwd <path>", "Workspace directory")
     .option("--force", "Overwrite generated config files")
+    .option(
+      "--profile <profile>",
+      "Policy profile to generate: default or trusted-local",
+      "default"
+    )
     .option("--create-default-goal", "Create the default repo-maintenance goal")
     .action(
       async (options: {
         cwd?: string;
         force?: boolean;
+        profile?: "default" | "trusted-local";
         createDefaultGoal?: boolean;
       }) => {
         const { initRunstead } = await import("./init.js");
@@ -40,6 +46,7 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
 
         console.log(`Initialized ${result.root}`);
         console.log(`Installed domain pack: ${result.domain}`);
+        console.log(`Policy profile: ${result.profile}`);
         console.log(`Created SQLite state: ${result.stateDb}`);
         if (result.defaultGoal !== undefined) {
           console.log(

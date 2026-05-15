@@ -44,6 +44,7 @@ export interface PolicyRule {
 
 export interface PolicyCondition {
   actionType?: string | string[];
+  resourceId?: string | string[];
   path?: PathMatcherCondition;
   command?: RegexMatcherCondition;
   sideEffects?: SideEffectsCondition;
@@ -68,6 +69,7 @@ export interface PolicyEvaluationResult {
   ruleId?: string;
   reason: string;
   obligations: string[];
+  matchedResourceId?: string;
   matchedPath?: string;
   matchedCommand?: string;
   matchedSideEffect?: string;
@@ -115,6 +117,7 @@ export const DEFAULT_CI_REPAIR_WORKSPACE_ACTION_TYPES = [
   "checkpoint.restore"
 ];
 export const DEFAULT_EXTERNAL_WORKER_ACTION_TYPES = ["worker.external.start"];
+export const TRUSTED_LOCAL_EXTERNAL_WORKER_IDS = ["codex_cli", "claude_code"];
 export const CI_REPAIR_WORKSPACE_OBLIGATIONS = [
   "capture_output",
   "attach_as_evidence",
@@ -155,6 +158,8 @@ export interface CreateRepoMaintenanceMinimumPolicyOptions {
   dangerousShellCommandPatterns?: string[];
   dependencyChangeActionTypes?: string[];
   dependencyChangePaths?: string[];
+  externalWorkerStartMode?: "require_approval" | "trusted_local_allow";
+  trustedExternalWorkerIds?: string[];
   id?: string;
 }
 
@@ -203,7 +208,9 @@ export function createRepoMaintenanceMinimumPolicy(
           ? {}
           : { paths: options.dependencyChangePaths })
       }).rules,
-      ...createExternalWorkerStartApprovalPolicy().rules,
+      ...(options.externalWorkerStartMode === "trusted_local_allow"
+        ? createExternalWorkerStartAllowPolicy(options.trustedExternalWorkerIds).rules
+        : createExternalWorkerStartApprovalPolicy().rules),
       ...createReadWorkspaceAllowPolicy().rules,
       ...createCiRepairWorkspaceActionAllowPolicy().rules,
       ...createVerifierCommandAllowPolicy(options.verifierCommandPatterns).rules,
@@ -335,6 +342,28 @@ export function createExternalWorkerStartApprovalPolicy(
   };
 }
 
+export function createExternalWorkerStartAllowPolicy(
+  workerIds = TRUSTED_LOCAL_EXTERNAL_WORKER_IDS,
+  actionTypes = DEFAULT_EXTERNAL_WORKER_ACTION_TYPES,
+  id = "policy_external_worker_start_allow_v1"
+): PolicyProfile {
+  return {
+    id,
+    version: 1,
+    rules: [
+      {
+        id: "allow_trusted_local_external_worker_start",
+        when: {
+          actionType: actionTypes,
+          resourceId: workerIds
+        },
+        decision: "allow",
+        risk: "medium"
+      }
+    ]
+  };
+}
+
 export function createVerifierCommandAllowPolicy(
   verifierCommandPatterns = DEFAULT_VERIFIER_COMMAND_PATTERNS,
   id = "policy_verifier_commands_v1"
@@ -401,6 +430,9 @@ export function evaluatePolicy(options: EvaluatePolicyOptions): PolicyEvaluation
       ruleId: rule.id,
       reason: `Matched policy rule ${rule.id}`,
       obligations: rule.obligations ?? [],
+      ...(match.resourceId === undefined
+        ? {}
+        : { matchedResourceId: match.resourceId }),
       ...(match.path === undefined ? {} : { matchedPath: match.path }),
       ...(match.command === undefined ? {} : { matchedCommand: match.command }),
       ...(match.sideEffect === undefined ? {} : { matchedSideEffect: match.sideEffect })
@@ -452,6 +484,7 @@ function decisionRank(decision: PolicyDecision): number {
 
 interface PolicyRuleMatch {
   matched: boolean;
+  resourceId?: string;
   path?: string;
   command?: string;
   sideEffect?: string;
@@ -459,6 +492,12 @@ interface PolicyRuleMatch {
 
 function matchPolicyRule(rule: PolicyRule, action: ActionEnvelope): PolicyRuleMatch {
   if (!matchesActionType(rule.when.actionType, action.actionType)) {
+    return { matched: false };
+  }
+
+  const resourceIdMatch = matchResourceIdCondition(rule.when.resourceId, action);
+
+  if (resourceIdMatch.required && !resourceIdMatch.matched) {
     return { matched: false };
   }
 
@@ -482,6 +521,9 @@ function matchPolicyRule(rule: PolicyRule, action: ActionEnvelope): PolicyRuleMa
 
   return {
     matched: true,
+    ...(resourceIdMatch.resourceId === undefined
+      ? {}
+      : { resourceId: resourceIdMatch.resourceId }),
     ...(pathMatch.path === undefined ? {} : { path: pathMatch.path }),
     ...(commandMatch.command === undefined ? {} : { command: commandMatch.command }),
     ...(sideEffectMatch.sideEffect === undefined
@@ -503,6 +545,38 @@ function matchesActionType(
   }
 
   return expected.includes(actual);
+}
+
+function matchResourceIdCondition(
+  condition: string | string[] | undefined,
+  action: ActionEnvelope
+): { required: boolean; matched: boolean; resourceId?: string } {
+  if (condition === undefined) {
+    return {
+      required: false,
+      matched: true
+    };
+  }
+
+  const resourceId = action.resource?.id;
+
+  if (resourceId === undefined) {
+    return {
+      required: true,
+      matched: false
+    };
+  }
+
+  return matchesActionType(condition, resourceId)
+    ? {
+        required: true,
+        matched: true,
+        resourceId
+      }
+    : {
+        required: true,
+        matched: false
+      };
 }
 
 function matchPathCondition(
