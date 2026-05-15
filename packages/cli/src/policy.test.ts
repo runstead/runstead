@@ -9,6 +9,7 @@ import {
   createDangerousShellDenyPolicy,
   createDependencyChangeApprovalPolicy,
   createExternalWriteApprovalPolicy,
+  createExternalWorkerStartApprovalPolicy,
   createProtectedPathDenyPolicy,
   createReadWorkspaceAllowPolicy,
   createRepoMaintenanceMinimumPolicy,
@@ -25,6 +26,7 @@ const protectedPathPolicy = createProtectedPathDenyPolicy([
 ]);
 const verifierCommandPolicy = createVerifierCommandAllowPolicy();
 const externalWritePolicy = createExternalWriteApprovalPolicy();
+const externalWorkerStartPolicy = createExternalWorkerStartApprovalPolicy();
 const dangerousShellPolicy = createDangerousShellDenyPolicy();
 const dependencyChangePolicy = createDependencyChangeApprovalPolicy();
 const readWorkspacePolicy = createReadWorkspaceAllowPolicy();
@@ -279,8 +281,8 @@ describe("evaluatePolicy CI repair workspace action rules", () => {
     const result = evaluatePolicy({
       policy: ciRepairWorkspacePolicy,
       action: {
-        actionId: "act_worker",
-        actionType: "worker.external.start"
+        actionId: "act_branch",
+        actionType: "git.branch.create"
       }
     });
 
@@ -289,6 +291,22 @@ describe("evaluatePolicy CI repair workspace action rules", () => {
       risk: "medium",
       ruleId: "allow_ci_repair_workspace_actions",
       obligations: CI_REPAIR_WORKSPACE_OBLIGATIONS
+    });
+  });
+
+  it("requires approval for external wrapped workers by default", () => {
+    const result = evaluatePolicy({
+      policy: externalWorkerStartPolicy,
+      action: {
+        actionId: "act_worker",
+        actionType: "worker.external.start"
+      }
+    });
+
+    expect(result).toMatchObject({
+      decision: "require_approval",
+      risk: "high",
+      ruleId: "require_approval_external_worker_start"
     });
   });
 

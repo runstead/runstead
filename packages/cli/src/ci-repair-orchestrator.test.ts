@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -40,7 +40,7 @@ describe("runCiRepairOrchestrator", () => {
     try {
       await initRunstead({ cwd: workspace, createDefaultGoal: true });
 
-      const first = await runCiRepairOrchestrator({
+      const workerApproval = await runCiRepairOrchestrator({
         cwd: workspace,
         runId: "123",
         worker: "codex_cli",
@@ -53,6 +53,34 @@ describe("runCiRepairOrchestrator", () => {
         workerRunner: workerRunner(workerCalls),
         verifierRunner: verifierRunner(verifierCalls),
         now
+      });
+
+      expect(workerApproval.status).toBe("waiting_approval");
+      expect(workerApproval.approval?.reason).toContain(
+        "require_approval_external_worker_start"
+      );
+      expect(workerApproval.workerResult).toBeUndefined();
+      expect(workerCalls).toHaveLength(0);
+
+      await approveResultApproval({
+        cwd: workspace,
+        result: workerApproval,
+        now: new Date("2026-05-14T12:00:30.000Z")
+      });
+
+      const first = await runCiRepairOrchestrator({
+        cwd: workspace,
+        runId: "123",
+        worker: "codex_cli",
+        base: "main",
+        allowedPaths: ["src/**"],
+        deniedPaths: [".env"],
+        verifierCommands: [{ name: "test", command: "pnpm test" }],
+        githubRunner: githubRunner(githubCalls),
+        gitRunner: gitRunner(gitCalls, { diffNameOnly: "src/fix.ts\n" }),
+        workerRunner: workerRunner(workerCalls),
+        verifierRunner: verifierRunner(verifierCalls),
+        now: new Date("2026-05-14T12:01:00.000Z")
       });
 
       expect(first.status).toBe("waiting_approval");
@@ -270,7 +298,7 @@ describe("runCiRepairOrchestrator", () => {
         id: first.approval.id,
         decision: "approved",
         decidedBy: "local-admin",
-        now: new Date("2026-05-14T12:01:00.000Z")
+        now: new Date("2026-05-14T12:02:00.000Z")
       });
 
       const second = await runCiRepairOrchestrator({
@@ -285,7 +313,7 @@ describe("runCiRepairOrchestrator", () => {
         gitRunner: gitRunner(gitCalls, { diffNameOnly: "src/fix.ts\n" }),
         workerRunner: workerRunner(workerCalls),
         verifierRunner: verifierRunner(verifierCalls),
-        now: new Date("2026-05-14T12:02:00.000Z")
+        now: new Date("2026-05-14T12:03:00.000Z")
       });
 
       expect(second.status).toBe("completed");
@@ -349,6 +377,7 @@ describe("runCiRepairOrchestrator", () => {
 
     try {
       await initRunstead({ cwd: workspace, createDefaultGoal: true });
+      await allowExternalWorkerStartForTest(workspace);
 
       await expect(
         runCiRepairOrchestrator({
@@ -402,6 +431,7 @@ describe("runCiRepairOrchestrator", () => {
 
     try {
       await initRunstead({ cwd: workspace, createDefaultGoal: true });
+      await allowExternalWorkerStartForTest(workspace);
 
       const result = await runCiRepairOrchestrator({
         cwd: workspace,
@@ -484,6 +514,7 @@ describe("runCiRepairOrchestrator", () => {
 
       try {
         await initRunstead({ cwd: workspace, createDefaultGoal: true });
+        await allowExternalWorkerStartForTest(workspace);
 
         await expect(
           runCiRepairOrchestrator({
@@ -571,6 +602,7 @@ describe("runCiRepairOrchestrator", () => {
 
     try {
       await initRunstead({ cwd: workspace, createDefaultGoal: true });
+      await allowExternalWorkerStartForTest(workspace);
 
       const first = await runCiRepairOrchestrator({
         cwd: workspace,
@@ -655,6 +687,7 @@ describe("runCiRepairOrchestrator", () => {
 
     try {
       await initRunstead({ cwd: workspace, createDefaultGoal: true });
+      await allowExternalWorkerStartForTest(workspace);
 
       await expect(
         runCiRepairOrchestrator({
@@ -685,6 +718,7 @@ describe("runCiRepairOrchestrator", () => {
 
     try {
       await initRunstead({ cwd: workspace, createDefaultGoal: true });
+      await allowExternalWorkerStartForTest(workspace);
       await writeFile(
         join(workspace, "package.json"),
         JSON.stringify({
@@ -816,6 +850,7 @@ describe("runCiRepairOrchestrator", () => {
 
     try {
       await initRunstead({ cwd: workspace, createDefaultGoal: true });
+      await allowExternalWorkerStartForTest(workspace);
 
       const first = await runCiRepairOrchestrator({
         cwd: workspace,
@@ -919,6 +954,7 @@ describe("runCiRepairOrchestrator", () => {
 
     try {
       await initRunstead({ cwd: workspace, createDefaultGoal: true });
+      await allowExternalWorkerStartForTest(workspace);
 
       const first = await runCiRepairOrchestrator({
         cwd: workspace,
@@ -1176,6 +1212,51 @@ function crashAfterStage(stage: string): (persistedStage: string) => void {
       throw error;
     }
   };
+}
+
+async function approveResultApproval(input: {
+  cwd: string;
+  result: Awaited<ReturnType<typeof runCiRepairOrchestrator>>;
+  now: Date;
+}): Promise<string> {
+  expect(input.result.status).toBe("waiting_approval");
+
+  if (input.result.approval === undefined) {
+    throw new Error("Expected approval request");
+  }
+
+  await decideApproval({
+    cwd: input.cwd,
+    id: input.result.approval.id,
+    decision: "approved",
+    decidedBy: "local-admin",
+    now: input.now
+  });
+
+  return input.result.approval.id;
+}
+
+async function allowExternalWorkerStartForTest(workspace: string): Promise<void> {
+  const policyPath = join(
+    workspace,
+    ".runstead",
+    "policies",
+    "repo-maintenance.yaml"
+  );
+  const raw = await readFile(policyPath, "utf8");
+  const withoutApprovalRule = raw.replace(
+    /\n  - id: require_approval_external_worker_start\n    when:\n      action_type: worker\.external\.start\n    decision: require_approval\n    risk: high\n/s,
+    ""
+  );
+
+  await writeFile(
+    policyPath,
+    withoutApprovalRule.replace(
+      "          - checkpoint.restore\n",
+      "          - checkpoint.restore\n          - worker.external.start\n"
+    ),
+    "utf8"
+  );
 }
 
 function completedVerifierTask(taskId: string): Task {

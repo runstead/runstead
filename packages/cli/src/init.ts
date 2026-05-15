@@ -71,13 +71,18 @@ rules:
           - git.commit
           - checkpoint.create
           - checkpoint.restore
-          - worker.external.start
     decision: allow
     risk: medium
     obligations:
       - capture_output
       - attach_as_evidence
       - verify_diff_scope
+
+  - id: require_approval_external_worker_start
+    when:
+      action_type: worker.external.start
+    decision: require_approval
+    risk: high
 
   - id: allow_verifier_commands
     when:

@@ -112,9 +112,9 @@ export const DEFAULT_CI_REPAIR_WORKSPACE_ACTION_TYPES = [
   "git.branch.create",
   "git.commit",
   "checkpoint.create",
-  "checkpoint.restore",
-  "worker.external.start"
+  "checkpoint.restore"
 ];
+export const DEFAULT_EXTERNAL_WORKER_ACTION_TYPES = ["worker.external.start"];
 export const CI_REPAIR_WORKSPACE_OBLIGATIONS = [
   "capture_output",
   "attach_as_evidence",
@@ -203,6 +203,7 @@ export function createRepoMaintenanceMinimumPolicy(
           ? {}
           : { paths: options.dependencyChangePaths })
       }).rules,
+      ...createExternalWorkerStartApprovalPolicy().rules,
       ...createReadWorkspaceAllowPolicy().rules,
       ...createCiRepairWorkspaceActionAllowPolicy().rules,
       ...createVerifierCommandAllowPolicy(options.verifierCommandPatterns).rules,
@@ -306,6 +307,26 @@ export function createDependencyChangeApprovalPolicy(
           path: {
             matchesAny: options.paths ?? DEFAULT_DEPENDENCY_CHANGE_PATHS
           }
+        },
+        decision: "require_approval",
+        risk: "high"
+      }
+    ]
+  };
+}
+
+export function createExternalWorkerStartApprovalPolicy(
+  actionTypes = DEFAULT_EXTERNAL_WORKER_ACTION_TYPES,
+  id = "policy_external_worker_start_approval_v1"
+): PolicyProfile {
+  return {
+    id,
+    version: 1,
+    rules: [
+      {
+        id: "require_approval_external_worker_start",
+        when: {
+          actionType: actionTypes
         },
         decision: "require_approval",
         risk: "high"
