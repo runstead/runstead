@@ -10,27 +10,16 @@ import {
 import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sqlite";
 
 import {
-  expireApprovalGrant,
-  findApprovedApprovalForAction,
-  requestApproval
-} from "./approvals.js";
+  runGovernedToolAction,
+  ToolActionApprovalRequiredError,
+  ToolActionDeniedError
+} from "./governed-action.js";
 import { withRunsteadManagerLock } from "./manager-lock.js";
 import { loadPolicyProfileFromFile } from "./policy-loader.js";
-import {
-  fingerprintPolicyProfile,
-  type ActionEnvelope,
-  type PolicyProfile
-} from "./policy.js";
-import { recordPolicyDecision } from "./policy-log.js";
+import { type ActionEnvelope, type PolicyProfile } from "./policy.js";
 import { requireRunsteadStateDbSync } from "./runstead-root.js";
-import {
-  finishToolCall,
-  finishWorkerRun,
-  startToolCall,
-  startWorkerRun
-} from "./runtime-audit.js";
+import { finishWorkerRun, startWorkerRun } from "./runtime-audit.js";
 import { claimTask, showTask } from "./tasks.js";
-import { preflightToolAction } from "./tool-proxy.js";
 import {
   storeCommandVerifierEvidence,
   storeCommandVerifierPolicyEvidence,
@@ -165,200 +154,146 @@ export async function runTaskVerifiersUnlocked(
         index,
         cwd
       });
-      const toolCall = startToolCall({
-        database,
-        workerRun,
-        task: runningTask,
-        action,
-        ...(options.now === undefined ? {} : { now: options.now })
-      });
-      const preflight = preflightToolAction({ policy, action });
-      const recordedPolicy = recordPolicyDecision({
-        cwd,
-        stateDb,
-        policyId: policy.id,
-        policyFingerprint: fingerprintPolicyProfile(policy),
-        action: preflight.action,
-        result: preflight.policyResult,
-        ...(options.now === undefined ? {} : { now: options.now })
-      });
-      const approvedGrant =
-        preflight.status === "approval_required"
-          ? findApprovedApprovalForAction({
-              database,
-              actionId: preflight.action.actionId,
-              ...(options.now === undefined ? {} : { now: options.now })
-            })
-          : undefined;
 
-      if (preflight.status === "denied") {
-        const evidenceResult = await storeCommandVerifierPolicyEvidence({
+      try {
+        const governed = await runGovernedToolAction({
           cwd,
-          runsteadRoot: root,
+          stateDb,
           database,
+          policy,
           task: runningTask,
-          command,
-          policyDecisionId: recordedPolicy.decision.id,
-          decision: "deny",
-          reason: preflight.policyResult.reason,
-          ...(options.now === undefined ? {} : { now: options.now })
-        });
-
-        commandResults.push(
-          policyCommandResult(command, evidenceResult, recordedPolicy.decision.id)
-        );
-        finishToolCall({
-          database,
-          toolCall,
-          status: "denied",
-          policyDecisionId: recordedPolicy.decision.id,
-          output: {
-            decision: preflight.policyResult.decision,
-            reason: preflight.policyResult.reason,
-            evidenceId: evidenceResult.evidence.id
-          },
-          ...(options.now === undefined ? {} : { now: options.now })
-        });
-        finishWorkerRun({
-          database,
           workerRun,
-          status: "blocked",
-          output: verifierOutput(commandResults, false),
-          ...(options.now === undefined ? {} : { now: options.now })
-        });
-
-        const finalTask = finalizeTask({
-          runningTask: currentTask,
-          status: "blocked",
-          output: verifierOutput(commandResults, false),
-          updatedAt: createdAt,
-          database,
-          projectTaskState
-        });
-
-        return {
-          task: finalTask,
-          commandResults
-        };
-      }
-
-      if (preflight.status === "approval_required" && approvedGrant === undefined) {
-        const approval = requestApproval({
-          database,
-          policyDecision: recordedPolicy.decision,
+          action,
           requestedBy: "runstead:verifier",
-          ...(options.now === undefined ? {} : { now: options.now })
-        });
-        const evidenceResult = await storeCommandVerifierPolicyEvidence({
-          cwd,
-          runsteadRoot: root,
-          database,
-          task: runningTask,
-          command,
-          policyDecisionId: recordedPolicy.decision.id,
-          decision: "require_approval",
-          reason: preflight.policyResult.reason,
-          approvalId: approval.id,
-          ...(options.now === undefined ? {} : { now: options.now })
-        });
+          ...(options.now === undefined ? {} : { now: options.now }),
+          run: async () => {
+            currentTask = startExecutionAttempt();
+            const value = await storeCommandVerifierEvidence({
+              cwd,
+              runsteadRoot: root,
+              database,
+              task: currentTask,
+              command,
+              ...(options.timeoutMs === undefined
+                ? {}
+                : { timeoutMs: options.timeoutMs }),
+              ...(options.killGraceMs === undefined
+                ? {}
+                : { killGraceMs: options.killGraceMs }),
+              ...(options.now === undefined ? {} : { now: options.now })
+            });
 
-        commandResults.push(
-          policyCommandResult(
-            command,
-            evidenceResult,
-            recordedPolicy.decision.id,
-            approval.id
-          )
-        );
-        finishToolCall({
-          database,
-          toolCall,
-          status: "approval_required",
-          policyDecisionId: recordedPolicy.decision.id,
-          output: {
-            approvalId: approval.id,
-            decision: preflight.policyResult.decision,
-            reason: preflight.policyResult.reason,
-            evidenceId: evidenceResult.evidence.id
-          },
-          ...(options.now === undefined ? {} : { now: options.now })
-        });
-        finishWorkerRun({
-          database,
-          workerRun,
-          status: "waiting_approval",
-          output: verifierOutput(commandResults, false),
-          ...(options.now === undefined ? {} : { now: options.now })
-        });
-
-        const finalTask = finalizeTask({
-          runningTask: currentTask,
-          status: "waiting_approval",
-          output: verifierOutput(commandResults, false),
-          updatedAt: createdAt,
-          database,
-          projectTaskState
-        });
-
-        return {
-          task: finalTask,
-          commandResults
-        };
-      }
-
-      currentTask = startExecutionAttempt();
-      const approvalGrantOutput =
-        approvedGrant === undefined
-          ? {}
-          : {
-              approvalId: approvedGrant.id,
-              approvalGrant: "used"
+            return {
+              value,
+              output: {
+                evidenceId: value.evidence.id,
+                exitCode: value.artifact.result.exitCode,
+                timedOut: value.artifact.result.timedOut,
+                forceKilled: value.artifact.result.forceKilled
+              }
             };
-
-      if (approvedGrant !== undefined) {
-        expireApprovalGrant({
-          database,
-          approval: approvedGrant,
-          ...(options.now === undefined ? {} : { now: options.now })
+          }
         });
-      }
+        const evidenceResult = governed.value;
 
-      const evidenceResult = await storeCommandVerifierEvidence({
-        cwd,
-        runsteadRoot: root,
-        database,
-        task: currentTask,
-        command,
-        ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
-        ...(options.killGraceMs === undefined
-          ? {}
-          : { killGraceMs: options.killGraceMs }),
-        ...(options.now === undefined ? {} : { now: options.now })
-      });
-
-      commandResults.push({
-        verifier: evidenceResult.artifact.verifier,
-        exitCode: evidenceResult.artifact.result.exitCode,
-        timedOut: evidenceResult.artifact.result.timedOut,
-        forceKilled: evidenceResult.artifact.result.forceKilled,
-        evidenceId: evidenceResult.evidence.id,
-        policyDecisionId: recordedPolicy.decision.id,
-        ...(approvedGrant === undefined ? {} : { approvalId: approvedGrant.id })
-      });
-      finishToolCall({
-        database,
-        toolCall,
-        status: "completed",
-        policyDecisionId: recordedPolicy.decision.id,
-        output: {
-          evidenceId: evidenceResult.evidence.id,
+        commandResults.push({
+          verifier: evidenceResult.artifact.verifier,
           exitCode: evidenceResult.artifact.result.exitCode,
           timedOut: evidenceResult.artifact.result.timedOut,
           forceKilled: evidenceResult.artifact.result.forceKilled,
-          ...approvalGrantOutput
-        },
-        ...(options.now === undefined ? {} : { now: options.now })
-      });
+          evidenceId: evidenceResult.evidence.id,
+          policyDecisionId: governed.policyDecision.id,
+          ...(governed.approval === undefined
+            ? {}
+            : { approvalId: governed.approval.id })
+        });
+      } catch (error) {
+        if (error instanceof ToolActionDeniedError) {
+          const evidenceResult = await storeCommandVerifierPolicyEvidence({
+            cwd,
+            runsteadRoot: root,
+            database,
+            task: runningTask,
+            command,
+            policyDecisionId: error.policyDecision.id,
+            decision: "deny",
+            reason: error.policyDecision.reason,
+            ...(options.now === undefined ? {} : { now: options.now })
+          });
+
+          commandResults.push(
+            policyCommandResult(command, evidenceResult, error.policyDecision.id)
+          );
+          finishWorkerRun({
+            database,
+            workerRun,
+            status: "blocked",
+            output: verifierOutput(commandResults, false),
+            ...(options.now === undefined ? {} : { now: options.now })
+          });
+
+          const finalTask = finalizeTask({
+            runningTask: currentTask,
+            status: "blocked",
+            output: verifierOutput(commandResults, false),
+            updatedAt: createdAt,
+            database,
+            projectTaskState
+          });
+
+          return {
+            task: finalTask,
+            commandResults
+          };
+        }
+
+        if (error instanceof ToolActionApprovalRequiredError) {
+          const evidenceResult = await storeCommandVerifierPolicyEvidence({
+            cwd,
+            runsteadRoot: root,
+            database,
+            task: runningTask,
+            command,
+            policyDecisionId: error.policyDecision.id,
+            decision: "require_approval",
+            reason: error.policyDecision.reason,
+            approvalId: error.approval.id,
+            ...(options.now === undefined ? {} : { now: options.now })
+          });
+
+          commandResults.push(
+            policyCommandResult(
+              command,
+              evidenceResult,
+              error.policyDecision.id,
+              error.approval.id
+            )
+          );
+          finishWorkerRun({
+            database,
+            workerRun,
+            status: "waiting_approval",
+            output: verifierOutput(commandResults, false),
+            ...(options.now === undefined ? {} : { now: options.now })
+          });
+
+          const finalTask = finalizeTask({
+            runningTask: currentTask,
+            status: "waiting_approval",
+            output: verifierOutput(commandResults, false),
+            updatedAt: createdAt,
+            database,
+            projectTaskState
+          });
+
+          return {
+            task: finalTask,
+            commandResults
+          };
+        }
+
+        throw error;
+      }
     }
 
     const passed =
