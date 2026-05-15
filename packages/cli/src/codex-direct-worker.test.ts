@@ -15,7 +15,6 @@ import type { CodexResponsesRequest } from "./codex-responses-transport.js";
 import { showGoal } from "./goals.js";
 import { initRunstead } from "./init.js";
 import type { PolicyProfile } from "./policy.js";
-import { loadPolicyProfileFromFile } from "./policy-loader.js";
 import { listTasks } from "./tasks.js";
 
 describe("runCodexDirectWorker", () => {
@@ -91,7 +90,15 @@ describe("runCodexDirectWorker", () => {
         expect(await readFile(join(workspace, "src/fix.txt"), "utf8")).toBe("fixed\n");
         expect(toolCalls).toEqual([
           {
+            action_type: "model.inference.request",
+            status: "completed"
+          },
+          {
             action_type: "filesystem.write",
+            status: "completed"
+          },
+          {
+            action_type: "model.inference.request",
             status: "completed"
           }
         ]);
@@ -134,14 +141,11 @@ describe("runCodexDirectWorker", () => {
         }
 
         const goal = showGoal({ cwd: workspace, id: task.goalId }).goal;
-        const policy = await loadPolicyProfileFromFile(
-          join(initialized.root, "policies", "repo-maintenance.yaml")
-        );
         const result = await runCodexDirectWorker({
           cwd: workspace,
           stateDb: initialized.stateDb,
           database,
-          policy,
+          policy: modelAllowedRepoMaintenancePolicy,
           goal,
           task,
           model: "fake-codex",
@@ -198,14 +202,11 @@ describe("runCodexDirectWorker", () => {
         }
 
         const goal = showGoal({ cwd: workspace, id: task.goalId }).goal;
-        const policy = await loadPolicyProfileFromFile(
-          join(initialized.root, "policies", "repo-maintenance.yaml")
-        );
         const result = await runCodexDirectWorker({
           cwd: workspace,
           stateDb: initialized.stateDb,
           database,
-          policy,
+          policy: modelAllowedRepoMaintenancePolicy,
           goal,
           task,
           model: "fake-codex",
@@ -270,11 +271,39 @@ const allowDirectToolsPolicy: PolicyProfile = {
           "filesystem.write",
           "shell.exec",
           "git.status",
-          "git.diff"
+          "git.diff",
+          "model.inference.request"
         ]
       },
       decision: "allow",
       risk: "low"
+    }
+  ]
+};
+
+const modelAllowedRepoMaintenancePolicy: PolicyProfile = {
+  id: "model_allowed_repo_maintenance_for_test",
+  version: 1,
+  defaultDecision: "require_approval",
+  defaultRisk: "medium",
+  rules: [
+    {
+      id: "deny_secret_files",
+      when: {
+        path: {
+          matchesAny: [".env", ".env.*", "**/secrets/**", "infra/prod/**"]
+        }
+      },
+      decision: "deny",
+      risk: "critical"
+    },
+    {
+      id: "allow_model_inference",
+      when: {
+        actionType: "model.inference.request"
+      },
+      decision: "allow",
+      risk: "medium"
     }
   ]
 };

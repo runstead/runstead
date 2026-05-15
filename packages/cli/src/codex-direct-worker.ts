@@ -114,12 +114,17 @@ export async function runCodexDirectWorker(
       turn < (options.maxTurns ?? DEFAULT_CODEX_DIRECT_MAX_TURNS);
       turn += 1
     ) {
-      const response = await options.transport.createResponse({
+      const request: CodexResponsesRequest = {
         model: options.model,
         instructions: buildCodexDirectInstructions(options),
         input: messages,
         tools: codexDirectToolDefinitions(),
         sessionId: options.task.id
+      };
+      const response = await runGovernedModelInference({
+        ...options,
+        workerRun,
+        request
       });
 
       if (response.toolCalls.length === 0) {
@@ -204,6 +209,35 @@ export async function runCodexDirectWorker(
       toolCalls: executedToolCalls
     });
   }
+}
+
+async function runGovernedModelInference(
+  options: CodexDirectWorkerOptions & {
+    workerRun: WorkerRun;
+    request: CodexResponsesRequest;
+  }
+): Promise<CodexResponsesResult> {
+  return runGovernedToolAction({
+    ...governedToolOptions(options),
+    action: modelInferenceAction({
+      task: options.task,
+      model: options.model
+    }),
+    run: async () => {
+      const value = await options.transport.createResponse(options.request);
+
+      return {
+        value,
+        output: {
+          model: options.model,
+          status: value.status ?? "unknown",
+          finishReason: value.finishReason,
+          toolCalls: value.toolCalls.length,
+          outputTextBytes: Buffer.byteLength(value.outputText, "utf8")
+        }
+      };
+    }
+  }).then((result) => result.value);
 }
 
 export function buildCodexDirectInstructions(
@@ -561,6 +595,21 @@ function gitReadAction(input: {
     },
     context: {
       cwd: input.cwd
+    }
+  };
+}
+
+function modelInferenceAction(input: { task: Task; model: string }): ActionEnvelope {
+  return {
+    actionId: stableActionId("model_inference_request", [input.task.id, input.model]),
+    actionType: "model.inference.request",
+    resource: {
+      type: "model_provider",
+      id: "chatgpt_codex"
+    },
+    context: {
+      networkDomains: ["chatgpt.com"],
+      sideEffects: ["network_write_external", "llm_data_egress"]
     }
   };
 }
