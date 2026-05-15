@@ -733,6 +733,112 @@ describe("runCiRepairOrchestrator", () => {
     }
   });
 
+  it("resumes after publish approval is consumed before push", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-ci-crash-publish-"));
+    const githubCalls: string[][] = [];
+    const gitCalls: string[][] = [];
+
+    try {
+      await initRunstead({ cwd: workspace, createDefaultGoal: true });
+      await allowExternalWorkerStartForTest(workspace);
+
+      const first = await runCiRepairOrchestrator({
+        cwd: workspace,
+        runId: "123",
+        worker: "codex_cli",
+        base: "main",
+        allowedPaths: ["src/**"],
+        verifierCommands: [{ name: "test", command: "pnpm test" }],
+        githubRunner: githubRunner(githubCalls),
+        gitRunner: gitRunner(gitCalls, { diffNameOnly: "src/fix.ts\n" }),
+        workerRunner: workerRunner([]),
+        verifierRunner: verifierRunner([]),
+        now: new Date("2026-05-14T13:20:00.000Z")
+      });
+
+      if (first.approval === undefined) {
+        throw new Error("Expected publish approval request");
+      }
+
+      await decideApproval({
+        cwd: workspace,
+        id: first.approval.id,
+        decision: "approved",
+        decidedBy: "local-admin",
+        now: new Date("2026-05-14T13:21:00.000Z")
+      });
+
+      await expect(
+        runCiRepairOrchestrator({
+          cwd: workspace,
+          runId: "123",
+          worker: "codex_cli",
+          base: "main",
+          allowedPaths: ["src/**"],
+          verifierCommands: [{ name: "test", command: "pnpm test" }],
+          githubRunner: githubRunner(githubCalls),
+          gitRunner: gitRunner(gitCalls, { diffNameOnly: "src/fix.ts\n" }),
+          workerRunner: workerRunner([]),
+          verifierRunner: verifierRunner([]),
+          onStagePersisted: crashAfterStage("publish_approved"),
+          now: new Date("2026-05-14T13:22:00.000Z")
+        })
+      ).rejects.toThrow("crash after publish_approved");
+
+      const resumedTasks = await resumeInterruptedTasks({
+        cwd: workspace,
+        now: new Date("2026-05-14T13:23:00.000Z")
+      });
+      const resumed = await runOnce({
+        cwd: workspace,
+        base: "main",
+        allowedPaths: ["src/**"],
+        githubRunner: githubRunner(githubCalls),
+        gitRunner: gitRunner(gitCalls, { diffNameOnly: "src/fix.ts\n" }),
+        workerRunner: workerRunner([]),
+        verifierRunner: verifierRunner([]),
+        now: new Date("2026-05-14T13:24:00.000Z")
+      });
+
+      if (!resumed.ranTask) {
+        throw new Error("Expected run once to resume the publish-approved task");
+      }
+
+      const database = openRunsteadDatabase(join(workspace, ".runstead", "state.db"));
+
+      try {
+        const approvalCount = database
+          .prepare("SELECT COUNT(*) AS count FROM approvals")
+          .get() as { count: number };
+        const publishStatuses = database
+          .prepare(
+            "SELECT status FROM tool_calls WHERE action_type = 'repo.publish_repair' ORDER BY started_at, id"
+          )
+          .all() as { status: string }[];
+        const gitPushes = gitCalls.filter((args) => args[0] === "push");
+
+        expect(resumedTasks.requeuedTasks).toHaveLength(1);
+        expect(resumed.task.status).toBe("completed");
+        expect(resumed.ciRepairResult?.pullRequest?.url).toBe(
+          "https://github.example/pr/1"
+        );
+        expect(approvalCount.count).toBe(1);
+        expect(publishStatuses.map((row) => row.status)).toEqual([
+          "approval_required",
+          "completed"
+        ]);
+        expect(gitPushes).toHaveLength(1);
+        expect(
+          showApproval({ cwd: workspace, id: first.approval.id }).approval.status
+        ).toBe("expired");
+      } finally {
+        database.close();
+      }
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
   it("fails before publish when the worker produces no branch diff", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "runstead-ci-empty-diff-"));
     const githubCalls: string[][] = [];
