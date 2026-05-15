@@ -93,6 +93,7 @@ export interface RunCiRepairOrchestratorOptions {
   verifierRunner?: (
     options: RunTaskVerifiersOptions
   ) => Promise<RunTaskVerifiersResult>;
+  onStagePersisted?: (stage: string, task: Task) => void;
   now?: Date;
 }
 
@@ -143,6 +144,9 @@ export async function runCiRepairOrchestratorUnlocked(
         : { githubRunner: options.githubRunner }),
       ...(options.authToken === undefined ? {} : { authToken: options.authToken }),
       ...(options.gitRunner === undefined ? {} : { gitRunner: options.gitRunner }),
+      ...(options.onStagePersisted === undefined
+        ? {}
+        : { onStagePersisted: options.onStagePersisted }),
       ...(options.now === undefined ? {} : { now: options.now })
     });
   }
@@ -202,6 +206,9 @@ export async function runCiRepairOrchestratorUnlocked(
         task: orchestratorTask,
         context: stageContext,
         stage: "intake_completed",
+        ...(options.onStagePersisted === undefined
+          ? {}
+          : { onStagePersisted: options.onStagePersisted }),
         ...(options.now === undefined ? {} : { now: options.now })
       }));
     }
@@ -211,6 +218,9 @@ export async function runCiRepairOrchestratorUnlocked(
         task: orchestratorTask,
         context: stageContext,
         stage: "claimed",
+        ...(options.onStagePersisted === undefined
+          ? {}
+          : { onStagePersisted: options.onStagePersisted }),
         ...(options.now === undefined ? {} : { now: options.now })
       }));
     }
@@ -277,6 +287,9 @@ export async function runCiRepairOrchestratorUnlocked(
             branchName,
             base
           },
+          ...(options.onStagePersisted === undefined
+            ? {}
+            : { onStagePersisted: options.onStagePersisted }),
           ...(options.now === undefined ? {} : { now: options.now })
         }));
       }
@@ -330,6 +343,9 @@ export async function runCiRepairOrchestratorUnlocked(
           patch: {
             checkpointBefore
           },
+          ...(options.onStagePersisted === undefined
+            ? {}
+            : { onStagePersisted: options.onStagePersisted }),
           ...(options.now === undefined ? {} : { now: options.now })
         }));
       }
@@ -405,6 +421,9 @@ export async function runCiRepairOrchestratorUnlocked(
           patch: {
             workerResult: durableWorkerResult(workerResult)
           },
+          ...(options.onStagePersisted === undefined
+            ? {}
+            : { onStagePersisted: options.onStagePersisted }),
           ...(options.now === undefined ? {} : { now: options.now })
         }));
       }
@@ -528,6 +547,9 @@ export async function runCiRepairOrchestratorUnlocked(
           patch: {
             commit
           },
+          ...(options.onStagePersisted === undefined
+            ? {}
+            : { onStagePersisted: options.onStagePersisted }),
           ...(options.now === undefined ? {} : { now: options.now })
         }));
       }
@@ -728,6 +750,9 @@ export async function runCiRepairOrchestratorUnlocked(
             verifierTask: normalizedVerifierResult.task,
             verifierCommandResults: normalizedVerifierResult.commandResults
           },
+          ...(options.onStagePersisted === undefined
+            ? {}
+            : { onStagePersisted: options.onStagePersisted }),
           ...(options.now === undefined ? {} : { now: options.now })
         }));
       }
@@ -750,6 +775,9 @@ export async function runCiRepairOrchestratorUnlocked(
         task: orchestratorTask,
         context: resumeContext,
         stage: "ready_for_push",
+        ...(options.onStagePersisted === undefined
+          ? {}
+          : { onStagePersisted: options.onStagePersisted }),
         ...(options.now === undefined ? {} : { now: options.now })
       }));
 
@@ -781,6 +809,9 @@ export async function runCiRepairOrchestratorUnlocked(
             patch: {
               branchPushed: true
             },
+            ...(options.onStagePersisted === undefined
+              ? {}
+              : { onStagePersisted: options.onStagePersisted }),
             ...(options.now === undefined ? {} : { now: options.now })
           }) as {
             task: Task;
@@ -849,6 +880,10 @@ export async function runCiRepairOrchestratorUnlocked(
           pullRequest
         };
       } catch (error) {
+        if (isStagePersistenceInterruption(error)) {
+          throw error;
+        }
+
         if (error instanceof ToolActionApprovalRequiredError) {
           const approvalStage =
             error.toolCall.actionType === "git.push"
@@ -913,6 +948,10 @@ export async function runCiRepairOrchestratorUnlocked(
         throw error;
       }
     } catch (error) {
+      if (isStagePersistenceInterruption(error)) {
+        throw error;
+      }
+
       if (error instanceof ToolActionApprovalRequiredError) {
         const waitingTask = markTaskTerminal({
           database,
@@ -1279,9 +1318,18 @@ async function resumeCiRepairPullRequest(options: {
   authToken?: string;
   githubRunner?: GitHubCliRunner;
   gitRunner?: CiRepairGitRunner;
+  onStagePersisted?: (stage: string, task: Task) => void;
   now?: Date;
 }): Promise<RunCiRepairOrchestratorResult> {
-  const context = parsePullRequestResumeContext(options.task);
+  const task =
+    options.task.status === "queued"
+      ? claimTask({
+          cwd: options.cwd,
+          id: options.task.id,
+          ...(options.now === undefined ? {} : { now: options.now })
+        }).task
+      : options.task;
+  const context = parsePullRequestResumeContext(task);
   const stateDb = join(options.root, "state.db");
   const policy = await loadPolicyProfileFromFile(
     join(options.root, "policies", "repo-maintenance.yaml")
@@ -1290,25 +1338,25 @@ async function resumeCiRepairPullRequest(options: {
   const ciRepair = ciRepairResultFromResume({
     cwd: options.cwd,
     stateDb,
-    task: options.task,
+    task,
     context
   });
 
   try {
     assertNoRunningCiRepairOrchestratorWorker({
       database,
-      task: options.task
+      task
     });
 
     const workerRun = startWorkerRun({
       database,
-      task: options.task,
+      task,
       workerType: "ci_repair_orchestrator",
       enforcementLevel: "policy_enforced",
       ...(options.now === undefined ? {} : { now: options.now })
     });
 
-    let resumeTask = options.task;
+    let resumeTask = task;
     let resumeContext = context;
 
     try {
@@ -1326,20 +1374,21 @@ async function resumeCiRepairPullRequest(options: {
           ...(options.gitRunner === undefined ? {} : { gitRunner: options.gitRunner }),
           ...(options.now === undefined ? {} : { now: options.now })
         });
-        resumeContext = {
-          ...resumeContext,
-          stage: "branch_pushed",
-          branchPushed: true
-        };
-        resumeTask = writeTaskOutput({
+        ({ task: resumeTask, context: resumeContext } = writeCiRepairStage({
           database,
           task: resumeTask,
-          output: {
-            ...(resumeTask.output ?? {}),
-            ciRepairOrchestrator: resumeContext
+          context: resumeContext,
+          stage: "branch_pushed",
+          patch: {
+            branchPushed: true
           },
-          eventType: "task.updated",
+          ...(options.onStagePersisted === undefined
+            ? {}
+            : { onStagePersisted: options.onStagePersisted }),
           ...(options.now === undefined ? {} : { now: options.now })
+        }) as {
+          task: Task;
+          context: CiRepairOrchestratorResumeContext;
         });
       }
 
@@ -1404,6 +1453,10 @@ async function resumeCiRepairPullRequest(options: {
         pullRequest
       };
     } catch (error) {
+      if (isStagePersistenceInterruption(error)) {
+        throw error;
+      }
+
       if (error instanceof ToolActionApprovalRequiredError) {
         const approvalStage =
           error.toolCall.actionType === "git.push"
@@ -1838,6 +1891,7 @@ function writeCiRepairStage(input: {
   context: CiRepairOrchestratorStageContext;
   stage: CiRepairOrchestratorStage;
   patch?: Partial<CiRepairOrchestratorStageContext>;
+  onStagePersisted?: (stage: string, task: Task) => void;
   now?: Date;
 }): { task: Task; context: CiRepairOrchestratorStageContext } {
   const context: CiRepairOrchestratorStageContext = {
@@ -1855,6 +1909,7 @@ function writeCiRepairStage(input: {
     eventType: "task.updated",
     ...(input.now === undefined ? {} : { now: input.now })
   });
+  input.onStagePersisted?.(input.stage, task);
 
   return {
     task,
@@ -2340,6 +2395,12 @@ function failCiRepairOrchestratorRun(input: {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function isStagePersistenceInterruption(error: unknown): boolean {
+  return (
+    error instanceof Error && error.name === "RunsteadStagePersistenceInterruption"
+  );
 }
 
 function taskEvent(

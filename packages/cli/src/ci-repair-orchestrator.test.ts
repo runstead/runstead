@@ -14,6 +14,7 @@ import {
   formatCiRepairOrchestratorReport,
   runCiRepairOrchestrator
 } from "./ci-repair-orchestrator.js";
+import { resumeInterruptedTasks } from "./resume.js";
 import { runOnce } from "./run.js";
 import { startWorkerRun } from "./runtime-audit.js";
 import type { GitRunner } from "./git-branch.js";
@@ -458,7 +459,7 @@ describe("runCiRepairOrchestrator", () => {
           .get(result.ciRepair.task.id) as { status: string };
         const workerRun = database
           .prepare(
-            "SELECT status, output_json FROM worker_runs WHERE task_id = ? ORDER BY started_at DESC, id DESC LIMIT 1"
+            "SELECT status, output_json FROM worker_runs WHERE task_id = ? AND worker_type = 'ci_repair_orchestrator' ORDER BY started_at DESC, id DESC LIMIT 1"
           )
           .get(result.ciRepair.task.id) as {
           status: string;
@@ -487,6 +488,191 @@ describe("runCiRepairOrchestrator", () => {
       } finally {
         database.close();
       }
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("resumes pre-publish stages without repeating completed side effects", async () => {
+    const crashStages = [
+      "branch_created",
+      "checkpoint_created",
+      "worker_completed",
+      "committed",
+      "verified",
+      "ready_for_push"
+    ];
+
+    for (const crashStage of crashStages) {
+      const workspace = await mkdtemp(
+        join(tmpdir(), `runstead-ci-crash-${crashStage}-`)
+      );
+      const githubCalls: string[][] = [];
+      const gitCalls: string[][] = [];
+      const workerCalls: string[] = [];
+      const verifierCalls: RunTaskVerifiersOptions[] = [];
+
+      try {
+        await initRunstead({ cwd: workspace, createDefaultGoal: true });
+
+        await expect(
+          runCiRepairOrchestrator({
+            cwd: workspace,
+            runId: "123",
+            worker: "codex_cli",
+            base: "main",
+            allowedPaths: ["src/**"],
+            verifierCommands: [{ name: "test", command: "pnpm test" }],
+            githubRunner: githubRunner(githubCalls),
+            gitRunner: gitRunner(gitCalls, { diffNameOnly: "src/fix.ts\n" }),
+            workerRunner: workerRunner(workerCalls),
+            verifierRunner: verifierRunner(verifierCalls),
+            onStagePersisted: crashAfterStage(crashStage),
+            now: new Date("2026-05-14T13:00:00.000Z")
+          })
+        ).rejects.toThrow(`crash after ${crashStage}`);
+
+        const resumedTasks = await resumeInterruptedTasks({
+          cwd: workspace,
+          now: new Date("2026-05-14T13:01:00.000Z")
+        });
+        const resumed = await runOnce({
+          cwd: workspace,
+          base: "main",
+          allowedPaths: ["src/**"],
+          githubRunner: githubRunner(githubCalls),
+          gitRunner: gitRunner(gitCalls, { diffNameOnly: "src/fix.ts\n" }),
+          workerRunner: workerRunner(workerCalls),
+          verifierRunner: verifierRunner(verifierCalls),
+          now: new Date("2026-05-14T13:02:00.000Z")
+        });
+
+        if (!resumed.ranTask) {
+          throw new Error("Expected run once to resume the interrupted task");
+        }
+
+        const database = openRunsteadDatabase(join(workspace, ".runstead", "state.db"));
+
+        try {
+          const checkpointCreates = database
+            .prepare(
+              "SELECT COUNT(*) AS count FROM tool_calls WHERE task_id = ? AND action_type = 'checkpoint.create'"
+            )
+            .get(resumed.task.id) as { count: number };
+          const taskOutput = JSON.parse(
+            (
+              database
+                .prepare("SELECT output_json FROM tasks WHERE id = ?")
+                .get(resumed.task.id) as { output_json: string }
+            ).output_json
+          ) as { ciRepairOrchestrator?: { stage?: string } };
+
+          expect(resumedTasks.requeuedTasks).toHaveLength(1);
+          expect(resumed.task.status).toBe("waiting_approval");
+          expect(taskOutput.ciRepairOrchestrator?.stage).toBe(
+            "push_approval_requested"
+          );
+          expect(
+            gitCalls.filter((args) => args[0] === "switch" && args[1] === "-c")
+          ).toHaveLength(1);
+          expect(checkpointCreates.count).toBe(1);
+          expect(workerCalls).toHaveLength(1);
+          expect(gitCalls.filter((args) => args[0] === "commit")).toHaveLength(1);
+          expect(verifierCalls).toHaveLength(1);
+          expect(gitCalls.filter((args) => args[0] === "push")).toHaveLength(0);
+          expect(
+            githubCalls.filter((args) => args[0] === "pr" && args[1] === "create")
+          ).toHaveLength(0);
+        } finally {
+          database.close();
+        }
+      } finally {
+        await rm(workspace, { force: true, recursive: true });
+      }
+    }
+  });
+
+  it("resumes after a branch push crash without pushing again", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-ci-crash-push-"));
+    const githubCalls: string[][] = [];
+    const gitCalls: string[][] = [];
+    const workerCalls: string[] = [];
+    const verifierCalls: RunTaskVerifiersOptions[] = [];
+
+    try {
+      await initRunstead({ cwd: workspace, createDefaultGoal: true });
+
+      const first = await runCiRepairOrchestrator({
+        cwd: workspace,
+        runId: "123",
+        worker: "codex_cli",
+        base: "main",
+        allowedPaths: ["src/**"],
+        verifierCommands: [{ name: "test", command: "pnpm test" }],
+        githubRunner: githubRunner(githubCalls),
+        gitRunner: gitRunner(gitCalls, { diffNameOnly: "src/fix.ts\n" }),
+        workerRunner: workerRunner(workerCalls),
+        verifierRunner: verifierRunner(verifierCalls),
+        now: new Date("2026-05-14T13:10:00.000Z")
+      });
+
+      if (first.approval === undefined) {
+        throw new Error("Expected push approval request");
+      }
+
+      await decideApproval({
+        cwd: workspace,
+        id: first.approval.id,
+        decision: "approved",
+        decidedBy: "local-admin",
+        now: new Date("2026-05-14T13:11:00.000Z")
+      });
+
+      await expect(
+        runCiRepairOrchestrator({
+          cwd: workspace,
+          runId: "123",
+          worker: "codex_cli",
+          base: "main",
+          allowedPaths: ["src/**"],
+          verifierCommands: [{ name: "test", command: "pnpm test" }],
+          githubRunner: githubRunner(githubCalls),
+          gitRunner: gitRunner(gitCalls, { diffNameOnly: "src/fix.ts\n" }),
+          workerRunner: workerRunner(workerCalls),
+          verifierRunner: verifierRunner(verifierCalls),
+          onStagePersisted: crashAfterStage("branch_pushed"),
+          now: new Date("2026-05-14T13:12:00.000Z")
+        })
+      ).rejects.toThrow("crash after branch_pushed");
+
+      const resumedTasks = await resumeInterruptedTasks({
+        cwd: workspace,
+        now: new Date("2026-05-14T13:13:00.000Z")
+      });
+      const resumed = await runOnce({
+        cwd: workspace,
+        base: "main",
+        allowedPaths: ["src/**"],
+        githubRunner: githubRunner(githubCalls),
+        gitRunner: gitRunner(gitCalls, { diffNameOnly: "src/fix.ts\n" }),
+        workerRunner: workerRunner(workerCalls),
+        verifierRunner: verifierRunner(verifierCalls),
+        now: new Date("2026-05-14T13:14:00.000Z")
+      });
+
+      if (!resumed.ranTask) {
+        throw new Error("Expected run once to resume the branch-pushed task");
+      }
+
+      expect(resumedTasks.requeuedTasks).toHaveLength(1);
+      expect(resumed.task.status).toBe("waiting_approval");
+      expect(gitCalls.filter((args) => args[0] === "push")).toHaveLength(1);
+      expect(
+        githubCalls.filter((args) => args[0] === "pr" && args[1] === "create")
+      ).toHaveLength(0);
+      expect(resumed.ciRepairResult?.approval?.reason).toContain(
+        "require_approval_external_write"
+      );
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }
@@ -1028,6 +1214,19 @@ function verifierRunner(
         }
       ]
     });
+  };
+}
+
+function crashAfterStage(stage: string): (persistedStage: string) => void {
+  let crashed = false;
+
+  return (persistedStage) => {
+    if (!crashed && persistedStage === stage) {
+      crashed = true;
+      const error = new Error(`crash after ${stage}`);
+      error.name = "RunsteadStagePersistenceInterruption";
+      throw error;
+    }
   };
 }
 

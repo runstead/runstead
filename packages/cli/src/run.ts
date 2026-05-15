@@ -18,6 +18,7 @@ import {
   type RunTaskVerifierCommandResult
 } from "./verifier-runner.js";
 import type { CommandVerifierInput } from "./verifier-evidence.js";
+import type { WorkerProcessRunner } from "./wrapped-worker.js";
 
 const RUN_ONCE_SUPPORTED_TASK_TYPES = [
   "run_local_verifiers",
@@ -28,8 +29,16 @@ const RUN_ONCE_SUPPORTED_TASK_TYPES = [
 export interface RunOnceOptions {
   cwd?: string;
   authToken?: string;
+  base?: string;
+  draft?: boolean;
+  allowedPaths?: string[];
+  deniedPaths?: string[];
   githubRunner?: GitHubCliRunner;
   gitRunner?: CiRepairGitRunner;
+  workerRunner?: WorkerProcessRunner;
+  verifierRunner?: (
+    options: Parameters<typeof runTaskVerifiersUnlocked>[0]
+  ) => ReturnType<typeof runTaskVerifiersUnlocked>;
   ciRepairOrchestrator?: (
     options: RunCiRepairOrchestratorOptions
   ) => Promise<RunCiRepairOrchestratorResult>;
@@ -90,11 +99,25 @@ export async function runOnceUnlocked(
       runId,
       worker: "codex_cli",
       verifierCommands: [],
+      ...(options.base === undefined ? {} : { base: options.base }),
+      ...(options.draft === undefined ? {} : { draft: options.draft }),
+      ...(options.allowedPaths === undefined
+        ? {}
+        : { allowedPaths: options.allowedPaths }),
+      ...(options.deniedPaths === undefined
+        ? {}
+        : { deniedPaths: options.deniedPaths }),
       ...(options.authToken === undefined ? {} : { authToken: options.authToken }),
       ...(options.githubRunner === undefined
         ? {}
         : { githubRunner: options.githubRunner }),
       ...(options.gitRunner === undefined ? {} : { gitRunner: options.gitRunner }),
+      ...(options.workerRunner === undefined
+        ? {}
+        : { workerRunner: options.workerRunner }),
+      ...(options.verifierRunner === undefined
+        ? {}
+        : { verifierRunner: options.verifierRunner }),
       ...(options.now === undefined ? {} : { now: options.now })
     });
 
@@ -120,11 +143,25 @@ export async function runOnceUnlocked(
       runId,
       worker: "codex_cli",
       verifierCommands: verifierCommandsFromCiRepairTask(task),
+      ...(options.base === undefined ? {} : { base: options.base }),
+      ...(options.draft === undefined ? {} : { draft: options.draft }),
+      ...(options.allowedPaths === undefined
+        ? {}
+        : { allowedPaths: options.allowedPaths }),
+      ...(options.deniedPaths === undefined
+        ? {}
+        : { deniedPaths: options.deniedPaths }),
       ...(options.authToken === undefined ? {} : { authToken: options.authToken }),
       ...(options.githubRunner === undefined
         ? {}
         : { githubRunner: options.githubRunner }),
       ...(options.gitRunner === undefined ? {} : { gitRunner: options.gitRunner }),
+      ...(options.workerRunner === undefined
+        ? {}
+        : { workerRunner: options.workerRunner }),
+      ...(options.verifierRunner === undefined
+        ? {}
+        : { verifierRunner: options.verifierRunner }),
       ...(options.now === undefined ? {} : { now: options.now })
     });
 
