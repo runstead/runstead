@@ -150,7 +150,7 @@ describe("runCiRepairOrchestrator", () => {
               status: "completed"
             }),
             expect.objectContaining({
-              action_type: "git.push",
+              action_type: "repo.publish_repair",
               status: "approval_required"
             })
           ])
@@ -183,7 +183,7 @@ describe("runCiRepairOrchestrator", () => {
           .filter((stage): stage is string => typeof stage === "string");
 
         expect(taskOutput.ciRepairOrchestrator).toMatchObject({
-          stage: "push_approval_requested",
+          stage: "publish_approval_requested",
           checkpointBefore: { id: first.workerResult?.checkpointBefore?.id },
           workerResult: { worker: "codex_cli" },
           commit: { commitSha: "abc123" },
@@ -254,12 +254,12 @@ describe("runCiRepairOrchestrator", () => {
           "git.status",
           "git.commit",
           "git.diff",
-          "git.push"
+          "repo.publish_repair"
         ])
       );
 
       if (first.approval === undefined) {
-        throw new Error("Expected PR approval request");
+        throw new Error("Expected publish approval request");
       }
 
       await decideApproval({
@@ -285,9 +285,8 @@ describe("runCiRepairOrchestrator", () => {
         now: new Date("2026-05-14T12:02:00.000Z")
       });
 
-      expect(second.status).toBe("waiting_approval");
-      expect(second.pullRequest).toBeUndefined();
-      expect(second.approval?.id).toMatch(/^appr_/);
+      expect(second.status).toBe("completed");
+      expect(second.pullRequest?.url).toBe("https://github.example/pr/1");
       expect(gitCalls).toContainEqual([
         "push",
         "--set-upstream",
@@ -295,7 +294,7 @@ describe("runCiRepairOrchestrator", () => {
         first.branchName
       ]);
       expect(githubCalls.some((args) => args[0] === "pr" && args[1] === "create")).toBe(
-        false
+        true
       );
       expect(
         gitCalls.filter((args) => args[0] === "switch" && args[1] === "-c")
@@ -303,39 +302,6 @@ describe("runCiRepairOrchestrator", () => {
       expect(
         showApproval({ cwd: workspace, id: first.approval.id }).approval.status
       ).toBe("expired");
-
-      if (second.approval === undefined) {
-        throw new Error("Expected PR approval request");
-      }
-
-      await decideApproval({
-        cwd: workspace,
-        id: second.approval.id,
-        decision: "approved",
-        decidedBy: "local-admin",
-        now: new Date("2026-05-14T12:03:00.000Z")
-      });
-
-      const third = await runCiRepairOrchestrator({
-        cwd: workspace,
-        runId: "123",
-        worker: "codex_cli",
-        base: "main",
-        allowedPaths: ["src/**"],
-        deniedPaths: [".env"],
-        verifierCommands: [{ name: "test", command: "pnpm test" }],
-        githubRunner: githubRunner(githubCalls),
-        gitRunner: gitRunner(gitCalls, { diffNameOnly: "src/fix.ts\n" }),
-        workerRunner: workerRunner(workerCalls),
-        verifierRunner: verifierRunner(verifierCalls),
-        now: new Date("2026-05-14T12:04:00.000Z")
-      });
-
-      expect(third.status).toBe("completed");
-      expect(third.pullRequest?.url).toBe("https://github.example/pr/1");
-      expect(githubCalls.some((args) => args[0] === "pr" && args[1] === "create")).toBe(
-        true
-      );
       const prCreateArgs = githubCalls.find(
         (args) => args[0] === "pr" && args[1] === "create"
       );
@@ -344,16 +310,13 @@ describe("runCiRepairOrchestrator", () => {
         bodyIndex === -1 ? undefined : prCreateArgs?.[bodyIndex + 1];
 
       expect(pullRequestBody).toContain("## Evidence");
-      expect(pullRequestBody).toContain(`- CI log: ${third.ciRepair.evidence.id}`);
+      expect(pullRequestBody).toContain(`- CI log: ${second.ciRepair.evidence.id}`);
       expect(pullRequestBody).toContain("- test: ev_test");
       expect(pullRequestBody).toContain("- Commit: abc123");
       expect(pullRequestBody).toContain(
-        `- Approval: ${second.approval.id} approved by local-admin`
+        `- Approval: ${first.approval.id} approved by local-admin`
       );
       expect(gitCalls.filter((args) => args[0] === "push")).toHaveLength(1);
-      expect(
-        showApproval({ cwd: workspace, id: second.approval.id }).approval.status
-      ).toBe("expired");
       const finalAuditLog = await exportAuditLog({ cwd: workspace });
       const finalRequestedActions = finalAuditLog.entries
         .filter((entry) => entry.type === "tool_call.requested")
@@ -366,7 +329,7 @@ describe("runCiRepairOrchestrator", () => {
         );
 
       expect(finalRequestedActions).toEqual(
-        expect.arrayContaining(["git.push", "github.pr.create"])
+        expect.arrayContaining(["repo.publish_repair", "git.push", "github.pr.create"])
       );
     } finally {
       await rm(workspace, { force: true, recursive: true });
@@ -570,7 +533,7 @@ describe("runCiRepairOrchestrator", () => {
           expect(resumedTasks.requeuedTasks).toHaveLength(1);
           expect(resumed.task.status).toBe("waiting_approval");
           expect(taskOutput.ciRepairOrchestrator?.stage).toBe(
-            "push_approval_requested"
+            "publish_approval_requested"
           );
           expect(
             gitCalls.filter((args) => args[0] === "switch" && args[1] === "-c")
@@ -665,13 +628,13 @@ describe("runCiRepairOrchestrator", () => {
       }
 
       expect(resumedTasks.requeuedTasks).toHaveLength(1);
-      expect(resumed.task.status).toBe("waiting_approval");
+      expect(resumed.task.status).toBe("completed");
       expect(gitCalls.filter((args) => args[0] === "push")).toHaveLength(1);
       expect(
         githubCalls.filter((args) => args[0] === "pr" && args[1] === "create")
-      ).toHaveLength(0);
-      expect(resumed.ciRepairResult?.approval?.reason).toContain(
-        "require_approval_external_write"
+      ).toHaveLength(1);
+      expect(resumed.ciRepairResult?.pullRequest?.url).toBe(
+        "https://github.example/pr/1"
       );
     } finally {
       await rm(workspace, { force: true, recursive: true });
@@ -887,8 +850,11 @@ describe("runCiRepairOrchestrator", () => {
       }
 
       expect(second.task.type).toBe("ci_repair");
-      expect(second.ciRepairResult?.status).toBe("waiting_approval");
-      expect(second.ciRepairResult?.approval?.id).toMatch(/^appr_/);
+      expect(second.task.status).toBe("completed");
+      expect(second.ciRepairResult?.status).toBe("completed");
+      expect(second.ciRepairResult?.pullRequest?.url).toBe(
+        "https://github.example/pr/1"
+      );
       expect(gitCalls).toContainEqual([
         "push",
         "--set-upstream",
@@ -896,41 +862,14 @@ describe("runCiRepairOrchestrator", () => {
         first.branchName
       ]);
       expect(githubCalls.some((args) => args[0] === "pr" && args[1] === "create")).toBe(
-        false
+        true
       );
+      const secondCiRepair = second.ciRepairResult;
 
-      if (second.ciRepairResult?.approval === undefined) {
-        throw new Error("Expected PR approval request");
-      }
-
-      await decideApproval({
-        cwd: workspace,
-        id: second.ciRepairResult.approval.id,
-        decision: "approved",
-        decidedBy: "local-admin",
-        now: new Date("2026-05-14T12:03:00.000Z")
-      });
-
-      const third = await runOnce({
-        cwd: workspace,
-        githubRunner: githubRunner(githubCalls),
-        gitRunner: gitRunner(gitCalls, { diffNameOnly: "src/fix.ts\n" }),
-        now: new Date("2026-05-14T12:04:00.000Z")
-      });
-
-      if (!third.ranTask) {
-        throw new Error("Expected run once to finish CI repair");
-      }
-      const thirdCiRepair = third.ciRepairResult;
-
-      if (thirdCiRepair === undefined) {
+      if (secondCiRepair === undefined) {
         throw new Error("Expected CI repair result");
       }
 
-      expect(third.task.type).toBe("ci_repair");
-      expect(third.task.status).toBe("completed");
-      expect(thirdCiRepair.status).toBe("completed");
-      expect(thirdCiRepair.pullRequest?.url).toBe("https://github.example/pr/1");
       const prCreateCall = githubCalls.find(
         (args) => args[0] === "pr" && args[1] === "create"
       );
@@ -949,14 +888,14 @@ describe("runCiRepairOrchestrator", () => {
       expect(body).toContain("- test: exit=0 evidence=ev_test");
       expect(body).toContain("## Policy");
       expect(body).toContain(
-        `- Approval: ${second.ciRepairResult.approval.id} approved by local-admin`
+        `- Approval: ${first.approval.id} approved by local-admin`
       );
-      expect(body).toContain("- git.push: completed policy=require_approval");
       expect(body).toContain(
-        "- github.pr.create: approval_required policy=require_approval"
+        "- repo.publish_repair: completed policy=require_approval"
       );
+      expect(body).toContain("- git.push: completed");
       expect(body).toContain("## Evidence");
-      expect(body).toContain(thirdCiRepair.ciRepair.evidence.id);
+      expect(body).toContain(secondCiRepair.ciRepair.evidence.id);
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }
@@ -1059,10 +998,7 @@ describe("runCiRepairOrchestrator", () => {
         });
         expect(lastWorkerOutput.summary).toBe("CI repair publish failed");
         expect(lastWorkerOutput.error).toContain("git push failed");
-        expect(pushCalls.map((call) => call.status)).toEqual([
-          "approval_required",
-          "failed"
-        ]);
+        expect(pushCalls.map((call) => call.status)).toEqual(["failed"]);
         expect(failedPushOutput.error).toContain("git push failed");
         expect(
           showApproval({ cwd: workspace, id: first.approval.id }).approval.status

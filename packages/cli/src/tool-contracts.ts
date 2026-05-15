@@ -113,6 +113,14 @@ const TOOL_CONTRACTS: ToolContract[] = [
     policyRequired: true
   },
   {
+    actionType: "repo.publish_repair",
+    tool: "runstead",
+    resourceTypes: ["pull_request", "branch"],
+    sideEffects: ["network_write_external", "git_push", "github_pr_create"],
+    evidenceRequired: true,
+    policyRequired: true
+  },
+  {
     actionType: "worker.external.start",
     tool: "worker",
     resourceTypes: ["process", "repository"],

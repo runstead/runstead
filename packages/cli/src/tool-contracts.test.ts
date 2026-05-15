@@ -25,6 +25,7 @@ describe("tool contract registry", () => {
         "package.install",
         "package.update",
         "github.pr.create",
+        "repo.publish_repair",
         "worker.external.start",
         "checkpoint.create",
         "checkpoint.restore"
@@ -52,6 +53,13 @@ describe("tool contract registry", () => {
       actionType: "git.push",
       tool: "git",
       sideEffects: ["network_write_external", "git_push"],
+      evidenceRequired: true,
+      policyRequired: true
+    });
+    expect(getToolContract("repo.publish_repair")).toMatchObject({
+      actionType: "repo.publish_repair",
+      tool: "runstead",
+      sideEffects: ["network_write_external", "git_push", "github_pr_create"],
       evidenceRequired: true,
       policyRequired: true
     });
