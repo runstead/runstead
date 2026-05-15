@@ -8,6 +8,7 @@ import {
   CODEX_OAUTH_TOKEN_URL,
   CODEX_PROVIDER_ID,
   codexAuthStorePath,
+  codexModelCachePath,
   formatCodexAuthStatus,
   formatCodexModels,
   getCodexAuthStatus,
@@ -168,6 +169,7 @@ describe("codex auth store", () => {
 
       const models = await listCodexModels({
         runsteadHome,
+        now: new Date("2026-05-16T00:00:00.000Z"),
         fetch: async (input, init) => {
           expect(String(input)).toBe(
             "https://chatgpt.com/backend-api/codex/models?client_version=1.0.0"
@@ -186,6 +188,13 @@ describe("codex auth store", () => {
           });
         }
       });
+      const cached = JSON.parse(
+        await readFile(codexModelCachePath({ runsteadHome }), "utf8")
+      ) as { models: Array<{ id: string }> };
+      const cachedFallback = await listCodexModels({
+        runsteadHome,
+        fetch: async () => jsonResponse({ error: "down" }, 503)
+      });
       const formatted = formatCodexModels(models);
 
       expect(models).toEqual([
@@ -194,9 +203,48 @@ describe("codex auth store", () => {
           contextWindow: 272000
         })
       ]);
+      expect(cached.models[0]?.id).toBe("gpt-5.1-codex");
+      expect(cachedFallback[0]?.id).toBe("gpt-5.1-codex");
       expect(formatted).toContain("gpt-5.1-codex");
       expect(formatted).not.toContain(accessToken);
     } finally {
+      await rm(runsteadHome, { force: true, recursive: true });
+    }
+  });
+
+  it("falls back to configured Codex model ids when live discovery and cache miss", async () => {
+    const runsteadHome = await mkdtemp(join(tmpdir(), "runstead-codex-env-models-"));
+    const previous = process.env.RUNSTEAD_CODEX_MODELS;
+
+    try {
+      process.env.RUNSTEAD_CODEX_MODELS = "codex-a, codex-b";
+      await saveCodexAuthState(
+        {
+          provider: CODEX_PROVIDER_ID,
+          authMode: "chatgpt",
+          source: "device-code",
+          baseUrl: "https://chatgpt.com/backend-api/codex",
+          tokens: {
+            accessToken: jwtWithExp(1_900_000_000),
+            refreshToken: "refresh-secret"
+          },
+          lastRefresh: "2026-05-16T00:00:00.000Z"
+        },
+        { runsteadHome }
+      );
+
+      const models = await listCodexModels({
+        runsteadHome,
+        fetch: async () => jsonResponse({ error: "down" }, 503)
+      });
+
+      expect(models.map((model) => model.id)).toEqual(["codex-a", "codex-b"]);
+    } finally {
+      if (previous === undefined) {
+        delete process.env.RUNSTEAD_CODEX_MODELS;
+      } else {
+        process.env.RUNSTEAD_CODEX_MODELS = previous;
+      }
       await rm(runsteadHome, { force: true, recursive: true });
     }
   });
@@ -218,9 +266,9 @@ function base64Url(value: string): string {
     .replaceAll("=", "");
 }
 
-function jsonResponse(body: unknown): Response {
+function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
-    status: 200,
+    status,
     headers: {
       "content-type": "application/json"
     }

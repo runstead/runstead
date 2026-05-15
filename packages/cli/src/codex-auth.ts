@@ -67,6 +67,13 @@ export interface CodexModel {
   raw: Record<string, unknown>;
 }
 
+export interface CodexModelCacheFile {
+  version: 1;
+  provider: typeof CODEX_PROVIDER_ID;
+  fetchedAt: string;
+  models: CodexModel[];
+}
+
 export interface CodexDeviceCode {
   userCode: string;
   deviceAuthId: string;
@@ -130,6 +137,10 @@ export function resolveRunsteadHome(options: CodexAuthStoreOptions = {}): string
 
 export function codexAuthStorePath(options: CodexAuthStoreOptions = {}): string {
   return join(resolveRunsteadHome(options), "auth.json");
+}
+
+export function codexModelCachePath(options: CodexAuthStoreOptions = {}): string {
+  return join(resolveRunsteadHome(options), "cache", "codex-models.json");
 }
 
 export async function readCodexAuthState(
@@ -363,45 +374,60 @@ export async function listCodexModels(
 
   url.searchParams.set("client_version", options.clientVersion ?? "1.0.0");
 
-  const response = await (options.fetch ?? fetch)(url, {
-    method: "GET",
-    headers: {
-      Accept: "application/json",
-      Authorization: `Bearer ${credentials.accessToken}`
-    }
-  });
-
-  if (!response.ok) {
-    throw new Error(`Codex models request failed with status ${response.status}`);
-  }
-
-  const payload = await response.json();
-  const models =
-    isRecord(payload) && Array.isArray(payload.models) ? payload.models : [];
-
-  return models.flatMap((item) => {
-    if (!isRecord(item)) {
-      return [];
-    }
-
-    const id = item.slug ?? item.id;
-
-    if (typeof id !== "string" || id.trim().length === 0) {
-      return [];
-    }
-
-    const contextWindow = item.context_window ?? item.contextWindow;
-
-    return [
-      {
-        id: id.trim(),
-        ...(typeof contextWindow === "number" && Number.isFinite(contextWindow)
-          ? { contextWindow }
-          : {}),
-        raw: { ...item }
+  try {
+    const response = await (options.fetch ?? fetch)(url, {
+      method: "GET",
+      headers: {
+        Accept: "application/json",
+        Authorization: `Bearer ${credentials.accessToken}`
       }
-    ];
-  });
+    });
+
+    if (!response.ok) {
+      throw new Error(`Codex models request failed with status ${response.status}`);
+    }
+
+    const models = parseCodexModelsPayload(await response.json());
+
+    await writeCodexModelCache(models, options);
+    return models;
+  } catch (error) {
+    const cached = await readCodexModelCache(options);
+
+    if (cached.length > 0) {
+      return cached;
+    }
+
+    const configured = codexModelsFromEnvironment();
+
+    if (configured.length > 0) {
+      return configured;
+    }
+
+    throw error;
+  }
+}
+
+export async function readCodexModelCache(
+  options: CodexAuthStoreOptions = {}
+): Promise<CodexModel[]> {
+  try {
+    const raw = JSON.parse(
+      await readFile(codexModelCachePath(options), "utf8")
+    ) as unknown;
+
+    if (!isRecord(raw) || !Array.isArray(raw.models)) {
+      return [];
+    }
+
+    return parseCodexModelsPayload({ models: raw.models });
+  } catch (error) {
+    if (isNodeErrorCode(error, "ENOENT")) {
+      return [];
+    }
+
+    throw error;
+  }
 }
 
 export function formatCodexAuthStatus(status: CodexAuthStatus): string {
@@ -853,6 +879,75 @@ function parseTokenResponsePayload(payload: unknown, label: string): CodexAuthTo
         ? refreshToken.trim()
         : ""
   };
+}
+
+function parseCodexModelsPayload(payload: unknown): CodexModel[] {
+  const models =
+    isRecord(payload) && Array.isArray(payload.models) ? payload.models : [];
+
+  return models.flatMap((item) => {
+    if (!isRecord(item)) {
+      return [];
+    }
+
+    const id = item.slug ?? item.id;
+
+    if (typeof id !== "string" || id.trim().length === 0) {
+      return [];
+    }
+
+    const contextWindow = item.context_window ?? item.contextWindow;
+
+    return [
+      {
+        id: id.trim(),
+        ...(typeof contextWindow === "number" && Number.isFinite(contextWindow)
+          ? { contextWindow }
+          : {}),
+        raw: { ...item }
+      }
+    ];
+  });
+}
+
+async function writeCodexModelCache(
+  models: CodexModel[],
+  options: CodexAuthStoreOptions
+): Promise<void> {
+  const cachePath = codexModelCachePath(options);
+  const payload: CodexModelCacheFile = {
+    version: 1,
+    provider: CODEX_PROVIDER_ID,
+    fetchedAt: (options.now ?? new Date()).toISOString(),
+    models
+  };
+  const tmpPath = `${cachePath}.${process.pid}.${Date.now()}.tmp`;
+
+  await mkdir(dirname(cachePath), { recursive: true, mode: 0o700 });
+  await writeFile(tmpPath, `${JSON.stringify(payload, null, 2)}\n`, { mode: 0o600 });
+  await chmod(tmpPath, 0o600).catch(() => undefined);
+  await rename(tmpPath, cachePath);
+  await chmod(cachePath, 0o600).catch(() => undefined);
+}
+
+function codexModelsFromEnvironment(): CodexModel[] {
+  const configured = process.env.RUNSTEAD_CODEX_MODELS;
+
+  if (configured === undefined || configured.trim().length === 0) {
+    return [];
+  }
+
+  return configured
+    .split(",")
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0)
+    .map((id) => ({
+      id,
+      raw: {
+        id,
+        source: "RUNSTEAD_CODEX_MODELS"
+      }
+    }));
 }
 
 function resolveCodexCliHome(options: ImportCodexCliTokensOptions): string {
