@@ -485,6 +485,7 @@ function fakeCiRepairOrchestration(
   return {
     status: "completed",
     ciRepair: {
+      status: "created",
       cwd,
       stateDb,
       task: completedTask,

@@ -16,6 +16,8 @@ import {
 
 import {
   createCiRepairTaskFromWorkflowRunUnlocked,
+  isCreatedCiRepairTaskResult,
+  type CreateCiRepairTaskFromWorkflowRunResult,
   type CreateCiRepairTaskResult
 } from "./ci-repair.js";
 import {
@@ -103,9 +105,9 @@ export interface RunCiRepairOrchestratorOptions {
 }
 
 export interface RunCiRepairOrchestratorResult {
-  status: "completed" | "waiting_approval";
-  ciRepair: CreateCiRepairTaskResult;
-  branchName: string;
+  status: "completed" | "waiting_approval" | "ignored";
+  ciRepair: CreateCiRepairTaskFromWorkflowRunResult;
+  branchName?: string;
   workerResult?: WrappedWorkerRunResult;
   commit?: CommitGitChangesResult;
   diffScope?: GitDiffScopeVerification;
@@ -172,6 +174,13 @@ export async function runCiRepairOrchestratorUnlocked(
     ...(options.githubRunner === undefined ? {} : { runner: options.githubRunner }),
     ...(options.now === undefined ? {} : { now: options.now })
   });
+
+  if (!isCreatedCiRepairTaskResult(queuedCiRepair)) {
+    return {
+      status: "ignored",
+      ciRepair: queuedCiRepair
+    };
+  }
 
   if (queuedCiRepair.task.status !== "queued") {
     throw new Error(
@@ -1051,6 +1060,22 @@ export async function runCiRepairOrchestratorUnlocked(
 export function formatCiRepairOrchestratorReport(
   result: RunCiRepairOrchestratorResult
 ): string {
+  if (result.status === "ignored") {
+    if (result.ciRepair.status !== "ignored") {
+      throw new Error("Ignored CI repair orchestrator result is missing ignored intake");
+    }
+
+    return [
+      "Runstead CI repair orchestrator",
+      "Status: ignored",
+      `Reason: ${result.ciRepair.reason}`,
+      `Task: ${result.ciRepair.task.id}`,
+      `Task status: ${result.ciRepair.taskStatus}`,
+      `Run: ${result.ciRepair.workflowRun.runId}`,
+      `Conclusion: ${result.ciRepair.workflowRun.conclusion ?? "none"}`
+    ].join("\n");
+  }
+
   return [
     "Runstead CI repair orchestrator",
     `Status: ${result.status}`,
@@ -2248,6 +2273,7 @@ function ciRepairResultFromResume(input: {
   };
 
   return {
+    status: "created",
     cwd: input.cwd,
     stateDb: input.stateDb,
     task: input.task,

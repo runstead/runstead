@@ -8,7 +8,10 @@ import { describe, expect, it } from "vitest";
 import {
   createCiRepairTaskFromWorkflowRun,
   formatCiRepairTaskReport,
-  repairableWorkflowRunIdFromWebhook
+  isCreatedCiRepairTaskResult,
+  repairableWorkflowRunIdFromWebhook,
+  type CreateCiRepairTaskFromWorkflowRunResult,
+  type CreateCiRepairTaskResult
 } from "./ci-repair.js";
 import type { GitHubCliRunner } from "./github-actions.js";
 import { initRunstead } from "./init.js";
@@ -61,6 +64,7 @@ describe("createCiRepairTaskFromWorkflowRun", () => {
         runner,
         now: new Date("2026-05-14T11:00:00.000Z")
       });
+      expectCreatedCiRepair(result);
       const database = openRunsteadDatabase(result.stateDb);
 
       try {
@@ -235,6 +239,8 @@ describe("createCiRepairTaskFromWorkflowRun", () => {
         },
         now: new Date("2026-05-14T11:11:00.000Z")
       });
+      expectCreatedCiRepair(first);
+      expectCreatedCiRepair(second);
       const database = openRunsteadDatabase(second.stateDb);
 
       try {
@@ -311,6 +317,7 @@ describe("createCiRepairTaskFromWorkflowRun", () => {
         runner,
         now: new Date("2026-05-14T11:05:00.000Z")
       });
+      expectCreatedCiRepair(result);
       const artifact = JSON.parse(await readFile(result.evidencePath, "utf8")) as {
         log: { log: string };
       };
@@ -397,7 +404,7 @@ describe("createCiRepairTaskFromWorkflowRun", () => {
     }
   });
 
-  it("rejects successful workflow runs", async () => {
+  it("returns an ignored result for successful workflow runs", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "runstead-ci-repair-"));
     const runner: GitHubCliRunner = (args) => {
       if (args.includes("--log")) {
@@ -424,13 +431,19 @@ describe("createCiRepairTaskFromWorkflowRun", () => {
         createDefaultGoal: true
       });
 
-      await expect(
-        createCiRepairTaskFromWorkflowRun({
-          cwd: workspace,
-          runId: "123",
-          runner
-        })
-      ).rejects.toThrow("expected repairable failure");
+      const result = await createCiRepairTaskFromWorkflowRun({
+        cwd: workspace,
+        runId: "123",
+        runner
+      });
+
+      expect(result).toMatchObject({
+        status: "ignored",
+        reason: "workflow_not_repairable",
+        taskStatus: "cancelled",
+        error: expect.stringContaining("expected repairable failure")
+      });
+      expect(formatCiRepairTaskReport(result)).toContain("Status: ignored");
 
       const database = openRunsteadDatabase(join(workspace, ".runstead", "state.db"));
 
@@ -496,6 +509,16 @@ describe("createCiRepairTaskFromWorkflowRun", () => {
     ).toBeUndefined();
   });
 });
+
+function expectCreatedCiRepair(
+  result: CreateCiRepairTaskFromWorkflowRunResult
+): asserts result is CreateCiRepairTaskResult {
+  expect(result.status).toBe("created");
+
+  if (!isCreatedCiRepairTaskResult(result)) {
+    throw new Error(`Expected created CI repair result, got ${result.status}`);
+  }
+}
 
 function classificationRunner(log: string): GitHubCliRunner {
   return (args) => {

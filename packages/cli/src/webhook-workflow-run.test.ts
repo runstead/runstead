@@ -457,6 +457,7 @@ describe("handleGitHubWorkflowRunWebhook", () => {
 
 function fakeCiRepair(runId: string): CreateCiRepairTaskResult {
   return {
+    status: "created",
     cwd: "/repo",
     stateDb: "/repo/.runstead/state.db",
     task: {

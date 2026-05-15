@@ -8,7 +8,7 @@ import type { CommandVerifierInput } from "./verifier-evidence.js";
 import {
   createCiRepairTaskFromWorkflowRun,
   repairableWorkflowRunIdFromWebhook,
-  type CreateCiRepairTaskResult
+  type CreateCiRepairTaskFromWorkflowRunResult
 } from "./ci-repair.js";
 import {
   runCiRepairOrchestrator,
@@ -37,7 +37,7 @@ export type HandleGitHubWorkflowRunWebhookResult =
       handled: true;
       mode: "intake";
       runId: string;
-      ciRepair: CreateCiRepairTaskResult;
+      ciRepair: CreateCiRepairTaskFromWorkflowRunResult;
     }
   | {
       handled: true;
@@ -361,8 +361,27 @@ function webhookAuditPayload(
       mode: result.mode,
       runId: result.runId,
       taskId: result.ciRepair.task.id,
+      status: result.ciRepair.status,
       taskStatus: result.ciRepair.task.status,
+      ...(result.ciRepair.status === "ignored"
+        ? { reason: result.ciRepair.reason }
+        : {}),
       created: result.ciRepair.created
+    };
+  }
+
+  if (
+    result.orchestration.status === "ignored" &&
+    result.orchestration.ciRepair.status === "ignored"
+  ) {
+    return {
+      ...base,
+      mode: result.mode,
+      runId: result.runId,
+      taskId: result.orchestration.ciRepair.task.id,
+      status: result.orchestration.status,
+      reason: result.orchestration.ciRepair.reason,
+      taskStatus: result.orchestration.ciRepair.taskStatus
     };
   }
 

@@ -9,7 +9,10 @@ import { describe, expect, it } from "vitest";
 import { decideApproval, showApproval } from "./approvals.js";
 import { exportAuditLog } from "./audit-export.js";
 import { initRunstead } from "./init.js";
-import { createCiRepairTaskFromWorkflowRun } from "./ci-repair.js";
+import {
+  createCiRepairTaskFromWorkflowRun,
+  isCreatedCiRepairTaskResult
+} from "./ci-repair.js";
 import {
   formatCiRepairOrchestratorReport,
   runCiRepairOrchestrator
@@ -308,6 +311,10 @@ describe("runCiRepairOrchestrator", () => {
       const bodyIndex = prCreateArgs?.indexOf("--body") ?? -1;
       const pullRequestBody =
         bodyIndex === -1 ? undefined : prCreateArgs?.[bodyIndex + 1];
+
+      if (!isCreatedCiRepairTaskResult(second.ciRepair)) {
+        throw new Error(`Expected created CI repair result, got ${second.ciRepair.status}`);
+      }
 
       expect(pullRequestBody).toContain("## Evidence");
       expect(pullRequestBody).toContain(`- CI log: ${second.ciRepair.evidence.id}`);
@@ -895,6 +902,11 @@ describe("runCiRepairOrchestrator", () => {
       );
       expect(body).toContain("- git.push: completed");
       expect(body).toContain("## Evidence");
+      if (!isCreatedCiRepairTaskResult(secondCiRepair.ciRepair)) {
+        throw new Error(
+          `Expected created CI repair result, got ${secondCiRepair.ciRepair.status}`
+        );
+      }
       expect(body).toContain(secondCiRepair.ciRepair.evidence.id);
     } finally {
       await rm(workspace, { force: true, recursive: true });

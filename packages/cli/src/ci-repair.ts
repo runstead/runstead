@@ -45,6 +45,7 @@ export interface CreateCiRepairTaskOptions {
 }
 
 export interface CreateCiRepairTaskResult {
+  status: "created";
   cwd: string;
   stateDb: string;
   task: Task;
@@ -55,6 +56,24 @@ export interface CreateCiRepairTaskResult {
   log: GitHubWorkflowRunLog;
   created: boolean;
 }
+
+export interface IgnoredCiRepairTaskResult {
+  status: "ignored";
+  reason: "workflow_not_repairable";
+  taskStatus: "cancelled";
+  cwd: string;
+  stateDb: string;
+  task: Task;
+  event: RunsteadEvent;
+  workflowRun: GitHubWorkflowRunStatus;
+  log: GitHubWorkflowRunLog;
+  created: boolean;
+  error: string;
+}
+
+export type CreateCiRepairTaskFromWorkflowRunResult =
+  | CreateCiRepairTaskResult
+  | IgnoredCiRepairTaskResult;
 
 interface CiFailureClassification extends JsonObject {
   category:
@@ -86,7 +105,7 @@ const CI_LOG_EVIDENCE_METADATA = {
 
 export async function createCiRepairTaskFromWorkflowRun(
   options: CreateCiRepairTaskOptions
-): Promise<CreateCiRepairTaskResult> {
+): Promise<CreateCiRepairTaskFromWorkflowRunResult> {
   return withRunsteadManagerLock(options, () =>
     createCiRepairTaskFromWorkflowRunUnlocked(options)
   );
@@ -94,7 +113,7 @@ export async function createCiRepairTaskFromWorkflowRun(
 
 export async function createCiRepairTaskFromWorkflowRunUnlocked(
   options: CreateCiRepairTaskOptions
-): Promise<CreateCiRepairTaskResult> {
+): Promise<CreateCiRepairTaskFromWorkflowRunResult> {
   const cwd = resolve(options.cwd ?? process.cwd());
   const resolvedState = requireRunsteadStateDbSync(cwd);
   const createdAt = (options.now ?? new Date()).toISOString();
@@ -171,6 +190,8 @@ export async function createCiRepairTaskFromWorkflowRunUnlocked(
     createdAt
   };
   const database = openRunsteadDatabase(resolvedState.stateDb);
+  let fetchedWorkflowRun: GitHubWorkflowRunStatus | undefined;
+  let fetchedLog: GitHubWorkflowRunLog | undefined;
 
   try {
     appendEventAndProject(database, {
@@ -261,6 +282,8 @@ export async function createCiRepairTaskFromWorkflowRunUnlocked(
       const evidenceLog = redactGitHubWorkflowRunLog(logResult.value);
       const failureClassification = classifyCiFailure(workflowRun, evidenceLog);
 
+      fetchedWorkflowRun = workflowRun;
+      fetchedLog = evidenceLog;
       assertRepairableWorkflowRun(workflowRun);
 
       const finalTask: Task = {
@@ -369,6 +392,7 @@ export async function createCiRepairTaskFromWorkflowRunUnlocked(
       });
 
       return {
+        status: "created",
         cwd,
         stateDb: resolvedState.stateDb,
         task: finalTask,
@@ -382,7 +406,7 @@ export async function createCiRepairTaskFromWorkflowRunUnlocked(
     } catch (error) {
       const notRepairable = error instanceof NonRepairableWorkflowRunError;
 
-      markCiRepairTaskTerminal({
+      const terminalTask = markCiRepairTaskTerminal({
         database,
         task,
         status: notRepairable ? "cancelled" : "failed",
@@ -400,6 +424,26 @@ export async function createCiRepairTaskFromWorkflowRunUnlocked(
         ...(options.now === undefined ? {} : { now: options.now })
       });
 
+      if (
+        notRepairable &&
+        fetchedWorkflowRun !== undefined &&
+        fetchedLog !== undefined
+      ) {
+        return {
+          status: "ignored",
+          reason: "workflow_not_repairable",
+          taskStatus: "cancelled",
+          cwd,
+          stateDb: resolvedState.stateDb,
+          task: terminalTask,
+          event: taskCreatedEvent,
+          workflowRun: fetchedWorkflowRun,
+          log: fetchedLog,
+          created: true,
+          error: errorMessage(error)
+        };
+      }
+
       throw error;
     }
   } finally {
@@ -407,9 +451,26 @@ export async function createCiRepairTaskFromWorkflowRunUnlocked(
   }
 }
 
-export function formatCiRepairTaskReport(result: CreateCiRepairTaskResult): string {
+export function formatCiRepairTaskReport(
+  result: CreateCiRepairTaskFromWorkflowRunResult
+): string {
+  if (result.status === "ignored") {
+    return [
+      "Runstead CI repair task",
+      "Status: ignored",
+      `Reason: ${result.reason}`,
+      `Task: ${result.task.id}`,
+      `Task status: ${result.taskStatus}`,
+      `Run: ${result.workflowRun.runId}`,
+      `Workflow: ${result.workflowRun.workflowName ?? "unknown"}`,
+      `Conclusion: ${result.workflowRun.conclusion ?? "none"}`,
+      `Message: ${result.error}`
+    ].join("\n");
+  }
+
   return [
     "Runstead CI repair task",
+    "Status: created",
     `Task: ${result.task.id}`,
     `Run: ${result.workflowRun.runId}`,
     `Workflow: ${result.workflowRun.workflowName ?? "unknown"}`,
@@ -417,6 +478,12 @@ export function formatCiRepairTaskReport(result: CreateCiRepairTaskResult): stri
     `Evidence: ${result.evidence.id}`,
     `Log bytes: ${result.log.byteLength}`
   ].join("\n");
+}
+
+export function isCreatedCiRepairTaskResult(
+  result: CreateCiRepairTaskFromWorkflowRunResult
+): result is CreateCiRepairTaskResult {
+  return result.status === "created";
 }
 
 function findExistingCiRepairTaskForWorkflowRun(input: {
@@ -483,6 +550,7 @@ async function loadExistingCiRepairTaskResult(input: {
     }
 
     return {
+      status: "created",
       cwd: input.cwd,
       stateDb: input.stateDb,
       task: input.task,
