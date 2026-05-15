@@ -203,6 +203,7 @@ describe("runCiRepairOrchestrator", () => {
         const taskOutput = JSON.parse(taskState.output_json) as {
           ciRepairOrchestrator?: {
             stage?: string;
+            counters?: Record<string, number>;
             checkpointBefore?: { id?: string };
             workerResult?: { worker?: string };
             commit?: { commitSha?: string };
@@ -223,6 +224,13 @@ describe("runCiRepairOrchestrator", () => {
 
         expect(taskOutput.ciRepairOrchestrator).toMatchObject({
           stage: "publish_approval_requested",
+          counters: {
+            orchestratorAttempt: 2,
+            workerAttempt: 1,
+            publishAttempt: 0,
+            resumeCount: 0,
+            approvalRound: 2
+          },
           checkpointBefore: { id: first.workerResult?.checkpointBefore?.id },
           workerResult: { worker: "codex_cli" },
           commit: { commitSha: "abc123" },
@@ -395,6 +403,14 @@ describe("runCiRepairOrchestrator", () => {
           output_json: string;
           policy_decision_id: string;
         }[];
+        const finalTaskState = finalDatabase
+          .prepare("SELECT output_json FROM tasks WHERE id = ?")
+          .get(second.ciRepair.task.id) as { output_json: string };
+        const finalTaskOutput = JSON.parse(finalTaskState.output_json) as {
+          ciRepairOrchestrator?: {
+            counters?: Record<string, number>;
+          };
+        };
 
         expect(coveredSubActions).toHaveLength(2);
         expect(coveredSubActions.map((row) => row.action_type).sort()).toEqual([
@@ -417,6 +433,13 @@ describe("runCiRepairOrchestrator", () => {
           expect(output.coveredByToolCallId).toMatch(/^tool_/);
           expect(output.coveredByPolicyDecisionId).toMatch(/^poldec_/);
         }
+        expect(finalTaskOutput.ciRepairOrchestrator?.counters).toMatchObject({
+          orchestratorAttempt: 3,
+          workerAttempt: 1,
+          publishAttempt: 1,
+          resumeCount: 0,
+          approvalRound: 2
+        });
       } finally {
         finalDatabase.close();
       }
@@ -817,6 +840,14 @@ describe("runCiRepairOrchestrator", () => {
           )
           .all() as { status: string }[];
         const gitPushes = gitCalls.filter((args) => args[0] === "push");
+        const taskState = database
+          .prepare("SELECT output_json FROM tasks WHERE id = ?")
+          .get(resumed.task.id) as { output_json: string };
+        const taskOutput = JSON.parse(taskState.output_json) as {
+          ciRepairOrchestrator?: {
+            counters?: Record<string, number>;
+          };
+        };
 
         expect(resumedTasks.requeuedTasks).toHaveLength(1);
         expect(resumed.task.status).toBe("completed");
@@ -832,6 +863,13 @@ describe("runCiRepairOrchestrator", () => {
         expect(
           showApproval({ cwd: workspace, id: first.approval.id }).approval.status
         ).toBe("expired");
+        expect(taskOutput.ciRepairOrchestrator?.counters).toMatchObject({
+          orchestratorAttempt: 3,
+          workerAttempt: 1,
+          publishAttempt: 1,
+          resumeCount: 1,
+          approvalRound: 1
+        });
       } finally {
         database.close();
       }

@@ -20,6 +20,12 @@ append-only event log. Replay follows related worker run, tool call, policy
 decision, approval, evidence, and task ids instead of requiring each aggregate
 filter to be selected manually.
 
+CI repair task output keeps separate runtime counters for orchestration
+attempts, wrapped-worker attempts, publish attempts, interrupted-run resumes,
+and approval rounds. These counters are separate from the task-level
+`attempt` field so crash resume, worker retry, and approval retry can be
+reported independently.
+
 The product rule is strict: every side effect must be allowed, denied, or
 attached to an approval request before it runs.
 

@@ -210,8 +210,9 @@ export async function runCiRepairOrchestratorUnlocked(
   });
   const database = openRunsteadDatabase(stateDb);
   let orchestratorTask = ciRepair.task;
+  const restoredStageContext = ciRepairStageContext(queuedCiRepair.task);
   let stageContext =
-    ciRepairStageContext(queuedCiRepair.task) ??
+    restoredStageContext ??
     buildInitialCiRepairStageContext({
       ciRepair,
       branchName,
@@ -220,6 +221,21 @@ export async function runCiRepairOrchestratorUnlocked(
     });
 
   try {
+    if (restoredStageContext !== undefined) {
+      ({ task: orchestratorTask, context: stageContext } = writeCiRepairContextPatch({
+        database,
+        task: orchestratorTask,
+        context: stageContext,
+        patch: {
+          counters: incrementCiRepairCounter(
+            stageContext,
+            "orchestratorAttempt"
+          )
+        },
+        ...(options.now === undefined ? {} : { now: options.now })
+      }));
+    }
+
     if (!stageAtLeast(stageContext.stage, "intake_completed")) {
       ({ task: orchestratorTask, context: stageContext } = writeCiRepairStage({
         database,
@@ -430,6 +446,10 @@ export async function runCiRepairOrchestratorUnlocked(
             };
           }
         }).then((result) => result.value);
+        stageContext = {
+          ...stageContext,
+          counters: incrementCiRepairCounter(stageContext, "workerAttempt")
+        };
         if (workerResult === undefined) {
           throw new Error("CI repair worker result context is missing");
         }
@@ -822,6 +842,10 @@ export async function runCiRepairOrchestratorUnlocked(
               context: publishContext,
               ...(options.now === undefined ? {} : { now: options.now })
             });
+            publishContext = {
+              ...publishContext,
+              counters: incrementCiRepairCounter(publishContext, "publishAttempt")
+            };
             ({ task: publishTask, context: publishContext } = writeCiRepairStage({
               database,
               task: publishTask,
@@ -947,6 +971,10 @@ export async function runCiRepairOrchestratorUnlocked(
               : error.toolCall.actionType === "git.push"
                 ? "push_approval_requested"
                 : "pr_approval_requested";
+          const waitingContext = {
+            ...publishContext,
+            counters: incrementCiRepairCounter(publishContext, "approvalRound")
+          };
           const waitingTask = markTaskTerminal({
             database,
             task: publishTask,
@@ -954,7 +982,7 @@ export async function runCiRepairOrchestratorUnlocked(
             output: {
               ...(publishTask.output ?? {}),
               ciRepairOrchestrator: {
-                ...publishContext,
+                ...waitingContext,
                 stage: approvalStage,
                 approvalId: error.approval.id
               }
@@ -1011,6 +1039,10 @@ export async function runCiRepairOrchestratorUnlocked(
       }
 
       if (error instanceof ToolActionApprovalRequiredError) {
+        const waitingContext = {
+          ...stageContext,
+          counters: incrementCiRepairCounter(stageContext, "approvalRound")
+        };
         const waitingTask = markTaskTerminal({
           database,
           task: orchestratorTask,
@@ -1019,7 +1051,7 @@ export async function runCiRepairOrchestratorUnlocked(
             ...(orchestratorTask.output ?? {}),
             summary: `${error.toolCall.actionType} requires approval`,
             ciRepairOrchestrator: {
-              ...stageContext,
+              ...waitingContext,
               approvalId: error.approval.id
             },
             approval: {
@@ -1435,6 +1467,19 @@ async function resumeCiRepairPullRequest(options: {
     let resumeTask = task;
     let resumeContext = context;
 
+    ({ task: resumeTask, context: resumeContext } = writeCiRepairContextPatch({
+      database,
+      task: resumeTask,
+      context: resumeContext,
+      patch: {
+        counters: incrementCiRepairCounter(resumeContext, "orchestratorAttempt")
+      },
+      ...(options.now === undefined ? {} : { now: options.now })
+    }) as {
+      task: Task;
+      context: CiRepairOrchestratorResumeContext;
+    });
+
     try {
       if (!stageAtLeast(resumeContext.stage, "branch_pushed")) {
         let publishCoverage = publishCoverageFromContext(resumeContext);
@@ -1453,6 +1498,10 @@ async function resumeCiRepairPullRequest(options: {
             context: resumeContext,
             ...(options.now === undefined ? {} : { now: options.now })
           });
+          resumeContext = {
+            ...resumeContext,
+            counters: incrementCiRepairCounter(resumeContext, "publishAttempt")
+          };
           ({ task: resumeTask, context: resumeContext } = writeCiRepairStage({
             database,
             task: resumeTask,
@@ -1576,6 +1625,10 @@ async function resumeCiRepairPullRequest(options: {
             : error.toolCall.actionType === "git.push"
               ? "push_approval_requested"
               : "pr_approval_requested";
+        const waitingContext = {
+          ...resumeContext,
+          counters: incrementCiRepairCounter(resumeContext, "approvalRound")
+        };
         const waitingTask = markTaskTerminal({
           database,
           task: resumeTask,
@@ -1583,7 +1636,7 @@ async function resumeCiRepairPullRequest(options: {
           output: {
             ...(resumeTask.output ?? {}),
             ciRepairOrchestrator: {
-              ...resumeContext,
+              ...waitingContext,
               stage: approvalStage,
               approvalId: error.approval.id
             }
@@ -2088,6 +2141,7 @@ const CI_REPAIR_PROGRESS_STAGE_ORDER: CiRepairOrchestratorProgressStage[] = [
 interface CiRepairOrchestratorStageContext extends JsonObject {
   stage: string;
   runId: string;
+  counters?: CiRepairOrchestratorCounters;
   branchName?: string;
   base?: string;
   draft?: boolean;
@@ -2112,6 +2166,7 @@ interface CiRepairOrchestratorStageContext extends JsonObject {
 interface CiRepairOrchestratorResumeContext extends JsonObject {
   stage: string;
   runId: string;
+  counters?: CiRepairOrchestratorCounters;
   branchName: string;
   base: string;
   draft: boolean;
@@ -2138,6 +2193,21 @@ interface PublishCoverage {
   approvalId?: string;
 }
 
+interface CiRepairOrchestratorCounters extends JsonObject {
+  orchestratorAttempt: number;
+  workerAttempt: number;
+  publishAttempt: number;
+  resumeCount: number;
+  approvalRound: number;
+}
+
+type CiRepairOrchestratorCounterName =
+  | "orchestratorAttempt"
+  | "workerAttempt"
+  | "publishAttempt"
+  | "resumeCount"
+  | "approvalRound";
+
 function buildInitialCiRepairStageContext(input: {
   ciRepair: CreateCiRepairTaskResult;
   branchName: string;
@@ -2147,6 +2217,13 @@ function buildInitialCiRepairStageContext(input: {
   return {
     stage: "created",
     runId: input.ciRepair.workflowRun.runId,
+    counters: {
+      orchestratorAttempt: 1,
+      workerAttempt: 0,
+      publishAttempt: 0,
+      resumeCount: 0,
+      approvalRound: 0
+    },
     branchName: input.branchName,
     base: input.base,
     draft: input.draft,
@@ -2220,6 +2297,64 @@ function writeCiRepairStage(input: {
     task,
     context
   };
+}
+
+function writeCiRepairContextPatch(input: {
+  database: RunsteadDatabase;
+  task: Task;
+  context: CiRepairOrchestratorStageContext;
+  patch: Partial<CiRepairOrchestratorStageContext>;
+  now?: Date;
+}): { task: Task; context: CiRepairOrchestratorStageContext } {
+  const context: CiRepairOrchestratorStageContext = {
+    ...input.context,
+    ...input.patch
+  };
+  const task = writeTaskOutput({
+    database: input.database,
+    task: input.task,
+    output: {
+      ...(input.task.output ?? {}),
+      ciRepairOrchestrator: context
+    },
+    eventType: "task.updated",
+    ...(input.now === undefined ? {} : { now: input.now })
+  });
+
+  return {
+    task,
+    context
+  };
+}
+
+function incrementCiRepairCounter(
+  context: CiRepairOrchestratorStageContext,
+  counter: CiRepairOrchestratorCounterName
+): CiRepairOrchestratorCounters {
+  const counters = ciRepairCounters(context);
+
+  return {
+    ...counters,
+    [counter]: counters[counter] + 1
+  };
+}
+
+function ciRepairCounters(
+  context: CiRepairOrchestratorStageContext
+): CiRepairOrchestratorCounters {
+  const counters = context.counters;
+
+  return {
+    orchestratorAttempt: numberOrZero(counters?.orchestratorAttempt),
+    workerAttempt: numberOrZero(counters?.workerAttempt),
+    publishAttempt: numberOrZero(counters?.publishAttempt),
+    resumeCount: numberOrZero(counters?.resumeCount),
+    approvalRound: numberOrZero(counters?.approvalRound)
+  };
+}
+
+function numberOrZero(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
 
 function stageAtLeast(

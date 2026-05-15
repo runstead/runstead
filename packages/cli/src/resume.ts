@@ -116,9 +116,11 @@ function resumeInterruptedTasksUnlocked(
         continue;
       }
 
+      const output = resumeRequeuedOutput(interrupted.task);
       const task: Task = {
         ...interrupted.task,
         status: "queued",
+        ...(output === undefined ? {} : { output }),
         updatedAt: requeuedAt
       };
       const event = taskEvent(
@@ -199,6 +201,33 @@ function resumeFailedOutput(task: Task): JsonObject {
     previousStatus: task.status,
     attempt: task.attempt,
     maxAttempts: task.maxAttempts
+  };
+}
+
+function resumeRequeuedOutput(task: Task): JsonObject | undefined {
+  const output = task.output;
+
+  if (output === undefined) {
+    return undefined;
+  }
+
+  const context = output.ciRepairOrchestrator;
+
+  if (!isRecord(context)) {
+    return output;
+  }
+
+  const counters = isRecord(context.counters) ? context.counters : {};
+
+  return {
+    ...output,
+    ciRepairOrchestrator: {
+      ...context,
+      counters: {
+        ...counters,
+        resumeCount: numberOrZero(counters.resumeCount) + 1
+      }
+    }
   };
 }
 
@@ -312,4 +341,12 @@ function taskEvent(
     payload,
     createdAt
   };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function numberOrZero(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
