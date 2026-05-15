@@ -65,6 +65,26 @@ describe("cli entrypoint", () => {
     );
   });
 
+  it("exposes Codex Direct credential commands", () => {
+    const codex = createProgram().commands.find(
+      (command) => command.name() === "codex"
+    );
+
+    expect(codex?.commands.map((command) => command.name())).toEqual(
+      expect.arrayContaining(["login", "status", "logout", "models"])
+    );
+    expect(
+      codex?.commands
+        .find((command) => command.name() === "login")
+        ?.options.map((option) => option.long)
+    ).toEqual(expect.arrayContaining(["--import-codex-cli", "--yes"]));
+    expect(
+      codex?.commands
+        .find((command) => command.name() === "models")
+        ?.options.map((option) => option.long)
+    ).toContain("--refresh");
+  });
+
   it("exposes RBAC actor selection on domain registry commands", () => {
     const domain = createProgram().commands.find(
       (command) => command.name() === "domain"

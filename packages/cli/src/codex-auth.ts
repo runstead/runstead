@@ -1,0 +1,935 @@
+import { constants } from "node:fs";
+import {
+  access,
+  chmod,
+  mkdir,
+  open,
+  readFile,
+  rename,
+  rm,
+  stat,
+  writeFile
+} from "node:fs/promises";
+import { homedir } from "node:os";
+import { dirname, join, resolve } from "node:path";
+import { setTimeout as sleep } from "node:timers/promises";
+
+export const CODEX_PROVIDER_ID = "openai-codex";
+export const DEFAULT_CODEX_BASE_URL = "https://chatgpt.com/backend-api/codex";
+export const CODEX_OAUTH_CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann";
+export const CODEX_OAUTH_TOKEN_URL = "https://auth.openai.com/oauth/token";
+export const CODEX_AUTH_REFRESH_SKEW_SECONDS = 120;
+
+export interface CodexAuthStoreOptions {
+  runsteadHome?: string;
+  now?: Date;
+}
+
+export interface CodexAuthTokens {
+  accessToken: string;
+  refreshToken: string;
+}
+
+export interface CodexAuthState {
+  provider: typeof CODEX_PROVIDER_ID;
+  authMode: "chatgpt";
+  source: "device-code" | "codex-cli-import" | "manual";
+  baseUrl: string;
+  tokens: CodexAuthTokens;
+  lastRefresh: string;
+}
+
+export interface CodexAuthStatus {
+  loggedIn: boolean;
+  authPath: string;
+  provider: typeof CODEX_PROVIDER_ID;
+  baseUrl?: string;
+  source?: CodexAuthState["source"];
+  authMode?: CodexAuthState["authMode"];
+  lastRefresh?: string;
+  hasRefreshToken?: boolean;
+  accessTokenExpiresAt?: string;
+  accessTokenExpired?: boolean;
+}
+
+export interface CodexRuntimeCredentials {
+  provider: typeof CODEX_PROVIDER_ID;
+  baseUrl: string;
+  accessToken: string;
+  source: CodexAuthState["source"];
+  authMode: CodexAuthState["authMode"];
+  lastRefresh: string;
+}
+
+export interface CodexModel {
+  id: string;
+  contextWindow?: number;
+  raw: Record<string, unknown>;
+}
+
+export interface CodexDeviceCode {
+  userCode: string;
+  deviceAuthId: string;
+  verificationUrl: string;
+  pollIntervalMs: number;
+}
+
+export interface CodexDeviceLoginOptions extends CodexAuthStoreOptions {
+  fetch?: FetchLike;
+  issuer?: string;
+  tokenUrl?: string;
+  baseUrl?: string;
+  timeoutMs?: number;
+  onDeviceCode?: (deviceCode: CodexDeviceCode) => void;
+}
+
+export interface ResolveCodexRuntimeCredentialsOptions extends CodexAuthStoreOptions {
+  fetch?: FetchLike;
+  forceRefresh?: boolean;
+  refreshIfExpiring?: boolean;
+  refreshSkewSeconds?: number;
+  lockTimeoutMs?: number;
+}
+
+export interface ListCodexModelsOptions extends ResolveCodexRuntimeCredentialsOptions {
+  clientVersion?: string;
+}
+
+export interface ImportCodexCliTokensOptions extends CodexAuthStoreOptions {
+  codexHome?: string;
+  baseUrl?: string;
+}
+
+type FetchLike = (input: string | URL, init?: RequestInit) => Promise<Response>;
+
+interface CodexAuthStoreFile {
+  version: 1;
+  providers: Record<string, unknown>;
+}
+
+interface CodexAuthStateJson {
+  tokens?: {
+    access_token?: unknown;
+    refresh_token?: unknown;
+  };
+  base_url?: unknown;
+  last_refresh?: unknown;
+  auth_mode?: unknown;
+  source?: unknown;
+}
+
+export function resolveRunsteadHome(options: CodexAuthStoreOptions = {}): string {
+  const configured = options.runsteadHome ?? process.env.RUNSTEAD_HOME;
+
+  if (configured !== undefined && configured.trim().length > 0) {
+    return resolve(configured);
+  }
+
+  return join(homedir(), ".runstead");
+}
+
+export function codexAuthStorePath(options: CodexAuthStoreOptions = {}): string {
+  return join(resolveRunsteadHome(options), "auth.json");
+}
+
+export async function readCodexAuthState(
+  options: CodexAuthStoreOptions = {}
+): Promise<CodexAuthState | undefined> {
+  const store = await readCodexAuthStore(options);
+  const raw = store.providers[CODEX_PROVIDER_ID];
+
+  if (raw === undefined) {
+    return undefined;
+  }
+
+  return parseCodexAuthState(raw);
+}
+
+export async function requireCodexAuthState(
+  options: CodexAuthStoreOptions = {}
+): Promise<CodexAuthState> {
+  const state = await readCodexAuthState(options);
+
+  if (state === undefined) {
+    throw new Error(`No Codex credentials stored. Run \`runstead codex login\` first.`);
+  }
+
+  return state;
+}
+
+export async function saveCodexAuthState(
+  state: CodexAuthState,
+  options: CodexAuthStoreOptions = {}
+): Promise<{ authPath: string; state: CodexAuthState }> {
+  const store = await readCodexAuthStore(options);
+  const authPath = codexAuthStorePath(options);
+
+  store.providers[CODEX_PROVIDER_ID] = codexAuthStateToJson(state);
+  await writeCodexAuthStore(authPath, store);
+
+  return {
+    authPath,
+    state
+  };
+}
+
+export async function clearCodexAuthState(
+  options: CodexAuthStoreOptions = {}
+): Promise<{ authPath: string; cleared: boolean }> {
+  const store = await readCodexAuthStore(options);
+  const authPath = codexAuthStorePath(options);
+  const cleared = store.providers[CODEX_PROVIDER_ID] !== undefined;
+
+  delete store.providers[CODEX_PROVIDER_ID];
+  await writeCodexAuthStore(authPath, store);
+
+  return {
+    authPath,
+    cleared
+  };
+}
+
+export async function getCodexAuthStatus(
+  options: CodexAuthStoreOptions = {}
+): Promise<CodexAuthStatus> {
+  const state = await readCodexAuthState(options);
+  const authPath = codexAuthStorePath(options);
+
+  if (state === undefined) {
+    return {
+      loggedIn: false,
+      authPath,
+      provider: CODEX_PROVIDER_ID
+    };
+  }
+
+  const expiresAt = codexAccessTokenExpiresAt(state.tokens.accessToken);
+  const expired = isCodexAccessTokenExpiring(state.tokens.accessToken, 0, options.now);
+
+  return {
+    loggedIn: true,
+    authPath,
+    provider: CODEX_PROVIDER_ID,
+    baseUrl: state.baseUrl,
+    source: state.source,
+    authMode: state.authMode,
+    lastRefresh: state.lastRefresh,
+    hasRefreshToken: state.tokens.refreshToken.length > 0,
+    ...(expiresAt === undefined ? {} : { accessTokenExpiresAt: expiresAt }),
+    accessTokenExpired: expired
+  };
+}
+
+export async function loginCodexWithDeviceCode(
+  options: CodexDeviceLoginOptions = {}
+): Promise<{ authPath: string; state: CodexAuthState; deviceCode: CodexDeviceCode }> {
+  const fetchFn = options.fetch ?? fetch;
+  const issuer = trimTrailingSlash(options.issuer ?? "https://auth.openai.com");
+  const tokenUrl = options.tokenUrl ?? CODEX_OAUTH_TOKEN_URL;
+  const baseUrl = resolveCodexBaseUrl(options.baseUrl);
+  const deviceCode = await requestCodexDeviceCode({
+    fetch: fetchFn,
+    issuer
+  });
+
+  options.onDeviceCode?.(deviceCode);
+
+  const authorization = await pollCodexDeviceAuthorization({
+    fetch: fetchFn,
+    issuer,
+    deviceCode,
+    timeoutMs: options.timeoutMs ?? 15 * 60_000
+  });
+  const tokens = await exchangeCodexAuthorizationCode({
+    fetch: fetchFn,
+    tokenUrl,
+    issuer,
+    authorizationCode: authorization.authorizationCode,
+    codeVerifier: authorization.codeVerifier
+  });
+  const state = normalizeCodexAuthState({
+    provider: CODEX_PROVIDER_ID,
+    authMode: "chatgpt",
+    source: "device-code",
+    baseUrl,
+    tokens,
+    lastRefresh: (options.now ?? new Date()).toISOString()
+  });
+  const saved = await saveCodexAuthState(state, options);
+
+  return {
+    ...saved,
+    deviceCode
+  };
+}
+
+export async function importCodexCliTokens(
+  options: ImportCodexCliTokensOptions = {}
+): Promise<{ authPath: string; state: CodexAuthState } | undefined> {
+  const authPath = join(resolveCodexCliHome(options), "auth.json");
+
+  try {
+    await access(authPath, constants.R_OK);
+  } catch {
+    return undefined;
+  }
+
+  const raw = JSON.parse(await readFile(authPath, "utf8")) as unknown;
+  const tokens = parseCodexCliTokens(raw);
+
+  if (tokens === undefined) {
+    return undefined;
+  }
+
+  if (isCodexAccessTokenExpiring(tokens.accessToken, 0, options.now)) {
+    return undefined;
+  }
+
+  const state = normalizeCodexAuthState({
+    provider: CODEX_PROVIDER_ID,
+    authMode: "chatgpt",
+    source: "codex-cli-import",
+    baseUrl: resolveCodexBaseUrl(options.baseUrl),
+    tokens,
+    lastRefresh: (options.now ?? new Date()).toISOString()
+  });
+
+  return saveCodexAuthState(state, options);
+}
+
+export async function resolveCodexRuntimeCredentials(
+  options: ResolveCodexRuntimeCredentialsOptions = {}
+): Promise<CodexRuntimeCredentials> {
+  let state = await requireCodexAuthState(options);
+  const refreshIfExpiring = options.refreshIfExpiring !== false;
+  let shouldRefresh = options.forceRefresh === true;
+
+  if (!shouldRefresh && refreshIfExpiring) {
+    shouldRefresh = isCodexAccessTokenExpiring(
+      state.tokens.accessToken,
+      options.refreshSkewSeconds ?? CODEX_AUTH_REFRESH_SKEW_SECONDS,
+      options.now
+    );
+  }
+
+  if (shouldRefresh) {
+    state = await withCodexAuthLock(options, async () => {
+      const latest = await requireCodexAuthState(options);
+      let latestShouldRefresh = options.forceRefresh === true;
+
+      if (!latestShouldRefresh && refreshIfExpiring) {
+        latestShouldRefresh = isCodexAccessTokenExpiring(
+          latest.tokens.accessToken,
+          options.refreshSkewSeconds ?? CODEX_AUTH_REFRESH_SKEW_SECONDS,
+          options.now
+        );
+      }
+
+      if (!latestShouldRefresh) {
+        return latest;
+      }
+
+      const refreshed = await refreshCodexAuthTokens({
+        fetch: options.fetch ?? fetch,
+        tokens: latest.tokens,
+        ...(options.now === undefined ? {} : { now: options.now })
+      });
+      const updated = normalizeCodexAuthState({
+        ...latest,
+        tokens: refreshed.tokens,
+        lastRefresh: refreshed.lastRefresh
+      });
+
+      await saveCodexAuthState(updated, options);
+      return updated;
+    });
+  }
+
+  return {
+    provider: CODEX_PROVIDER_ID,
+    baseUrl: state.baseUrl,
+    accessToken: state.tokens.accessToken,
+    source: state.source,
+    authMode: state.authMode,
+    lastRefresh: state.lastRefresh
+  };
+}
+
+export async function listCodexModels(
+  options: ListCodexModelsOptions = {}
+): Promise<CodexModel[]> {
+  const credentials = await resolveCodexRuntimeCredentials(options);
+  const url = new URL(`${trimTrailingSlash(credentials.baseUrl)}/models`);
+
+  url.searchParams.set("client_version", options.clientVersion ?? "1.0.0");
+
+  const response = await (options.fetch ?? fetch)(url, {
+    method: "GET",
+    headers: {
+      Accept: "application/json",
+      Authorization: `Bearer ${credentials.accessToken}`
+    }
+  });
+
+  if (!response.ok) {
+    throw new Error(`Codex models request failed with status ${response.status}`);
+  }
+
+  const payload = await response.json();
+  const models =
+    isRecord(payload) && Array.isArray(payload.models) ? payload.models : [];
+
+  return models.flatMap((item) => {
+    if (!isRecord(item)) {
+      return [];
+    }
+
+    const id = item.slug ?? item.id;
+
+    if (typeof id !== "string" || id.trim().length === 0) {
+      return [];
+    }
+
+    const contextWindow = item.context_window ?? item.contextWindow;
+
+    return [
+      {
+        id: id.trim(),
+        ...(typeof contextWindow === "number" && Number.isFinite(contextWindow)
+          ? { contextWindow }
+          : {}),
+        raw: { ...item }
+      }
+    ];
+  });
+}
+
+export function formatCodexAuthStatus(status: CodexAuthStatus): string {
+  if (!status.loggedIn) {
+    return [
+      "Codex Direct: not logged in",
+      `Auth store: ${status.authPath}`,
+      "Run `runstead codex login` to authenticate."
+    ].join("\n");
+  }
+
+  return [
+    "Codex Direct: logged in",
+    `Provider: ${status.provider}`,
+    `Base URL: ${status.baseUrl ?? DEFAULT_CODEX_BASE_URL}`,
+    `Source: ${status.source ?? "unknown"}`,
+    `Auth mode: ${status.authMode ?? "unknown"}`,
+    `Refresh token: ${status.hasRefreshToken === true ? "present" : "missing"}`,
+    ...(status.lastRefresh === undefined
+      ? []
+      : [`Last refresh: ${status.lastRefresh}`]),
+    ...(status.accessTokenExpiresAt === undefined
+      ? []
+      : [`Access token expires: ${status.accessTokenExpiresAt}`]),
+    `Access token expired: ${status.accessTokenExpired === true ? "yes" : "no"}`,
+    `Auth store: ${status.authPath}`
+  ].join("\n");
+}
+
+export function formatCodexModels(models: CodexModel[]): string {
+  if (models.length === 0) {
+    return "Codex models: none returned";
+  }
+
+  return [
+    "Codex models:",
+    ...models.map((model) =>
+      model.contextWindow === undefined
+        ? `  ${model.id}`
+        : `  ${model.id} (${model.contextWindow} context)`
+    )
+  ].join("\n");
+}
+
+export function isCodexAccessTokenExpiring(
+  accessToken: string,
+  skewSeconds: number,
+  now = new Date()
+): boolean {
+  const exp = codexAccessTokenExpUnixSeconds(accessToken);
+
+  if (exp === undefined) {
+    return false;
+  }
+
+  return exp <= now.getTime() / 1000 + Math.max(0, skewSeconds);
+}
+
+export function codexAccessTokenExpiresAt(accessToken: string): string | undefined {
+  const exp = codexAccessTokenExpUnixSeconds(accessToken);
+
+  if (exp === undefined) {
+    return undefined;
+  }
+
+  return new Date(exp * 1000).toISOString();
+}
+
+async function requestCodexDeviceCode(options: {
+  fetch: FetchLike;
+  issuer: string;
+}): Promise<CodexDeviceCode> {
+  const response = await options.fetch(
+    `${options.issuer}/api/accounts/deviceauth/usercode`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json"
+      },
+      body: JSON.stringify({
+        client_id: CODEX_OAUTH_CLIENT_ID
+      })
+    }
+  );
+
+  if (!response.ok) {
+    throw new Error(`Codex device-code request failed with status ${response.status}`);
+  }
+
+  const payload = await response.json();
+
+  if (!isRecord(payload)) {
+    throw new Error("Codex device-code response was not an object");
+  }
+
+  const userCode = payload.user_code;
+  const deviceAuthId = payload.device_auth_id;
+  const interval = payload.interval;
+
+  if (typeof userCode !== "string" || userCode.trim().length === 0) {
+    throw new Error("Codex device-code response is missing user_code");
+  }
+
+  if (typeof deviceAuthId !== "string" || deviceAuthId.trim().length === 0) {
+    throw new Error("Codex device-code response is missing device_auth_id");
+  }
+
+  return {
+    userCode: userCode.trim(),
+    deviceAuthId: deviceAuthId.trim(),
+    verificationUrl: `${options.issuer}/codex/device`,
+    pollIntervalMs: Math.max(3, toInteger(interval, 5)) * 1000
+  };
+}
+
+async function pollCodexDeviceAuthorization(options: {
+  fetch: FetchLike;
+  issuer: string;
+  deviceCode: CodexDeviceCode;
+  timeoutMs: number;
+}): Promise<{ authorizationCode: string; codeVerifier: string }> {
+  const startedAt = Date.now();
+
+  while (Date.now() - startedAt < options.timeoutMs) {
+    await sleep(options.deviceCode.pollIntervalMs);
+
+    const response = await options.fetch(
+      `${options.issuer}/api/accounts/deviceauth/token`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json"
+        },
+        body: JSON.stringify({
+          device_auth_id: options.deviceCode.deviceAuthId,
+          user_code: options.deviceCode.userCode
+        })
+      }
+    );
+
+    if (response.status === 403 || response.status === 404) {
+      continue;
+    }
+
+    if (!response.ok) {
+      throw new Error(
+        `Codex device-code polling failed with status ${response.status}`
+      );
+    }
+
+    const payload = await response.json();
+
+    if (!isRecord(payload)) {
+      throw new Error("Codex device-code polling response was not an object");
+    }
+
+    const authorizationCode = payload.authorization_code;
+    const codeVerifier = payload.code_verifier;
+
+    if (
+      typeof authorizationCode !== "string" ||
+      authorizationCode.trim().length === 0 ||
+      typeof codeVerifier !== "string" ||
+      codeVerifier.trim().length === 0
+    ) {
+      throw new Error(
+        "Codex device-code polling response is missing authorization_code or code_verifier"
+      );
+    }
+
+    return {
+      authorizationCode: authorizationCode.trim(),
+      codeVerifier: codeVerifier.trim()
+    };
+  }
+
+  throw new Error("Codex device-code login timed out");
+}
+
+async function exchangeCodexAuthorizationCode(options: {
+  fetch: FetchLike;
+  tokenUrl: string;
+  issuer: string;
+  authorizationCode: string;
+  codeVerifier: string;
+}): Promise<CodexAuthTokens> {
+  const body = new URLSearchParams({
+    grant_type: "authorization_code",
+    code: options.authorizationCode,
+    redirect_uri: `${options.issuer}/deviceauth/callback`,
+    client_id: CODEX_OAUTH_CLIENT_ID,
+    code_verifier: options.codeVerifier
+  });
+  const response = await options.fetch(options.tokenUrl, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+      Accept: "application/json"
+    },
+    body
+  });
+
+  if (!response.ok) {
+    throw new Error(`Codex token exchange failed with status ${response.status}`);
+  }
+
+  return parseTokenResponsePayload(await response.json(), "Codex token exchange");
+}
+
+async function refreshCodexAuthTokens(options: {
+  fetch: FetchLike;
+  tokens: CodexAuthTokens;
+  now?: Date;
+}): Promise<{ tokens: CodexAuthTokens; lastRefresh: string }> {
+  const body = new URLSearchParams({
+    grant_type: "refresh_token",
+    refresh_token: options.tokens.refreshToken,
+    client_id: CODEX_OAUTH_CLIENT_ID
+  });
+  const response = await options.fetch(CODEX_OAUTH_TOKEN_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+      Accept: "application/json"
+    },
+    body
+  });
+
+  if (!response.ok) {
+    throw new Error(`Codex token refresh failed with status ${response.status}`);
+  }
+
+  const refreshed = parseTokenResponsePayload(
+    await response.json(),
+    "Codex token refresh"
+  );
+
+  return {
+    tokens: {
+      accessToken: refreshed.accessToken,
+      refreshToken: refreshed.refreshToken || options.tokens.refreshToken
+    },
+    lastRefresh: (options.now ?? new Date()).toISOString()
+  };
+}
+
+async function withCodexAuthLock<T>(
+  options: ResolveCodexRuntimeCredentialsOptions,
+  run: () => Promise<T>
+): Promise<T> {
+  const authPath = codexAuthStorePath(options);
+  const lockPath = `${authPath}.lock`;
+  const lockTimeoutMs = options.lockTimeoutMs ?? 30_000;
+  const startedAt = Date.now();
+  let handle: Awaited<ReturnType<typeof open>> | undefined;
+
+  await mkdir(dirname(authPath), { recursive: true, mode: 0o700 });
+
+  while (handle === undefined) {
+    try {
+      handle = await open(lockPath, "wx", 0o600);
+      await handle.writeFile(`${process.pid}\n${new Date().toISOString()}\n`);
+      break;
+    } catch (error) {
+      if (!isNodeErrorCode(error, "EEXIST")) {
+        throw error;
+      }
+
+      if (Date.now() - startedAt > lockTimeoutMs) {
+        throw new Error(`Timed out waiting for Codex auth lock at ${lockPath}`);
+      }
+
+      try {
+        const lockStat = await stat(lockPath);
+        if (Date.now() - lockStat.mtimeMs > Math.max(lockTimeoutMs * 2, 60_000)) {
+          await rm(lockPath, { force: true });
+        }
+      } catch {
+        // Another process may have released the lock between open and stat.
+      }
+
+      await sleep(50);
+    }
+  }
+
+  try {
+    return await run();
+  } finally {
+    await handle.close();
+    await rm(lockPath, { force: true });
+  }
+}
+
+async function readCodexAuthStore(
+  options: CodexAuthStoreOptions
+): Promise<CodexAuthStoreFile> {
+  const authPath = codexAuthStorePath(options);
+
+  try {
+    const text = await readFile(authPath, "utf8");
+    const parsed = JSON.parse(text) as unknown;
+
+    if (!isRecord(parsed)) {
+      throw new Error("Codex auth store must be a JSON object");
+    }
+
+    const providers = isRecord(parsed.providers) ? parsed.providers : {};
+
+    return {
+      version: 1,
+      providers: { ...providers }
+    };
+  } catch (error) {
+    if (isNodeErrorCode(error, "ENOENT")) {
+      return {
+        version: 1,
+        providers: {}
+      };
+    }
+
+    throw error;
+  }
+}
+
+async function writeCodexAuthStore(
+  authPath: string,
+  store: CodexAuthStoreFile
+): Promise<void> {
+  await mkdir(dirname(authPath), { recursive: true, mode: 0o700 });
+  await chmod(dirname(authPath), 0o700).catch(() => undefined);
+
+  const tmpPath = `${authPath}.${process.pid}.${Date.now()}.tmp`;
+  const serialized = `${JSON.stringify(store, null, 2)}\n`;
+
+  await writeFile(tmpPath, serialized, { mode: 0o600 });
+  await chmod(tmpPath, 0o600).catch(() => undefined);
+  await rename(tmpPath, authPath);
+  await chmod(authPath, 0o600).catch(() => undefined);
+}
+
+function parseCodexAuthState(raw: unknown): CodexAuthState {
+  if (!isRecord(raw)) {
+    throw new Error("Codex auth state must be an object");
+  }
+
+  const state = raw as CodexAuthStateJson;
+  const tokens = state.tokens;
+  const accessToken = tokens?.access_token;
+  const refreshToken = tokens?.refresh_token;
+
+  if (typeof accessToken !== "string" || accessToken.trim().length === 0) {
+    throw new Error("Codex auth state is missing access_token");
+  }
+
+  if (typeof refreshToken !== "string" || refreshToken.trim().length === 0) {
+    throw new Error("Codex auth state is missing refresh_token");
+  }
+
+  return normalizeCodexAuthState({
+    provider: CODEX_PROVIDER_ID,
+    authMode: "chatgpt",
+    source:
+      state.source === "codex-cli-import" || state.source === "manual"
+        ? state.source
+        : "device-code",
+    baseUrl:
+      typeof state.base_url === "string" && state.base_url.trim().length > 0
+        ? state.base_url
+        : DEFAULT_CODEX_BASE_URL,
+    tokens: {
+      accessToken,
+      refreshToken
+    },
+    lastRefresh:
+      typeof state.last_refresh === "string" && state.last_refresh.trim().length > 0
+        ? state.last_refresh
+        : new Date(0).toISOString()
+  });
+}
+
+function codexAuthStateToJson(state: CodexAuthState): CodexAuthStateJson {
+  return {
+    tokens: {
+      access_token: state.tokens.accessToken,
+      refresh_token: state.tokens.refreshToken
+    },
+    base_url: state.baseUrl,
+    last_refresh: state.lastRefresh,
+    auth_mode: state.authMode,
+    source: state.source
+  };
+}
+
+function normalizeCodexAuthState(state: CodexAuthState): CodexAuthState {
+  return {
+    provider: CODEX_PROVIDER_ID,
+    authMode: "chatgpt",
+    source: state.source,
+    baseUrl: trimTrailingSlash(state.baseUrl || DEFAULT_CODEX_BASE_URL),
+    tokens: {
+      accessToken: state.tokens.accessToken.trim(),
+      refreshToken: state.tokens.refreshToken.trim()
+    },
+    lastRefresh: state.lastRefresh
+  };
+}
+
+function parseCodexCliTokens(raw: unknown): CodexAuthTokens | undefined {
+  if (!isRecord(raw) || !isRecord(raw.tokens)) {
+    return undefined;
+  }
+
+  const accessToken = raw.tokens.access_token;
+  const refreshToken = raw.tokens.refresh_token;
+
+  if (
+    typeof accessToken !== "string" ||
+    accessToken.trim().length === 0 ||
+    typeof refreshToken !== "string" ||
+    refreshToken.trim().length === 0
+  ) {
+    return undefined;
+  }
+
+  return {
+    accessToken: accessToken.trim(),
+    refreshToken: refreshToken.trim()
+  };
+}
+
+function parseTokenResponsePayload(payload: unknown, label: string): CodexAuthTokens {
+  if (!isRecord(payload)) {
+    throw new Error(`${label} response was not an object`);
+  }
+
+  const accessToken = payload.access_token;
+  const refreshToken = payload.refresh_token;
+
+  if (typeof accessToken !== "string" || accessToken.trim().length === 0) {
+    throw new Error(`${label} response is missing access_token`);
+  }
+
+  return {
+    accessToken: accessToken.trim(),
+    refreshToken:
+      typeof refreshToken === "string" && refreshToken.trim().length > 0
+        ? refreshToken.trim()
+        : ""
+  };
+}
+
+function resolveCodexCliHome(options: ImportCodexCliTokensOptions): string {
+  const configured = options.codexHome ?? process.env.CODEX_HOME;
+
+  if (configured !== undefined && configured.trim().length > 0) {
+    return resolve(configured);
+  }
+
+  return join(homedir(), ".codex");
+}
+
+function resolveCodexBaseUrl(value: string | undefined): string {
+  return trimTrailingSlash(
+    value ?? process.env.RUNSTEAD_CODEX_BASE_URL ?? DEFAULT_CODEX_BASE_URL
+  );
+}
+
+function trimTrailingSlash(value: string): string {
+  return value.trim().replace(/\/+$/, "");
+}
+
+function codexAccessTokenExpUnixSeconds(accessToken: string): number | undefined {
+  const parts = accessToken.split(".");
+
+  if (parts.length < 2) {
+    return undefined;
+  }
+
+  try {
+    const payload = JSON.parse(base64UrlDecode(parts[1] ?? "")) as unknown;
+
+    if (!isRecord(payload) || typeof payload.exp !== "number") {
+      return undefined;
+    }
+
+    return payload.exp;
+  } catch {
+    return undefined;
+  }
+}
+
+function base64UrlDecode(value: string): string {
+  const normalized = value.replaceAll("-", "+").replaceAll("_", "/");
+  const padded = normalized.padEnd(
+    normalized.length + ((4 - (normalized.length % 4)) % 4),
+    "="
+  );
+
+  return Buffer.from(padded, "base64").toString("utf8");
+}
+
+function toInteger(value: unknown, fallback: number): number {
+  if (typeof value === "number" && Number.isInteger(value)) {
+    return value;
+  }
+
+  if (typeof value === "string" && value.trim().length > 0) {
+    const parsed = Number.parseInt(value, 10);
+
+    if (Number.isInteger(parsed)) {
+      return parsed;
+    }
+  }
+
+  return fallback;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isNodeErrorCode(error: unknown, code: string): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error as { code?: unknown }).code === code
+  );
+}
