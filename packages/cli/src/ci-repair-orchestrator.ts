@@ -54,7 +54,12 @@ import {
 } from "./governed-action.js";
 import { showGoal } from "./goals.js";
 import { loadPolicyProfileFromFile } from "./policy-loader.js";
-import type { ActionEnvelope, PolicyProfile } from "./policy.js";
+import {
+  fingerprintPolicyProfile,
+  type ActionEnvelope,
+  type PolicyProfile
+} from "./policy.js";
+import { recordPolicyDecision } from "./policy-log.js";
 import { requireRunsteadRootSync } from "./runstead-root.js";
 import {
   finishToolCall,
@@ -63,6 +68,7 @@ import {
   startWorkerRun
 } from "./runtime-audit.js";
 import { claimTask, listTasks } from "./tasks.js";
+import { preflightToolAction } from "./tool-proxy.js";
 import {
   runTaskVerifiersUnlocked,
   type RunTaskVerifiersOptions,
@@ -812,7 +818,9 @@ export async function runCiRepairOrchestratorUnlocked(
           });
           await pushRepairBranchWithPublishApproval({
             cwd,
+            stateDb,
             database,
+            policy,
             task: publishTask,
             workerRun,
             context: publishContext,
@@ -844,7 +852,9 @@ export async function runCiRepairOrchestratorUnlocked(
 
         const pullRequest = await createRepairPullRequestWithPublishApproval({
           cwd,
+          stateDb,
           database,
+          policy,
           task: publishTask,
           workerRun,
           ciRepair,
@@ -1414,7 +1424,9 @@ async function resumeCiRepairPullRequest(options: {
         });
         await pushRepairBranchWithPublishApproval({
           cwd: options.cwd,
+          stateDb,
           database,
+          policy,
           task: resumeTask,
           workerRun,
           context: resumeContext,
@@ -1444,7 +1456,9 @@ async function resumeCiRepairPullRequest(options: {
 
       const pullRequest = await createRepairPullRequestWithPublishApproval({
         cwd: options.cwd,
+        stateDb,
         database,
+        policy,
         task: resumeTask,
         workerRun,
         ciRepair,
@@ -1636,7 +1650,9 @@ async function ensureGovernedRepairPublishApproval(options: {
 
 async function pushRepairBranchWithPublishApproval(options: {
   cwd: string;
+  stateDb: string;
   database: RunsteadDatabase;
+  policy: PolicyProfile;
   task: Task;
   workerRun: ReturnType<typeof startWorkerRun>;
   context: CiRepairOrchestratorResumeContext;
@@ -1645,7 +1661,10 @@ async function pushRepairBranchWithPublishApproval(options: {
   now?: Date;
 }): Promise<void> {
   await runPublishCoveredToolAction({
+    cwd: options.cwd,
+    stateDb: options.stateDb,
     database: options.database,
+    policy: options.policy,
     task: options.task,
     workerRun: options.workerRun,
     action: gitPushAction({
@@ -1676,7 +1695,9 @@ async function pushRepairBranchWithPublishApproval(options: {
 
 async function createRepairPullRequestWithPublishApproval(options: {
   cwd: string;
+  stateDb: string;
   database: RunsteadDatabase;
+  policy: PolicyProfile;
   task: Task;
   workerRun: ReturnType<typeof startWorkerRun>;
   ciRepair: CreateCiRepairTaskResult;
@@ -1689,7 +1710,10 @@ async function createRepairPullRequestWithPublishApproval(options: {
   const title = `Repair CI run ${options.ciRepair.workflowRun.runId}`;
 
   return runPublishCoveredToolAction({
+    cwd: options.cwd,
+    stateDb: options.stateDb,
     database: options.database,
+    policy: options.policy,
     task: options.task,
     workerRun: options.workerRun,
     action: githubPullRequestCreateAction({
@@ -1741,7 +1765,10 @@ async function createRepairPullRequestWithPublishApproval(options: {
 }
 
 async function runPublishCoveredToolAction<T>(options: {
+  cwd: string;
+  stateDb: string;
   database: RunsteadDatabase;
+  policy: PolicyProfile;
   task: Task;
   workerRun: ReturnType<typeof startWorkerRun>;
   action: ActionEnvelope;
@@ -1749,13 +1776,48 @@ async function runPublishCoveredToolAction<T>(options: {
   now?: Date;
   run: () => Promise<{ value: T; output?: JsonObject }>;
 }): Promise<T> {
+  const preflight = preflightToolAction({
+    policy: options.policy,
+    action: options.action
+  });
   const toolCall = startToolCall({
     database: options.database,
     workerRun: options.workerRun,
     task: options.task,
-    action: options.action,
+    action: preflight.action,
     ...(options.now === undefined ? {} : { now: options.now })
   });
+  const recordedPolicy = recordPolicyDecision({
+    cwd: options.cwd,
+    stateDb: options.stateDb,
+    policyId: options.policy.id,
+    policyFingerprint: fingerprintPolicyProfile(options.policy),
+    action: preflight.action,
+    result: preflight.policyResult,
+    ...(options.now === undefined ? {} : { now: options.now })
+  });
+
+  if (preflight.status === "denied") {
+    const deniedToolCall = finishToolCall({
+      database: options.database,
+      toolCall,
+      status: "denied",
+      policyDecisionId: recordedPolicy.decision.id,
+      output: {
+        decision: preflight.policyResult.decision,
+        reason: preflight.policyResult.reason,
+        coveredByActionType: "repo.publish_repair",
+        ...(options.approvalId === undefined ? {} : { approvalId: options.approvalId })
+      },
+      ...(options.now === undefined ? {} : { now: options.now })
+    });
+
+    throw new ToolActionDeniedError(
+      `${preflight.action.actionType} denied by policy: ${preflight.policyResult.reason}`,
+      deniedToolCall,
+      recordedPolicy.decision
+    );
+  }
 
   try {
     const executed = await options.run();
@@ -1763,6 +1825,7 @@ async function runPublishCoveredToolAction<T>(options: {
       database: options.database,
       toolCall,
       status: "completed",
+      policyDecisionId: recordedPolicy.decision.id,
       output: {
         ...(executed.output ?? {}),
         coveredByActionType: "repo.publish_repair",
@@ -1777,6 +1840,7 @@ async function runPublishCoveredToolAction<T>(options: {
       database: options.database,
       toolCall,
       status: "failed",
+      policyDecisionId: recordedPolicy.decision.id,
       output: {
         error: errorMessage(error),
         coveredByActionType: "repo.publish_repair",

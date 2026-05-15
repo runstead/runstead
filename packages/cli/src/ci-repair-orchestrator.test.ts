@@ -958,6 +958,90 @@ describe("runCiRepairOrchestrator", () => {
     }
   });
 
+  it("does not let composite publish approval cover denied sub-actions", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-ci-deny-push-"));
+    const gitCalls: string[][] = [];
+
+    try {
+      await initRunstead({ cwd: workspace, createDefaultGoal: true });
+      await allowExternalWorkerStartForTest(workspace);
+      await denyPublishSubActionForTest(workspace, "git.push");
+
+      const first = await runCiRepairOrchestrator({
+        cwd: workspace,
+        runId: "123",
+        worker: "codex_cli",
+        base: "main",
+        allowedPaths: ["src/**"],
+        verifierCommands: [{ name: "test", command: "pnpm test" }],
+        githubRunner: githubRunner([]),
+        gitRunner: gitRunner(gitCalls, { diffNameOnly: "src/fix.ts\n" }),
+        workerRunner: workerRunner([]),
+        verifierRunner: verifierRunner([]),
+        now: new Date("2026-05-14T12:00:00.000Z")
+      });
+
+      if (first.approval === undefined) {
+        throw new Error("Expected publish approval request");
+      }
+
+      await decideApproval({
+        cwd: workspace,
+        id: first.approval.id,
+        decision: "approved",
+        decidedBy: "local-admin",
+        now: new Date("2026-05-14T12:01:00.000Z")
+      });
+
+      await expect(
+        runCiRepairOrchestrator({
+          cwd: workspace,
+          runId: "123",
+          worker: "codex_cli",
+          base: "main",
+          allowedPaths: ["src/**"],
+          verifierCommands: [{ name: "test", command: "pnpm test" }],
+          githubRunner: githubRunner([]),
+          gitRunner: gitRunner(gitCalls, { diffNameOnly: "src/fix.ts\n" }),
+          workerRunner: workerRunner([]),
+          verifierRunner: verifierRunner([]),
+          now: new Date("2026-05-14T12:02:00.000Z")
+        })
+      ).rejects.toThrow("git.push denied by policy");
+
+      const database = openRunsteadDatabase(join(workspace, ".runstead", "state.db"));
+
+      try {
+        const task = database
+          .prepare("SELECT status FROM tasks WHERE id = ?")
+          .get(first.ciRepair.task.id) as { status: string };
+        const pushCall = database
+          .prepare(
+            "SELECT status, policy_decision_id FROM tool_calls WHERE action_type = 'git.push'"
+          )
+          .get() as { status: string; policy_decision_id: string };
+        const policyDecision = database
+          .prepare("SELECT decision, rule_id FROM policy_decisions WHERE id = ?")
+          .get(pushCall.policy_decision_id) as {
+          decision: string;
+          rule_id: string;
+        };
+
+        expect(task.status).toBe("blocked");
+        expect(pushCall.status).toBe("denied");
+        expect(policyDecision).toEqual({
+          decision: "deny",
+          rule_id: "deny_publish_subaction_git_push"
+        });
+        expect(gitCalls.filter((args) => args[0] === "push")).toHaveLength(0);
+      } finally {
+        database.close();
+      }
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
   it("marks task and worker failed when approved branch push fails", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "runstead-ci-push-failure-"));
     const gitCalls: string[][] = [];
@@ -1262,6 +1346,25 @@ async function allowExternalWorkerStartForTest(workspace: string): Promise<void>
     ),
     "utf8"
   );
+}
+
+async function denyPublishSubActionForTest(
+  workspace: string,
+  actionType: "git.push" | "github.pr.create"
+): Promise<void> {
+  const policyPath = join(workspace, ".runstead", "policies", "repo-maintenance.yaml");
+  const raw = await readFile(policyPath, "utf8");
+  const ruleId = `deny_publish_subaction_${actionType.replace(/[^a-z0-9]+/g, "_")}`;
+  const rule = [
+    "  - id: " + ruleId,
+    "    when:",
+    `      action_type: ${actionType}`,
+    "    decision: deny",
+    "    risk: critical",
+    ""
+  ].join("\n");
+
+  await writeFile(policyPath, raw.replace("rules:\n", `rules:\n\n${rule}`), "utf8");
 }
 
 function completedVerifierTask(taskId: string): Task {
