@@ -227,10 +227,7 @@ export async function runCiRepairOrchestratorUnlocked(
         task: orchestratorTask,
         context: stageContext,
         patch: {
-          counters: incrementCiRepairCounter(
-            stageContext,
-            "orchestratorAttempt"
-          )
+          counters: incrementCiRepairCounter(stageContext, "orchestratorAttempt")
         },
         ...(options.now === undefined ? {} : { now: options.now })
       }));
@@ -1925,9 +1922,7 @@ async function runPublishCoveredToolAction<T>(options: {
         decision: preflight.policyResult.decision,
         reason: preflight.policyResult.reason,
         coveredByActionType: "repo.publish_repair",
-        ...(options.coverage === undefined
-          ? {}
-          : coveredByOutput(options.coverage)),
+        ...(options.coverage === undefined ? {} : coveredByOutput(options.coverage)),
         ...(options.approvalId === undefined ? {} : { approvalId: options.approvalId })
       },
       ...(options.now === undefined ? {} : { now: options.now })
@@ -1950,9 +1945,7 @@ async function runPublishCoveredToolAction<T>(options: {
       output: {
         ...(executed.output ?? {}),
         coveredByActionType: "repo.publish_repair",
-        ...(options.coverage === undefined
-          ? {}
-          : coveredByOutput(options.coverage)),
+        ...(options.coverage === undefined ? {} : coveredByOutput(options.coverage)),
         ...(options.approvalId === undefined ? {} : { approvalId: options.approvalId })
       },
       ...(options.now === undefined ? {} : { now: options.now })
@@ -1968,9 +1961,7 @@ async function runPublishCoveredToolAction<T>(options: {
       output: {
         error: errorMessage(error),
         coveredByActionType: "repo.publish_repair",
-        ...(options.coverage === undefined
-          ? {}
-          : coveredByOutput(options.coverage)),
+        ...(options.coverage === undefined ? {} : coveredByOutput(options.coverage)),
         ...(options.approvalId === undefined ? {} : { approvalId: options.approvalId })
       },
       ...(options.now === undefined ? {} : { now: options.now })
@@ -2111,10 +2102,7 @@ type CiRepairOrchestratorProgressStage =
   | "pr_approval_requested"
   | "completed";
 
-type CiRepairOrchestratorTerminalStage =
-  | "failed"
-  | "blocked"
-  | "cancelled";
+type CiRepairOrchestratorTerminalStage = "failed" | "blocked" | "cancelled";
 
 type CiRepairOrchestratorStage =
   | CiRepairOrchestratorProgressStage
