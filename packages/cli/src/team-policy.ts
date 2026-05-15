@@ -80,8 +80,15 @@ dependency_change:
     - package.json
     - package-lock.json
     - pnpm-lock.yaml
+    - yarn.lock
+    - bun.lockb
     - requirements.txt
     - poetry.lock
+    - uv.lock
+    - go.mod
+    - go.sum
+    - Cargo.toml
+    - Cargo.lock
 `;
 
 const TeamPolicyYamlSchema = z.object({

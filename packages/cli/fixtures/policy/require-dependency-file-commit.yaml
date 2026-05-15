@@ -1,0 +1,12 @@
+action:
+  action_id: act_fixture_dependency_file_commit
+  action_type: git.commit
+  context:
+    files_touched:
+      - src/index.ts
+      - pnpm-lock.yaml
+
+expected:
+  decision: require_approval
+  risk: high
+  rule_id: require_approval_dependency_file_commit

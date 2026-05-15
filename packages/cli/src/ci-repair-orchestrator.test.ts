@@ -377,6 +377,75 @@ describe("runCiRepairOrchestrator", () => {
     }
   });
 
+  it("pauses dependency file commits for approval", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-ci-dependency-"));
+    const gitCalls: string[][] = [];
+    const workerCalls: string[] = [];
+    const verifierCalls: RunTaskVerifiersOptions[] = [];
+
+    try {
+      await initRunstead({ cwd: workspace, createDefaultGoal: true });
+
+      const result = await runCiRepairOrchestrator({
+        cwd: workspace,
+        runId: "123",
+        worker: "codex_cli",
+        base: "main",
+        allowedPaths: ["package.json"],
+        verifierCommands: [{ name: "test", command: "pnpm test" }],
+        githubRunner: githubRunner([]),
+        gitRunner: gitRunner(gitCalls, { diffNameOnly: "package.json\n" }),
+        workerRunner: workerRunner(workerCalls),
+        verifierRunner: verifierRunner(verifierCalls),
+        now: new Date("2026-05-14T12:05:00.000Z")
+      });
+      const database = openRunsteadDatabase(join(workspace, ".runstead", "state.db"));
+
+      try {
+        const policyDecision = database
+          .prepare(
+            "SELECT decision, risk, rule_id FROM policy_decisions WHERE rule_id = 'require_approval_dependency_file_commit'"
+          )
+          .get() as { decision: string; risk: string; rule_id: string };
+        const storedTask = database
+          .prepare("SELECT status FROM tasks WHERE id = ?")
+          .get(result.ciRepair.task.id) as { status: string };
+        const workerRun = database
+          .prepare(
+            "SELECT status, output_json FROM worker_runs WHERE task_id = ? ORDER BY started_at DESC, id DESC LIMIT 1"
+          )
+          .get(result.ciRepair.task.id) as {
+          status: string;
+          output_json: string;
+        };
+
+        expect(result.status).toBe("waiting_approval");
+        expect(result.approval?.id).toMatch(/^appr_/);
+        expect(result.approval?.reason).toContain(
+          "require_approval_dependency_file_commit"
+        );
+        expect(result.workerResult?.exitCode).toBe(0);
+        expect(gitCalls.some((args) => args[0] === "commit")).toBe(false);
+        expect(verifierCalls).toHaveLength(0);
+        expect(policyDecision).toEqual({
+          decision: "require_approval",
+          risk: "high",
+          rule_id: "require_approval_dependency_file_commit"
+        });
+        expect(storedTask.status).toBe("waiting_approval");
+        expect(workerRun.status).toBe("waiting_approval");
+        expect(JSON.parse(workerRun.output_json)).toMatchObject({
+          approvalId: result.approval?.id,
+          actionType: "git.commit"
+        });
+      } finally {
+        database.close();
+      }
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
   it("fails before publish when the worker produces no branch diff", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "runstead-ci-empty-diff-"));
     const githubCalls: string[][] = [];

@@ -391,6 +391,47 @@ describe("evaluatePolicy dependency change rules", () => {
     });
   });
 
+  it("requires approval for commits that touch dependency files", () => {
+    const result = evaluatePolicy({
+      policy: minimumPolicy,
+      action: {
+        actionId: "act_commit_dependency",
+        actionType: "git.commit",
+        context: {
+          filesTouched: ["src/index.ts", "pnpm-lock.yaml"]
+        }
+      }
+    });
+
+    expect(result).toMatchObject({
+      actionId: "act_commit_dependency",
+      decision: "require_approval",
+      risk: "high",
+      ruleId: "require_approval_dependency_file_commit",
+      matchedPath: "pnpm-lock.yaml"
+    });
+  });
+
+  it("allows CI repair commits that do not touch dependency files", () => {
+    const result = evaluatePolicy({
+      policy: minimumPolicy,
+      action: {
+        actionId: "act_commit_source",
+        actionType: "git.commit",
+        context: {
+          filesTouched: ["src/index.ts"]
+        }
+      }
+    });
+
+    expect(result).toMatchObject({
+      actionId: "act_commit_source",
+      decision: "allow",
+      risk: "medium",
+      ruleId: "allow_ci_repair_workspace_actions"
+    });
+  });
+
   it("lets protected path deny outrank dependency approval", () => {
     const result = evaluatePolicy({
       policy: minimumPolicy,

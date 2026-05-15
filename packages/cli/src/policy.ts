@@ -137,8 +137,15 @@ export const DEFAULT_DEPENDENCY_CHANGE_PATHS = [
   "package.json",
   "package-lock.json",
   "pnpm-lock.yaml",
+  "yarn.lock",
+  "bun.lockb",
   "requirements.txt",
-  "poetry.lock"
+  "poetry.lock",
+  "uv.lock",
+  "go.mod",
+  "go.sum",
+  "Cargo.toml",
+  "Cargo.lock"
 ];
 
 export interface CreateRepoMaintenanceMinimumPolicyOptions {
@@ -285,6 +292,17 @@ export function createDependencyChangeApprovalPolicy(
         id: "require_approval_dependency_change",
         when: {
           actionType: options.actionTypes ?? DEFAULT_DEPENDENCY_CHANGE_ACTION_TYPES,
+          path: {
+            matchesAny: options.paths ?? DEFAULT_DEPENDENCY_CHANGE_PATHS
+          }
+        },
+        decision: "require_approval",
+        risk: "high"
+      },
+      {
+        id: "require_approval_dependency_file_commit",
+        when: {
+          actionType: "git.commit",
           path: {
             matchesAny: options.paths ?? DEFAULT_DEPENDENCY_CHANGE_PATHS
           }

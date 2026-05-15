@@ -133,8 +133,35 @@ rules:
           - package.json
           - package-lock.json
           - pnpm-lock.yaml
+          - yarn.lock
+          - bun.lockb
           - requirements.txt
           - poetry.lock
+          - uv.lock
+          - go.mod
+          - go.sum
+          - Cargo.toml
+          - Cargo.lock
+    decision: require_approval
+    risk: high
+
+  - id: require_approval_dependency_file_commit
+    when:
+      action_type: git.commit
+      path:
+        matches_any:
+          - package.json
+          - package-lock.json
+          - pnpm-lock.yaml
+          - yarn.lock
+          - bun.lockb
+          - requirements.txt
+          - poetry.lock
+          - uv.lock
+          - go.mod
+          - go.sum
+          - Cargo.toml
+          - Cargo.lock
     decision: require_approval
     risk: high
 

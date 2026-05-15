@@ -200,6 +200,8 @@ export async function runCiRepairOrchestratorUnlocked(
       ...(options.now === undefined ? {} : { now: options.now })
     });
 
+    let completedWorkerResult: WrappedWorkerRunResult | undefined;
+
     try {
       await runGovernedToolAction({
         cwd,
@@ -319,6 +321,7 @@ export async function runCiRepairOrchestratorUnlocked(
           };
         }
       }).then((result) => result.value);
+      completedWorkerResult = workerResult;
 
       if (workerResult.exitCode !== 0) {
         await rollbackWorkerChanges({
@@ -747,6 +750,49 @@ export async function runCiRepairOrchestratorUnlocked(
         throw error;
       }
     } catch (error) {
+      if (error instanceof ToolActionApprovalRequiredError) {
+        const waitingTask = markTaskTerminal({
+          database,
+          task: ciRepair.task,
+          status: "waiting_approval",
+          output: {
+            ...(ciRepair.task.output ?? {}),
+            summary: `${error.toolCall.actionType} requires approval`,
+            approval: {
+              id: error.approval.id,
+              status: error.approval.status,
+              actionId: error.approval.actionId,
+              policyDecisionId: error.approval.policyDecisionId,
+              reason: error.approval.reason
+            }
+          },
+          ...(options.now === undefined ? {} : { now: options.now })
+        });
+        finishWorkerRun({
+          database,
+          workerRun,
+          status: "waiting_approval",
+          output: {
+            approvalId: error.approval.id,
+            actionType: error.toolCall.actionType
+          },
+          ...(options.now === undefined ? {} : { now: options.now })
+        });
+
+        return {
+          status: "waiting_approval",
+          ciRepair: {
+            ...ciRepair,
+            task: waitingTask
+          },
+          branchName,
+          ...(completedWorkerResult === undefined
+            ? {}
+            : { workerResult: completedWorkerResult }),
+          approval: approvalSummary(error)
+        };
+      }
+
       if (error instanceof ToolActionDeniedError) {
         markTaskTerminal({
           database,
