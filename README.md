@@ -7,6 +7,11 @@ Runstead turns them into tasks, dispatches worker agents, guards actions with
 policy, verifies outputs with evidence, records audit logs, and resumes after
 failures.
 
+Runstead currently provides **Level 1 wrapped execution** for external coding
+agents: it gates worker launch, checkpoints the workspace, verifies results,
+and audits side effects. Full **Level 2 tool-proxied execution**, where every
+internal worker tool call passes through Runstead, is future work.
+
 The first supported product path is **repo-maintenance**: create a long-running
 goal, run governed local verifiers, capture evidence, request approvals for
 unknown actions, and export an audit trail.

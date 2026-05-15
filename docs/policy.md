@@ -40,15 +40,16 @@ Some ad-hoc CLI helpers are still explicitly labeled unmanaged. They are useful
 for local diagnosis, but the product path is the governed runtime and CI repair
 orchestrator.
 
-Wrapped external workers run in `policy_gated_wrapper` mode: Runstead gates the
+Wrapped external workers run in `policy_gated_wrapper` mode. Runstead currently
+provides Level 1 wrapped execution for external coding agents: it gates the
 worker launch, records the action envelope and policy decision, starts the
 worker with native sandbox or permission guardrails, checkpoints the workspace,
 commits worker changes through a governed `git.commit` action, verifies diff
-scope and command evidence after the worker exits, and audits the result. It
-does not yet fully hard-proxy each tool call made inside the external worker
-process. The worker governance manifest records this as
-`internalToolProxy.mode: none`; callers that require `hard_proxy` enforcement
-fail before the external worker process is launched.
+scope and command evidence after the worker exits, and audits the result. Full
+Level 2 tool-proxied execution, where every internal worker tool call passes
+through Runstead, is future work. The worker governance manifest records this
+as `internalToolProxy.mode: none`; callers that require `hard_proxy`
+enforcement fail before the external worker process is launched.
 
 Mutating unmanaged helpers now require explicit acknowledgement with
 `--unmanaged`:
