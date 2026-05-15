@@ -8,6 +8,7 @@ import {
   CODEX_OAUTH_TOKEN_URL,
   CODEX_PROVIDER_ID,
   codexAuthStorePath,
+  codexBackendHeaders,
   codexModelCachePath,
   formatCodexAuthStatus,
   formatCodexModels,
@@ -151,7 +152,7 @@ describe("codex auth store", () => {
 
   it("lists Codex models through the authenticated backend without exposing tokens", async () => {
     const runsteadHome = await mkdtemp(join(tmpdir(), "runstead-codex-models-"));
-    const accessToken = jwtWithExp(1_900_000_000);
+    const accessToken = jwtWithExp(1_900_000_000, "acct-models-1");
 
     try {
       await saveCodexAuthState(
@@ -178,6 +179,15 @@ describe("codex auth store", () => {
           );
           expect((init?.headers as Record<string, string>).Authorization).toBe(
             `Bearer ${accessToken}`
+          );
+          expect((init?.headers as Record<string, string>)["ChatGPT-Account-ID"]).toBe(
+            "acct-models-1"
+          );
+          expect((init?.headers as Record<string, string>)["User-Agent"]).toMatch(
+            /^codex_cli_rs\//
+          );
+          expect((init?.headers as Record<string, string>).originator).toBe(
+            "codex_cli_rs"
           );
 
           return Promise.resolve(
@@ -214,6 +224,20 @@ describe("codex auth store", () => {
     } finally {
       await rm(runsteadHome, { force: true, recursive: true });
     }
+  });
+
+  it("builds Codex backend headers from the OAuth JWT account claim", () => {
+    const validHeaders = codexBackendHeaders(
+      jwtWithExp(1_900_000_000, "acct-headers-1")
+    );
+    const malformedHeaders = codexBackendHeaders("not-a-jwt");
+
+    expect(validHeaders["ChatGPT-Account-ID"]).toBe("acct-headers-1");
+    expect(validHeaders["User-Agent"]).toMatch(/^codex_cli_rs\//);
+    expect(validHeaders.originator).toBe("codex_cli_rs");
+    expect(malformedHeaders["User-Agent"]).toMatch(/^codex_cli_rs\//);
+    expect(malformedHeaders.originator).toBe("codex_cli_rs");
+    expect(malformedHeaders).not.toHaveProperty("ChatGPT-Account-ID");
   });
 
   it("falls back to configured Codex model ids when live discovery and cache miss", async () => {
@@ -254,10 +278,18 @@ describe("codex auth store", () => {
   });
 });
 
-function jwtWithExp(exp: number): string {
+function jwtWithExp(exp: number, accountId?: string): string {
+  const claims: Record<string, unknown> = { exp };
+
+  if (accountId !== undefined) {
+    claims["https://api.openai.com/auth"] = {
+      chatgpt_account_id: accountId
+    };
+  }
+
   return [
     base64Url(JSON.stringify({ alg: "none" })),
-    base64Url(JSON.stringify({ exp })),
+    base64Url(JSON.stringify(claims)),
     "signature"
   ].join(".");
 }

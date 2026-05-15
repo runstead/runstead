@@ -378,6 +378,7 @@ export async function listCodexModels(
     const response = await (options.fetch ?? fetch)(url, {
       method: "GET",
       headers: {
+        ...codexBackendHeaders(credentials.accessToken),
         Accept: "application/json",
         Authorization: `Bearer ${credentials.accessToken}`
       }
@@ -494,6 +495,20 @@ export function codexAccessTokenExpiresAt(accessToken: string): string | undefin
   }
 
   return new Date(exp * 1000).toISOString();
+}
+
+export function codexBackendHeaders(accessToken: string): Record<string, string> {
+  const headers: Record<string, string> = {
+    "User-Agent": "codex_cli_rs/0.0.0 (Runstead)",
+    originator: "codex_cli_rs"
+  };
+  const accountId = codexChatGptAccountId(accessToken);
+
+  if (accountId !== undefined) {
+    headers["ChatGPT-Account-ID"] = accountId;
+  }
+
+  return headers;
 }
 
 async function requestCodexDeviceCode(options: {
@@ -987,6 +1002,34 @@ function codexAccessTokenExpUnixSeconds(accessToken: string): number | undefined
     }
 
     return payload.exp;
+  } catch {
+    return undefined;
+  }
+}
+
+function codexChatGptAccountId(accessToken: string): string | undefined {
+  const parts = accessToken.split(".");
+
+  if (parts.length < 2) {
+    return undefined;
+  }
+
+  try {
+    const payload = JSON.parse(base64UrlDecode(parts[1] ?? "")) as unknown;
+
+    if (!isRecord(payload)) {
+      return undefined;
+    }
+
+    const authClaims = payload["https://api.openai.com/auth"];
+
+    if (!isRecord(authClaims) || typeof authClaims.chatgpt_account_id !== "string") {
+      return undefined;
+    }
+
+    const accountId = authClaims.chatgpt_account_id.trim();
+
+    return accountId.length === 0 ? undefined : accountId;
   } catch {
     return undefined;
   }

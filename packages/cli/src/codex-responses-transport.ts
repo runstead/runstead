@@ -1,4 +1,4 @@
-import { DEFAULT_CODEX_BASE_URL } from "./codex-auth.js";
+import { DEFAULT_CODEX_BASE_URL, codexBackendHeaders } from "./codex-auth.js";
 
 export interface CodexResponsesTransportOptions {
   baseUrl?: string;
@@ -81,6 +81,7 @@ export class CodexResponsesTransport {
     const response = await this.fetch(`${this.baseUrl}/responses`, {
       method: "POST",
       headers: {
+        ...codexBackendHeaders(this.accessToken),
         Accept: "application/json",
         Authorization: `Bearer ${this.accessToken}`,
         "Content-Type": "application/json",

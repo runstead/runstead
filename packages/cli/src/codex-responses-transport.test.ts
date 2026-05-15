@@ -52,9 +52,10 @@ describe("CodexResponsesTransport", () => {
       input: string | URL;
       init?: RequestInit;
     }[] = [];
+    const accessToken = jwtWithCodexAccount("acct-responses-1");
     const transport = new CodexResponsesTransport({
       baseUrl: "https://codex.example/api/",
-      accessToken: "secret-token",
+      accessToken,
       fetch: (input, init) => {
         requests.push({
           input,
@@ -91,12 +92,17 @@ describe("CodexResponsesTransport", () => {
 
     expect(String(request?.input)).toBe("https://codex.example/api/responses");
     expect(request?.init?.headers).toMatchObject({
-      Authorization: "Bearer secret-token",
+      Authorization: `Bearer ${accessToken}`,
+      "ChatGPT-Account-ID": "acct-responses-1",
+      originator: "codex_cli_rs",
       session_id: "session-1",
       "x-client-request-id": "session-1"
     });
+    expect((request?.init?.headers as Record<string, string>)["User-Agent"]).toMatch(
+      /^codex_cli_rs\//
+    );
     expect(body.store).toBe(false);
-    expect(JSON.stringify(body)).not.toContain("secret-token");
+    expect(JSON.stringify(body)).not.toContain(accessToken);
     expect(result).toMatchObject({
       id: "resp_1",
       outputText: "Done.",
@@ -152,6 +158,28 @@ describe("CodexResponsesTransport", () => {
     ).rejects.toThrow("Codex Responses request failed with status 500");
   });
 });
+
+function jwtWithCodexAccount(accountId: string): string {
+  return [
+    base64Url(JSON.stringify({ alg: "none" })),
+    base64Url(
+      JSON.stringify({
+        "https://api.openai.com/auth": {
+          chatgpt_account_id: accountId
+        }
+      })
+    ),
+    "signature"
+  ].join(".");
+}
+
+function base64Url(value: string): string {
+  return Buffer.from(value, "utf8")
+    .toString("base64")
+    .replaceAll("+", "-")
+    .replaceAll("/", "_")
+    .replaceAll("=", "");
+}
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
