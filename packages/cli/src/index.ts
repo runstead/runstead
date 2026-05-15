@@ -415,6 +415,7 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
       "Worker to run when orchestrating repairs",
       "codex_cli"
     )
+    .option("--model <model>", "Model to use with codex_direct")
     .option("--base <ref>", "PR base branch when orchestrating repairs")
     .option("--draft", "Create draft pull requests when orchestrating repairs")
     .option(
@@ -447,6 +448,7 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
         installationId?: string;
         orchestrateRepair?: boolean;
         worker: string;
+        model?: string;
         base?: string;
         draft?: boolean;
         allowed: string[];
@@ -505,7 +507,8 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
               ...(authToken === undefined ? {} : { authToken }),
               mode: options.orchestrateRepair === true ? "orchestrate" : "intake",
               dedupeDelivery: true,
-              worker: parseWrappedWorkerKind(options.worker),
+              worker: parseCiRepairWorkerKind(options.worker),
+              ...(options.model === undefined ? {} : { model: options.model }),
               ...(options.base === undefined ? {} : { base: options.base }),
               draft: options.draft === true,
               allowedPaths: options.allowed,
@@ -2458,6 +2461,7 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
 interface CiRepairOrchestrationCliOptions {
   cwd?: string;
   worker: string;
+  model?: string;
   base?: string;
   draft?: boolean;
   allowed: string[];
@@ -2609,7 +2613,12 @@ function addCiRepairOrchestrationCommand(command: Command): void {
   command
     .argument("<run-id>", "GitHub Actions workflow run id")
     .option("--cwd <path>", "Workspace directory")
-    .option("--worker <worker>", "Worker to run: codex_cli or claude_code", "codex_cli")
+    .option(
+      "--worker <worker>",
+      "Worker to run: codex_cli, claude_code, or codex_direct",
+      "codex_cli"
+    )
+    .option("--model <model>", "Model to use with codex_direct")
     .option("--base <ref>", "PR base branch")
     .option("--draft", "Create a draft pull request")
     .option("--allowed <pattern>", "Allowed changed path pattern", collectValues, [])
@@ -2645,7 +2654,8 @@ async function runCiRepairOrchestrationFromCli(
   const result = await runCiRepairOrchestrator({
     ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
     runId,
-    worker: parseWrappedWorkerKind(options.worker),
+    worker: parseCiRepairWorkerKind(options.worker),
+    ...(options.model === undefined ? {} : { model: options.model }),
     ...(options.base === undefined ? {} : { base: options.base }),
     draft: options.draft === true,
     allowedPaths: options.allowed,
@@ -2675,12 +2685,14 @@ function evidenceSummariesFromCli(values: string[]) {
   }));
 }
 
-function parseWrappedWorkerKind(value: string): "codex_cli" | "claude_code" {
-  if (value === "codex_cli" || value === "claude_code") {
+function parseCiRepairWorkerKind(
+  value: string
+): "codex_cli" | "claude_code" | "codex_direct" {
+  if (value === "codex_cli" || value === "claude_code" || value === "codex_direct") {
     return value;
   }
 
-  throw new Error("--worker must be codex_cli or claude_code");
+  throw new Error("--worker must be codex_cli, claude_code, or codex_direct");
 }
 
 function parseVerifierCommandOption(value: string): { name: string; command: string } {

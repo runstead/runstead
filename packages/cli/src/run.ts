@@ -6,10 +6,12 @@ import {
   ciRepairPullRequestResumeRunId,
   isCiRepairPullRequestResumeTask,
   runCiRepairOrchestratorUnlocked,
+  type CiRepairWorkerKind,
   type CiRepairGitRunner,
   type RunCiRepairOrchestratorOptions,
   type RunCiRepairOrchestratorResult
 } from "./ci-repair-orchestrator.js";
+import type { CodexDirectTransport } from "./codex-direct-worker.js";
 import type { GitHubCliRunner } from "./github-actions.js";
 import { withRunsteadManagerLock } from "./manager-lock.js";
 import { blockTask, listTasks } from "./tasks.js";
@@ -31,11 +33,14 @@ export interface RunOnceOptions {
   authToken?: string;
   base?: string;
   draft?: boolean;
+  worker?: CiRepairWorkerKind;
+  model?: string;
   allowedPaths?: string[];
   deniedPaths?: string[];
   githubRunner?: GitHubCliRunner;
   gitRunner?: CiRepairGitRunner;
   workerRunner?: WorkerProcessRunner;
+  codexDirectTransport?: CodexDirectTransport;
   verifierRunner?: (
     options: Parameters<typeof runTaskVerifiersUnlocked>[0]
   ) => ReturnType<typeof runTaskVerifiersUnlocked>;
@@ -97,7 +102,8 @@ export async function runOnceUnlocked(
     const result = await runCiRepairOrchestratorUnlocked({
       cwd,
       runId,
-      worker: "codex_cli",
+      worker: options.worker ?? "codex_cli",
+      ...(options.model === undefined ? {} : { model: options.model }),
       verifierCommands: [],
       ...(options.base === undefined ? {} : { base: options.base }),
       ...(options.draft === undefined ? {} : { draft: options.draft }),
@@ -115,6 +121,9 @@ export async function runOnceUnlocked(
       ...(options.workerRunner === undefined
         ? {}
         : { workerRunner: options.workerRunner }),
+      ...(options.codexDirectTransport === undefined
+        ? {}
+        : { codexDirectTransport: options.codexDirectTransport }),
       ...(options.verifierRunner === undefined
         ? {}
         : { verifierRunner: options.verifierRunner }),
@@ -136,12 +145,15 @@ export async function runOnceUnlocked(
       throw new Error(`Task ${task.id} is missing a CI workflow run id`);
     }
 
+    const worker = options.worker ?? workerFromCiRepairTask(task) ?? "codex_cli";
+    const model = options.model ?? modelFromCiRepairTask(task);
     const result = await (
       options.ciRepairOrchestrator ?? runCiRepairOrchestratorUnlocked
     )({
       cwd,
       runId,
-      worker: "codex_cli",
+      worker,
+      ...(model === undefined ? {} : { model }),
       verifierCommands: verifierCommandsFromCiRepairTask(task),
       ...(options.base === undefined ? {} : { base: options.base }),
       ...(options.draft === undefined ? {} : { draft: options.draft }),
@@ -159,6 +171,9 @@ export async function runOnceUnlocked(
       ...(options.workerRunner === undefined
         ? {}
         : { workerRunner: options.workerRunner }),
+      ...(options.codexDirectTransport === undefined
+        ? {}
+        : { codexDirectTransport: options.codexDirectTransport }),
       ...(options.verifierRunner === undefined
         ? {}
         : { verifierRunner: options.verifierRunner }),
@@ -247,6 +262,26 @@ function ciRepairTaskRunId(task: Task): string | undefined {
 
   if (typeof runId === "string" || typeof runId === "number") {
     return String(runId);
+  }
+
+  return undefined;
+}
+
+function workerFromCiRepairTask(task: Task): CiRepairWorkerKind | undefined {
+  const worker = task.input.worker;
+
+  if (worker === "codex_cli" || worker === "claude_code" || worker === "codex_direct") {
+    return worker;
+  }
+
+  return undefined;
+}
+
+function modelFromCiRepairTask(task: Task): string | undefined {
+  const model = task.input.model;
+
+  if (typeof model === "string" && model.trim().length > 0) {
+    return model.trim();
   }
 
   return undefined;

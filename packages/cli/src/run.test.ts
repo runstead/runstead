@@ -265,6 +265,73 @@ describe("runOnce", () => {
     }
   });
 
+  it("passes queued ci repair worker and model routing hints to the orchestrator", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-run-ci-worker-"));
+
+    try {
+      await initRunstead({ cwd: workspace });
+      const goal = await createGoal({
+        cwd: workspace,
+        domain: "repo-maintenance",
+        now: new Date("2026-05-14T08:00:00.000Z")
+      });
+      const task: Task = {
+        id: "task_ci_repair_codex_direct",
+        goalId: goal.goal.id,
+        domain: "repo-maintenance",
+        type: "ci_repair",
+        status: "queued",
+        priority: "high",
+        attempt: 0,
+        maxAttempts: 1,
+        input: {
+          source: "github_actions",
+          runId: "123",
+          worker: "codex_direct",
+          model: "fake-codex",
+          logEvidenceType: "github_workflow_run",
+          workflowRun: {
+            runId: "123",
+            status: "completed",
+            conclusion: "failure"
+          },
+          commands: [
+            {
+              name: "test",
+              command: "pnpm test"
+            }
+          ]
+        },
+        verifiers: ["evidence:github_workflow_run", "command:test"],
+        createdAt: "2026-05-14T07:59:00.000Z",
+        updatedAt: "2026-05-14T07:59:00.000Z"
+      };
+      const calls: unknown[] = [];
+
+      insertTask(goal.stateDb, task);
+
+      await runOnce({
+        cwd: workspace,
+        ciRepairOrchestrator: (options) => {
+          calls.push(options);
+
+          return Promise.resolve(
+            fakeCiRepairOrchestration(workspace, goal.stateDb, task)
+          );
+        }
+      });
+
+      expect(calls).toEqual([
+        expect.objectContaining({
+          worker: "codex_direct",
+          model: "fake-codex"
+        })
+      ]);
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
   it("blocks queued task types that do not have a run route", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "runstead-run-unsupported-"));
 

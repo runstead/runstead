@@ -32,7 +32,7 @@ describe("buildDomainPackManifest", () => {
       fixtures: ["js-test-failure"],
       evals: ["js-test-failure-smoke"],
       requiredTools: ["filesystem", "shell", "git", "github"],
-      supportedWorkers: ["shell", "claude_code", "codex_cli"]
+      supportedWorkers: ["shell", "claude_code", "codex_cli", "codex_direct"]
     });
     expect(manifest.files.map((file) => file.path)).toEqual([
       "domain.yaml",

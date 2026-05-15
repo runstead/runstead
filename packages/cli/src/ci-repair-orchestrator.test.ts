@@ -18,6 +18,7 @@ import {
   formatCiRepairOrchestratorReport,
   runCiRepairOrchestrator
 } from "./ci-repair-orchestrator.js";
+import type { CodexDirectTransport } from "./codex-direct-worker.js";
 import { resumeInterruptedTasks } from "./resume.js";
 import { runOnce } from "./run.js";
 import { startWorkerRun } from "./runtime-audit.js";
@@ -442,6 +443,107 @@ describe("runCiRepairOrchestrator", () => {
         });
       } finally {
         finalDatabase.close();
+      }
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("runs codex_direct through native worker and model-governed tool calls", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-ci-codex-direct-"));
+    const gitCalls: string[][] = [];
+    const verifierCalls: RunTaskVerifiersOptions[] = [];
+    const codexRequests: unknown[] = [];
+    const codexDirectTransport: CodexDirectTransport = {
+      async createResponse(request) {
+        codexRequests.push(request);
+
+        if (codexRequests.length === 1) {
+          return {
+            outputText: "",
+            toolCalls: [
+              {
+                id: "call_write",
+                name: "write_file",
+                arguments: JSON.stringify({
+                  path: "src/fix.ts",
+                  content: "export const fixed = true;\n",
+                  createDirs: true
+                })
+              }
+            ],
+            finishReason: "tool_calls",
+            outputItems: []
+          };
+        }
+
+        return {
+          outputText: "Patched the failing file.",
+          toolCalls: [],
+          finishReason: "stop",
+          outputItems: []
+        };
+      }
+    };
+
+    try {
+      await initRunstead({
+        cwd: workspace,
+        profile: "trusted-local",
+        createDefaultGoal: true
+      });
+      await allowCodexDirectWorkspaceWritesForTest(workspace);
+
+      const result = await runCiRepairOrchestrator({
+        cwd: workspace,
+        runId: "123",
+        worker: "codex_direct",
+        model: "fake-codex",
+        base: "main",
+        allowedPaths: ["src/**"],
+        verifierCommands: [{ name: "test", command: "pnpm test" }],
+        githubRunner: githubRunner([]),
+        gitRunner: gitRunner(gitCalls, { diffNameOnly: "src/fix.ts\n" }),
+        codexDirectTransport,
+        verifierRunner: verifierRunner(verifierCalls),
+        now: new Date("2026-05-14T12:10:00.000Z")
+      });
+      const database = openRunsteadDatabase(join(workspace, ".runstead", "state.db"));
+
+      try {
+        const toolCalls = database
+          .prepare("SELECT action_type, status FROM tool_calls ORDER BY started_at, id")
+          .all() as { action_type: string; status: string }[];
+
+        expect(result.status).toBe("waiting_approval");
+        expect(result.workerResult).toMatchObject({
+          worker: "codex_direct",
+          model: "fake-codex",
+          exitCode: 0
+        });
+        expect(codexRequests).toHaveLength(2);
+        expect(await readFile(join(workspace, "src/fix.ts"), "utf8")).toBe(
+          "export const fixed = true;\n"
+        );
+        expect(toolCalls).toEqual(
+          expect.arrayContaining([
+            {
+              action_type: "worker.native.start",
+              status: "completed"
+            },
+            {
+              action_type: "model.inference.request",
+              status: "completed"
+            },
+            {
+              action_type: "filesystem.write",
+              status: "completed"
+            }
+          ])
+        );
+        expect(verifierCalls).toHaveLength(1);
+      } finally {
+        database.close();
       }
     } finally {
       await rm(workspace, { force: true, recursive: true });
@@ -1531,6 +1633,22 @@ async function allowExternalWorkerStartForTest(workspace: string): Promise<void>
     withoutApprovalRule.replace(
       "          - checkpoint.restore\n",
       "          - checkpoint.restore\n          - worker.external.start\n"
+    ),
+    "utf8"
+  );
+}
+
+async function allowCodexDirectWorkspaceWritesForTest(
+  workspace: string
+): Promise<void> {
+  const policyPath = join(workspace, ".runstead", "policies", "repo-maintenance.yaml");
+  const raw = await readFile(policyPath, "utf8");
+
+  await writeFile(
+    policyPath,
+    raw.replace(
+      "          - checkpoint.restore\n",
+      "          - checkpoint.restore\n          - filesystem.write\n"
     ),
     "utf8"
   );

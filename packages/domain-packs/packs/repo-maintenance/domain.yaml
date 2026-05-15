@@ -37,6 +37,7 @@ supported_workers:
   - shell
   - claude_code
   - codex_cli
+  - codex_direct
 
 security:
   untrusted_inputs:

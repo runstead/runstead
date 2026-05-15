@@ -243,6 +243,7 @@ describe("cli entrypoint", () => {
       "--orchestrate-repair"
     );
     expect(serve?.options.map((option) => option.long)).toContain("--verifier");
+    expect(serve?.options.map((option) => option.long)).toContain("--model");
   });
 
   it("exposes RBAC actor selection on scheduler ticks", () => {
@@ -357,6 +358,7 @@ describe("cli entrypoint", () => {
         "--actor",
         "--github-app",
         "--installation-id",
+        "--model",
         "--verifier",
         "--worker"
       ])

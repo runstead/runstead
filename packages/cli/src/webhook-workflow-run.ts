@@ -3,7 +3,6 @@ import { join, resolve } from "node:path";
 import { createRunsteadId, type RunsteadEvent } from "@runstead/core";
 import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sqlite";
 
-import type { WrappedWorkerKind } from "./wrapped-worker.js";
 import type { CommandVerifierInput } from "./verifier-evidence.js";
 import {
   createCiRepairTaskFromWorkflowRun,
@@ -12,6 +11,7 @@ import {
 } from "./ci-repair.js";
 import {
   runCiRepairOrchestrator,
+  type CiRepairWorkerKind,
   type RunCiRepairOrchestratorResult
 } from "./ci-repair-orchestrator.js";
 import {
@@ -69,7 +69,8 @@ export interface HandleGitHubWorkflowRunWebhookOptions {
   authToken?: string;
   mode?: GitHubWorkflowRunWebhookMode;
   dedupeDelivery?: boolean;
-  worker?: WrappedWorkerKind;
+  worker?: CiRepairWorkerKind;
+  model?: string;
   base?: string;
   draft?: boolean;
   allowedPaths?: string[];
@@ -144,6 +145,7 @@ export async function handleGitHubWorkflowRunWebhook(
       ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
       runId,
       worker: options.worker ?? "codex_cli",
+      ...(options.model === undefined ? {} : { model: options.model }),
       ...(options.base === undefined ? {} : { base: options.base }),
       draft: options.draft === true,
       allowedPaths: options.allowedPaths ?? [],

@@ -16,7 +16,7 @@ export const repoMaintenancePack = {
   defaultPolicy: "policies/repo-maintenance.yaml",
   defaultVerifiers: ["command", "git_diff_scope"],
   requiredTools: ["filesystem", "shell", "git", "github"],
-  supportedWorkers: ["shell", "claude_code", "codex_cli"]
+  supportedWorkers: ["shell", "claude_code", "codex_cli", "codex_direct"]
 } satisfies DomainPack;
 
 export const repoMaintenanceDomainYaml = `id: repo-maintenance
@@ -58,6 +58,7 @@ supported_workers:
   - shell
   - claude_code
   - codex_cli
+  - codex_direct
 
 security:
   untrusted_inputs:
