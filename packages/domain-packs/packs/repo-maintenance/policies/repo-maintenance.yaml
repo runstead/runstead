@@ -18,6 +18,7 @@ rules:
           - git.show
           - git.diff.summary
           - repo.metadata.read
+          - evidence.read
           - github.run.read
           - github.run.log.read
     decision: allow

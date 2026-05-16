@@ -747,7 +747,8 @@ function localAgentReportSections(report: LocalAgentTaskReport) {
         "git.show",
         "git.diff.summary",
         "shell.exec",
-        "verifier.run"
+        "verifier.run",
+        "evidence.read"
       ].includes(call.actionType)
     ),
     verifiers: verifierReportRows(report.task.output ?? {}),

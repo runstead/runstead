@@ -17,6 +17,7 @@ import type { CodexResponsesRequest } from "./codex-responses-transport.js";
 import { showGoal } from "./goals.js";
 import { initRunstead } from "./init.js";
 import type { PolicyProfile } from "./policy.js";
+import { storeCommandVerifierEvidence } from "./verifier-evidence.js";
 import { listTasks } from "./tasks.js";
 
 const execFileAsync = promisify(execFile);
@@ -128,7 +129,8 @@ describe("runCodexDirectWorker", () => {
           "git_diff",
           "git_log",
           "git_show",
-          "diff_summary"
+          "diff_summary",
+          "read_evidence"
         ]);
       } finally {
         database.close();
@@ -830,6 +832,90 @@ describe("runCodexDirectWorker", () => {
         expect(evidenceRows[0]?.type).toBe("command_output");
         expect(toolOutput).toContain("verifier ok");
         expect(toolOutput).toContain('\\"exitCode\\":0');
+      } finally {
+        database.close();
+      }
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("reads stored evidence artifacts by id", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-codex-read-evidence-"));
+
+    try {
+      const initialized = await initRunstead({
+        cwd: workspace,
+        createDefaultGoal: true
+      });
+      const database = openRunsteadDatabase(initialized.stateDb);
+
+      try {
+        const task = listTasks({ cwd: workspace }).tasks[0];
+
+        if (task === undefined) {
+          throw new Error("Expected generated task");
+        }
+
+        const evidence = await storeCommandVerifierEvidence({
+          cwd: workspace,
+          runsteadRoot: initialized.root,
+          database,
+          task,
+          command: {
+            name: "fixture",
+            command: "node -e \"console.log('artifact ok')\""
+          }
+        });
+        const goal = showGoal({ cwd: workspace, id: task.goalId }).goal;
+        const transport = scriptedTransport([
+          {
+            outputText: "",
+            toolCalls: [
+              {
+                id: "call_read_evidence",
+                name: "read_evidence",
+                arguments: JSON.stringify({
+                  id: evidence.evidence.id,
+                  maxBytes: 20_000
+                })
+              }
+            ],
+            finishReason: "tool_calls",
+            outputItems: []
+          },
+          {
+            outputText: "Read evidence.",
+            toolCalls: [],
+            finishReason: "stop",
+            outputItems: []
+          }
+        ]);
+        const result = await runCodexDirectWorker({
+          cwd: workspace,
+          stateDb: initialized.stateDb,
+          database,
+          policy: allowDirectToolsPolicy,
+          goal,
+          task,
+          model: "fake-codex",
+          evidenceDir: join(initialized.root, "evidence"),
+          transport
+        });
+        const evidenceCall = database
+          .prepare("SELECT status, output_json FROM tool_calls WHERE action_type = ?")
+          .get("evidence.read") as { status: string; output_json: string };
+        const toolOutput = JSON.stringify(transport.requests[1]?.input);
+
+        expect(result).toMatchObject({
+          status: "completed",
+          toolCalls: 1,
+          summary: "Read evidence."
+        });
+        expect(evidenceCall.status).toBe("completed");
+        expect(evidenceCall.output_json).toContain(evidence.evidence.id);
+        expect(toolOutput).toContain("artifact ok");
+        expect(toolOutput).toContain(evidence.evidence.id);
       } finally {
         database.close();
       }
@@ -1626,7 +1712,8 @@ describe("runCodexDirectWorker", () => {
       "git_diff",
       "git_log",
       "git_show",
-      "diff_summary"
+      "diff_summary",
+      "read_evidence"
     ]);
   });
 });
@@ -1655,6 +1742,7 @@ const allowDirectToolsPolicy: PolicyProfile = {
           "git.log",
           "git.show",
           "git.diff.summary",
+          "evidence.read",
           "model.inference.request"
         ]
       },

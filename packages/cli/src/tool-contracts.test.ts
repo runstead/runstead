@@ -31,6 +31,7 @@ describe("tool contract registry", () => {
         "github.run.log.read",
         "repo.metadata.read",
         "verifier.run",
+        "evidence.read",
         "package.install",
         "package.update",
         "github.pr.create",

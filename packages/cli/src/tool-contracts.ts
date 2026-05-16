@@ -161,6 +161,14 @@ const TOOL_CONTRACTS: ToolContract[] = [
     policyRequired: true
   },
   {
+    actionType: "evidence.read",
+    tool: "runstead",
+    resourceTypes: ["evidence"],
+    sideEffects: ["read_workspace"],
+    evidenceRequired: false,
+    policyRequired: true
+  },
+  {
     actionType: "package.install",
     tool: "package-manager",
     resourceTypes: ["package_manifest", "lockfile"],
