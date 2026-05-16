@@ -839,9 +839,18 @@ async function executeCodexDirectTool(
       return JSON.stringify(
         await runGovernedListFiles({
           ...options,
-          glob: optionalStringArray(options.toolCall.arguments.glob, "glob"),
-          exclude: optionalStringArray(options.toolCall.arguments.exclude, "exclude"),
-          maxResults: optionalPositiveInteger(options.toolCall.arguments.maxResults),
+          ...optionalField(
+            "glob",
+            optionalStringArray(options.toolCall.arguments.glob, "glob")
+          ),
+          ...optionalField(
+            "exclude",
+            optionalStringArray(options.toolCall.arguments.exclude, "exclude")
+          ),
+          ...optionalField(
+            "maxResults",
+            optionalPositiveInteger(options.toolCall.arguments.maxResults)
+          ),
           includeDirs: options.toolCall.arguments.includeDirs === true
         })
       );
@@ -851,13 +860,22 @@ async function executeCodexDirectTool(
           ...options,
           query: requiredString(options.toolCall.arguments.query, "query"),
           regex: options.toolCall.arguments.regex === true,
-          glob: optionalStringArray(options.toolCall.arguments.glob, "glob"),
-          caseSensitive: options.toolCall.arguments.caseSensitive === true,
-          contextLines: optionalNonNegativeInteger(
-            options.toolCall.arguments.contextLines,
-            "contextLines"
+          ...optionalField(
+            "glob",
+            optionalStringArray(options.toolCall.arguments.glob, "glob")
           ),
-          maxMatches: optionalPositiveInteger(options.toolCall.arguments.maxMatches)
+          caseSensitive: options.toolCall.arguments.caseSensitive === true,
+          ...optionalField(
+            "contextLines",
+            optionalNonNegativeInteger(
+              options.toolCall.arguments.contextLines,
+              "contextLines"
+            )
+          ),
+          ...optionalField(
+            "maxMatches",
+            optionalPositiveInteger(options.toolCall.arguments.maxMatches)
+          )
         })
       );
     case "read_file":
@@ -872,11 +890,13 @@ async function executeCodexDirectTool(
         await runGovernedReadManyFiles({
           ...options,
           paths: requiredStringArray(options.toolCall.arguments.paths, "paths"),
-          maxBytesPerFile: optionalPositiveInteger(
-            options.toolCall.arguments.maxBytesPerFile
+          ...optionalField(
+            "maxBytesPerFile",
+            optionalPositiveInteger(options.toolCall.arguments.maxBytesPerFile)
           ),
-          maxTotalBytes: optionalPositiveInteger(
-            options.toolCall.arguments.maxTotalBytes
+          ...optionalField(
+            "maxTotalBytes",
+            optionalPositiveInteger(options.toolCall.arguments.maxTotalBytes)
           )
         })
       );
@@ -885,7 +905,10 @@ async function executeCodexDirectTool(
         await runGovernedFileInfo({
           ...options,
           path: optionalString(options.toolCall.arguments.path) ?? ".",
-          maxEntries: optionalPositiveInteger(options.toolCall.arguments.maxEntries)
+          ...optionalField(
+            "maxEntries",
+            optionalPositiveInteger(options.toolCall.arguments.maxEntries)
+          )
         })
       );
     case "tree":
@@ -893,8 +916,14 @@ async function executeCodexDirectTool(
         await runGovernedTree({
           ...options,
           path: optionalString(options.toolCall.arguments.path) ?? ".",
-          maxDepth: optionalPositiveInteger(options.toolCall.arguments.maxDepth),
-          maxEntries: optionalPositiveInteger(options.toolCall.arguments.maxEntries),
+          ...optionalField(
+            "maxDepth",
+            optionalPositiveInteger(options.toolCall.arguments.maxDepth)
+          ),
+          ...optionalField(
+            "maxEntries",
+            optionalPositiveInteger(options.toolCall.arguments.maxEntries)
+          ),
           includeFiles: options.toolCall.arguments.includeFiles !== false
         })
       );
@@ -909,9 +938,10 @@ async function executeCodexDirectTool(
       return JSON.stringify(
         await runGovernedApplyPatch({
           ...options,
-          patch: optionalString(options.toolCall.arguments.patch),
-          replacements: optionalReplacementArray(
-            options.toolCall.arguments.replacements
+          ...optionalField("patch", optionalString(options.toolCall.arguments.patch)),
+          ...optionalField(
+            "replacements",
+            optionalReplacementArray(options.toolCall.arguments.replacements)
           )
         })
       );
@@ -957,9 +987,12 @@ async function executeCodexDirectTool(
       return JSON.stringify(
         await runGovernedGitLog({
           ...options,
-          range: optionalString(options.toolCall.arguments.range),
-          path: optionalString(options.toolCall.arguments.path),
-          maxCommits: optionalPositiveInteger(options.toolCall.arguments.maxCommits)
+          ...optionalField("range", optionalString(options.toolCall.arguments.range)),
+          ...optionalField("path", optionalString(options.toolCall.arguments.path)),
+          ...optionalField(
+            "maxCommits",
+            optionalPositiveInteger(options.toolCall.arguments.maxCommits)
+          )
         })
       );
     case "git_show":
@@ -967,8 +1000,11 @@ async function executeCodexDirectTool(
         await runGovernedGitShow({
           ...options,
           ref: requiredString(options.toolCall.arguments.ref, "ref"),
-          path: optionalString(options.toolCall.arguments.path),
-          maxBytes: optionalPositiveInteger(options.toolCall.arguments.maxBytes)
+          ...optionalField("path", optionalString(options.toolCall.arguments.path)),
+          ...optionalField(
+            "maxBytes",
+            optionalPositiveInteger(options.toolCall.arguments.maxBytes)
+          )
         })
       );
     case "diff_summary": {
@@ -982,10 +1018,13 @@ async function executeCodexDirectTool(
       return JSON.stringify(
         await runGovernedDiffSummary({
           ...options,
-          path,
           staged,
-          base,
-          maxFiles: optionalPositiveInteger(options.toolCall.arguments.maxFiles)
+          ...optionalField("path", path),
+          ...optionalField("base", base),
+          ...optionalField(
+            "maxFiles",
+            optionalPositiveInteger(options.toolCall.arguments.maxFiles)
+          )
         })
       );
     }
@@ -994,7 +1033,10 @@ async function executeCodexDirectTool(
         await runGovernedReadEvidence({
           ...options,
           id: requiredString(options.toolCall.arguments.id, "id"),
-          maxBytes: optionalPositiveInteger(options.toolCall.arguments.maxBytes)
+          ...optionalField(
+            "maxBytes",
+            optionalPositiveInteger(options.toolCall.arguments.maxBytes)
+          )
         })
       );
     case "workspace_facts":
@@ -2100,6 +2142,13 @@ function optionalString(value: unknown): string | undefined {
   return undefined;
 }
 
+function optionalField<K extends string, V>(
+  key: K,
+  value: V | undefined
+): Record<K, V> | Record<string, never> {
+  return value === undefined ? {} : ({ [key]: value } as Record<K, V>);
+}
+
 function optionalStringArray(value: unknown, field: string): string[] | undefined {
   if (value === undefined) {
     return undefined;
@@ -2585,10 +2634,11 @@ function mergeDiffSummaryRows(input: { numstat: string; nameStatus: string }): {
       const [added = "0", deleted = "0", path = ""] = line.split("\t");
       const additions = added === "-" ? "binary" : Number.parseInt(added, 10);
       const deletions = deleted === "-" ? "binary" : Number.parseInt(deleted, 10);
+      const status = statuses.get(path);
 
       return {
         path,
-        ...(statuses.get(path) === undefined ? {} : { status: statuses.get(path) }),
+        ...(status === undefined ? {} : { status }),
         additions:
           additions === "binary" ? "binary" : Number.isNaN(additions) ? 0 : additions,
         deletions:

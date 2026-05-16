@@ -364,9 +364,7 @@ export async function inspectWorkspacePath(
     result.directory = await summarizeDirectory(
       target.absolutePath,
       target.relativePath,
-      {
-        maxEntries: options.maxEntries
-      }
+      options.maxEntries === undefined ? {} : { maxEntries: options.maxEntries }
     );
   }
 
