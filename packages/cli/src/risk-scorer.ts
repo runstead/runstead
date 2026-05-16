@@ -19,6 +19,7 @@ const ACTION_TYPE_RISK: Record<string, PolicyRisk> = {
   "git.diff": "low",
   "git.log": "low",
   "git.show": "low",
+  "git.diff.summary": "low",
   "repo.metadata.read": "low",
   "shell.exec": "medium",
   "verifier.run": "medium",

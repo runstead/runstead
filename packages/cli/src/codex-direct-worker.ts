@@ -112,7 +112,8 @@ type CodexDirectToolName =
   | "git_status"
   | "git_diff"
   | "git_log"
-  | "git_show";
+  | "git_show"
+  | "diff_summary";
 
 interface CodexDirectToolCall {
   id: string;
@@ -724,6 +725,34 @@ export function codexDirectToolDefinitions(): CodexResponsesTool[] {
         },
         ["ref"]
       )
+    },
+    {
+      type: "function",
+      name: "diff_summary",
+      description:
+        "Return a bounded file-level summary of the workspace git diff without full patch contents.",
+      strict: false,
+      parameters: objectSchema(
+        {
+          path: {
+            type: "string",
+            description: "Optional workspace-relative path to summarize."
+          },
+          staged: {
+            type: "boolean",
+            description: "Summarize staged diff when true."
+          },
+          base: {
+            type: "string",
+            description: "Optional base ref for base...HEAD summaries."
+          },
+          maxFiles: {
+            type: "number",
+            description: "Optional maximum file rows to return."
+          }
+        },
+        []
+      )
     }
   ];
 }
@@ -897,7 +926,98 @@ async function executeCodexDirectTool(
           maxBytes: optionalPositiveInteger(options.toolCall.arguments.maxBytes)
         })
       );
+    case "diff_summary": {
+      const path = optionalString(options.toolCall.arguments.path);
+      const requestedStaged = options.toolCall.arguments.staged === true;
+      const staged = taskGitDiffStaged(options.task) ?? requestedStaged;
+      const base =
+        taskGitDiffBase(options.task) ??
+        optionalString(options.toolCall.arguments.base);
+
+      return JSON.stringify(
+        await runGovernedDiffSummary({
+          ...options,
+          path,
+          staged,
+          base,
+          maxFiles: optionalPositiveInteger(options.toolCall.arguments.maxFiles)
+        })
+      );
+    }
   }
+}
+
+async function runGovernedDiffSummary(
+  options: CodexDirectWorkerOptions & {
+    workerRun: WorkerRun;
+    path?: string;
+    staged: boolean;
+    base?: string;
+    maxFiles?: number;
+  }
+) {
+  const maxFiles = Math.min(options.maxFiles ?? 100, 1_000);
+  const input = {
+    path: options.path,
+    staged: options.staged,
+    base: options.base
+  };
+  const numstatCommand = gitDiffSummaryCommand("--numstat", input);
+  const nameStatusCommand = gitDiffSummaryCommand("--name-status", input);
+  const shortstatCommand = gitDiffSummaryCommand("--shortstat", input);
+
+  return runGovernedToolAction({
+    ...governedToolOptions(options),
+    action: gitReadAction({
+      cwd: options.cwd,
+      actionType: "git.diff.summary"
+    }),
+    run: async () => {
+      const [numstat, nameStatus, shortstat] = await Promise.all([
+        runShellCommand({
+          command: numstatCommand,
+          cwd: options.cwd
+        }),
+        runShellCommand({
+          command: nameStatusCommand,
+          cwd: options.cwd
+        }),
+        runShellCommand({
+          command: shortstatCommand,
+          cwd: options.cwd
+        })
+      ]);
+      const files = mergeDiffSummaryRows({
+        numstat: numstat.stdout,
+        nameStatus: nameStatus.stdout
+      });
+      const truncated = files.length > maxFiles;
+      const value = {
+        commands: {
+          numstat: numstatCommand,
+          nameStatus: nameStatusCommand,
+          shortstat: shortstatCommand
+        },
+        exitCode: firstNonZeroExitCode([numstat, nameStatus, shortstat]),
+        files: files.slice(0, maxFiles),
+        totals: diffSummaryTotals(files),
+        shortstat: shortstat.stdout.trim(),
+        truncated,
+        maxFiles
+      };
+
+      return {
+        value,
+        output: {
+          files: value.files.length,
+          truncated,
+          additions: value.totals.additions,
+          deletions: value.totals.deletions,
+          shortstat: value.shortstat
+        }
+      };
+    }
+  }).then((result) => result.value);
 }
 
 async function runGovernedGitLog(
@@ -1642,7 +1762,7 @@ function shellAction(input: { cwd: string; command: string }): ActionEnvelope {
 
 function gitReadAction(input: {
   cwd: string;
-  actionType: "git.status" | "git.diff" | "git.log" | "git.show";
+  actionType: "git.status" | "git.diff" | "git.log" | "git.show" | "git.diff.summary";
 }): ActionEnvelope {
   return {
     actionId: stableActionId(input.actionType, [input.cwd]),
@@ -2038,6 +2158,99 @@ function gitDiffCommand(input: {
   return input.path === undefined ? base : `${base} -- ${shellQuote(input.path)}`;
 }
 
+function gitDiffSummaryCommand(
+  mode: "--numstat" | "--name-status" | "--shortstat",
+  input: {
+    path: string | undefined;
+    staged: boolean;
+    base: string | undefined;
+  }
+): string {
+  const base = input.staged
+    ? `git diff --staged ${mode}`
+    : input.base === undefined
+      ? `git diff ${mode}`
+      : `git diff ${mode} ${shellQuote(input.base)}...HEAD`;
+
+  return input.path === undefined ? base : `${base} -- ${shellQuote(input.path)}`;
+}
+
+function mergeDiffSummaryRows(input: { numstat: string; nameStatus: string }): {
+  path: string;
+  status?: string;
+  additions: number | "binary";
+  deletions: number | "binary";
+}[] {
+  const statuses = new Map<string, string>();
+
+  for (const line of input.nameStatus.split(/\r?\n/)) {
+    if (line.length === 0) {
+      continue;
+    }
+
+    const [status, ...paths] = line.split("\t");
+    const path = paths.at(-1);
+
+    if (status !== undefined && path !== undefined) {
+      statuses.set(path, status);
+    }
+  }
+
+  return input.numstat
+    .split(/\r?\n/)
+    .filter((line) => line.length > 0)
+    .map((line) => {
+      const [added = "0", deleted = "0", path = ""] = line.split("\t");
+      const additions = added === "-" ? "binary" : Number.parseInt(added, 10);
+      const deletions = deleted === "-" ? "binary" : Number.parseInt(deleted, 10);
+
+      return {
+        path,
+        ...(statuses.get(path) === undefined ? {} : { status: statuses.get(path) }),
+        additions:
+          additions === "binary" ? "binary" : Number.isNaN(additions) ? 0 : additions,
+        deletions:
+          deletions === "binary" ? "binary" : Number.isNaN(deletions) ? 0 : deletions
+      };
+    });
+}
+
+function diffSummaryTotals(
+  files: {
+    additions: number | "binary";
+    deletions: number | "binary";
+  }[]
+): { files: number; additions: number; deletions: number; binaryFiles: number } {
+  const totals = {
+    files: 0,
+    additions: 0,
+    deletions: 0,
+    binaryFiles: 0
+  };
+
+  for (const file of files) {
+    totals.files += 1;
+
+    if (file.additions === "binary" || file.deletions === "binary") {
+      totals.binaryFiles += 1;
+    }
+
+    if (file.additions !== "binary") {
+      totals.additions += file.additions;
+    }
+
+    if (file.deletions !== "binary") {
+      totals.deletions += file.deletions;
+    }
+  }
+
+  return totals;
+}
+
+function firstNonZeroExitCode(results: ShellCommandResult[]): number {
+  return results.find((result) => result.exitCode !== 0)?.exitCode ?? 0;
+}
+
 function gitLogCommand(input: {
   range: string | undefined;
   path: string | undefined;
@@ -2122,7 +2335,8 @@ function isCodexDirectToolName(value: string): value is CodexDirectToolName {
     "git_status",
     "git_diff",
     "git_log",
-    "git_show"
+    "git_show",
+    "diff_summary"
   ].includes(value);
 }
 

@@ -97,6 +97,14 @@ const TOOL_CONTRACTS: ToolContract[] = [
     policyRequired: true
   },
   {
+    actionType: "git.diff.summary",
+    tool: "git",
+    resourceTypes: ["repository"],
+    sideEffects: ["read_workspace"],
+    evidenceRequired: false,
+    policyRequired: true
+  },
+  {
     actionType: "git.branch.create",
     tool: "git",
     resourceTypes: ["branch", "repository"],

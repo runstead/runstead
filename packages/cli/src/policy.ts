@@ -141,6 +141,7 @@ export const DEFAULT_READ_WORKSPACE_ACTION_TYPES = [
   "git.diff",
   "git.log",
   "git.show",
+  "git.diff.summary",
   "repo.metadata.read",
   "github.run.read",
   "github.run.log.read"

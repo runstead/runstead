@@ -23,6 +23,7 @@ describe("tool contract registry", () => {
         "git.diff",
         "git.log",
         "git.show",
+        "git.diff.summary",
         "git.branch.create",
         "git.commit",
         "git.push",

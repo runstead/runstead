@@ -35,6 +35,7 @@ agent run / repair-ci / run --once / daemon
               -> git.diff
               -> git.log
               -> git.show
+              -> git.diff.summary
               -> policy / approval / audit / evidence
 ```
 
@@ -83,6 +84,7 @@ The first tool set should stay small:
 - `git_diff` -> `git.diff`
 - `git_log` -> `git.log`
 - `git_show` -> `git.show`
+- `diff_summary` -> `git.diff.summary`
 
 If policy requires approval, the worker must stop with an approval-required
 result. It must not ask the model to work around the denied or pending action.

@@ -127,7 +127,8 @@ describe("runCodexDirectWorker", () => {
           "git_status",
           "git_diff",
           "git_log",
-          "git_show"
+          "git_show",
+          "diff_summary"
         ]);
       } finally {
         database.close();
@@ -1101,6 +1102,92 @@ describe("runCodexDirectWorker", () => {
     }
   }, 10000);
 
+  it("returns bounded git diff summaries", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-codex-diff-summary-"));
+
+    try {
+      await execFileAsync("git", ["init"], { cwd: workspace });
+      await execFileAsync("git", ["config", "user.name", "Runstead"], {
+        cwd: workspace
+      });
+      await execFileAsync("git", ["config", "user.email", "runstead@example.com"], {
+        cwd: workspace
+      });
+      await writeFile(join(workspace, "README.md"), "# Fixture\n");
+      await execFileAsync("git", ["add", "README.md"], { cwd: workspace });
+      await execFileAsync("git", ["commit", "-m", "initial fixture"], {
+        cwd: workspace
+      });
+      await writeFile(join(workspace, "README.md"), "# Fixture\n\nChanged\n");
+      const initialized = await initRunstead({
+        cwd: workspace,
+        createDefaultGoal: true
+      });
+      const database = openRunsteadDatabase(initialized.stateDb);
+
+      try {
+        const task = listTasks({ cwd: workspace }).tasks[0];
+
+        if (task === undefined) {
+          throw new Error("Expected generated task");
+        }
+
+        const goal = showGoal({ cwd: workspace, id: task.goalId }).goal;
+        const transport = scriptedTransport([
+          {
+            outputText: "",
+            toolCalls: [
+              {
+                id: "call_diff_summary",
+                name: "diff_summary",
+                arguments: JSON.stringify({
+                  maxFiles: 10
+                })
+              }
+            ],
+            finishReason: "tool_calls",
+            outputItems: []
+          },
+          {
+            outputText: "Summarized diff.",
+            toolCalls: [],
+            finishReason: "stop",
+            outputItems: []
+          }
+        ]);
+        const result = await runCodexDirectWorker({
+          cwd: workspace,
+          stateDb: initialized.stateDb,
+          database,
+          policy: allowDirectToolsPolicy,
+          goal,
+          task,
+          model: "fake-codex",
+          evidenceDir: join(initialized.root, "evidence"),
+          transport
+        });
+        const summaryCall = database
+          .prepare("SELECT status, output_json FROM tool_calls WHERE action_type = ?")
+          .get("git.diff.summary") as { status: string; output_json: string };
+        const toolOutput = JSON.stringify(transport.requests[1]?.input);
+
+        expect(result).toMatchObject({
+          status: "completed",
+          toolCalls: 1,
+          summary: "Summarized diff."
+        });
+        expect(summaryCall.status).toBe("completed");
+        expect(summaryCall.output_json).toContain('"files":1');
+        expect(toolOutput).toContain("README.md");
+        expect(toolOutput).toContain('\\"additions\\":2');
+      } finally {
+        database.close();
+      }
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  }, 10000);
+
   it("enforces task-scoped base git diff tool calls", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "runstead-codex-base-diff-"));
 
@@ -1538,7 +1625,8 @@ describe("runCodexDirectWorker", () => {
       "git_status",
       "git_diff",
       "git_log",
-      "git_show"
+      "git_show",
+      "diff_summary"
     ]);
   });
 });
@@ -1566,6 +1654,7 @@ const allowDirectToolsPolicy: PolicyProfile = {
           "git.diff",
           "git.log",
           "git.show",
+          "git.diff.summary",
           "model.inference.request"
         ]
       },

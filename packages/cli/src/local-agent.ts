@@ -745,6 +745,7 @@ function localAgentReportSections(report: LocalAgentTaskReport) {
         "git.diff",
         "git.log",
         "git.show",
+        "git.diff.summary",
         "shell.exec",
         "verifier.run"
       ].includes(call.actionType)

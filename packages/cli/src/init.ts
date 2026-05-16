@@ -94,6 +94,7 @@ rules:
           - git.diff
           - git.log
           - git.show
+          - git.diff.summary
           - repo.metadata.read
           - github.run.read
           - github.run.log.read
