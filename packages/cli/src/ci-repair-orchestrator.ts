@@ -3047,6 +3047,14 @@ function workerOutput(workerResult: CiRepairWorkerResult): JsonObject {
     args: redactedWorkerArgs(workerResult),
     governance: workerResult.governance,
     exitCode: workerResult.exitCode,
+    outputValidation: workerResult.outputValidation,
+    ...(workerResult.structuredOutput === undefined
+      ? {}
+      : {
+          structuredOutput: {
+            needsApproval: workerResult.structuredOutput.needs_approval
+          }
+        }),
     stdoutBytes: Buffer.byteLength(workerResult.stdout, "utf8"),
     stderrBytes: Buffer.byteLength(workerResult.stderr, "utf8"),
     stdoutOmitted: workerResult.stdout.length > 0,
@@ -3069,9 +3077,12 @@ function durableWorkerResult(workerResult: CiRepairWorkerResult): CiRepairWorker
   }
 
   const omitted = "[omitted from Runstead durable state]";
+  const durable = { ...workerResult };
+
+  delete durable.structuredOutput;
 
   return {
-    ...workerResult,
+    ...durable,
     prompt: omitted,
     args: redactedWorkerArgs(workerResult),
     stdout: workerResult.stdout.length === 0 ? "" : omitted,

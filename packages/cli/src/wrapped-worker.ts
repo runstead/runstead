@@ -86,6 +86,20 @@ export interface WorkerProcessResult {
   exitCode: number;
 }
 
+export interface WrappedWorkerStructuredOutput {
+  summary: string;
+  files_changed: string[];
+  commands_run: string[];
+  risks: string[];
+  needs_approval: boolean;
+  approval_reason: string | null;
+}
+
+export interface WrappedWorkerOutputValidation {
+  valid: boolean;
+  reason?: string;
+}
+
 export type WorkerProcessRunner = (
   command: string,
   args: string[],
@@ -103,6 +117,8 @@ export interface WrappedWorkerRunResult extends WorkerProcessResult {
   command: string;
   args: string[];
   governance: WrappedWorkerGovernanceManifest;
+  outputValidation: WrappedWorkerOutputValidation;
+  structuredOutput?: WrappedWorkerStructuredOutput;
   checkpointBefore?: WorkspaceCheckpoint;
 }
 
@@ -299,6 +315,22 @@ export async function startWrappedWorker(
       maxOutputBytes: options.maxOutputBytes ?? DEFAULT_WORKER_MAX_OUTPUT_BYTES
     }
   );
+  const validation = validateWrappedWorkerStructuredOutput(result.stdout);
+  const outputValidation: WrappedWorkerOutputValidation =
+    validation.reason === undefined
+      ? { valid: validation.valid }
+      : { valid: validation.valid, reason: validation.reason };
+  const finalResult =
+    result.exitCode === 0 && !validation.valid
+      ? {
+          ...result,
+          stderr: appendWorkerProcessNotice(
+            result.stderr,
+            validation.reason ?? "worker did not return valid structured output"
+          ),
+          exitCode: 1
+        }
+      : result;
 
   return {
     worker: options.worker,
@@ -306,10 +338,12 @@ export async function startWrappedWorker(
     command: command.command,
     args: command.args,
     governance,
+    outputValidation,
+    ...(validation.output === undefined ? {} : { structuredOutput: validation.output }),
     ...(checkpointBefore === undefined ? {} : { checkpointBefore }),
-    stdout: result.stdout,
-    stderr: result.stderr,
-    exitCode: result.exitCode
+    stdout: finalResult.stdout,
+    stderr: finalResult.stderr,
+    exitCode: finalResult.exitCode
   };
 }
 
@@ -469,4 +503,86 @@ export async function runWorkerProcess(
 
 function appendWorkerProcessNotice(output: string, notice: string): string {
   return `${output}${output.length === 0 || output.endsWith("\n") ? "" : "\n"}[runstead] ${notice}\n`;
+}
+
+function validateWrappedWorkerStructuredOutput(
+  stdout: string
+): WrappedWorkerOutputValidation & { output?: WrappedWorkerStructuredOutput } {
+  const trimmed = stdout.trim();
+
+  if (trimmed.length === 0) {
+    return {
+      valid: false,
+      reason: "worker produced no structured output"
+    };
+  }
+
+  let parsed: unknown;
+
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch {
+    return {
+      valid: false,
+      reason: "worker stdout is not valid JSON"
+    };
+  }
+
+  if (!isRecord(parsed)) {
+    return {
+      valid: false,
+      reason: "worker JSON output must be an object"
+    };
+  }
+
+  if (typeof parsed.summary !== "string") {
+    return invalidWorkerOutputField("summary");
+  }
+
+  if (!isStringArray(parsed.files_changed)) {
+    return invalidWorkerOutputField("files_changed");
+  }
+
+  if (!isStringArray(parsed.commands_run)) {
+    return invalidWorkerOutputField("commands_run");
+  }
+
+  if (!isStringArray(parsed.risks)) {
+    return invalidWorkerOutputField("risks");
+  }
+
+  if (typeof parsed.needs_approval !== "boolean") {
+    return invalidWorkerOutputField("needs_approval");
+  }
+
+  if (parsed.approval_reason !== null && typeof parsed.approval_reason !== "string") {
+    return invalidWorkerOutputField("approval_reason");
+  }
+
+  return {
+    valid: true,
+    output: {
+      summary: parsed.summary,
+      files_changed: parsed.files_changed,
+      commands_run: parsed.commands_run,
+      risks: parsed.risks,
+      needs_approval: parsed.needs_approval,
+      approval_reason: parsed.approval_reason
+    }
+  };
+}
+
+function invalidWorkerOutputField(field: string): WrappedWorkerOutputValidation {
+  return {
+    valid: false,
+    reason: `worker JSON output field ${field} is missing or invalid`
+  };
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((entry) => typeof entry === "string");
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

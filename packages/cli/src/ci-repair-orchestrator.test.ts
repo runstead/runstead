@@ -1582,7 +1582,14 @@ function workerRunner(calls: string[]): WorkerProcessRunner {
     calls.push(args.join("\n"));
 
     return Promise.resolve({
-      stdout: '{"summary":"fixed"}',
+      stdout: JSON.stringify({
+        summary: "fixed",
+        files_changed: ["src/fix.ts"],
+        commands_run: [],
+        risks: [],
+        needs_approval: false,
+        approval_reason: null
+      }),
       stderr: "",
       exitCode: 0
     });

@@ -47,6 +47,15 @@ const task: Task = {
   updatedAt: "2026-05-14T00:01:00.000Z"
 };
 
+const wrappedWorkerOutput = JSON.stringify({
+  summary: "done",
+  files_changed: [],
+  commands_run: [],
+  risks: [],
+  needs_approval: false,
+  approval_reason: null
+});
+
 describe("buildWrappedWorkerPrompt", () => {
   it("builds a constrained prompt with policy and verifier requirements", () => {
     const prompt = buildWrappedWorkerPrompt({
@@ -237,7 +246,7 @@ describe("startWrappedWorker", () => {
       });
 
       return Promise.resolve({
-        stdout: '{"summary":"done"}',
+        stdout: wrappedWorkerOutput,
         stderr: "",
         exitCode: 0
       });
@@ -256,9 +265,14 @@ describe("startWrappedWorker", () => {
     expect(result).toMatchObject({
       worker: "codex_cli",
       command: "codex",
-      stdout: '{"summary":"done"}',
+      stdout: wrappedWorkerOutput,
       stderr: "",
       exitCode: 0
+    });
+    expect(result.outputValidation).toEqual({ valid: true });
+    expect(result.structuredOutput).toMatchObject({
+      summary: "done",
+      needs_approval: false
     });
     expect(result.args[0]).toBe("exec");
     expect(result.args).toEqual([
@@ -311,7 +325,7 @@ describe("startWrappedWorker", () => {
     const gitCalls: string[][] = [];
     const runner: WorkerProcessRunner = () =>
       Promise.resolve({
-        stdout: '{"summary":"done"}',
+        stdout: wrappedWorkerOutput,
         stderr: "",
         exitCode: 0
       });
@@ -358,7 +372,7 @@ describe("startWrappedWorker", () => {
     const gitCalls: string[][] = [];
     const runner: WorkerProcessRunner = () =>
       Promise.resolve({
-        stdout: '{"summary":"done"}',
+        stdout: wrappedWorkerOutput,
         stderr: "",
         exitCode: 0
       });
@@ -427,5 +441,55 @@ describe("runWorkerProcess", () => {
       stderr: "",
       exitCode: 0
     });
+  });
+});
+
+describe("wrapped worker output validation", () => {
+  it("fails an otherwise successful worker when stdout is empty", async () => {
+    const result = await startWrappedWorker({
+      worker: "codex_cli",
+      goal,
+      task,
+      workspace: "/repo",
+      evidenceDir: "/repo/.runstead/evidence",
+      runner: () =>
+        Promise.resolve({
+          stdout: "",
+          stderr: "",
+          exitCode: 0
+        })
+    });
+
+    expect(result.exitCode).toBe(1);
+    expect(result.outputValidation).toEqual({
+      valid: false,
+      reason: "worker produced no structured output"
+    });
+    expect(result.stderr).toContain(
+      "[runstead] worker produced no structured output"
+    );
+  });
+
+  it("fails an otherwise successful worker when stdout is not contract JSON", async () => {
+    const result = await startWrappedWorker({
+      worker: "codex_cli",
+      goal,
+      task,
+      workspace: "/repo",
+      evidenceDir: "/repo/.runstead/evidence",
+      runner: () =>
+        Promise.resolve({
+          stdout: '{"summary":"done"}',
+          stderr: "",
+          exitCode: 0
+        })
+    });
+
+    expect(result.exitCode).toBe(1);
+    expect(result.outputValidation).toEqual({
+      valid: false,
+      reason: "worker JSON output field files_changed is missing or invalid"
+    });
+    expect(result.stderr).toContain("files_changed is missing or invalid");
   });
 });
