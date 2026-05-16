@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
   createProgram,
   inferProgramName,
+  requireVerifierCommandOptions,
   requireSecretPrintAcknowledgement,
   requireUnmanagedHelperAcknowledgement
 } from "./index.js";
@@ -512,6 +513,21 @@ describe("cli entrypoint", () => {
     expect(() =>
       requireSecretPrintAcknowledgement({ printSecret: true }, "GitHub App JWTs")
     ).not.toThrow();
+  });
+
+  it("requires verifier command options for verifier-backed commands", () => {
+    expect(() => requireVerifierCommandOptions([], "agent test")).toThrow(
+      "agent test requires at least one --verifier name=command"
+    );
+    expect(() => requireVerifierCommandOptions(["broken"], "agent test")).toThrow(
+      "--verifier must use name=command"
+    );
+    expect(requireVerifierCommandOptions(["test=pnpm test"], "agent test")).toEqual([
+      {
+        name: "test",
+        command: "pnpm test"
+      }
+    ]);
   });
 
   it("labels ad-hoc side-effect helpers as unmanaged", () => {

@@ -2969,7 +2969,7 @@ function addAgentCommand(command: Command): void {
     .option("--cwd <path>", "Workspace directory")
     .option("--worker <worker>", "Worker to run: codex_direct", "codex_direct")
     .option("--model <model>", "Model to use with codex_direct")
-    .requiredOption(
+    .option(
       "--verifier <name=command>",
       "Verifier command to run before triage",
       collectValues,
@@ -2983,6 +2983,11 @@ function addAgentCommand(command: Command): void {
     )
     .option("--actor <id>", "RBAC subject for local agent execution", "local-admin")
     .action(async (focusParts: string[], options: AgentTestCliOptions) => {
+      const verifierCommands = requireVerifierCommandOptions(
+        options.verifier,
+        "agent test"
+      );
+
       await requireRbacPermission({
         ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
         actor: options.actor,
@@ -2996,7 +3001,6 @@ function addAgentCommand(command: Command): void {
         throw new Error("agent test currently supports --worker codex_direct only");
       }
 
-      const verifierCommands = options.verifier.map(parseVerifierCommandOption);
       const {
         attachLocalAgentVerifierEvidence,
         createLocalAgentTask,
@@ -3067,7 +3071,7 @@ function addAgentCommand(command: Command): void {
     .option("--model <model>", "Model to use with codex_direct")
     .option("--allowed <pattern>", "Allowed workspace path pattern", collectValues, [])
     .option("--denied <pattern>", "Denied workspace path pattern", collectValues, [])
-    .requiredOption(
+    .option(
       "--verifier <name=command>",
       "Verifier command to run after the fix",
       collectValues,
@@ -3100,7 +3104,7 @@ function addAgentCommand(command: Command): void {
     .option("--model <model>", "Model to use with codex_direct")
     .option("--allowed <pattern>", "Allowed workspace path pattern", collectValues, [])
     .option("--denied <pattern>", "Denied workspace path pattern", collectValues, [])
-    .requiredOption(
+    .option(
       "--verifier <name=command>",
       "Verifier command to run before and after repair",
       collectValues,
@@ -3185,6 +3189,11 @@ async function runAgentFixLikeCommand(input: {
   verifierFirst: boolean;
   options: AgentFixCliOptions;
 }): Promise<void> {
+  const verifierCommands = requireVerifierCommandOptions(
+    input.options.verifier,
+    `agent ${input.presetId === "fix:small" ? "fix" : "repair-test"}`
+  );
+
   await requireRbacPermission({
     ...(input.options.cwd === undefined ? {} : { cwd: input.options.cwd }),
     actor: input.options.actor,
@@ -3202,7 +3211,6 @@ async function runAgentFixLikeCommand(input: {
     throw new Error("agent fix prompt is required");
   }
 
-  const verifierCommands = input.options.verifier.map(parseVerifierCommandOption);
   const {
     attachLocalAgentVerifierEvidence,
     createLocalAgentTask,
@@ -3284,7 +3292,7 @@ function addCiRepairOrchestrationCommand(command: Command): void {
     .option("--github-app", "Use configured GitHub App installation auth")
     .option("--installation-id <id>", "Override configured GitHub App installation id")
     .option("--actor <id>", "RBAC subject for repair orchestration", "local-admin")
-    .requiredOption(
+    .option(
       "--verifier <name=command>",
       "Verifier command to run after repair",
       collectValues,
@@ -3299,6 +3307,11 @@ async function runCiRepairOrchestrationFromCli(
   runId: string,
   options: CiRepairOrchestrationCliOptions
 ): Promise<void> {
+  const verifierCommands = requireVerifierCommandOptions(
+    options.verifier,
+    "repair-ci"
+  );
+
   await requireRbacPermission({
     ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
     actor: options.actor,
@@ -3319,7 +3332,7 @@ async function runCiRepairOrchestrationFromCli(
     allowedPaths: options.allowed,
     deniedPaths: options.denied,
     ...(authToken === undefined ? {} : { authToken }),
-    verifierCommands: options.verifier.map(parseVerifierCommandOption)
+    verifierCommands
   });
 
   console.log(formatCiRepairOrchestratorReport(result));
@@ -3385,6 +3398,19 @@ function parseVerifierCommandOption(value: string): { name: string; command: str
     name: value.slice(0, separator).trim(),
     command: value.slice(separator + 1).trim()
   };
+}
+
+export function requireVerifierCommandOptions(
+  values: string[],
+  commandName: string
+): { name: string; command: string }[] {
+  const commands = values.map(parseVerifierCommandOption);
+
+  if (commands.length === 0) {
+    throw new Error(`${commandName} requires at least one --verifier name=command`);
+  }
+
+  return commands;
 }
 
 function parseOptionalFloat(
