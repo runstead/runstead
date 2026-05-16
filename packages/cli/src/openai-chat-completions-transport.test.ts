@@ -152,10 +152,12 @@ describe("OpenAI-compatible chat completions transport", () => {
     const transport = new OpenAiChatCompletionsTransport({
       baseUrl: "https://example.com/v1/",
       apiKey: "secret-token",
-      fetch: async () =>
-        new Response("bad", {
-          status: 401
-        })
+      fetch: () =>
+        Promise.resolve(
+          new Response("bad", {
+            status: 401
+          })
+        )
     });
 
     await expect(

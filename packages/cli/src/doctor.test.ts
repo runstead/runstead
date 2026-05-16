@@ -354,12 +354,11 @@ describe("doctorRunstead", () => {
         ])
       );
       expect(result.checks.map((check) => check.id)).not.toContain("codex-auth");
-      expect(
-        result.checks.find((check) => check.id === "model-provider")
-      ).toMatchObject({
-        status: "pass",
-        message: expect.stringContaining("provider=openrouter")
-      });
+      const providerCheck = result.checks.find(
+        (check) => check.id === "model-provider"
+      );
+      expect(providerCheck?.status).toBe("pass");
+      expect(providerCheck?.message).toContain("provider=openrouter");
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }
@@ -390,12 +389,11 @@ describe("doctorRunstead", () => {
       });
 
       expect(result.ok).toBe(false);
-      expect(
-        result.checks.find((check) => check.id === "model-provider-auth")
-      ).toMatchObject({
-        status: "fail",
-        message: expect.stringContaining("ANTHROPIC_API_KEY")
-      });
+      const authCheck = result.checks.find(
+        (check) => check.id === "model-provider-auth"
+      );
+      expect(authCheck?.status).toBe("fail");
+      expect(authCheck?.message).toContain("ANTHROPIC_API_KEY");
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }

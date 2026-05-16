@@ -85,8 +85,9 @@ export function normalizeGeminiGenerateContentPayload(
     throw new Error("Gemini generateContent payload was not an object");
   }
 
-  const candidate = Array.isArray(payload.candidates)
-    ? payload.candidates[0]
+  const candidates = payload.candidates;
+  const candidate = Array.isArray(candidates)
+    ? (candidates as unknown[])[0]
     : undefined;
 
   if (!isRecord(candidate) || !isRecord(candidate.content)) {

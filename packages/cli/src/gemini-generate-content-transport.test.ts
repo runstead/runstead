@@ -138,11 +138,13 @@ describe("Gemini generateContent transport", () => {
     const transport = new GeminiGenerateContentTransport({
       baseUrl: "https://generativelanguage.googleapis.com/v1beta/",
       apiKey: "gemini-secret",
-      fetch: async (input) => {
+      fetch: (input) => {
         requestedUrl = String(input);
-        return new Response("bad", {
-          status: 403
-        });
+        return Promise.resolve(
+          new Response("bad", {
+            status: 403
+          })
+        );
       }
     });
 

@@ -81,7 +81,8 @@ export function normalizeOpenAiChatCompletionsPayload(
     throw new Error("OpenAI-compatible response payload was not an object");
   }
 
-  const choice = Array.isArray(payload.choices) ? payload.choices[0] : undefined;
+  const choices = payload.choices;
+  const choice = Array.isArray(choices) ? (choices as unknown[])[0] : undefined;
 
   if (!isRecord(choice) || !isRecord(choice.message)) {
     throw new Error("OpenAI-compatible response payload returned no message");
