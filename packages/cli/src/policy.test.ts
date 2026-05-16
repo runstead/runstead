@@ -181,6 +181,22 @@ describe("evaluatePolicy verifier command rules", () => {
     expect(result.ruleId).toBe("allow_verifier_commands");
   });
 
+  it("allows generated typecheck verifier commands", () => {
+    const result = evaluatePolicy({
+      policy: verifierCommandPolicy,
+      action: {
+        actionId: "act_verifier_typecheck",
+        actionType: "shell.exec",
+        context: {
+          command: "pnpm typecheck"
+        }
+      }
+    });
+
+    expect(result.decision).toBe("allow");
+    expect(result.ruleId).toBe("allow_verifier_commands");
+  });
+
   it("requires approval for non-verifier shell commands", () => {
     const result = evaluatePolicy({
       policy: verifierCommandPolicy,

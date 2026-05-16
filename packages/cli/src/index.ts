@@ -2773,7 +2773,7 @@ function addAgentCommand(command: Command): void {
     .option("--denied <pattern>", "Denied workspace path pattern", collectValues, [])
     .option(
       "--verifier <name=command>",
-      "Verifier command for edit/repair tasks",
+      "Verifier command for edit/repair tasks, or auto to discover common scripts",
       collectValues,
       []
     )
@@ -2805,7 +2805,14 @@ function addAgentCommand(command: Command): void {
         runLocalAgentTask
       } = await import("./local-agent.js");
       const { resolveLocalAgentPreset } = await import("./local-agent-presets.js");
-      const verifierCommands = options.verifier.map(parseVerifierCommandOption);
+      const verifierCommands = await resolveVerifierCommandOptions(
+        options.verifier,
+        "agent run",
+        {
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          required: false
+        }
+      );
       const prompt = promptParts.join(" ").trim();
       const resolvedPreset =
         options.preset === undefined
@@ -3070,7 +3077,7 @@ function addAgentCommand(command: Command): void {
     .option("--model <model>", "Model to use with codex_direct")
     .option(
       "--verifier <name=command>",
-      "Verifier command to run before triage",
+      "Verifier command to run before triage, or auto to discover common scripts",
       collectValues,
       []
     )
@@ -3082,9 +3089,13 @@ function addAgentCommand(command: Command): void {
     )
     .option("--actor <id>", "RBAC subject for local agent execution", "local-admin")
     .action(async (focusParts: string[], options: AgentTestCliOptions) => {
-      const verifierCommands = requireVerifierCommandOptions(
+      const verifierCommands = await resolveVerifierCommandOptions(
         options.verifier,
-        "agent test"
+        "agent test",
+        {
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          required: true
+        }
       );
 
       await requireRbacPermission({
@@ -3177,7 +3188,7 @@ function addAgentCommand(command: Command): void {
     .option("--denied <pattern>", "Denied workspace path pattern", collectValues, [])
     .option(
       "--verifier <name=command>",
-      "Verifier command to run after the fix",
+      "Verifier command to run after the fix, or auto to discover common scripts",
       collectValues,
       []
     )
@@ -3210,7 +3221,7 @@ function addAgentCommand(command: Command): void {
     .option("--denied <pattern>", "Denied workspace path pattern", collectValues, [])
     .option(
       "--verifier <name=command>",
-      "Verifier command to run before and after repair",
+      "Verifier command to run before and after repair, or auto to discover common scripts",
       collectValues,
       []
     )
@@ -3293,9 +3304,13 @@ async function runAgentFixLikeCommand(input: {
   verifierFirst: boolean;
   options: AgentFixCliOptions;
 }): Promise<void> {
-  const verifierCommands = requireVerifierCommandOptions(
+  const verifierCommands = await resolveVerifierCommandOptions(
     input.options.verifier,
-    `agent ${input.presetId === "fix:small" ? "fix" : "repair-test"}`
+    `agent ${input.presetId === "fix:small" ? "fix" : "repair-test"}`,
+    {
+      ...(input.options.cwd === undefined ? {} : { cwd: input.options.cwd }),
+      required: true
+    }
   );
 
   await requireRbacPermission({
@@ -3520,6 +3535,57 @@ export function requireVerifierCommandOptions(
   }
 
   return commands;
+}
+
+async function resolveVerifierCommandOptions(
+  values: string[],
+  commandName: string,
+  options: { cwd?: string; required: boolean }
+): Promise<{ name: string; command: string }[]> {
+  const autoRequested = values.some((value) => value.trim() === "auto");
+  const manual = values
+    .filter((value) => value.trim() !== "auto")
+    .map(parseVerifierCommandOption);
+  const discovered = autoRequested
+    ? await discoverVerifierCommandOptions({
+        ...(options.cwd === undefined ? {} : { cwd: options.cwd })
+      })
+    : [];
+  const commands = mergeVerifierCommands([...discovered, ...manual]);
+
+  if (commands.length === 0 && autoRequested) {
+    throw new Error(
+      `${commandName} could not discover verifier commands; pass --verifier name=command`
+    );
+  }
+
+  if (commands.length === 0 && options.required) {
+    throw new Error(
+      `${commandName} requires at least one --verifier name=command or --verifier auto`
+    );
+  }
+
+  return commands;
+}
+
+async function discoverVerifierCommandOptions(options: {
+  cwd?: string;
+}): Promise<{ name: string; command: string }[]> {
+  const { discoverVerifierCommands } = await import("./verifier-discovery.js");
+
+  return discoverVerifierCommands(options);
+}
+
+function mergeVerifierCommands(
+  commands: { name: string; command: string }[]
+): { name: string; command: string }[] {
+  const merged = new Map<string, { name: string; command: string }>();
+
+  for (const command of commands) {
+    merged.set(command.name, command);
+  }
+
+  return [...merged.values()];
 }
 
 function parseOptionalFloat(

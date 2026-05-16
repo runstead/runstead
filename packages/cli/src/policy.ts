@@ -82,12 +82,20 @@ export interface EvaluatePolicyOptions {
 
 export const DEFAULT_VERIFIER_COMMAND_PATTERNS = [
   "^pnpm test( .*)?$",
+  "^pnpm run test( .*)?$",
+  "^pnpm lint( .*)?$",
   "^pnpm run lint( .*)?$",
+  "^pnpm typecheck( .*)?$",
+  "^pnpm run typecheck( .*)?$",
   "^npm test( .*)?$",
   "^npm run lint( .*)?$",
+  "^npm run typecheck( .*)?$",
   "^yarn test( .*)?$",
   "^yarn lint( .*)?$",
+  "^yarn typecheck( .*)?$",
   "^bun test( .*)?$",
+  "^bun run test( .*)?$",
+  "^bun run typecheck( .*)?$",
   "^bun run lint( .*)?$"
 ];
 
