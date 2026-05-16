@@ -362,6 +362,26 @@ async function runCodexDirectTool(
     toolCall: CodexDirectToolCall;
   }
 ): Promise<string> {
+  try {
+    return await executeCodexDirectTool(options);
+  } catch (error) {
+    if (
+      error instanceof ToolActionApprovalRequiredError ||
+      error instanceof ToolActionDeniedError
+    ) {
+      throw error;
+    }
+
+    return JSON.stringify(toolExecutionErrorOutput(error));
+  }
+}
+
+async function executeCodexDirectTool(
+  options: CodexDirectWorkerOptions & {
+    workerRun: WorkerRun;
+    toolCall: CodexDirectToolCall;
+  }
+): Promise<string> {
   switch (options.toolCall.name) {
     case "read_file":
       return JSON.stringify(
@@ -624,6 +644,16 @@ function shellCommandOutput(result: ShellCommandResult): JsonObject {
     stderrBytes: Buffer.byteLength(result.stderr, "utf8"),
     stdoutTruncated: result.stdoutTruncated,
     stderrTruncated: result.stderrTruncated
+  };
+}
+
+function toolExecutionErrorOutput(error: unknown): JsonObject {
+  return {
+    ok: false,
+    error: {
+      message: error instanceof Error ? error.message : String(error),
+      name: error instanceof Error ? error.name : "Error"
+    }
   };
 }
 

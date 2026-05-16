@@ -123,6 +123,93 @@ describe("runCodexDirectWorker", () => {
     }
   });
 
+  it("returns recoverable tool execution errors to the model", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-codex-tool-error-"));
+
+    try {
+      const initialized = await initRunstead({
+        cwd: workspace,
+        createDefaultGoal: true
+      });
+      const database = openRunsteadDatabase(initialized.stateDb);
+
+      try {
+        const task = listTasks({ cwd: workspace }).tasks[0];
+
+        if (task === undefined) {
+          throw new Error("Expected generated task");
+        }
+
+        const goal = showGoal({ cwd: workspace, id: task.goalId }).goal;
+        const transport = scriptedTransport([
+          {
+            outputText: "",
+            toolCalls: [
+              {
+                id: "call_missing_file",
+                name: "read_file",
+                arguments: JSON.stringify({
+                  path: "pyproject.toml"
+                })
+              }
+            ],
+            finishReason: "tool_calls",
+            outputItems: []
+          },
+          {
+            outputText: "Missing file handled.",
+            toolCalls: [],
+            finishReason: "stop",
+            outputItems: []
+          }
+        ]);
+        const result = await runCodexDirectWorker({
+          cwd: workspace,
+          stateDb: initialized.stateDb,
+          database,
+          policy: allowDirectToolsPolicy,
+          goal,
+          task,
+          model: "fake-codex",
+          evidenceDir: join(initialized.root, "evidence"),
+          transport
+        });
+        const toolCalls = database
+          .prepare("SELECT action_type, status FROM tool_calls ORDER BY started_at, id")
+          .all() as { action_type: string; status: string }[];
+
+        expect(result).toMatchObject({
+          status: "completed",
+          exitCode: 0,
+          toolCalls: 1,
+          summary: "Missing file handled."
+        });
+        expect(toolCalls).toEqual([
+          {
+            action_type: "model.inference.request",
+            status: "completed"
+          },
+          {
+            action_type: "filesystem.read",
+            status: "failed"
+          },
+          {
+            action_type: "model.inference.request",
+            status: "completed"
+          }
+        ]);
+        expect(JSON.stringify(transport.requests[1]?.input)).toContain(
+          "pyproject.toml"
+        );
+        expect(JSON.stringify(transport.requests[1]?.input)).toContain("ENOENT");
+      } finally {
+        database.close();
+      }
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
   it("stops when a tool call requires approval", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "runstead-codex-approval-"));
 
