@@ -101,6 +101,7 @@ describe("cli entrypoint", () => {
         "--worker",
         "--model",
         "--mode",
+        "--preset",
         "--allowed",
         "--denied",
         "--verifier",

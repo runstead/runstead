@@ -27,9 +27,7 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
       .command("codex")
       .description("Manage experimental Codex Direct provider credentials.")
   );
-  addAgentCommand(
-    program.command("agent").description("Run local repo agent tasks.")
-  );
+  addAgentCommand(program.command("agent").description("Run local repo agent tasks."));
 
   program
     .command("init")
@@ -2494,6 +2492,7 @@ interface AgentRunCliOptions {
   worker: string;
   model?: string;
   mode: string;
+  preset?: string;
   allowed: string[];
   denied: string[];
   verifier: string[];
@@ -2633,14 +2632,20 @@ function addAgentCommand(command: Command): void {
   command
     .command("run")
     .description("Run a governed local agent task against the current workspace.")
-    .argument("<prompt...>", "Task prompt for the local agent")
+    .argument("[prompt...]", "Task prompt for the local agent")
     .option("--cwd <path>", "Workspace directory")
     .option("--worker <worker>", "Worker to run: codex_direct", "codex_direct")
     .option("--model <model>", "Model to use with codex_direct")
     .option("--mode <mode>", "Agent mode: read-only, edit, or repair", "read-only")
+    .option("--preset <id>", "Local agent preset id")
     .option("--allowed <pattern>", "Allowed workspace path pattern", collectValues, [])
     .option("--denied <pattern>", "Denied workspace path pattern", collectValues, [])
-    .option("--verifier <name=command>", "Verifier command for edit/repair tasks", collectValues, [])
+    .option(
+      "--verifier <name=command>",
+      "Verifier command for edit/repair tasks",
+      collectValues,
+      []
+    )
     .option("--max-turns <number>", "Maximum Codex Direct tool turns")
     .option("--actor <id>", "RBAC subject for local agent execution", "local-admin")
     .action(async (promptParts: string[], options: AgentRunCliOptions) => {
@@ -2663,17 +2668,43 @@ function addAgentCommand(command: Command): void {
         localAgentRunExitCode,
         runLocalAgentTask
       } = await import("./local-agent.js");
+      const { resolveLocalAgentPreset } = await import("./local-agent-presets.js");
+      const verifierCommands = options.verifier.map(parseVerifierCommandOption);
+      const prompt = promptParts.join(" ").trim();
+      const resolvedPreset =
+        options.preset === undefined
+          ? undefined
+          : resolveLocalAgentPreset(options.preset, {
+              ...(prompt.length === 0 ? {} : { prompt }),
+              verifierNames: verifierCommands.map((command) => command.name)
+            });
+
+      if (resolvedPreset === undefined && prompt.length === 0) {
+        throw new Error("agent run prompt is required unless --preset is set");
+      }
+
       const created = await createLocalAgentTask({
         ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-        prompt: promptParts.join(" "),
+        prompt: resolvedPreset?.prompt ?? prompt,
+        ...(resolvedPreset === undefined
+          ? {}
+          : {
+              preset: resolvedPreset.preset.id,
+              checkpoint: resolvedPreset.preset.checkpoint
+            }),
         worker,
         ...(options.model === undefined ? {} : { model: options.model }),
-        mode: parseLocalAgentMode(options.mode),
+        mode:
+          resolvedPreset === undefined
+            ? parseLocalAgentMode(options.mode)
+            : resolvedPreset.preset.mode,
         allowedPaths: options.allowed,
         deniedPaths: options.denied,
-        verifierCommands: options.verifier.map(parseVerifierCommandOption),
+        verifierCommands,
         ...(options.maxTurns === undefined
-          ? {}
+          ? resolvedPreset === undefined
+            ? {}
+            : { maxTurns: resolvedPreset.preset.maxTurns }
           : { maxTurns: parseRequiredInteger(options.maxTurns, "--max-turns") })
       });
       const result = await runLocalAgentTask({
