@@ -16,6 +16,7 @@ import {
 } from "./filesystem-proxy.js";
 import {
   inspectWorkspacePath,
+  inspectPackageScripts,
   listWorkspaceFiles,
   readManyWorkspaceFiles,
   searchWorkspaceText,
@@ -96,6 +97,7 @@ type CodexDirectToolName =
   | "read_many_files"
   | "file_info"
   | "tree"
+  | "package_scripts"
   | "write_file"
   | "run_command"
   | "git_status"
@@ -520,6 +522,23 @@ export function codexDirectToolDefinitions(): CodexResponsesTool[] {
     },
     {
       type: "function",
+      name: "package_scripts",
+      description:
+        "Inspect package.json scripts, package manager, workspace hints, turbo tasks, and verifier command candidates.",
+      strict: false,
+      parameters: objectSchema(
+        {
+          path: {
+            type: "string",
+            description:
+              "Workspace-relative package directory. Defaults to the workspace root."
+          }
+        },
+        []
+      )
+    },
+    {
+      type: "function",
       name: "write_file",
       description: "Write a UTF-8 file inside the workspace.",
       strict: false,
@@ -689,6 +708,13 @@ async function executeCodexDirectTool(
           includeFiles: options.toolCall.arguments.includeFiles !== false
         })
       );
+    case "package_scripts":
+      return JSON.stringify(
+        await runGovernedPackageScripts({
+          ...options,
+          path: optionalString(options.toolCall.arguments.path) ?? "."
+        })
+      );
     case "write_file":
       return JSON.stringify(
         await writeGovernedWorkspaceFile({
@@ -720,6 +746,37 @@ async function executeCodexDirectTool(
       return JSON.stringify(await runGovernedGitRead(options, command));
     }
   }
+}
+
+async function runGovernedPackageScripts(
+  options: CodexDirectWorkerOptions & {
+    workerRun: WorkerRun;
+    path: string;
+  }
+) {
+  return runGovernedToolAction({
+    ...governedToolOptions(options),
+    action: repositoryMetadataReadAction({
+      cwd: options.cwd,
+      path: options.path
+    }),
+    run: async () => {
+      const value = await inspectPackageScripts(options.cwd, {
+        path: options.path
+      });
+
+      return {
+        value,
+        output: {
+          path: value.path,
+          packageManager: value.packageManager,
+          scripts: value.scripts.length,
+          verifierCandidates: value.verifierCandidates.length,
+          turboTasks: value.workspace.turboTasks.length
+        }
+      };
+    }
+  }).then((result) => result.value);
 }
 
 async function runGovernedFileInfo(
@@ -1289,6 +1346,30 @@ function filesystemReadAction(input: {
   };
 }
 
+function repositoryMetadataReadAction(input: {
+  cwd: string;
+  path: string;
+}): ActionEnvelope {
+  return {
+    actionId: stableActionId("repo.metadata.read", [input.cwd, input.path]),
+    actionType: "repo.metadata.read",
+    resource: {
+      type: "package_manifest",
+      path: input.path
+    },
+    context: {
+      cwd: input.cwd,
+      filesTouched: [
+        input.path === "." ? "package.json" : `${input.path}/package.json`,
+        input.path === "."
+          ? "pnpm-workspace.yaml"
+          : `${input.path}/pnpm-workspace.yaml`,
+        input.path === "." ? "turbo.json" : `${input.path}/turbo.json`
+      ]
+    }
+  };
+}
+
 function modelInferenceAction(input: { task: Task; model: string }): ActionEnvelope {
   return {
     actionId: stableActionId("model_inference_request", [input.task.id, input.model]),
@@ -1469,6 +1550,7 @@ function isCodexDirectToolName(value: string): value is CodexDirectToolName {
     "read_many_files",
     "file_info",
     "tree",
+    "package_scripts",
     "write_file",
     "run_command",
     "git_status",

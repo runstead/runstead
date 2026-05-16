@@ -17,6 +17,7 @@ const ACTION_TYPE_RISK: Record<string, PolicyRisk> = {
   "filesystem.stat": "low",
   "git.status": "low",
   "git.diff": "low",
+  "repo.metadata.read": "low",
   "shell.exec": "medium",
   "filesystem.write": "medium",
   "package.install": "high",

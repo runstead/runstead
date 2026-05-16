@@ -115,6 +115,7 @@ describe("runCodexDirectWorker", () => {
           "read_many_files",
           "file_info",
           "tree",
+          "package_scripts",
           "write_file",
           "run_command",
           "git_status",
@@ -478,6 +479,101 @@ describe("runCodexDirectWorker", () => {
         expect(toolOutput).toContain('\\"binary\\":false');
         expect(toolOutput).toContain("src/nested");
         expect(toolOutput).not.toContain("node_modules/pkg/ignored.ts");
+      } finally {
+        database.close();
+      }
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("inspects package scripts and verifier candidates", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-codex-package-"));
+
+    try {
+      await writeFile(
+        join(workspace, "package.json"),
+        JSON.stringify(
+          {
+            packageManager: "pnpm@11.1.1",
+            scripts: {
+              build: "tsc -b",
+              test: "vitest run"
+            }
+          },
+          null,
+          2
+        )
+      );
+      await writeFile(
+        join(workspace, "pnpm-workspace.yaml"),
+        "packages:\n  - packages/*\n"
+      );
+      await writeFile(
+        join(workspace, "turbo.json"),
+        JSON.stringify({ tasks: { lint: {}, typecheck: {} } }, null, 2)
+      );
+      const initialized = await initRunstead({
+        cwd: workspace,
+        createDefaultGoal: true
+      });
+      const database = openRunsteadDatabase(initialized.stateDb);
+
+      try {
+        const task = listTasks({ cwd: workspace }).tasks[0];
+
+        if (task === undefined) {
+          throw new Error("Expected generated task");
+        }
+
+        const goal = showGoal({ cwd: workspace, id: task.goalId }).goal;
+        const transport = scriptedTransport([
+          {
+            outputText: "",
+            toolCalls: [
+              {
+                id: "call_package_scripts",
+                name: "package_scripts",
+                arguments: "{}"
+              }
+            ],
+            finishReason: "tool_calls",
+            outputItems: []
+          },
+          {
+            outputText: "Inspected package scripts.",
+            toolCalls: [],
+            finishReason: "stop",
+            outputItems: []
+          }
+        ]);
+        const result = await runCodexDirectWorker({
+          cwd: workspace,
+          stateDb: initialized.stateDb,
+          database,
+          policy: allowDirectToolsPolicy,
+          goal,
+          task,
+          model: "fake-codex",
+          evidenceDir: join(initialized.root, "evidence"),
+          transport
+        });
+        const metadataCall = database
+          .prepare("SELECT status FROM tool_calls WHERE action_type = ?")
+          .get("repo.metadata.read") as { status: string };
+        const toolOutput = JSON.stringify(transport.requests[1]?.input);
+
+        expect(result).toMatchObject({
+          status: "completed",
+          toolCalls: 1,
+          summary: "Inspected package scripts."
+        });
+        expect(metadataCall.status).toBe("completed");
+        expect(toolOutput).toContain('\\"packageManager\\":\\"pnpm\\"');
+        expect(toolOutput).toContain('\\"name\\":\\"test\\"');
+        expect(toolOutput).toContain('\\"command\\":\\"pnpm test\\"');
+        expect(toolOutput).toContain('\\"command\\":\\"pnpm exec turbo run lint\\"');
+        expect(toolOutput).toContain("packages/*");
       } finally {
         database.close();
       }
@@ -1075,6 +1171,7 @@ describe("runCodexDirectWorker", () => {
       "read_many_files",
       "file_info",
       "tree",
+      "package_scripts",
       "write_file",
       "run_command",
       "git_status",
@@ -1098,6 +1195,7 @@ const allowDirectToolsPolicy: PolicyProfile = {
           "filesystem.search",
           "filesystem.stat",
           "filesystem.write",
+          "repo.metadata.read",
           "shell.exec",
           "git.status",
           "git.diff",

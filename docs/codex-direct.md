@@ -29,6 +29,7 @@ agent run / repair-ci / run --once / daemon
               -> filesystem.stat
               -> filesystem.write
               -> shell.exec
+              -> repo.metadata.read
               -> git.status
               -> git.diff
               -> policy / approval / audit / evidence
@@ -70,6 +71,7 @@ The first tool set should stay small:
 - `read_many_files` -> `filesystem.read`
 - `file_info` -> `filesystem.stat`
 - `tree` -> `filesystem.list`
+- `package_scripts` -> `repo.metadata.read`
 - `write_file` -> `filesystem.write`
 - `run_command` -> `shell.exec`
 - `git_status` -> `git.status`
