@@ -29,6 +29,7 @@ agent run / repair-ci / run --once / daemon
               -> filesystem.stat
               -> filesystem.write
               -> shell.exec
+              -> verifier.run
               -> repo.metadata.read
               -> git.status
               -> git.diff
@@ -73,6 +74,7 @@ The first tool set should stay small:
 - `tree` -> `filesystem.list`
 - `package_scripts` -> `repo.metadata.read`
 - `apply_patch` -> `filesystem.patch`
+- `run_verifier` -> `verifier.run`
 - `write_file` -> `filesystem.write`
 - `run_command` -> `shell.exec`
 - `git_status` -> `git.status`

@@ -121,6 +121,7 @@ describe("runCodexDirectWorker", () => {
           "tree",
           "package_scripts",
           "apply_patch",
+          "run_verifier",
           "write_file",
           "run_command",
           "git_status",
@@ -747,6 +748,93 @@ describe("runCodexDirectWorker", () => {
     }
   });
 
+  it("runs auto-discovered verifiers with evidence", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-codex-run-verifier-"));
+
+    try {
+      await writeFile(
+        join(workspace, "package.json"),
+        JSON.stringify({
+          scripts: {
+            test: "node -e \"console.log('verifier ok')\""
+          }
+        })
+      );
+      const initialized = await initRunstead({
+        cwd: workspace,
+        createDefaultGoal: true
+      });
+      const database = openRunsteadDatabase(initialized.stateDb);
+
+      try {
+        const task = listTasks({ cwd: workspace }).tasks[0];
+
+        if (task === undefined) {
+          throw new Error("Expected generated task");
+        }
+
+        const goal = showGoal({ cwd: workspace, id: task.goalId }).goal;
+        const transport = scriptedTransport([
+          {
+            outputText: "",
+            toolCalls: [
+              {
+                id: "call_run_verifier",
+                name: "run_verifier",
+                arguments: JSON.stringify({
+                  name: "test"
+                })
+              }
+            ],
+            finishReason: "tool_calls",
+            outputItems: []
+          },
+          {
+            outputText: "Ran verifier.",
+            toolCalls: [],
+            finishReason: "stop",
+            outputItems: []
+          }
+        ]);
+        const result = await runCodexDirectWorker({
+          cwd: workspace,
+          stateDb: initialized.stateDb,
+          database,
+          policy: allowDirectToolsPolicy,
+          goal,
+          task,
+          model: "fake-codex",
+          evidenceDir: join(initialized.root, "evidence"),
+          transport
+        });
+        const verifierCall = database
+          .prepare("SELECT status, output_json FROM tool_calls WHERE action_type = ?")
+          .get("verifier.run") as { status: string; output_json: string };
+        const evidenceRows = database
+          .prepare("SELECT id, type FROM evidence WHERE type = 'command_output'")
+          .all() as { id: string; type: string }[];
+        const toolOutput = JSON.stringify(transport.requests[1]?.input);
+
+        expect(result).toMatchObject({
+          status: "completed",
+          toolCalls: 1,
+          summary: "Ran verifier."
+        });
+        expect(verifierCall.status).toBe("completed");
+        expect(verifierCall.output_json).toContain("evidenceId");
+        expect(evidenceRows).toHaveLength(1);
+        expect(evidenceRows[0]?.id).toMatch(/^ev_/);
+        expect(evidenceRows[0]?.type).toBe("command_output");
+        expect(toolOutput).toContain("verifier ok");
+        expect(toolOutput).toContain('\\"exitCode\\":0');
+      } finally {
+        database.close();
+      }
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
   it("returns recoverable tool execution errors to the model", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "runstead-codex-tool-error-"));
 
@@ -1338,6 +1426,7 @@ describe("runCodexDirectWorker", () => {
       "tree",
       "package_scripts",
       "apply_patch",
+      "run_verifier",
       "write_file",
       "run_command",
       "git_status",
@@ -1363,6 +1452,7 @@ const allowDirectToolsPolicy: PolicyProfile = {
           "filesystem.write",
           "filesystem.patch",
           "repo.metadata.read",
+          "verifier.run",
           "shell.exec",
           "git.status",
           "git.diff",

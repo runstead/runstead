@@ -213,6 +213,22 @@ describe("evaluatePolicy verifier command rules", () => {
     expect(result.ruleId).toBe("allow_verifier_commands");
   });
 
+  it("allows native verifier run actions for configured verifier commands", () => {
+    const result = evaluatePolicy({
+      policy: verifierCommandPolicy,
+      action: {
+        actionId: "act_native_verifier_test",
+        actionType: "verifier.run",
+        context: {
+          command: "npm test"
+        }
+      }
+    });
+
+    expect(result.decision).toBe("allow");
+    expect(result.ruleId).toBe("allow_verifier_commands");
+  });
+
   it("requires approval for non-verifier shell commands", () => {
     const result = evaluatePolicy({
       policy: verifierCommandPolicy,

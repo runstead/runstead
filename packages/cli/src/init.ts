@@ -121,7 +121,10 @@ ${modelInferencePolicyRuleYaml(profile)}
 
   - id: allow_verifier_commands
     when:
-      action_type: shell.exec
+      action_type:
+        in:
+          - shell.exec
+          - verifier.run
       command:
         matches_any:
           - "^pnpm test( .*)?$"

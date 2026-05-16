@@ -129,6 +129,14 @@ const TOOL_CONTRACTS: ToolContract[] = [
     policyRequired: true
   },
   {
+    actionType: "verifier.run",
+    tool: "runstead",
+    resourceTypes: ["verifier", "repository"],
+    sideEffects: ["execute_process", "read_workspace"],
+    evidenceRequired: true,
+    policyRequired: true
+  },
+  {
     actionType: "package.install",
     tool: "package-manager",
     resourceTypes: ["package_manifest", "lockfile"],

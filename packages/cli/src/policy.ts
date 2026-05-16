@@ -116,6 +116,7 @@ export const VERIFIER_COMMAND_OBLIGATIONS = [
   "attach_as_evidence",
   "redact_secrets"
 ];
+export const DEFAULT_VERIFIER_COMMAND_ACTION_TYPES = ["shell.exec", "verifier.run"];
 
 export const DEFAULT_EXTERNAL_WRITE_SIDE_EFFECTS = [
   "network_write_external",
@@ -506,6 +507,7 @@ export function createModelInferenceRequestAllowPolicy(
 
 export function createVerifierCommandAllowPolicy(
   verifierCommandPatterns = DEFAULT_VERIFIER_COMMAND_PATTERNS,
+  actionTypes = DEFAULT_VERIFIER_COMMAND_ACTION_TYPES,
   id = "policy_verifier_commands_v1"
 ): PolicyProfile {
   return {
@@ -517,7 +519,7 @@ export function createVerifierCommandAllowPolicy(
       {
         id: "allow_verifier_commands",
         when: {
-          actionType: "shell.exec",
+          actionType: actionTypes,
           command: {
             matchesAny: verifierCommandPatterns
           }

@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { dirname } from "node:path";
 
 import type { Goal, JsonObject, Task, WorkerRun } from "@runstead/core";
 import type { RunsteadDatabase } from "@runstead/state-sqlite";
@@ -10,6 +11,11 @@ import {
   type CodexResponsesTool,
   CodexResponsesTransport
 } from "./codex-responses-transport.js";
+import { discoverVerifierCommands } from "./verifier-discovery.js";
+import {
+  storeCommandVerifierEvidence,
+  type CommandVerifierInput
+} from "./verifier-evidence.js";
 import {
   readGovernedWorkspaceFile,
   writeGovernedWorkspaceFile
@@ -100,6 +106,7 @@ type CodexDirectToolName =
   | "tree"
   | "package_scripts"
   | "apply_patch"
+  | "run_verifier"
   | "write_file"
   | "run_command"
   | "git_status"
@@ -580,6 +587,26 @@ export function codexDirectToolDefinitions(): CodexResponsesTool[] {
     },
     {
       type: "function",
+      name: "run_verifier",
+      description:
+        "Run one declared or auto-discovered verifier command and record evidence.",
+      strict: false,
+      parameters: objectSchema(
+        {
+          name: {
+            type: "string",
+            description: "Verifier name, such as test, lint, or typecheck."
+          },
+          timeoutMs: {
+            type: "number",
+            description: "Optional verifier timeout in milliseconds."
+          }
+        },
+        ["name"]
+      )
+    },
+    {
+      type: "function",
       name: "write_file",
       description: "Write a UTF-8 file inside the workspace.",
       strict: false,
@@ -766,6 +793,14 @@ async function executeCodexDirectTool(
           )
         })
       );
+    case "run_verifier":
+      return JSON.stringify(
+        await runGovernedVerifier({
+          ...options,
+          name: requiredString(options.toolCall.arguments.name, "name"),
+          ...optionalTimeoutMs(options.toolCall.arguments.timeoutMs)
+        })
+      );
     case "write_file":
       return JSON.stringify(
         await writeGovernedWorkspaceFile({
@@ -797,6 +832,59 @@ async function executeCodexDirectTool(
       return JSON.stringify(await runGovernedGitRead(options, command));
     }
   }
+}
+
+async function runGovernedVerifier(
+  options: CodexDirectWorkerOptions & {
+    workerRun: WorkerRun;
+    name: string;
+    timeoutMs?: number;
+  }
+) {
+  const command = await resolveVerifierCommand(options);
+
+  return runGovernedToolAction({
+    ...governedToolOptions(options),
+    action: verifierRunAction({
+      task: options.task,
+      cwd: options.cwd,
+      command
+    }),
+    run: async () => {
+      const value = await storeCommandVerifierEvidence({
+        cwd: options.cwd,
+        runsteadRoot: dirname(options.evidenceDir),
+        database: options.database,
+        task: options.task,
+        command,
+        ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
+        ...(options.now === undefined ? {} : { now: options.now })
+      });
+
+      return {
+        value: {
+          verifier: command.name,
+          command: value.artifact.command,
+          exitCode: value.artifact.result.exitCode,
+          timedOut: value.artifact.result.timedOut,
+          forceKilled: value.artifact.result.forceKilled,
+          evidenceId: value.evidence.id,
+          artifactPath: value.artifactPath,
+          stdoutPreview: previewText(value.artifact.result.stdout),
+          stderrPreview: previewText(value.artifact.result.stderr),
+          stdoutTruncated: value.artifact.result.stdoutTruncated,
+          stderrTruncated: value.artifact.result.stderrTruncated
+        },
+        output: {
+          verifier: command.name,
+          exitCode: value.artifact.result.exitCode,
+          timedOut: value.artifact.result.timedOut,
+          evidenceId: value.evidence.id,
+          artifactPath: value.artifactPath
+        }
+      };
+    }
+  }).then((result) => result.value);
 }
 
 async function runGovernedApplyPatch(
@@ -1482,6 +1570,30 @@ function filesystemPatchAction(input: {
   };
 }
 
+function verifierRunAction(input: {
+  task: Task;
+  cwd: string;
+  command: CommandVerifierInput;
+}): ActionEnvelope {
+  return {
+    actionId: stableActionId("verifier.run", [
+      input.task.id,
+      input.command.name,
+      input.command.command
+    ]),
+    actionType: "verifier.run",
+    resource: {
+      type: "verifier",
+      id: input.command.name
+    },
+    context: {
+      cwd: input.cwd,
+      command: input.command.command,
+      sideEffects: ["execute_process", "read_workspace"]
+    }
+  };
+}
+
 function modelInferenceAction(input: { task: Task; model: string }): ActionEnvelope {
   return {
     actionId: stableActionId("model_inference_request", [input.task.id, input.model]),
@@ -1644,6 +1756,50 @@ function codexDirectPatchFilesTouched(input: {
   return [];
 }
 
+async function resolveVerifierCommand(
+  options: Pick<CodexDirectWorkerOptions, "cwd" | "task"> & { name: string }
+): Promise<CommandVerifierInput> {
+  const declared = declaredVerifierCommands(options.task);
+  const discovered = await discoverVerifierCommands({ cwd: options.cwd });
+  const candidates = [...declared, ...discovered];
+  const command = candidates.find((candidate) => candidate.name === options.name);
+
+  if (command === undefined) {
+    throw new Error(
+      `Verifier not available: ${options.name}. Available verifiers: ${
+        candidates.map((candidate) => candidate.name).join(", ") || "none"
+      }`
+    );
+  }
+
+  return command;
+}
+
+function declaredVerifierCommands(task: Task): CommandVerifierInput[] {
+  const commands = task.input.commands;
+
+  if (!Array.isArray(commands)) {
+    return [];
+  }
+
+  return commands.flatMap((command) => {
+    if (!isRecord(command)) {
+      return [];
+    }
+
+    const name = command.name;
+    const commandText = command.command;
+
+    return typeof name === "string" && typeof commandText === "string"
+      ? [{ name, command: commandText }]
+      : [];
+  });
+}
+
+function previewText(value: string): string {
+  return value.length <= 500 ? value : `${value.slice(0, 500)}...`;
+}
+
 function parseCodexDirectPatchPaths(patch: string): string[] {
   return patch
     .split(/\r?\n/)
@@ -1740,6 +1896,7 @@ function isCodexDirectToolName(value: string): value is CodexDirectToolName {
     "tree",
     "package_scripts",
     "apply_patch",
+    "run_verifier",
     "write_file",
     "run_command",
     "git_status",
