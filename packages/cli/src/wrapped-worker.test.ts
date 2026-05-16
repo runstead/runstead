@@ -197,6 +197,7 @@ describe("workerCommand", () => {
         "default",
         "--disallowedTools",
         expect.stringContaining("Bash(git push *)"),
+        "--",
         "prompt"
       ]
     });
@@ -210,6 +211,7 @@ describe("workerCommand", () => {
         "default",
         "--disallowedTools",
         expect.stringContaining("Bash(git push *)"),
+        "--",
         "prompt"
       ]
     });

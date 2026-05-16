@@ -554,6 +554,7 @@ describe("local agent task primitives", () => {
         "default",
         "--disallowedTools",
         expect.stringContaining("Bash(git push *)"),
+        "--",
         expect.stringContaining("Runstead local-agent mode:")
       ]);
       expect(storedTask.status).toBe("completed");

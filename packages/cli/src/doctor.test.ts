@@ -479,6 +479,7 @@ describe("doctorRunstead", () => {
         "default",
         "--disallowedTools",
         expect.stringContaining("Bash(git push *)"),
+        "--",
         expect.stringContaining("runstead_claude_code_probe")
       ]);
     } finally {

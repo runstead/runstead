@@ -365,6 +365,7 @@ export function workerCommand(
           "default",
           "--disallowedTools",
           CLAUDE_DISALLOWED_TOOLS.join(","),
+          "--",
           prompt
         ]
       };
