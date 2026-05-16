@@ -598,6 +598,60 @@ describe("local agent task primitives", () => {
     }
   });
 
+  it("reports the Claude Code CLI default model source when no model is set", async () => {
+    const workspace = await mkdtemp(
+      join(tmpdir(), "runstead-local-agent-claude-default-model-")
+    );
+    const workerCalls: { args: string[] }[] = [];
+
+    try {
+      await initRunstead({ cwd: workspace, profile: "trusted-local" });
+      const created = await createLocalAgentTask({
+        cwd: workspace,
+        prompt: "Inspect this repo and summarize package metadata.",
+        worker: "claude_code",
+        mode: "read-only",
+        now: new Date("2026-05-16T08:00:00.000Z")
+      });
+      const result = await runLocalAgentTask({
+        cwd: workspace,
+        taskId: created.task.id,
+        workerRunner(_command, args) {
+          workerCalls.push({ args });
+
+          return Promise.resolve({
+            stdout: JSON.stringify({
+              summary: "Inspected package metadata through Claude Code CLI.",
+              files_changed: [],
+              commands_run: [],
+              risks: [],
+              needs_approval: false,
+              approval_reason: null
+            }),
+            stderr: "",
+            exitCode: 0
+          });
+        },
+        now: new Date("2026-05-16T08:01:00.000Z")
+      });
+      const storedTask = showTask({ cwd: workspace, id: created.task.id }).task;
+
+      expect(workerCalls[0]?.args).not.toContain("--model");
+      expect(storedTask.output).toMatchObject({
+        worker: "claude_code",
+        modelSource: "claude_code_config"
+      });
+      expect(formatLocalAgentRunReport(result)).toContain(
+        "Model: Claude Code CLI default"
+      );
+      expect(formatLocalAgentRunReport(result)).toContain(
+        "Model source: claude_code_config"
+      );
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
   it("uses the configured Codex model when the task omits a model", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "runstead-local-agent-model-"));
     const requests: CodexResponsesRequest[] = [];

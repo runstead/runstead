@@ -502,7 +502,10 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
       "codex_cli"
     )
     .option("--provider <provider>", "Model provider to use with codex_direct")
-    .option("--model <model>", "Model to use with codex_direct or codex_cli")
+    .option(
+      "--model <model>",
+      "Model to use with codex_direct, codex_cli, or claude_code"
+    )
     .option("--base-url <url>", "Model provider base URL")
     .option("--base <ref>", "PR base branch when orchestrating repairs")
     .option("--draft", "Create draft pull requests when orchestrating repairs")
@@ -2882,7 +2885,10 @@ function addAgentCommand(command: Command): void {
       "codex_direct"
     )
     .option("--provider <provider>", "Model provider to use with codex_direct")
-    .option("--model <model>", "Model to use with codex_direct or codex_cli")
+    .option(
+      "--model <model>",
+      "Model to use with codex_direct, codex_cli, or claude_code"
+    )
     .option("--base-url <url>", "Model provider base URL")
     .option("--mode <mode>", "Agent mode: read-only, edit, or repair", "read-only")
     .option("--preset <id>", "Local agent preset id")
@@ -3047,7 +3053,7 @@ function addAgentCommand(command: Command): void {
     .option("--cwd <path>", "Workspace directory")
     .option("--worker <worker>", "Worker to run: codex_direct", "codex_direct")
     .option("--provider <provider>", "Model provider to use with codex_direct")
-    .option("--model <model>", "Model to use with codex_direct or codex_cli")
+    .option("--model <model>", "Model to use with codex_direct")
     .option("--base-url <url>", "Model provider base URL")
     .option("--depth <depth>", "Inspection depth: smoke or standard", "smoke")
     .option("--max-turns <number>", "Override preset Codex Direct tool turns")
@@ -3700,7 +3706,10 @@ function addCiRepairOrchestrationCommand(command: Command): void {
       "Worker to run: codex_cli, claude_code, or codex_direct",
       "codex_cli"
     )
-    .option("--model <model>", "Model to use with codex_direct")
+    .option(
+      "--model <model>",
+      "Model to use with codex_direct, codex_cli, or claude_code"
+    )
     .option("--provider <provider>", "Model provider to use with codex_direct")
     .option("--base-url <url>", "Model provider base URL")
     .option("--base <ref>", "PR base branch")

@@ -783,8 +783,8 @@ function formatLocalAgentWorkerResultLines(
     `Worker: ${workerResult.worker}`,
     `Command: ${workerResult.command}`,
     `Mode: wrapped external worker`,
-    `Model: ${wrappedWorkerModel(workerResult) ?? "Codex CLI default"}`,
-    `Model source: ${wrappedWorkerModel(workerResult) === undefined ? "codex_cli_config" : "runstead_model_option"}`,
+    `Model: ${wrappedWorkerModel(workerResult) ?? wrappedWorkerDefaultModelLabel(workerResult)}`,
+    `Model source: ${wrappedWorkerModelSource(workerResult)}`,
     "Tool proxy: none (worker-internal tool calls are not hard-proxied)",
     `Exit: ${workerResult.exitCode}`,
     `Output valid: ${workerResult.outputValidation.valid ? "yes" : "no"}`,
@@ -1370,7 +1370,7 @@ function localAgentTaskOutput(input: {
       stdoutOmitted: input.workerResult.stdout.length > 0,
       stderrOmitted: input.workerResult.stderr.length > 0,
       ...(wrappedWorkerModel(input.workerResult) === undefined
-        ? { modelSource: "codex_cli_config" }
+        ? { modelSource: wrappedWorkerDefaultModelSource(input.workerResult) }
         : {
             model: wrappedWorkerModel(input.workerResult),
             modelSource: "runstead_model_option"
@@ -1435,7 +1435,7 @@ function localAgentWorkerOutput(input: {
       stderrOmitted: input.workerResult.stderr.length > 0,
       ...(input.summary === undefined ? {} : { summary: input.summary }),
       ...(wrappedWorkerModel(input.workerResult) === undefined
-        ? { modelSource: "codex_cli_config" }
+        ? { modelSource: wrappedWorkerDefaultModelSource(input.workerResult) }
         : {
             model: wrappedWorkerModel(input.workerResult),
             modelSource: "runstead_model_option"
@@ -1737,6 +1737,26 @@ function wrappedWorkerModel(workerResult: WrappedWorkerRunResult): string | unde
   return typeof model === "string" && model.trim().length > 0
     ? model.trim()
     : undefined;
+}
+
+function wrappedWorkerModelSource(workerResult: WrappedWorkerRunResult): string {
+  return wrappedWorkerModel(workerResult) === undefined
+    ? wrappedWorkerDefaultModelSource(workerResult)
+    : "runstead_model_option";
+}
+
+function wrappedWorkerDefaultModelSource(
+  workerResult: WrappedWorkerRunResult
+): string {
+  return workerResult.worker === "codex_cli"
+    ? "codex_cli_config"
+    : "claude_code_config";
+}
+
+function wrappedWorkerDefaultModelLabel(workerResult: WrappedWorkerRunResult): string {
+  return workerResult.worker === "codex_cli"
+    ? "Codex CLI default"
+    : "Claude Code CLI default";
 }
 
 function localWrappedWorkerGovernanceOutput(
