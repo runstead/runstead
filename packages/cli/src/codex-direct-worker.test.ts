@@ -125,7 +125,9 @@ describe("runCodexDirectWorker", () => {
           "write_file",
           "run_command",
           "git_status",
-          "git_diff"
+          "git_diff",
+          "git_log",
+          "git_show"
         ]);
       } finally {
         database.close();
@@ -995,6 +997,110 @@ describe("runCodexDirectWorker", () => {
     }
   });
 
+  it("returns git log and show output through governed git read tools", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-codex-git-history-"));
+
+    try {
+      await execFileAsync("git", ["init"], { cwd: workspace });
+      await execFileAsync("git", ["config", "user.name", "Runstead"], {
+        cwd: workspace
+      });
+      await execFileAsync("git", ["config", "user.email", "runstead@example.com"], {
+        cwd: workspace
+      });
+      await writeFile(join(workspace, "README.md"), "# Fixture\n");
+      await execFileAsync("git", ["add", "README.md"], { cwd: workspace });
+      await execFileAsync("git", ["commit", "-m", "initial fixture"], {
+        cwd: workspace
+      });
+      const initialized = await initRunstead({
+        cwd: workspace,
+        createDefaultGoal: true
+      });
+      const database = openRunsteadDatabase(initialized.stateDb);
+
+      try {
+        const task = listTasks({ cwd: workspace }).tasks[0];
+
+        if (task === undefined) {
+          throw new Error("Expected generated task");
+        }
+
+        const goal = showGoal({ cwd: workspace, id: task.goalId }).goal;
+        const transport = scriptedTransport([
+          {
+            outputText: "",
+            toolCalls: [
+              {
+                id: "call_git_log",
+                name: "git_log",
+                arguments: JSON.stringify({
+                  maxCommits: 5
+                })
+              },
+              {
+                id: "call_git_show",
+                name: "git_show",
+                arguments: JSON.stringify({
+                  ref: "HEAD",
+                  path: "README.md",
+                  maxBytes: 20_000
+                })
+              }
+            ],
+            finishReason: "tool_calls",
+            outputItems: []
+          },
+          {
+            outputText: "Read git history.",
+            toolCalls: [],
+            finishReason: "stop",
+            outputItems: []
+          }
+        ]);
+        const result = await runCodexDirectWorker({
+          cwd: workspace,
+          stateDb: initialized.stateDb,
+          database,
+          policy: allowDirectToolsPolicy,
+          goal,
+          task,
+          model: "fake-codex",
+          evidenceDir: join(initialized.root, "evidence"),
+          transport
+        });
+        const toolCalls = database
+          .prepare("SELECT action_type, status FROM tool_calls ORDER BY started_at, id")
+          .all() as { action_type: string; status: string }[];
+        const toolOutput = JSON.stringify(transport.requests[1]?.input);
+
+        expect(result).toMatchObject({
+          status: "completed",
+          toolCalls: 2,
+          summary: "Read git history."
+        });
+        expect(toolCalls).toEqual(
+          expect.arrayContaining([
+            {
+              action_type: "git.log",
+              status: "completed"
+            },
+            {
+              action_type: "git.show",
+              status: "completed"
+            }
+          ])
+        );
+        expect(toolOutput).toContain("initial fixture");
+        expect(toolOutput).toContain("README.md");
+      } finally {
+        database.close();
+      }
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  }, 10000);
+
   it("enforces task-scoped base git diff tool calls", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "runstead-codex-base-diff-"));
 
@@ -1430,7 +1536,9 @@ describe("runCodexDirectWorker", () => {
       "write_file",
       "run_command",
       "git_status",
-      "git_diff"
+      "git_diff",
+      "git_log",
+      "git_show"
     ]);
   });
 });
@@ -1456,6 +1564,8 @@ const allowDirectToolsPolicy: PolicyProfile = {
           "shell.exec",
           "git.status",
           "git.diff",
+          "git.log",
+          "git.show",
           "model.inference.request"
         ]
       },

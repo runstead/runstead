@@ -110,7 +110,9 @@ type CodexDirectToolName =
   | "write_file"
   | "run_command"
   | "git_status"
-  | "git_diff";
+  | "git_diff"
+  | "git_log"
+  | "git_show";
 
 interface CodexDirectToolCall {
   id: string;
@@ -676,6 +678,52 @@ export function codexDirectToolDefinitions(): CodexResponsesTool[] {
         },
         []
       )
+    },
+    {
+      type: "function",
+      name: "git_log",
+      description: "Return bounded git commit history for the workspace.",
+      strict: false,
+      parameters: objectSchema(
+        {
+          range: {
+            type: "string",
+            description: "Optional git revision range."
+          },
+          path: {
+            type: "string",
+            description: "Optional workspace-relative path to filter history."
+          },
+          maxCommits: {
+            type: "number",
+            description: "Optional maximum commits to return."
+          }
+        },
+        []
+      )
+    },
+    {
+      type: "function",
+      name: "git_show",
+      description: "Return bounded git show output for a commit or ref.",
+      strict: false,
+      parameters: objectSchema(
+        {
+          ref: {
+            type: "string",
+            description: "Commit or ref to show."
+          },
+          path: {
+            type: "string",
+            description: "Optional workspace-relative path to show."
+          },
+          maxBytes: {
+            type: "number",
+            description: "Optional maximum stdout/stderr bytes to capture."
+          }
+        },
+        ["ref"]
+      )
     }
   ];
 }
@@ -831,7 +879,84 @@ async function executeCodexDirectTool(
 
       return JSON.stringify(await runGovernedGitRead(options, command));
     }
+    case "git_log":
+      return JSON.stringify(
+        await runGovernedGitLog({
+          ...options,
+          range: optionalString(options.toolCall.arguments.range),
+          path: optionalString(options.toolCall.arguments.path),
+          maxCommits: optionalPositiveInteger(options.toolCall.arguments.maxCommits)
+        })
+      );
+    case "git_show":
+      return JSON.stringify(
+        await runGovernedGitShow({
+          ...options,
+          ref: requiredString(options.toolCall.arguments.ref, "ref"),
+          path: optionalString(options.toolCall.arguments.path),
+          maxBytes: optionalPositiveInteger(options.toolCall.arguments.maxBytes)
+        })
+      );
   }
+}
+
+async function runGovernedGitLog(
+  options: CodexDirectWorkerOptions & {
+    workerRun: WorkerRun;
+    range?: string;
+    path?: string;
+    maxCommits?: number;
+  }
+) {
+  const maxCommits = Math.min(options.maxCommits ?? 20, 100);
+  const command = gitLogCommand({
+    range: options.range,
+    path: options.path,
+    maxCommits
+  });
+
+  return runGovernedGitCommand({
+    ...options,
+    actionType: "git.log",
+    command,
+    output: (result) => ({
+      command,
+      exitCode: result.exitCode,
+      stderr: result.stderr,
+      commits: parseGitLogOutput(result.stdout),
+      stdoutTruncated: result.stdoutTruncated,
+      stderrTruncated: result.stderrTruncated
+    })
+  });
+}
+
+async function runGovernedGitShow(
+  options: CodexDirectWorkerOptions & {
+    workerRun: WorkerRun;
+    ref: string;
+    path?: string;
+    maxBytes?: number;
+  }
+) {
+  const command = gitShowCommand({
+    ref: options.ref,
+    path: options.path
+  });
+
+  return runGovernedGitCommand({
+    ...options,
+    actionType: "git.show",
+    command,
+    ...(options.maxBytes === undefined ? {} : { maxBytes: options.maxBytes }),
+    output: (result) => ({
+      command,
+      exitCode: result.exitCode,
+      stdout: result.stdout,
+      stderr: result.stderr,
+      stdoutTruncated: result.stdoutTruncated,
+      stderrTruncated: result.stderrTruncated
+    })
+  });
 }
 
 async function runGovernedVerifier(
@@ -1239,6 +1364,37 @@ async function runGovernedGitRead(
   }).then((result) => result.value);
 }
 
+async function runGovernedGitCommand<T extends JsonObject>(
+  options: CodexDirectWorkerOptions & {
+    workerRun: WorkerRun;
+    actionType: "git.log" | "git.show";
+    command: string;
+    maxBytes?: number;
+    output: (result: ShellCommandResult) => T;
+  }
+): Promise<T> {
+  return runGovernedToolAction({
+    ...governedToolOptions(options),
+    action: gitReadAction({
+      cwd: options.cwd,
+      actionType: options.actionType
+    }),
+    run: async () => {
+      const value = await runShellCommand({
+        command: options.command,
+        cwd: options.cwd,
+        ...(options.maxBytes === undefined ? {} : { maxOutputBytes: options.maxBytes })
+      });
+      const output = shellCommandOutput(value);
+
+      return {
+        value: options.output(value),
+        output
+      };
+    }
+  }).then((result) => result.value);
+}
+
 async function finalizeBudgetExceededWorkerResult(input: {
   options: CodexDirectWorkerOptions;
   workerRun: WorkerRun;
@@ -1486,7 +1642,7 @@ function shellAction(input: { cwd: string; command: string }): ActionEnvelope {
 
 function gitReadAction(input: {
   cwd: string;
-  actionType: "git.status" | "git.diff";
+  actionType: "git.status" | "git.diff" | "git.log" | "git.show";
 }): ActionEnvelope {
   return {
     actionId: stableActionId(input.actionType, [input.cwd]),
@@ -1882,6 +2038,70 @@ function gitDiffCommand(input: {
   return input.path === undefined ? base : `${base} -- ${shellQuote(input.path)}`;
 }
 
+function gitLogCommand(input: {
+  range: string | undefined;
+  path: string | undefined;
+  maxCommits: number;
+}): string {
+  const parts = [
+    "git log",
+    `--max-count=${input.maxCommits}`,
+    "--date=iso-strict",
+    "--pretty=format:%H%x1f%an%x1f%ae%x1f%aI%x1f%s"
+  ];
+
+  if (input.range !== undefined) {
+    parts.push(shellQuote(input.range));
+  }
+
+  if (input.path !== undefined) {
+    parts.push("--", shellQuote(input.path));
+  }
+
+  return parts.join(" ");
+}
+
+function gitShowCommand(input: { ref: string; path: string | undefined }): string {
+  const parts = [
+    "git show",
+    "--stat",
+    "--patch",
+    "--find-renames",
+    "--format=fuller",
+    shellQuote(input.ref)
+  ];
+
+  if (input.path !== undefined) {
+    parts.push("--", shellQuote(input.path));
+  }
+
+  return parts.join(" ");
+}
+
+function parseGitLogOutput(stdout: string): {
+  sha: string;
+  authorName: string;
+  authorEmail: string;
+  date: string;
+  subject: string;
+}[] {
+  return stdout
+    .split(/\r?\n/)
+    .filter((line) => line.length > 0)
+    .map((line) => {
+      const [sha = "", authorName = "", authorEmail = "", date = "", subject = ""] =
+        line.split("\u001f");
+
+      return {
+        sha,
+        authorName,
+        authorEmail,
+        date,
+        subject
+      };
+    });
+}
+
 function shellQuote(value: string): string {
   return `'${value.replaceAll("'", "'\\''")}'`;
 }
@@ -1900,7 +2120,9 @@ function isCodexDirectToolName(value: string): value is CodexDirectToolName {
     "write_file",
     "run_command",
     "git_status",
-    "git_diff"
+    "git_diff",
+    "git_log",
+    "git_show"
   ].includes(value);
 }
 

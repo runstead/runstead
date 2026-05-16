@@ -139,6 +139,8 @@ export const DEFAULT_READ_WORKSPACE_ACTION_TYPES = [
   "filesystem.stat",
   "git.status",
   "git.diff",
+  "git.log",
+  "git.show",
   "repo.metadata.read",
   "github.run.read",
   "github.run.log.read"

@@ -21,6 +21,8 @@ describe("tool contract registry", () => {
         "filesystem.patch",
         "git.status",
         "git.diff",
+        "git.log",
+        "git.show",
         "git.branch.create",
         "git.commit",
         "git.push",

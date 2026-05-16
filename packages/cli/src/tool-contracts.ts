@@ -81,6 +81,22 @@ const TOOL_CONTRACTS: ToolContract[] = [
     policyRequired: true
   },
   {
+    actionType: "git.log",
+    tool: "git",
+    resourceTypes: ["repository"],
+    sideEffects: ["read_workspace"],
+    evidenceRequired: false,
+    policyRequired: true
+  },
+  {
+    actionType: "git.show",
+    tool: "git",
+    resourceTypes: ["repository"],
+    sideEffects: ["read_workspace"],
+    evidenceRequired: false,
+    policyRequired: true
+  },
+  {
     actionType: "git.branch.create",
     tool: "git",
     resourceTypes: ["branch", "repository"],

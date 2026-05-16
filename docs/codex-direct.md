@@ -33,6 +33,8 @@ agent run / repair-ci / run --once / daemon
               -> repo.metadata.read
               -> git.status
               -> git.diff
+              -> git.log
+              -> git.show
               -> policy / approval / audit / evidence
 ```
 
@@ -79,6 +81,8 @@ The first tool set should stay small:
 - `run_command` -> `shell.exec`
 - `git_status` -> `git.status`
 - `git_diff` -> `git.diff`
+- `git_log` -> `git.log`
+- `git_show` -> `git.show`
 
 If policy requires approval, the worker must stop with an approval-required
 result. It must not ask the model to work around the denied or pending action.
