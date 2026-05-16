@@ -112,6 +112,7 @@ describe("runCodexDirectWorker", () => {
           "list_files",
           "search_text",
           "read_file",
+          "read_many_files",
           "write_file",
           "run_command",
           "git_status",
@@ -295,6 +296,87 @@ describe("runCodexDirectWorker", () => {
         expect(toolOutput).toContain("hello runstead");
         expect(toolOutput).toContain("export function greet");
         expect(toolOutput).not.toContain("src/other.ts");
+      } finally {
+        database.close();
+      }
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("reads many workspace files with bounded output", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-codex-read-many-"));
+
+    try {
+      await mkdir(join(workspace, "src"), { recursive: true });
+      await writeFile(join(workspace, "src", "a.txt"), "alpha\n");
+      await writeFile(join(workspace, "src", "b.txt"), "bravo-charlie\n");
+      const initialized = await initRunstead({
+        cwd: workspace,
+        createDefaultGoal: true
+      });
+      const database = openRunsteadDatabase(initialized.stateDb);
+
+      try {
+        const task = listTasks({ cwd: workspace }).tasks[0];
+
+        if (task === undefined) {
+          throw new Error("Expected generated task");
+        }
+
+        const goal = showGoal({ cwd: workspace, id: task.goalId }).goal;
+        const transport = scriptedTransport([
+          {
+            outputText: "",
+            toolCalls: [
+              {
+                id: "call_read_many",
+                name: "read_many_files",
+                arguments: JSON.stringify({
+                  paths: ["src/a.txt", "src/b.txt"],
+                  maxBytesPerFile: 5,
+                  maxTotalBytes: 8
+                })
+              }
+            ],
+            finishReason: "tool_calls",
+            outputItems: []
+          },
+          {
+            outputText: "Read files.",
+            toolCalls: [],
+            finishReason: "stop",
+            outputItems: []
+          }
+        ]);
+        const result = await runCodexDirectWorker({
+          cwd: workspace,
+          stateDb: initialized.stateDb,
+          database,
+          policy: allowDirectToolsPolicy,
+          goal,
+          task,
+          model: "fake-codex",
+          evidenceDir: join(initialized.root, "evidence"),
+          transport
+        });
+        const readCall = database
+          .prepare("SELECT status, output_json FROM tool_calls WHERE action_type = ?")
+          .get("filesystem.read") as { status: string; output_json: string };
+        const toolOutput = JSON.stringify(transport.requests[1]?.input);
+
+        expect(result).toMatchObject({
+          status: "completed",
+          toolCalls: 1,
+          summary: "Read files."
+        });
+        expect(readCall.status).toBe("completed");
+        expect(readCall.output_json).toContain('"files":2');
+        expect(toolOutput).toContain("src/a.txt");
+        expect(toolOutput).toContain("alpha");
+        expect(toolOutput).toContain("src/b.txt");
+        expect(toolOutput).toContain('\\"truncated\\":true');
+        expect(toolOutput).not.toContain("bravo-charlie");
       } finally {
         database.close();
       }
@@ -889,6 +971,7 @@ describe("runCodexDirectWorker", () => {
       "list_files",
       "search_text",
       "read_file",
+      "read_many_files",
       "write_file",
       "run_command",
       "git_status",

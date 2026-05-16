@@ -16,6 +16,7 @@ import {
 } from "./filesystem-proxy.js";
 import {
   listWorkspaceFiles,
+  readManyWorkspaceFiles,
   searchWorkspaceText
 } from "./codex-direct-native-tools.js";
 import {
@@ -90,6 +91,7 @@ type CodexDirectToolName =
   | "list_files"
   | "search_text"
   | "read_file"
+  | "read_many_files"
   | "write_file"
   | "run_command"
   | "git_status"
@@ -438,6 +440,33 @@ export function codexDirectToolDefinitions(): CodexResponsesTool[] {
     },
     {
       type: "function",
+      name: "read_many_files",
+      description:
+        "Read multiple UTF-8 files inside the workspace with per-file and total byte limits.",
+      strict: false,
+      parameters: objectSchema(
+        {
+          paths: {
+            type: "array",
+            items: {
+              type: "string"
+            },
+            description: "Workspace-relative file paths."
+          },
+          maxBytesPerFile: {
+            type: "number",
+            description: "Optional maximum bytes returned for each file."
+          },
+          maxTotalBytes: {
+            type: "number",
+            description: "Optional maximum bytes returned across all files."
+          }
+        },
+        ["paths"]
+      )
+    },
+    {
+      type: "function",
       name: "write_file",
       description: "Write a UTF-8 file inside the workspace.",
       strict: false,
@@ -576,6 +605,19 @@ async function executeCodexDirectTool(
           path: requiredString(options.toolCall.arguments.path, "path")
         }).then((result) => result.value)
       );
+    case "read_many_files":
+      return JSON.stringify(
+        await runGovernedReadManyFiles({
+          ...options,
+          paths: requiredStringArray(options.toolCall.arguments.paths, "paths"),
+          maxBytesPerFile: optionalPositiveInteger(
+            options.toolCall.arguments.maxBytesPerFile
+          ),
+          maxTotalBytes: optionalPositiveInteger(
+            options.toolCall.arguments.maxTotalBytes
+          )
+        })
+      );
     case "write_file":
       return JSON.stringify(
         await writeGovernedWorkspaceFile({
@@ -607,6 +649,52 @@ async function executeCodexDirectTool(
       return JSON.stringify(await runGovernedGitRead(options, command));
     }
   }
+}
+
+async function runGovernedReadManyFiles(
+  options: CodexDirectWorkerOptions & {
+    workerRun: WorkerRun;
+    paths: string[];
+    maxBytesPerFile?: number;
+    maxTotalBytes?: number;
+  }
+) {
+  return runGovernedToolAction({
+    ...governedToolOptions(options),
+    action: filesystemReadAction({
+      cwd: options.cwd,
+      actionType: "filesystem.read",
+      path: ".",
+      filesTouched: options.paths,
+      stableParts: [
+        options.cwd,
+        options.paths,
+        options.maxBytesPerFile,
+        options.maxTotalBytes
+      ]
+    }),
+    run: async () => {
+      const value = await readManyWorkspaceFiles(options.cwd, {
+        paths: options.paths,
+        ...(options.maxBytesPerFile === undefined
+          ? {}
+          : { maxBytesPerFile: options.maxBytesPerFile }),
+        ...(options.maxTotalBytes === undefined
+          ? {}
+          : { maxTotalBytes: options.maxTotalBytes })
+      });
+
+      return {
+        value,
+        output: {
+          files: value.files.length,
+          bytes: value.bytes,
+          returnedBytes: value.returnedBytes,
+          truncated: value.truncated
+        }
+      };
+    }
+  }).then((result) => result.value);
 }
 
 async function runGovernedSearchText(
@@ -1024,8 +1112,9 @@ function gitReadAction(input: {
 
 function filesystemReadAction(input: {
   cwd: string;
-  actionType: "filesystem.list" | "filesystem.search";
+  actionType: "filesystem.list" | "filesystem.search" | "filesystem.read";
   path: string;
+  filesTouched?: string[];
   stableParts: unknown[];
 }): ActionEnvelope {
   return {
@@ -1036,7 +1125,8 @@ function filesystemReadAction(input: {
       path: input.path
     },
     context: {
-      cwd: input.cwd
+      cwd: input.cwd,
+      ...(input.filesTouched === undefined ? {} : { filesTouched: input.filesTouched })
     }
   };
 }
@@ -1137,6 +1227,24 @@ function optionalStringArray(value: unknown, field: string): string[] | undefine
   );
 }
 
+function requiredStringArray(value: unknown, field: string): string[] {
+  if (!Array.isArray(value)) {
+    throw new Error(
+      `Codex Direct tool argument ${field} must be a non-empty array of non-empty strings`
+    );
+  }
+
+  const strings = optionalStringArray(value, field);
+
+  if (strings === undefined || strings.length === 0) {
+    throw new Error(
+      `Codex Direct tool argument ${field} must be a non-empty array of non-empty strings`
+    );
+  }
+
+  return strings;
+}
+
 function optionalPositiveInteger(value: unknown): number | undefined {
   if (typeof value === "number" && Number.isInteger(value) && value > 0) {
     return value;
@@ -1200,6 +1308,7 @@ function isCodexDirectToolName(value: string): value is CodexDirectToolName {
     "list_files",
     "search_text",
     "read_file",
+    "read_many_files",
     "write_file",
     "run_command",
     "git_status",

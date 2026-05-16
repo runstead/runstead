@@ -10,6 +10,10 @@ const SEARCH_TEXT_MAX_MATCHES_LIMIT = 500;
 const SEARCH_TEXT_FILE_SCAN_LIMIT = 1_000;
 const SEARCH_TEXT_CONTEXT_LIMIT = 5;
 const SEARCH_TEXT_PREVIEW_LIMIT = 500;
+const DEFAULT_READ_MANY_BYTES_PER_FILE = 64 * 1024;
+const READ_MANY_BYTES_PER_FILE_LIMIT = 1024 * 1024;
+const DEFAULT_READ_MANY_TOTAL_BYTES = 256 * 1024;
+const READ_MANY_TOTAL_BYTES_LIMIT = 2 * 1024 * 1024;
 
 export interface ListWorkspaceFilesOptions {
   glob?: string[];
@@ -62,6 +66,30 @@ export interface SearchWorkspaceTextResult {
   maxMatches: number;
   filesSearched: number;
   filesTruncated: boolean;
+}
+
+export interface ReadManyWorkspaceFilesOptions {
+  paths: string[];
+  maxBytesPerFile?: number;
+  maxTotalBytes?: number;
+}
+
+export interface ReadManyWorkspaceFile {
+  path: string;
+  content: string;
+  bytes: number;
+  returnedBytes: number;
+  truncated: boolean;
+}
+
+export interface ReadManyWorkspaceFilesResult {
+  cwd: string;
+  files: ReadManyWorkspaceFile[];
+  bytes: number;
+  returnedBytes: number;
+  truncated: boolean;
+  maxBytesPerFile: number;
+  maxTotalBytes: number;
 }
 
 export async function listWorkspaceFiles(
@@ -136,6 +164,56 @@ export async function listWorkspaceFiles(
     entries,
     truncated,
     maxResults
+  };
+}
+
+export async function readManyWorkspaceFiles(
+  cwd: string,
+  options: ReadManyWorkspaceFilesOptions
+): Promise<ReadManyWorkspaceFilesResult> {
+  const root = resolve(cwd);
+  const maxBytesPerFile = boundedMaxResults(
+    options.maxBytesPerFile,
+    DEFAULT_READ_MANY_BYTES_PER_FILE,
+    READ_MANY_BYTES_PER_FILE_LIMIT
+  );
+  const maxTotalBytes = boundedMaxResults(
+    options.maxTotalBytes,
+    DEFAULT_READ_MANY_TOTAL_BYTES,
+    READ_MANY_TOTAL_BYTES_LIMIT
+  );
+  const files: ReadManyWorkspaceFile[] = [];
+  let bytes = 0;
+  let returnedBytes = 0;
+
+  for (const requestedPath of options.paths) {
+    const target = workspaceTarget(root, requestedPath);
+    const buffer = await readFile(target.absolutePath);
+    const fileBytes = buffer.byteLength;
+    const remainingTotalBytes = Math.max(0, maxTotalBytes - returnedBytes);
+    const fileReturnedBytes = Math.min(fileBytes, maxBytesPerFile, remainingTotalBytes);
+    const content = buffer.subarray(0, fileReturnedBytes).toString("utf8");
+    const truncated = fileReturnedBytes < fileBytes;
+
+    bytes += fileBytes;
+    returnedBytes += Buffer.byteLength(content, "utf8");
+    files.push({
+      path: target.relativePath,
+      content,
+      bytes: fileBytes,
+      returnedBytes: Buffer.byteLength(content, "utf8"),
+      truncated
+    });
+  }
+
+  return {
+    cwd: root,
+    files,
+    bytes,
+    returnedBytes,
+    truncated: files.some((file) => file.truncated),
+    maxBytesPerFile,
+    maxTotalBytes
   };
 }
 
@@ -294,6 +372,27 @@ function matchesSegment(pattern: string, value: string): boolean {
 
 function workspaceRelativePath(root: string, absolutePath: string): string {
   return relative(root, absolutePath).split(sep).join("/");
+}
+
+function workspaceTarget(
+  root: string,
+  requestedPath: string
+): { absolutePath: string; relativePath: string } {
+  const absolutePath = resolve(root, requestedPath);
+  const relativePath = workspaceRelativePath(root, absolutePath);
+
+  if (
+    relativePath.length === 0 ||
+    relativePath === ".." ||
+    relativePath.startsWith("../")
+  ) {
+    throw new Error(`Workspace path escapes root: ${requestedPath}`);
+  }
+
+  return {
+    absolutePath,
+    relativePath
+  };
 }
 
 function normalizePath(path: string): string {

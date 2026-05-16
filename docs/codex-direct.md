@@ -66,6 +66,7 @@ The first tool set should stay small:
 - `list_files` -> `filesystem.list`
 - `search_text` -> `filesystem.search`
 - `read_file` -> `filesystem.read`
+- `read_many_files` -> `filesystem.read`
 - `write_file` -> `filesystem.write`
 - `run_command` -> `shell.exec`
 - `git_status` -> `git.status`
