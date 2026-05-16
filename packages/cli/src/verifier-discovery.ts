@@ -29,7 +29,10 @@ export async function discoverVerifierCommands(
     return [
       {
         name,
-        command: packageManagerCommand(packageManager, name)
+        command:
+          scripts[name] === undefined
+            ? turboCommand(packageManager, name)
+            : packageManagerCommand(packageManager, name)
       }
     ];
   });
@@ -76,6 +79,22 @@ function packageManagerCommand(
       return `yarn ${script}`;
     case "bun":
       return `bun run ${script}`;
+  }
+}
+
+function turboCommand(
+  packageManager: PackageManager,
+  script: (typeof STANDARD_VERIFIERS)[number]
+): string {
+  switch (packageManager) {
+    case "pnpm":
+      return `pnpm exec turbo run ${script}`;
+    case "npm":
+      return `npm exec -- turbo run ${script}`;
+    case "yarn":
+      return `yarn turbo run ${script}`;
+    case "bun":
+      return `bunx turbo run ${script}`;
   }
 }
 

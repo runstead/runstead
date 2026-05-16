@@ -197,6 +197,22 @@ describe("evaluatePolicy verifier command rules", () => {
     expect(result.ruleId).toBe("allow_verifier_commands");
   });
 
+  it("allows generated turbo verifier commands", () => {
+    const result = evaluatePolicy({
+      policy: verifierCommandPolicy,
+      action: {
+        actionId: "act_verifier_turbo_lint",
+        actionType: "shell.exec",
+        context: {
+          command: "pnpm exec turbo run lint"
+        }
+      }
+    });
+
+    expect(result.decision).toBe("allow");
+    expect(result.ruleId).toBe("allow_verifier_commands");
+  });
+
   it("requires approval for non-verifier shell commands", () => {
     const result = evaluatePolicy({
       policy: verifierCommandPolicy,

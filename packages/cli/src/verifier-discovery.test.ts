@@ -70,11 +70,11 @@ describe("verifier discovery", () => {
         },
         {
           name: "lint",
-          command: "pnpm lint"
+          command: "pnpm exec turbo run lint"
         },
         {
           name: "typecheck",
-          command: "pnpm typecheck"
+          command: "pnpm exec turbo run typecheck"
         }
       ]);
     } finally {
