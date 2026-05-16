@@ -159,7 +159,28 @@ export const TRUSTED_LOCAL_EXTERNAL_WORKER_IDS = ["codex_cli", "claude_code"];
 export const DEFAULT_NATIVE_WORKER_ACTION_TYPES = ["worker.native.start"];
 export const TRUSTED_LOCAL_NATIVE_WORKER_IDS = ["codex_direct"];
 export const DEFAULT_MODEL_INFERENCE_ACTION_TYPES = ["model.inference.request"];
-export const TRUSTED_LOCAL_MODEL_INFERENCE_RESOURCE_IDS = ["chatgpt_codex"];
+export const TRUSTED_LOCAL_MODEL_INFERENCE_RESOURCE_IDS = [
+  "chatgpt_codex",
+  "openai",
+  "openrouter",
+  "anthropic",
+  "gemini",
+  "nous-api",
+  "deepseek",
+  "zai",
+  "kimi-coding",
+  "minimax",
+  "minimax-cn",
+  "huggingface",
+  "nvidia",
+  "xiaomi",
+  "arcee",
+  "ollama-cloud",
+  "kilocode",
+  "ai-gateway",
+  "lmstudio",
+  "custom"
+];
 export const CI_REPAIR_WORKSPACE_OBLIGATIONS = [
   "capture_output",
   "attach_as_evidence",

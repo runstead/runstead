@@ -301,6 +301,25 @@ function modelInferencePolicyRuleYaml(profile: InitPolicyProfile): string {
       resource_id:
         in:
           - chatgpt_codex
+          - openai
+          - openrouter
+          - anthropic
+          - gemini
+          - nous-api
+          - deepseek
+          - zai
+          - kimi-coding
+          - minimax
+          - minimax-cn
+          - huggingface
+          - nvidia
+          - xiaomi
+          - arcee
+          - ollama-cloud
+          - kilocode
+          - ai-gateway
+          - lmstudio
+          - custom
     decision: allow
     risk: medium`;
   }

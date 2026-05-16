@@ -385,6 +385,67 @@ describe("local agent task primitives", () => {
     }
   });
 
+  it("runs a local agent task through a configured non-Codex provider", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-local-agent-provider-"));
+    const requests: CodexResponsesRequest[] = [];
+    const transport: CodexDirectTransport = {
+      createResponse(request) {
+        requests.push(request);
+
+        return Promise.resolve({
+          id: "resp_local_agent_provider",
+          status: "completed",
+          outputText: "Inspected through OpenRouter.",
+          toolCalls: [],
+          finishReason: "stop",
+          outputItems: []
+        });
+      }
+    };
+
+    try {
+      await initRunstead({ cwd: workspace, profile: "trusted-local" });
+      const created = await createLocalAgentTask({
+        cwd: workspace,
+        prompt: "Inspect this repo.",
+        worker: "codex_direct",
+        provider: "openrouter",
+        model: "anthropic/claude-opus-4.6",
+        mode: "read-only"
+      });
+
+      const result = await runLocalAgentTask({
+        cwd: workspace,
+        taskId: created.task.id,
+        transport
+      });
+      const database = openRunsteadDatabase(created.stateDb);
+
+      try {
+        const decision = database
+          .prepare(
+            "SELECT action_json FROM policy_decisions WHERE action_id LIKE 'act_model_inference_request_%'"
+          )
+          .get() as { action_json: string };
+
+        expect(JSON.parse(decision.action_json)).toMatchObject({
+          resource: {
+            type: "model_provider",
+            id: "openrouter"
+          }
+        });
+      } finally {
+        database.close();
+      }
+
+      expect(result.status).toBe("completed");
+      expect(result.workerResult?.model).toBe("anthropic/claude-opus-4.6");
+      expect(requests[0]?.model).toBe("anthropic/claude-opus-4.6");
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
   it("runs edit mode with a checkpoint and configured verifiers", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "runstead-local-agent-edit-"));
     const verifierCommand = nodeCommand("process.exit(0)");

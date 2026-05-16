@@ -27,13 +27,10 @@ import {
 } from "./checkpoints.js";
 import {
   CODEX_DIRECT_WORKER_KIND,
-  createCodexDirectTransport,
   runCodexDirectWorker,
   type CodexDirectTransport,
   type CodexDirectWorkerResult
 } from "./codex-direct-worker.js";
-import { resolveCodexRuntimeCredentials } from "./codex-auth.js";
-import { resolveCodexModel } from "./codex-model.js";
 import {
   runGovernedToolAction,
   ToolActionApprovalRequiredError,
@@ -56,6 +53,10 @@ import {
   type RunTaskVerifiersResult
 } from "./verifier-runner.js";
 import type { CommandVerifierInput } from "./verifier-evidence.js";
+import {
+  createModelProviderRuntime,
+  resolveModelProviderModel
+} from "./model-provider-runtime.js";
 
 export const LOCAL_AGENT_TASK_TYPE = "local_agent_task";
 
@@ -68,7 +69,9 @@ export interface CreateLocalAgentTaskOptions {
   preset?: string;
   title?: string;
   worker?: LocalAgentWorkerKind;
+  provider?: string;
   model?: string;
+  baseUrl?: string;
   mode?: LocalAgentMode;
   allowedPaths?: string[];
   deniedPaths?: string[];
@@ -334,11 +337,22 @@ export async function runLocalAgentTask(
     throw new Error("Local agent task execution currently supports codex_direct only");
   }
 
+  const explicitProvider = localAgentTaskProvider(claimedTask);
   const explicitModel = localAgentTaskModel(claimedTask);
-  const model = await resolveCodexModel({
+  const explicitBaseUrl = localAgentTaskBaseUrl(claimedTask);
+  const providerOptions = {
     cwd,
-    ...(explicitModel === undefined ? {} : { explicitModel })
-  });
+    ...(explicitProvider === undefined ? {} : { explicitProvider }),
+    ...(explicitModel === undefined ? {} : { explicitModel }),
+    ...(explicitBaseUrl === undefined ? {} : { explicitBaseUrl })
+  };
+  const runtime =
+    options.transport === undefined
+      ? await createModelProviderRuntime({
+          ...providerOptions,
+          ...(options.now === undefined ? {} : { now: options.now })
+        })
+      : await resolveModelProviderModel(providerOptions);
 
   const startedAt = (options.now ?? new Date()).toISOString();
   const runningTask: Task = {
@@ -353,7 +367,8 @@ export async function runLocalAgentTask(
     join(root.root, "policies", "repo-maintenance.yaml")
   );
   const transport =
-    options.transport ?? (await createDefaultCodexDirectTransport(options));
+    options.transport ??
+    (runtime as Awaited<ReturnType<typeof createModelProviderRuntime>>).transport;
   const database = openRunsteadDatabase(state.stateDb);
 
   try {
@@ -376,7 +391,9 @@ export async function runLocalAgentTask(
       policy,
       goal,
       task: runningTask,
-      model: model.model,
+      model: runtime.model,
+      modelProviderResourceId: runtime.modelProviderResourceId,
+      modelProviderNetworkDomains: runtime.networkDomains,
       transport,
       ...(options.now === undefined ? {} : { now: options.now })
     });
@@ -394,6 +411,8 @@ async function runLocalAgentTaskWithDatabase(options: {
   goal: Goal;
   task: Task;
   model: string;
+  modelProviderResourceId: string;
+  modelProviderNetworkDomains: string[];
   transport: CodexDirectTransport;
   now?: Date;
 }): Promise<RunLocalAgentTaskResult> {
@@ -435,6 +454,8 @@ async function runLocalAgentTaskWithDatabase(options: {
           goal: options.goal,
           task: options.task,
           model: options.model,
+          modelProviderResourceId: options.modelProviderResourceId,
+          modelProviderNetworkDomains: options.modelProviderNetworkDomains,
           evidenceDir: join(options.root, "evidence"),
           transport: options.transport,
           prompt: buildLocalAgentPrompt(options.task),
@@ -830,7 +851,11 @@ function localAgentTaskInput(input: {
     worker: input.worker,
     mode: input.mode,
     ...(input.options.preset === undefined ? {} : { preset: input.options.preset }),
+    ...(input.options.provider === undefined
+      ? {}
+      : { provider: input.options.provider }),
     ...(input.options.model === undefined ? {} : { model: input.options.model }),
+    ...(input.options.baseUrl === undefined ? {} : { baseUrl: input.options.baseUrl }),
     ...(input.options.allowedPaths === undefined
       ? {}
       : { allowedPaths: input.options.allowedPaths }),
@@ -863,19 +888,6 @@ function localAgentTaskInput(input: {
       : { checkpoint: input.options.checkpoint }),
     ...(input.options.commit === undefined ? {} : { commit: input.options.commit })
   };
-}
-
-async function createDefaultCodexDirectTransport(options: {
-  now?: Date;
-}): Promise<CodexDirectTransport> {
-  const credentials = await resolveCodexRuntimeCredentials({
-    ...(options.now === undefined ? {} : { now: options.now })
-  });
-
-  return createCodexDirectTransport({
-    baseUrl: credentials.baseUrl,
-    accessToken: credentials.accessToken
-  });
 }
 
 function buildLocalAgentPrompt(task: Task): string {
@@ -1447,6 +1459,22 @@ function localAgentTaskModel(task: Task): string | undefined {
 
   return typeof model === "string" && model.trim().length > 0
     ? model.trim()
+    : undefined;
+}
+
+function localAgentTaskProvider(task: Task): string | undefined {
+  const provider = task.input.provider;
+
+  return typeof provider === "string" && provider.trim().length > 0
+    ? provider.trim()
+    : undefined;
+}
+
+function localAgentTaskBaseUrl(task: Task): string | undefined {
+  const baseUrl = task.input.baseUrl;
+
+  return typeof baseUrl === "string" && baseUrl.trim().length > 0
+    ? baseUrl.trim()
     : undefined;
 }
 

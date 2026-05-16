@@ -70,7 +70,9 @@ export interface HandleGitHubWorkflowRunWebhookOptions {
   mode?: GitHubWorkflowRunWebhookMode;
   dedupeDelivery?: boolean;
   worker?: CiRepairWorkerKind;
+  provider?: string;
   model?: string;
+  baseUrl?: string;
   base?: string;
   draft?: boolean;
   allowedPaths?: string[];
@@ -145,7 +147,9 @@ export async function handleGitHubWorkflowRunWebhook(
       ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
       runId,
       worker: options.worker ?? "codex_cli",
+      ...(options.provider === undefined ? {} : { provider: options.provider }),
       ...(options.model === undefined ? {} : { model: options.model }),
+      ...(options.baseUrl === undefined ? {} : { baseUrl: options.baseUrl }),
       ...(options.base === undefined ? {} : { base: options.base }),
       draft: options.draft === true,
       allowedPaths: options.allowedPaths ?? [],

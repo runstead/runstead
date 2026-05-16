@@ -461,7 +461,9 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
       "Worker to run when orchestrating repairs",
       "codex_cli"
     )
+    .option("--provider <provider>", "Model provider to use with codex_direct")
     .option("--model <model>", "Model to use with codex_direct")
+    .option("--base-url <url>", "Model provider base URL")
     .option("--base <ref>", "PR base branch when orchestrating repairs")
     .option("--draft", "Create draft pull requests when orchestrating repairs")
     .option(
@@ -494,7 +496,9 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
         installationId?: string;
         orchestrateRepair?: boolean;
         worker: string;
+        provider?: string;
         model?: string;
+        baseUrl?: string;
         base?: string;
         draft?: boolean;
         allowed: string[];
@@ -554,7 +558,9 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
               mode: options.orchestrateRepair === true ? "orchestrate" : "intake",
               dedupeDelivery: true,
               worker: parseCiRepairWorkerKind(options.worker),
+              ...(options.provider === undefined ? {} : { provider: options.provider }),
               ...(options.model === undefined ? {} : { model: options.model }),
+              ...(options.baseUrl === undefined ? {} : { baseUrl: options.baseUrl }),
               ...(options.base === undefined ? {} : { base: options.base }),
               draft: options.draft === true,
               allowedPaths: options.allowed,
@@ -2507,7 +2513,9 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
 interface CiRepairOrchestrationCliOptions {
   cwd?: string;
   worker: string;
+  provider?: string;
   model?: string;
+  baseUrl?: string;
   base?: string;
   draft?: boolean;
   allowed: string[];
@@ -2539,7 +2547,9 @@ interface ConfigCliOptions {
 interface AgentRunCliOptions {
   cwd?: string;
   worker: string;
+  provider?: string;
   model?: string;
+  baseUrl?: string;
   mode: string;
   preset?: string;
   allowed: string[];
@@ -2554,7 +2564,9 @@ interface AgentRunCliOptions {
 interface AgentInspectCliOptions {
   cwd?: string;
   worker: string;
+  provider?: string;
   model?: string;
+  baseUrl?: string;
   depth: string;
   maxTurns?: string;
   maxToolCalls?: string;
@@ -2565,7 +2577,9 @@ interface AgentInspectCliOptions {
 interface AgentReviewCliOptions {
   cwd?: string;
   worker: string;
+  provider?: string;
   model?: string;
+  baseUrl?: string;
   staged?: boolean;
   base?: string;
   unpushed?: boolean;
@@ -2578,7 +2592,9 @@ interface AgentReviewCliOptions {
 interface AgentTestCliOptions {
   cwd?: string;
   worker: string;
+  provider?: string;
   model?: string;
+  baseUrl?: string;
   verifier: string[];
   maxTurns?: string;
   maxToolCalls?: string;
@@ -2589,7 +2605,9 @@ interface AgentTestCliOptions {
 interface AgentFixCliOptions {
   cwd?: string;
   worker: string;
+  provider?: string;
   model?: string;
+  baseUrl?: string;
   allowed: string[];
   denied: string[];
   verifier: string[];
@@ -2777,7 +2795,9 @@ function addAgentCommand(command: Command): void {
     .argument("[prompt...]", "Task prompt for the local agent")
     .option("--cwd <path>", "Workspace directory")
     .option("--worker <worker>", "Worker to run: codex_direct", "codex_direct")
+    .option("--provider <provider>", "Model provider to use with codex_direct")
     .option("--model <model>", "Model to use with codex_direct")
+    .option("--base-url <url>", "Model provider base URL")
     .option("--mode <mode>", "Agent mode: read-only, edit, or repair", "read-only")
     .option("--preset <id>", "Local agent preset id")
     .option("--allowed <pattern>", "Allowed workspace path pattern", collectValues, [])
@@ -2867,7 +2887,9 @@ function addAgentCommand(command: Command): void {
               checkpoint: resolvedPreset.preset.checkpoint
             }),
         worker,
+        ...(options.provider === undefined ? {} : { provider: options.provider }),
         ...(model === undefined ? {} : { model }),
+        ...(options.baseUrl === undefined ? {} : { baseUrl: options.baseUrl }),
         mode:
           resolvedPreset === undefined
             ? parseLocalAgentMode(options.mode)
@@ -2932,7 +2954,9 @@ function addAgentCommand(command: Command): void {
     .argument("[focus...]", "Optional inspection focus")
     .option("--cwd <path>", "Workspace directory")
     .option("--worker <worker>", "Worker to run: codex_direct", "codex_direct")
+    .option("--provider <provider>", "Model provider to use with codex_direct")
     .option("--model <model>", "Model to use with codex_direct")
+    .option("--base-url <url>", "Model provider base URL")
     .option("--depth <depth>", "Inspection depth: smoke or standard", "smoke")
     .option("--max-turns <number>", "Override preset Codex Direct tool turns")
     .option("--max-tool-calls <number>", "Override preset Codex Direct tool calls")
@@ -2978,7 +3002,9 @@ function addAgentCommand(command: Command): void {
         preset: resolvedPreset.preset.id,
         title: `Local agent ${resolvedPreset.preset.id}`,
         worker,
+        ...(options.provider === undefined ? {} : { provider: options.provider }),
         ...(model === undefined ? {} : { model }),
+        ...(options.baseUrl === undefined ? {} : { baseUrl: options.baseUrl }),
         mode: resolvedPreset.preset.mode,
         checkpoint: resolvedPreset.preset.checkpoint,
         ...(options.maxTurns === undefined
@@ -3021,7 +3047,9 @@ function addAgentCommand(command: Command): void {
     .argument("[focus...]", "Optional review focus")
     .option("--cwd <path>", "Workspace directory")
     .option("--worker <worker>", "Worker to run: codex_direct", "codex_direct")
+    .option("--provider <provider>", "Model provider to use with codex_direct")
     .option("--model <model>", "Model to use with codex_direct")
+    .option("--base-url <url>", "Model provider base URL")
     .option("--staged", "Review the staged diff instead of the unstaged diff")
     .option("--base <ref>", "Review HEAD against a base ref")
     .option("--unpushed", "Review commits ahead of the upstream branch")
@@ -3088,7 +3116,9 @@ function addAgentCommand(command: Command): void {
         preset: resolvedPreset.preset.id,
         title: `Local agent review ${scope.title}`,
         worker,
+        ...(options.provider === undefined ? {} : { provider: options.provider }),
         ...(model === undefined ? {} : { model }),
+        ...(options.baseUrl === undefined ? {} : { baseUrl: options.baseUrl }),
         mode: resolvedPreset.preset.mode,
         checkpoint: resolvedPreset.preset.checkpoint,
         gitDiffStaged: options.staged === true,
@@ -3133,7 +3163,9 @@ function addAgentCommand(command: Command): void {
     .argument("[focus...]", "Optional test triage focus")
     .option("--cwd <path>", "Workspace directory")
     .option("--worker <worker>", "Worker to run: codex_direct", "codex_direct")
+    .option("--provider <provider>", "Model provider to use with codex_direct")
     .option("--model <model>", "Model to use with codex_direct")
+    .option("--base-url <url>", "Model provider base URL")
     .option(
       "--verifier <name=command>",
       "Verifier command to run before triage, or auto to discover common scripts",
@@ -3220,7 +3252,9 @@ function addAgentCommand(command: Command): void {
         preset: resolvedPreset.preset.id,
         title: "Local agent test triage",
         worker,
+        ...(options.provider === undefined ? {} : { provider: options.provider }),
         ...(model === undefined ? {} : { model }),
+        ...(options.baseUrl === undefined ? {} : { baseUrl: options.baseUrl }),
         mode: resolvedPreset.preset.mode,
         checkpoint: resolvedPreset.preset.checkpoint,
         verifierCommands,
@@ -3270,7 +3304,9 @@ function addAgentCommand(command: Command): void {
     .argument("<prompt...>", "Fix prompt for the local agent")
     .option("--cwd <path>", "Workspace directory")
     .option("--worker <worker>", "Worker to run: codex_direct", "codex_direct")
+    .option("--provider <provider>", "Model provider to use with codex_direct")
     .option("--model <model>", "Model to use with codex_direct")
+    .option("--base-url <url>", "Model provider base URL")
     .option("--allowed <pattern>", "Allowed workspace path pattern", collectValues, [])
     .option("--denied <pattern>", "Denied workspace path pattern", collectValues, [])
     .option(
@@ -3303,7 +3339,9 @@ function addAgentCommand(command: Command): void {
     .argument("[focus...]", "Optional repair focus")
     .option("--cwd <path>", "Workspace directory")
     .option("--worker <worker>", "Worker to run: codex_direct", "codex_direct")
+    .option("--provider <provider>", "Model provider to use with codex_direct")
     .option("--model <model>", "Model to use with codex_direct")
+    .option("--base-url <url>", "Model provider base URL")
     .option("--allowed <pattern>", "Allowed workspace path pattern", collectValues, [])
     .option("--denied <pattern>", "Denied workspace path pattern", collectValues, [])
     .option(
@@ -3509,7 +3547,11 @@ async function runAgentFixLikeCommand(input: {
     preset: resolvedPreset.preset.id,
     title: input.title,
     worker,
+    ...(input.options.provider === undefined
+      ? {}
+      : { provider: input.options.provider }),
     ...(model === undefined ? {} : { model }),
+    ...(input.options.baseUrl === undefined ? {} : { baseUrl: input.options.baseUrl }),
     mode: resolvedPreset.preset.mode,
     checkpoint: resolvedPreset.preset.checkpoint,
     allowedPaths: input.options.allowed,
@@ -3567,6 +3609,8 @@ function addCiRepairOrchestrationCommand(command: Command): void {
       "codex_cli"
     )
     .option("--model <model>", "Model to use with codex_direct")
+    .option("--provider <provider>", "Model provider to use with codex_direct")
+    .option("--base-url <url>", "Model provider base URL")
     .option("--base <ref>", "PR base branch")
     .option("--draft", "Create a draft pull request")
     .option("--allowed <pattern>", "Allowed changed path pattern", collectValues, [])
@@ -3605,7 +3649,9 @@ async function runCiRepairOrchestrationFromCli(
     ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
     runId,
     worker: parseCiRepairWorkerKind(options.worker),
+    ...(options.provider === undefined ? {} : { provider: options.provider }),
     ...(options.model === undefined ? {} : { model: options.model }),
+    ...(options.baseUrl === undefined ? {} : { baseUrl: options.baseUrl }),
     ...(options.base === undefined ? {} : { base: options.base }),
     draft: options.draft === true,
     allowedPaths: options.allowed,

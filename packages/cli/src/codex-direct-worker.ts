@@ -59,6 +59,8 @@ export interface CodexDirectWorkerOptions {
   goal: Goal;
   task: Task;
   model: string;
+  modelProviderResourceId?: string;
+  modelProviderNetworkDomains?: string[];
   prompt?: string;
   evidenceDir: string;
   transport: CodexDirectTransport;
@@ -308,7 +310,13 @@ async function runGovernedModelInference(
     ...governedToolOptions(options),
     action: modelInferenceAction({
       task: options.task,
-      model: options.model
+      model: options.model,
+      ...(options.modelProviderResourceId === undefined
+        ? {}
+        : { providerResourceId: options.modelProviderResourceId }),
+      ...(options.modelProviderNetworkDomains === undefined
+        ? {}
+        : { networkDomains: options.modelProviderNetworkDomains })
     }),
     run: async () => {
       const value = await options.transport.createResponse(options.request);
@@ -2091,16 +2099,27 @@ function workspaceFactsReadAction(input: {
   };
 }
 
-function modelInferenceAction(input: { task: Task; model: string }): ActionEnvelope {
+function modelInferenceAction(input: {
+  task: Task;
+  model: string;
+  providerResourceId?: string;
+  networkDomains?: string[];
+}): ActionEnvelope {
+  const providerResourceId = input.providerResourceId ?? "chatgpt_codex";
+
   return {
-    actionId: stableActionId("model_inference_request", [input.task.id, input.model]),
+    actionId: stableActionId("model_inference_request", [
+      input.task.id,
+      providerResourceId,
+      input.model
+    ]),
     actionType: "model.inference.request",
     resource: {
       type: "model_provider",
-      id: "chatgpt_codex"
+      id: providerResourceId
     },
     context: {
-      networkDomains: ["chatgpt.com"],
+      networkDomains: input.networkDomains ?? ["chatgpt.com"],
       sideEffects: ["network_write_external", "llm_data_egress"]
     }
   };

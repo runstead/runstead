@@ -21,11 +21,8 @@ import {
   type CreateCiRepairTaskFromWorkflowRunResult,
   type CreateCiRepairTaskResult
 } from "./ci-repair.js";
-import { resolveCodexRuntimeCredentials } from "./codex-auth.js";
-import { resolveCodexModel } from "./codex-model.js";
 import {
   CODEX_DIRECT_WORKER_KIND,
-  createCodexDirectTransport,
   runCodexDirectWorker,
   type CodexDirectTransport,
   type CodexDirectWorkerResult
@@ -98,6 +95,10 @@ import {
   type WrappedWorkerKind,
   type WrappedWorkerRunResult
 } from "./wrapped-worker.js";
+import {
+  createModelProviderRuntime,
+  resolveModelProviderModel
+} from "./model-provider-runtime.js";
 
 export type CiRepairGitRunner = GitRunner & GitDiffRunner;
 export type CiRepairWorkerKind = WrappedWorkerKind | typeof CODEX_DIRECT_WORKER_KIND;
@@ -112,7 +113,9 @@ export interface RunCiRepairOrchestratorOptions {
   cwd?: string;
   runId: string;
   worker: CiRepairWorkerKind;
+  provider?: string;
   model?: string;
+  baseUrl?: string;
   base?: string;
   draft?: boolean;
   allowedPaths?: string[];
@@ -440,7 +443,9 @@ export async function runCiRepairOrchestratorUnlocked(
               task: orchestratorTask,
               workerRun,
               worker: options.worker,
+              ...(options.provider === undefined ? {} : { provider: options.provider }),
               ...(options.model === undefined ? {} : { model: options.model }),
+              ...(options.baseUrl === undefined ? {} : { baseUrl: options.baseUrl }),
               checkpointBefore,
               workflowRunId: ciRepair.workflowRun.runId,
               evidenceId: ciRepair.evidence.id,
@@ -1480,7 +1485,9 @@ async function startCiRepairWorker(options: {
   task: Task;
   workerRun: ReturnType<typeof startWorkerRun>;
   worker: CiRepairWorkerKind;
+  provider?: string;
   model?: string;
+  baseUrl?: string;
   checkpointBefore: WorkspaceCheckpoint;
   workflowRunId: string;
   evidenceId: string;
@@ -1518,16 +1525,22 @@ async function startCiRepairWorker(options: {
 
   const localAgentPreset = await ciRepairPreset(options);
   const explicitModel = options.model ?? localAgentPreset.model;
-  const model = await resolveCodexModel({
+  const providerOptions = {
     cwd: options.cwd,
-    ...(explicitModel === undefined ? {} : { explicitModel })
-  });
-
+    ...(options.provider === undefined ? {} : { explicitProvider: options.provider }),
+    ...(explicitModel === undefined ? {} : { explicitModel }),
+    ...(options.baseUrl === undefined ? {} : { explicitBaseUrl: options.baseUrl })
+  };
+  const runtime =
+    options.codexDirectTransport === undefined
+      ? await createModelProviderRuntime({
+          ...providerOptions,
+          ...(options.now === undefined ? {} : { now: options.now })
+        })
+      : await resolveModelProviderModel(providerOptions);
   const transport =
     options.codexDirectTransport ??
-    (await createDefaultCodexDirectTransport({
-      ...(options.now === undefined ? {} : { now: options.now })
-    }));
+    (runtime as Awaited<ReturnType<typeof createModelProviderRuntime>>).transport;
   const result = await runCodexDirectWorker({
     cwd: options.cwd,
     stateDb: options.stateDb,
@@ -1535,7 +1548,9 @@ async function startCiRepairWorker(options: {
     policy: options.policy,
     goal: options.goal,
     task: options.task,
-    model: model.model,
+    model: runtime.model,
+    modelProviderResourceId: runtime.modelProviderResourceId,
+    modelProviderNetworkDomains: runtime.networkDomains,
     evidenceDir: join(options.root, "evidence"),
     transport,
     prompt: localAgentPreset.prompt,
@@ -1578,19 +1593,6 @@ function ciRepairPreset(options: {
       cwd: options.cwd
     }
   );
-}
-
-async function createDefaultCodexDirectTransport(options: {
-  now?: Date;
-}): Promise<CodexDirectTransport> {
-  const credentials = await resolveCodexRuntimeCredentials({
-    ...(options.now === undefined ? {} : { now: options.now })
-  });
-
-  return createCodexDirectTransport({
-    baseUrl: credentials.baseUrl,
-    accessToken: credentials.accessToken
-  });
 }
 
 async function rollbackWorkerChanges(options: {
