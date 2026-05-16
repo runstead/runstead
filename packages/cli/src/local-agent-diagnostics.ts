@@ -218,6 +218,7 @@ function budgetCause(budget: CodexDirectBudgetSummary): string {
 function budgetRetry(budget: CodexDirectBudgetSummary): string {
   switch (budget.reason) {
     case "turns":
+      return "rerun with a narrower preset or a higher --max-turns budget";
     case "tool_calls":
       return "rerun with a narrower preset or a higher --max-tool-calls budget";
     case "failed_tool_calls":

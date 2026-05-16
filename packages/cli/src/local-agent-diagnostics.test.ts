@@ -48,6 +48,32 @@ describe("local agent diagnostics", () => {
     expect(formatLocalAgentDiagnostics(diagnostics)).toContain(
       "  Retry: runstead approval approve appr_1 && runstead agent resume task_1"
     );
+    expect(diagnostics[1]?.retry).toBe(
+      "rerun with a narrower preset or a higher --max-tool-calls budget"
+    );
+  });
+
+  it("points turn budget failures at the turn budget option", () => {
+    const diagnostics = diagnoseLocalAgentRun({
+      task: localAgentTask({ id: "task_1" }),
+      status: "failed",
+      summary: "Turn budget exhausted",
+      workerResult: {
+        failedToolCalls: 0,
+        warnings: [],
+        budget: {
+          reason: "turns",
+          maxTurns: 4,
+          maxToolCalls: 12,
+          toolCalls: 7,
+          failedToolCalls: 0
+        }
+      }
+    });
+
+    expect(diagnostics[0]?.retry).toBe(
+      "rerun with a narrower preset or a higher --max-turns budget"
+    );
   });
 
   it("classifies stored task output diagnostics", () => {
