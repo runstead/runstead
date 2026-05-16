@@ -35,6 +35,11 @@ import {
   ToolActionDeniedError
 } from "./governed-action.js";
 import { showGoal } from "./goals.js";
+import {
+  diagnoseLocalAgentRun,
+  diagnoseLocalAgentTask,
+  formatLocalAgentDiagnostics
+} from "./local-agent-diagnostics.js";
 import { loadPolicyProfileFromFile } from "./policy-loader.js";
 import type { ActionEnvelope, PolicyProfile } from "./policy.js";
 import { requireRunsteadRoot, requireRunsteadStateDb } from "./runstead-root.js";
@@ -490,6 +495,7 @@ export function formatLocalAgentRunReport(result: RunLocalAgentTaskResult): stri
     ...(result.approval === undefined
       ? []
       : [`Approval: waiting ${result.approval.id}`]),
+    ...formatLocalAgentDiagnostics(diagnoseLocalAgentRun(result)),
     `Summary: ${result.summary}`,
     ...formatLocalAgentAuditSummary(result.audit)
   ].join("\n");
@@ -510,6 +516,7 @@ export function formatLocalAgentTaskReport(report: LocalAgentTaskReport): string
     ...formatOptionalOutputLine(report.task, "Model", "model"),
     ...formatOptionalOutputLine(report.task, "Checkpoint", "checkpointId"),
     ...formatOutputWarnings(report.task),
+    ...formatLocalAgentDiagnostics(diagnoseLocalAgentTask(report.task)),
     ...formatOptionalOutputLine(report.task, "Summary", "summary"),
     ...formatLocalAgentAuditSummary(report.audit)
   ].join("\n");
