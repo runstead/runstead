@@ -17,7 +17,8 @@ import { missingRequiredStateTables } from "./state-schema.js";
 import {
   runWorkerProcess,
   workerCommand,
-  type WorkerProcessRunner
+  type WorkerProcessRunner,
+  type WrappedWorkerKind
 } from "./wrapped-worker.js";
 
 export type DoctorCheckStatus = "pass" | "fail";
@@ -38,13 +39,14 @@ export interface DoctorResult {
 export interface DoctorRunsteadOptions {
   cwd?: string;
   codex?: boolean;
-  worker?: "codex_direct" | "codex_cli";
+  worker?: "codex_direct" | WrappedWorkerKind;
   model?: string;
   codexAuthStatus?: () => Promise<
     Pick<CodexAuthStatus, "loggedIn" | "accessTokenExpired" | "authPath">
   >;
   codexModelResolver?: (options: { cwd?: string }) => Promise<ResolveCodexModelResult>;
   codexCliProbeRunner?: WorkerProcessRunner;
+  wrappedWorkerProbeRunner?: WorkerProcessRunner;
   modelProviderEnv?: NodeJS.ProcessEnv;
 }
 
@@ -106,16 +108,30 @@ export async function doctorRunstead(
   if (options.codex === true) {
     checks.push(checkRunsteadInitialized(resolvedRoot));
 
-    if ((options.worker ?? "codex_direct") === "codex_cli") {
+    const worker = options.worker ?? "codex_direct";
+    const wrappedWorkerProbeRunner =
+      options.wrappedWorkerProbeRunner ??
+      options.codexCliProbeRunner ??
+      runWorkerProcess;
+
+    if (worker === "codex_cli") {
       checks.push(await checkCodexCliPolicy(root));
-      checks.push(
-        await checkCodexCliBinary(cwd, options.codexCliProbeRunner ?? runWorkerProcess)
-      );
+      checks.push(await checkCodexCliBinary(cwd, wrappedWorkerProbeRunner));
       checks.push(
         await checkCodexCliExecProbe({
           cwd,
           ...(options.model === undefined ? {} : { model: options.model }),
-          runner: options.codexCliProbeRunner ?? runWorkerProcess
+          runner: wrappedWorkerProbeRunner
+        })
+      );
+    } else if (worker === "claude_code") {
+      checks.push(await checkClaudeCodePolicy(root));
+      checks.push(await checkClaudeCodeBinary(cwd, wrappedWorkerProbeRunner));
+      checks.push(
+        await checkClaudeCodePrintProbe({
+          cwd,
+          ...(options.model === undefined ? {} : { model: options.model }),
+          runner: wrappedWorkerProbeRunner
         })
       );
     } else {
@@ -268,6 +284,32 @@ async function checkCodexCliPolicy(root: string): Promise<DoctorCheck> {
   }
 }
 
+async function checkClaudeCodePolicy(root: string): Promise<DoctorCheck> {
+  try {
+    const policy = await loadPolicyProfileFromFile(
+      join(root, "policies", "repo-maintenance.yaml")
+    );
+    const decision = evaluatePolicy({
+      policy,
+      action: claudeCodeWorkerAction()
+    });
+
+    return decision.decision === "allow"
+      ? pass(
+          "claude-code-policy",
+          "claude_code policy",
+          decision.ruleId ?? "default allow"
+        )
+      : fail(
+          "claude-code-policy",
+          "claude_code policy",
+          `decision=${decision.decision}; claude_code local agent runs require trusted external worker policy`
+        );
+  } catch (error) {
+    return fail("claude-code-policy", "claude_code policy", errorMessage(error));
+  }
+}
+
 async function checkCodexCliBinary(
   cwd: string,
   runner: WorkerProcessRunner
@@ -289,6 +331,34 @@ async function checkCodexCliBinary(
         );
   } catch (error) {
     return fail("codex-cli-binary", "Codex CLI binary", errorMessage(error));
+  }
+}
+
+async function checkClaudeCodeBinary(
+  cwd: string,
+  runner: WorkerProcessRunner
+): Promise<DoctorCheck> {
+  try {
+    const result = await runner("claude", ["--version"], {
+      cwd,
+      timeoutMs: 10_000,
+      maxOutputBytes: 20_000
+    });
+    const output = `${result.stdout}${result.stderr}`.trim();
+
+    return result.exitCode === 0
+      ? pass(
+          "claude-code-binary",
+          "Claude Code CLI binary",
+          output || "claude found"
+        )
+      : fail(
+          "claude-code-binary",
+          "Claude Code CLI binary",
+          `claude --version exited ${result.exitCode}: ${output}`
+        );
+  } catch (error) {
+    return fail("claude-code-binary", "Claude Code CLI binary", errorMessage(error));
   }
 }
 
@@ -363,6 +433,79 @@ async function checkCodexCliExecProbe(options: {
     );
   } catch (error) {
     return fail("codex-cli-exec", "Codex CLI exec probe", errorMessage(error));
+  }
+}
+
+async function checkClaudeCodePrintProbe(options: {
+  cwd: string;
+  model?: string;
+  runner: WorkerProcessRunner;
+}): Promise<DoctorCheck> {
+  const prompt =
+    'Return exactly this JSON and nothing else: {"runstead_claude_code_probe":true}';
+  const command = workerCommand("claude_code", prompt, {
+    ...(options.model === undefined ? {} : { model: options.model })
+  });
+
+  try {
+    const result = await options.runner(command.command, command.args, {
+      cwd: options.cwd,
+      timeoutMs: 120_000,
+      maxOutputBytes: 120_000
+    });
+    const stdout = result.stdout.trim();
+    const stderr = result.stderr.trim();
+    const authHint = claudeCodeAuthHint(`${stdout}\n${stderr}`);
+
+    if (result.exitCode !== 0) {
+      return fail(
+        "claude-code-print",
+        "Claude Code CLI print probe",
+        [
+          `claude -p exited ${result.exitCode}`,
+          ...(stdout.length === 0 ? [] : [`stdout=${truncateDoctorMessage(stdout)}`]),
+          ...(stderr.length === 0 ? [] : [`stderr=${truncateDoctorMessage(stderr)}`]),
+          authHint
+        ]
+          .filter((line): line is string => line !== undefined)
+          .join("; ")
+      );
+    }
+
+    if (!stdout.includes('"runstead_claude_code_probe":true')) {
+      return fail(
+        "claude-code-print",
+        "Claude Code CLI print probe",
+        [
+          "claude -p completed but did not return the expected probe JSON",
+          ...(stdout.length === 0
+            ? ["stdout was empty"]
+            : [`stdout=${truncateDoctorMessage(stdout)}`]),
+          ...(stderr.length === 0 ? [] : [`stderr=${truncateDoctorMessage(stderr)}`]),
+          authHint
+        ]
+          .filter((line): line is string => line !== undefined)
+          .join("; ")
+      );
+    }
+
+    return pass(
+      "claude-code-print",
+      "Claude Code CLI print probe",
+      [
+        `ok${
+          options.model === undefined
+            ? " using Claude Code CLI default model"
+            : ` using model=${options.model}`
+        }`,
+        ...(stderr.length === 0 ? [] : [`stderr=${truncateDoctorMessage(stderr)}`]),
+        authHint
+      ]
+        .filter((line): line is string => line !== undefined)
+        .join("; ")
+    );
+  } catch (error) {
+    return fail("claude-code-print", "Claude Code CLI print probe", errorMessage(error));
   }
 }
 
@@ -552,6 +695,17 @@ function codexCliWorkerAction() {
   };
 }
 
+function claudeCodeWorkerAction() {
+  return {
+    actionId: "doctor_claude_code_worker",
+    actionType: "worker.external.start",
+    resource: {
+      type: "process",
+      id: "claude_code"
+    }
+  };
+}
+
 function codexModelInferenceAction(resourceId = "chatgpt_codex") {
   return {
     actionId: "doctor_codex_model_inference",
@@ -573,6 +727,22 @@ function codexCliAuthHint(stderr: string): string | undefined {
     normalized.includes("authrequired") ||
     normalized.includes("not authorized")
     ? "Codex CLI reported a local CLI/MCP auth problem; this is separate from Runstead Codex Direct login"
+    : undefined;
+}
+
+function claudeCodeAuthHint(output: string): string | undefined {
+  const normalized = output.toLowerCase();
+
+  return normalized.includes("login") ||
+    normalized.includes("not authenticated") ||
+    normalized.includes("api key") ||
+    normalized.includes("anthropic_api_key") ||
+    normalized.includes("oauth") ||
+    normalized.includes("subscription") ||
+    normalized.includes("credit balance") ||
+    normalized.includes("invalid x-api-key") ||
+    normalized.includes("invalid api key")
+    ? "Claude Code CLI reported a local Claude auth/profile problem; this is separate from Runstead Codex Direct login"
     : undefined;
 }
 

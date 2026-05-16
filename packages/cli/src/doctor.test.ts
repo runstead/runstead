@@ -421,6 +421,116 @@ describe("doctorRunstead", () => {
     }
   });
 
+  it("checks claude_code readiness without requiring Runstead Codex Direct login", async () => {
+    const workspace = join(tmpdir(), `runstead-doctor-claude-code-${process.pid}`);
+    const calls: { command: string; args: string[] }[] = [];
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await mkdir(workspace, { recursive: true });
+      await initRunstead({ cwd: workspace, profile: "trusted-local" });
+
+      const result = await doctorRunstead({
+        cwd: workspace,
+        codex: true,
+        worker: "claude_code",
+        model: "sonnet",
+        codexAuthStatus: () => {
+          throw new Error("Runstead Codex Direct auth should not be checked");
+        },
+        wrappedWorkerProbeRunner(command, args) {
+          calls.push({ command, args });
+
+          if (args[0] === "--version") {
+            return Promise.resolve({
+              stdout: "1.0.0 (Claude Code)\n",
+              stderr: "",
+              exitCode: 0
+            });
+          }
+
+          return Promise.resolve({
+            stdout: '{"runstead_claude_code_probe":true}\n',
+            stderr: "",
+            exitCode: 0
+          });
+        }
+      });
+
+      expect(result.ok).toBe(true);
+      expect(result.checks.map((check) => check.id)).toEqual(
+        expect.arrayContaining([
+          "claude-code-policy",
+          "claude-code-binary",
+          "claude-code-print",
+          "runtime-artifacts-ignore"
+        ])
+      );
+      expect(result.checks.map((check) => check.id)).not.toContain("codex-auth");
+      expect(result.checks.map((check) => check.id)).not.toContain(
+        "codex-default-model"
+      );
+      expect(calls[1]?.command).toBe("claude");
+      expect(calls[1]?.args).toEqual([
+        "-p",
+        "--model",
+        "sonnet",
+        "--permission-mode",
+        "default",
+        "--disallowedTools",
+        expect.stringContaining("Bash(git push *)"),
+        expect.stringContaining("runstead_claude_code_probe")
+      ]);
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("diagnoses Claude Code CLI auth failures as local Claude profile problems", async () => {
+    const workspace = join(tmpdir(), `runstead-doctor-claude-code-auth-${process.pid}`);
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await mkdir(workspace, { recursive: true });
+      await initRunstead({ cwd: workspace, profile: "trusted-local" });
+
+      const result = await doctorRunstead({
+        cwd: workspace,
+        codex: true,
+        worker: "claude_code",
+        wrappedWorkerProbeRunner(_command, args) {
+          if (args[0] === "--version") {
+            return Promise.resolve({
+              stdout: "1.0.0 (Claude Code)\n",
+              stderr: "",
+              exitCode: 0
+            });
+          }
+
+          return Promise.resolve({
+            stdout: "",
+            stderr: "Please login to Claude Code before using the subscription",
+            exitCode: 1
+          });
+        }
+      });
+      const printCheck = result.checks.find(
+        (check) => check.id === "claude-code-print"
+      );
+
+      expect(result.ok).toBe(false);
+      expect(printCheck).toMatchObject({
+        status: "fail"
+      });
+      expect(printCheck?.message).toContain("local Claude auth/profile problem");
+      expect(printCheck?.message).toContain(
+        "separate from Runstead Codex Direct login"
+      );
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
   it("checks configured non-Codex model provider readiness without Codex login", async () => {
     const workspace = join(tmpdir(), `runstead-doctor-provider-${process.pid}`);
 

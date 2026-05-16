@@ -156,9 +156,12 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     .command("doctor")
     .description("Check local Runstead state and scaffold health.")
     .option("--cwd <path>", "Workspace directory")
-    .option("--codex", "Check Codex local-agent readiness")
-    .option("--worker <worker>", "Codex worker to check: codex_direct or codex_cli")
-    .option("--model <model>", "Model to use for codex_cli probe")
+    .option("--codex", "Check local-agent worker readiness")
+    .option(
+      "--worker <worker>",
+      "Worker to check: codex_direct, codex_cli, or claude_code"
+    )
+    .option("--model <model>", "Model to use for wrapped worker probes")
     .action(
       async (options: {
         cwd?: string;
@@ -170,7 +173,7 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
         const worker =
           options.worker === undefined
             ? undefined
-            : parseDoctorCodexWorker(options.worker);
+            : parseDoctorWorker(options.worker);
         const result = await doctorRunstead({
           ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
           ...(options.codex === undefined ? {} : { codex: options.codex }),
@@ -3792,12 +3795,16 @@ function parseCiRepairWorkerKind(
   throw new Error("--worker must be codex_cli, claude_code, or codex_direct");
 }
 
-function parseDoctorCodexWorker(value: string): "codex_direct" | "codex_cli" {
-  if (value === "codex_direct" || value === "codex_cli") {
+function parseDoctorWorker(
+  value: string
+): "codex_direct" | "codex_cli" | "claude_code" {
+  if (value === "codex_direct" || value === "codex_cli" || value === "claude_code") {
     return value;
   }
 
-  throw new Error("--worker must be codex_direct or codex_cli for doctor --codex");
+  throw new Error(
+    "--worker must be codex_direct, codex_cli, or claude_code for doctor --codex"
+  );
 }
 
 function parseLocalAgentMode(value: string): "read-only" | "edit" | "repair" {
