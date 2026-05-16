@@ -2804,8 +2804,10 @@ function addAgentCommand(command: Command): void {
         localAgentRunExitCode,
         runLocalAgentTask
       } = await import("./local-agent.js");
-      const { resolveLocalAgentPreset } = await import("./local-agent-presets.js");
-      const verifierCommands = await resolveVerifierCommandOptions(
+      const { resolveConfiguredLocalAgentPreset } = await import(
+        "./local-agent-presets.js"
+      );
+      let verifierCommands = await resolveVerifierCommandOptions(
         options.verifier,
         "agent run",
         {
@@ -2814,18 +2816,42 @@ function addAgentCommand(command: Command): void {
         }
       );
       const prompt = promptParts.join(" ").trim();
-      const resolvedPreset =
+      let resolvedPreset =
         options.preset === undefined
           ? undefined
-          : resolveLocalAgentPreset(options.preset, {
-              ...(prompt.length === 0 ? {} : { prompt }),
-              verifierNames: verifierCommands.map((command) => command.name)
-            });
+          : await resolveConfiguredLocalAgentPreset(
+              options.preset,
+              {
+                ...(prompt.length === 0 ? {} : { prompt }),
+                verifierNames: verifierCommands.map((command) => command.name)
+              },
+              {
+                ...(options.cwd === undefined ? {} : { cwd: options.cwd })
+              }
+            );
+
+      if (
+        verifierCommands.length === 0 &&
+        resolvedPreset?.verifierCommands !== undefined
+      ) {
+        verifierCommands = resolvedPreset.verifierCommands;
+        resolvedPreset = await resolveConfiguredLocalAgentPreset(
+          resolvedPreset.preset.id,
+          {
+            ...(prompt.length === 0 ? {} : { prompt }),
+            verifierNames: verifierCommands.map((command) => command.name)
+          },
+          {
+            ...(options.cwd === undefined ? {} : { cwd: options.cwd })
+          }
+        );
+      }
 
       if (resolvedPreset === undefined && prompt.length === 0) {
         throw new Error("agent run prompt is required unless --preset is set");
       }
 
+      const model = options.model ?? resolvedPreset?.model;
       const created = await createLocalAgentTask({
         ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
         prompt: resolvedPreset?.prompt ?? prompt,
@@ -2836,7 +2862,7 @@ function addAgentCommand(command: Command): void {
               checkpoint: resolvedPreset.preset.checkpoint
             }),
         worker,
-        ...(options.model === undefined ? {} : { model: options.model }),
+        ...(model === undefined ? {} : { model }),
         mode:
           resolvedPreset === undefined
             ? parseLocalAgentMode(options.mode)
@@ -2922,19 +2948,25 @@ function addAgentCommand(command: Command): void {
         localAgentRunExitCode,
         runLocalAgentTask
       } = await import("./local-agent.js");
-      const { resolveLocalAgentPreset } = await import("./local-agent-presets.js");
-      const focus = focusParts.join(" ").trim();
-      const resolvedPreset = resolveLocalAgentPreset(
-        localAgentInspectPresetId(options.depth),
-        focus.length === 0 ? {} : { prompt: focus }
+      const { resolveConfiguredLocalAgentPreset } = await import(
+        "./local-agent-presets.js"
       );
+      const focus = focusParts.join(" ").trim();
+      const resolvedPreset = await resolveConfiguredLocalAgentPreset(
+        localAgentInspectPresetId(options.depth),
+        focus.length === 0 ? {} : { prompt: focus },
+        {
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd })
+        }
+      );
+      const model = options.model ?? resolvedPreset.model;
       const created = await createLocalAgentTask({
         ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
         prompt: resolvedPreset.prompt,
         preset: resolvedPreset.preset.id,
         title: `Local agent ${resolvedPreset.preset.id}`,
         worker,
-        ...(options.model === undefined ? {} : { model: options.model }),
+        ...(model === undefined ? {} : { model }),
         mode: resolvedPreset.preset.mode,
         checkpoint: resolvedPreset.preset.checkpoint,
         ...(options.maxTurns === undefined
@@ -3009,25 +3041,34 @@ function addAgentCommand(command: Command): void {
         localAgentRunExitCode,
         runLocalAgentTask
       } = await import("./local-agent.js");
-      const { resolveLocalAgentPreset } = await import("./local-agent-presets.js");
+      const { resolveConfiguredLocalAgentPreset } = await import(
+        "./local-agent-presets.js"
+      );
       const focus = focusParts.join(" ").trim();
       const scope = options.staged === true ? "staged" : "unstaged";
-      const resolvedPreset = resolveLocalAgentPreset("review:diff", {
-        prompt: [
-          `Review the ${scope} git diff only.`,
-          options.staged === true
-            ? "When calling git_diff, pass staged=true."
-            : "When calling git_diff, leave staged unset or false.",
-          ...(focus.length === 0 ? [] : [focus])
-        ].join("\n")
-      });
+      const resolvedPreset = await resolveConfiguredLocalAgentPreset(
+        options.staged === true ? "review:staged" : "review:diff",
+        {
+          prompt: [
+            `Review the ${scope} git diff only.`,
+            options.staged === true
+              ? "When calling git_diff, pass staged=true."
+              : "When calling git_diff, leave staged unset or false.",
+            ...(focus.length === 0 ? [] : [focus])
+          ].join("\n")
+        },
+        {
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd })
+        }
+      );
+      const model = options.model ?? resolvedPreset.model;
       const created = await createLocalAgentTask({
         ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
         prompt: resolvedPreset.prompt,
         preset: resolvedPreset.preset.id,
         title: `Local agent review ${scope} diff`,
         worker,
-        ...(options.model === undefined ? {} : { model: options.model }),
+        ...(model === undefined ? {} : { model }),
         mode: resolvedPreset.preset.mode,
         checkpoint: resolvedPreset.preset.checkpoint,
         gitDiffStaged: options.staged === true,
@@ -3089,12 +3130,12 @@ function addAgentCommand(command: Command): void {
     )
     .option("--actor <id>", "RBAC subject for local agent execution", "local-admin")
     .action(async (focusParts: string[], options: AgentTestCliOptions) => {
-      const verifierCommands = await resolveVerifierCommandOptions(
+      let verifierCommands = await resolveVerifierCommandOptions(
         options.verifier,
         "agent test",
         {
           ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-          required: true
+          required: false
         }
       );
 
@@ -3118,19 +3159,51 @@ function addAgentCommand(command: Command): void {
         localAgentRunExitCode,
         runLocalAgentTask
       } = await import("./local-agent.js");
-      const { resolveLocalAgentPreset } = await import("./local-agent-presets.js");
+      const { resolveConfiguredLocalAgentPreset } = await import(
+        "./local-agent-presets.js"
+      );
       const focus = focusParts.join(" ").trim();
-      const resolvedPreset = resolveLocalAgentPreset("test:triage", {
-        ...(focus.length === 0 ? {} : { prompt: focus }),
-        verifierNames: verifierCommands.map((command) => command.name)
-      });
+      let resolvedPreset = await resolveConfiguredLocalAgentPreset(
+        "test:triage",
+        {
+          ...(focus.length === 0 ? {} : { prompt: focus }),
+          verifierNames: verifierCommands.map((command) => command.name)
+        },
+        {
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd })
+        }
+      );
+
+      if (
+        verifierCommands.length === 0 &&
+        resolvedPreset.verifierCommands !== undefined
+      ) {
+        verifierCommands = resolvedPreset.verifierCommands;
+        resolvedPreset = await resolveConfiguredLocalAgentPreset(
+          "test:triage",
+          {
+            ...(focus.length === 0 ? {} : { prompt: focus }),
+            verifierNames: verifierCommands.map((command) => command.name)
+          },
+          {
+            ...(options.cwd === undefined ? {} : { cwd: options.cwd })
+          }
+        );
+      }
+
+      if (verifierCommands.length === 0) {
+        throw new Error(
+          "agent test requires at least one --verifier name=command, --verifier auto, or preset verifier"
+        );
+      }
+      const model = options.model ?? resolvedPreset.model;
       const created = await createLocalAgentTask({
         ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
         prompt: resolvedPreset.prompt,
         preset: resolvedPreset.preset.id,
         title: "Local agent test triage",
         worker,
-        ...(options.model === undefined ? {} : { model: options.model }),
+        ...(model === undefined ? {} : { model }),
         mode: resolvedPreset.preset.mode,
         checkpoint: resolvedPreset.preset.checkpoint,
         verifierCommands,
@@ -3304,12 +3377,12 @@ async function runAgentFixLikeCommand(input: {
   verifierFirst: boolean;
   options: AgentFixCliOptions;
 }): Promise<void> {
-  const verifierCommands = await resolveVerifierCommandOptions(
+  let verifierCommands = await resolveVerifierCommandOptions(
     input.options.verifier,
     `agent ${input.presetId === "fix:small" ? "fix" : "repair-test"}`,
     {
       ...(input.options.cwd === undefined ? {} : { cwd: input.options.cwd }),
-      required: true
+      required: false
     }
   );
 
@@ -3337,18 +3410,50 @@ async function runAgentFixLikeCommand(input: {
     localAgentRunExitCode,
     runLocalAgentTask
   } = await import("./local-agent.js");
-  const { resolveLocalAgentPreset } = await import("./local-agent-presets.js");
-  const resolvedPreset = resolveLocalAgentPreset(input.presetId, {
-    ...(input.prompt.length === 0 ? {} : { prompt: input.prompt }),
-    verifierNames: verifierCommands.map((command) => command.name)
-  });
+  const { resolveConfiguredLocalAgentPreset } = await import(
+    "./local-agent-presets.js"
+  );
+  let resolvedPreset = await resolveConfiguredLocalAgentPreset(
+    input.presetId,
+    {
+      ...(input.prompt.length === 0 ? {} : { prompt: input.prompt }),
+      verifierNames: verifierCommands.map((command) => command.name)
+    },
+    {
+      ...(input.options.cwd === undefined ? {} : { cwd: input.options.cwd })
+    }
+  );
+
+  if (
+    verifierCommands.length === 0 &&
+    resolvedPreset.verifierCommands !== undefined
+  ) {
+    verifierCommands = resolvedPreset.verifierCommands;
+    resolvedPreset = await resolveConfiguredLocalAgentPreset(
+      input.presetId,
+      {
+        ...(input.prompt.length === 0 ? {} : { prompt: input.prompt }),
+        verifierNames: verifierCommands.map((command) => command.name)
+      },
+      {
+        ...(input.options.cwd === undefined ? {} : { cwd: input.options.cwd })
+      }
+    );
+  }
+
+  if (verifierCommands.length === 0) {
+    throw new Error(
+      `agent ${input.presetId === "fix:small" ? "fix" : "repair-test"} requires at least one --verifier name=command, --verifier auto, or preset verifier`
+    );
+  }
+  const model = input.options.model ?? resolvedPreset.model;
   const created = await createLocalAgentTask({
     ...(input.options.cwd === undefined ? {} : { cwd: input.options.cwd }),
     prompt: resolvedPreset.prompt,
     preset: resolvedPreset.preset.id,
     title: input.title,
     worker,
-    ...(input.options.model === undefined ? {} : { model: input.options.model }),
+    ...(model === undefined ? {} : { model }),
     mode: resolvedPreset.preset.mode,
     checkpoint: resolvedPreset.preset.checkpoint,
     allowedPaths: input.options.allowed,
