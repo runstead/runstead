@@ -2603,6 +2603,12 @@ interface AgentReportCliOptions {
   markdown?: boolean;
 }
 
+interface AgentUndoCliOptions {
+  cwd?: string;
+  actor: string;
+  allowHeadMismatch?: boolean;
+}
+
 function addCodexCommand(command: Command): void {
   command
     .command("login")
@@ -3384,6 +3390,37 @@ function addAgentCommand(command: Command): void {
       if (exitCode !== 0) {
         process.exitCode = exitCode;
       }
+    });
+
+  command
+    .command("undo")
+    .description("Restore the checkpoint created before a local agent edit or repair.")
+    .argument("<task-id>", "Local agent task id")
+    .option("--cwd <path>", "Workspace directory")
+    .option(
+      "--allow-head-mismatch",
+      "Restore even when the current HEAD differs from the checkpoint HEAD"
+    )
+    .option("--actor <id>", "RBAC subject for local agent undo", "local-admin")
+    .action(async (taskId: string, options: AgentUndoCliOptions) => {
+      await requireRbacPermission({
+        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+        actor: options.actor,
+        permission: "repo.manage",
+        action: "undo local agent tasks"
+      });
+
+      const { formatLocalAgentUndoReport, undoLocalAgentTask } = await import(
+        "./local-agent.js"
+      );
+      const result = await undoLocalAgentTask({
+        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+        taskId,
+        actor: options.actor,
+        allowHeadMismatch: options.allowHeadMismatch === true
+      });
+
+      console.log(formatLocalAgentUndoReport(result));
     });
 }
 

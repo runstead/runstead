@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -17,11 +17,13 @@ import {
   formatLocalAgentTaskReportJson,
   formatLocalAgentTaskReportMarkdown,
   formatLocalAgentTaskReport,
+  formatLocalAgentUndoReport,
   isLocalAgentTask,
   LOCAL_AGENT_TASK_TYPE,
   loadLocalAgentTaskReport,
   localAgentRunExitCode,
-  runLocalAgentTask
+  runLocalAgentTask,
+  undoLocalAgentTask
 } from "./local-agent.js";
 import { showTask } from "./tasks.js";
 import { showGoal } from "./goals.js";
@@ -488,6 +490,90 @@ describe("local agent task primitives", () => {
             count: 1
           }
         ])
+      );
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("undoes a local agent task through its recorded checkpoint", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-local-agent-undo-"));
+    const checkpointId = "chk_agent_undo_test";
+
+    try {
+      const initialized = await initRunstead({
+        cwd: workspace,
+        profile: "trusted-local"
+      });
+      const created = await createLocalAgentTask({
+        cwd: workspace,
+        prompt: "Update the README.",
+        worker: "codex_direct",
+        model: "gpt-5.3-codex",
+        mode: "edit"
+      });
+      const checkpointDir = join(workspace, ".runstead", "checkpoints");
+      const checkpoint = {
+        id: checkpointId,
+        workspace,
+        checkpointDir,
+        metadataPath: join(checkpointDir, `${checkpointId}.json`),
+        statusPath: join(checkpointDir, `${checkpointId}.status.txt`),
+        patchPath: join(checkpointDir, `${checkpointId}.patch`),
+        untrackedDir: join(checkpointDir, `${checkpointId}.untracked`),
+        untrackedFiles: [],
+        head: "abc123",
+        createdAt: "2026-05-16T08:00:00.000Z"
+      };
+
+      await mkdir(checkpoint.untrackedDir, { recursive: true });
+      await writeFile(checkpoint.metadataPath, `${JSON.stringify(checkpoint)}\n`, "utf8");
+      await writeFile(checkpoint.statusPath, "", "utf8");
+      await writeFile(checkpoint.patchPath, "", "utf8");
+      const database = openRunsteadDatabase(initialized.stateDb);
+
+      try {
+        database
+          .prepare("UPDATE tasks SET status = ?, output_json = ? WHERE id = ?")
+          .run(
+            "completed",
+            JSON.stringify({
+              summary: "Updated README.",
+              checkpointId
+            }),
+            created.task.id
+          );
+      } finally {
+        database.close();
+      }
+
+      const result = await undoLocalAgentTask({
+        cwd: workspace,
+        taskId: created.task.id,
+        runner: (args) => {
+          switch (args[0]) {
+            case "rev-parse":
+              return Promise.resolve({ stdout: "abc123\n", stderr: "", exitCode: 0 });
+            case "reset":
+              return Promise.resolve({ stdout: "reset", stderr: "", exitCode: 0 });
+            case "ls-files":
+              return Promise.resolve({ stdout: "", stderr: "", exitCode: 0 });
+            default:
+              return Promise.resolve({ stdout: "", stderr: "unexpected", exitCode: 1 });
+          }
+        },
+        actor: "local-admin",
+        now: new Date("2026-05-16T08:05:00.000Z")
+      });
+
+      expect(result.checkpointId).toBe(checkpointId);
+      expect(result.restore).toMatchObject({
+        restoredTrackedPatch: false,
+        currentHead: "abc123"
+      });
+      expect(formatLocalAgentUndoReport(result)).toContain("Runstead agent undo");
+      expect(formatLocalAgentUndoReport(result)).toContain(
+        `Checkpoint: ${checkpointId}`
       );
     } finally {
       await rm(workspace, { force: true, recursive: true });

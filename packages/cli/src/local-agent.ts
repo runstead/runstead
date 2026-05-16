@@ -19,6 +19,10 @@ import type { CiRepairWorkerKind } from "./ci-repair-orchestrator.js";
 import {
   createWorkspaceCheckpoint,
   recordWorkspaceCheckpointCreatedEvent,
+  recordWorkspaceCheckpointRestoreEvent,
+  restoreWorkspaceCheckpoint,
+  type GitCheckpointRunner,
+  type RestoreWorkspaceCheckpointResult,
   type WorkspaceCheckpoint
 } from "./checkpoints.js";
 import {
@@ -91,6 +95,21 @@ export interface RunLocalAgentTaskOptions {
   taskId: string;
   transport?: CodexDirectTransport;
   now?: Date;
+}
+
+export interface UndoLocalAgentTaskOptions {
+  cwd?: string;
+  taskId: string;
+  actor?: string;
+  allowHeadMismatch?: boolean;
+  runner?: GitCheckpointRunner;
+  now?: Date;
+}
+
+export interface UndoLocalAgentTaskResult {
+  task: Task;
+  checkpointId: string;
+  restore: RestoreWorkspaceCheckpointResult;
 }
 
 export interface RunLocalAgentTaskResult {
@@ -539,6 +558,46 @@ export async function loadLocalAgentTaskReport(options: {
   }
 }
 
+export async function undoLocalAgentTask(
+  options: UndoLocalAgentTaskOptions
+): Promise<UndoLocalAgentTaskResult> {
+  const cwd = resolve(options.cwd ?? process.cwd());
+  const root = await requireRunsteadRoot(cwd);
+  const state = await requireRunsteadStateDb(cwd);
+  const task = showTask({ cwd, id: options.taskId }).task;
+
+  if (!isLocalAgentTask(task)) {
+    throw new Error(`Task ${options.taskId} is not a local agent task`);
+  }
+
+  const checkpointId = localAgentTaskCheckpointId(task);
+
+  if (checkpointId === undefined) {
+    throw new Error(`Task ${options.taskId} does not have a checkpoint to undo`);
+  }
+
+  const restore = await restoreWorkspaceCheckpoint({
+    workspace: cwd,
+    checkpointDir: join(root.root, "checkpoints"),
+    checkpointId,
+    allowHeadMismatch: options.allowHeadMismatch === true,
+    ...(options.runner === undefined ? {} : { runner: options.runner })
+  });
+
+  recordWorkspaceCheckpointRestoreEvent({
+    stateDb: state.stateDb,
+    result: restore,
+    actor: options.actor ?? "local-admin",
+    ...(options.now === undefined ? {} : { now: options.now })
+  });
+
+  return {
+    task,
+    checkpointId,
+    restore
+  };
+}
+
 export function formatLocalAgentRunReport(result: RunLocalAgentTaskResult): string {
   return [
     "Runstead agent run",
@@ -569,6 +628,18 @@ export function formatLocalAgentRunReport(result: RunLocalAgentTaskResult): stri
     ...formatLocalAgentDiagnostics(diagnoseLocalAgentRun(result)),
     `Summary: ${result.summary}`,
     ...formatLocalAgentAuditSummary(result.audit)
+  ].join("\n");
+}
+
+export function formatLocalAgentUndoReport(result: UndoLocalAgentTaskResult): string {
+  return [
+    "Runstead agent undo",
+    `Task: ${result.task.id}`,
+    `Checkpoint: ${result.checkpointId}`,
+    `HEAD: ${result.restore.currentHead ?? "unknown"} -> ${result.restore.checkpoint.head ?? "unknown"}`,
+    `Tracked patch restored: ${result.restore.restoredTrackedPatch ? "yes" : "no"}`,
+    `Untracked files restored: ${result.restore.restoredUntrackedFiles.length}`,
+    `Untracked files removed: ${result.restore.removedUntrackedFiles.length}`
   ].join("\n");
 }
 
@@ -1367,6 +1438,14 @@ function localAgentTaskModel(task: Task): string | undefined {
 
   return typeof model === "string" && model.trim().length > 0
     ? model.trim()
+    : undefined;
+}
+
+function localAgentTaskCheckpointId(task: Task): string | undefined {
+  const checkpointId = task.output?.checkpointId;
+
+  return typeof checkpointId === "string" && checkpointId.trim().length > 0
+    ? checkpointId.trim()
     : undefined;
 }
 

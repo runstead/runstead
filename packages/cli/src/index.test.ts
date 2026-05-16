@@ -126,6 +126,7 @@ describe("cli entrypoint", () => {
     );
     const report = agent?.commands.find((command) => command.name() === "report");
     const resume = agent?.commands.find((command) => command.name() === "resume");
+    const undo = agent?.commands.find((command) => command.name() === "undo");
 
     expect(agent?.commands.map((command) => command.name())).toEqual(
       expect.arrayContaining([
@@ -136,7 +137,8 @@ describe("cli entrypoint", () => {
         "fix",
         "repair-test",
         "report",
-        "resume"
+        "resume",
+        "undo"
       ])
     );
     expect(run?.options.map((option) => option.long)).toEqual(
@@ -211,6 +213,9 @@ describe("cli entrypoint", () => {
     );
     expect(resume?.options.map((option) => option.long)).toEqual(
       expect.arrayContaining(["--cwd", "--actor"])
+    );
+    expect(undo?.options.map((option) => option.long)).toEqual(
+      expect.arrayContaining(["--cwd", "--allow-head-mismatch", "--actor"])
     );
   });
 
