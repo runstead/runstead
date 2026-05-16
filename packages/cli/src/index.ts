@@ -156,10 +156,25 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     .command("doctor")
     .description("Check local Runstead state and scaffold health.")
     .option("--cwd <path>", "Workspace directory")
-    .option("--codex", "Check Codex Direct local-agent readiness")
-    .action(async (options: { cwd?: string; codex?: boolean }) => {
+    .option("--codex", "Check Codex local-agent readiness")
+    .option("--worker <worker>", "Codex worker to check: codex_direct or codex_cli")
+    .option("--model <model>", "Model to use for codex_cli probe")
+    .action(
+      async (options: {
+        cwd?: string;
+        codex?: boolean;
+        worker?: string;
+        model?: string;
+      }) => {
       const { doctorRunstead } = await import("./doctor.js");
-      const result = await doctorRunstead(options);
+      const worker =
+        options.worker === undefined ? undefined : parseDoctorCodexWorker(options.worker);
+      const result = await doctorRunstead({
+        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+        ...(options.codex === undefined ? {} : { codex: options.codex }),
+        ...(worker === undefined ? {} : { worker }),
+        ...(options.model === undefined ? {} : { model: options.model })
+      });
 
       console.log(`Runstead doctor for ${result.root}`);
 
@@ -170,7 +185,8 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
       if (!result.ok) {
         process.exitCode = 1;
       }
-    });
+      }
+    );
 
   program
     .command("upgrade")
@@ -3753,6 +3769,14 @@ function parseCiRepairWorkerKind(
   }
 
   throw new Error("--worker must be codex_cli, claude_code, or codex_direct");
+}
+
+function parseDoctorCodexWorker(value: string): "codex_direct" | "codex_cli" {
+  if (value === "codex_direct" || value === "codex_cli") {
+    return value;
+  }
+
+  throw new Error("--worker must be codex_direct or codex_cli for doctor --codex");
 }
 
 function parseLocalAgentMode(value: string): "read-only" | "edit" | "repair" {

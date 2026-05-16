@@ -44,7 +44,9 @@ describe("cli entrypoint", () => {
       (command) => command.name() === "doctor"
     );
 
-    expect(doctor?.options.map((option) => option.long)).toContain("--codex");
+    expect(doctor?.options.map((option) => option.long)).toEqual(
+      expect.arrayContaining(["--codex", "--worker", "--model"])
+    );
   });
 
   it("exposes domain pack manifest generation", () => {

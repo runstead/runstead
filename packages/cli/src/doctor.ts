@@ -14,6 +14,11 @@ import { loadPolicyProfileFromFile } from "./policy-loader.js";
 import { evaluatePolicy } from "./policy.js";
 import { resolveRunsteadRoot } from "./runstead-root.js";
 import { missingRequiredStateTables } from "./state-schema.js";
+import {
+  runWorkerProcess,
+  workerCommand,
+  type WorkerProcessRunner
+} from "./wrapped-worker.js";
 
 export type DoctorCheckStatus = "pass" | "fail";
 
@@ -33,10 +38,13 @@ export interface DoctorResult {
 export interface DoctorRunsteadOptions {
   cwd?: string;
   codex?: boolean;
+  worker?: "codex_direct" | "codex_cli";
+  model?: string;
   codexAuthStatus?: () => Promise<
     Pick<CodexAuthStatus, "loggedIn" | "accessTokenExpired" | "authPath">
   >;
   codexModelResolver?: (options: { cwd?: string }) => Promise<ResolveCodexModelResult>;
+  codexCliProbeRunner?: WorkerProcessRunner;
   modelProviderEnv?: NodeJS.ProcessEnv;
 }
 
@@ -96,34 +104,50 @@ export async function doctorRunstead(
   checks.push(await checkStateDatabase(join(root, "state.db")));
 
   if (options.codex === true) {
-    const modelProvider = await checkModelProviderSelection(
-      cwd,
-      options.codexModelResolver,
-      options.modelProviderEnv
-    );
-
     checks.push(checkRunsteadInitialized(resolvedRoot));
-    checks.push(
-      await checkTrustedLocalCodexPolicy(
-        root,
-        modelProvider.selection === undefined
-          ? "chatgpt_codex"
-          : modelProviderResourceId(modelProvider.selection)
-      )
-    );
-    checks.push(await checkCodexDirectPolicy(root));
-    checks.push(modelProvider.check);
-    if (modelProvider.selection?.profile.apiMode === "codex_responses") {
-      checks.push(await checkCodexDirectAuth(options.codexAuthStatus));
-      checks.push(await checkCodexDefaultModel(cwd, options.codexModelResolver));
-    } else if (modelProvider.selection !== undefined) {
+
+    if ((options.worker ?? "codex_direct") === "codex_cli") {
+      checks.push(await checkCodexCliPolicy(root));
       checks.push(
-        checkModelProviderCredentials(
-          modelProvider.selection,
-          options.modelProviderEnv ?? process.env
+        await checkCodexCliBinary(cwd, options.codexCliProbeRunner ?? runWorkerProcess)
+      );
+      checks.push(
+        await checkCodexCliExecProbe({
+          cwd,
+          ...(options.model === undefined ? {} : { model: options.model }),
+          runner: options.codexCliProbeRunner ?? runWorkerProcess
+        })
+      );
+    } else {
+      const modelProvider = await checkModelProviderSelection(
+        cwd,
+        options.codexModelResolver,
+        options.modelProviderEnv
+      );
+
+      checks.push(
+        await checkTrustedLocalCodexPolicy(
+          root,
+          modelProvider.selection === undefined
+            ? "chatgpt_codex"
+            : modelProviderResourceId(modelProvider.selection)
         )
       );
+      checks.push(await checkCodexDirectPolicy(root));
+      checks.push(modelProvider.check);
+      if (modelProvider.selection?.profile.apiMode === "codex_responses") {
+        checks.push(await checkCodexDirectAuth(options.codexAuthStatus));
+        checks.push(await checkCodexDefaultModel(cwd, options.codexModelResolver));
+      } else if (modelProvider.selection !== undefined) {
+        checks.push(
+          checkModelProviderCredentials(
+            modelProvider.selection,
+            options.modelProviderEnv ?? process.env
+          )
+        );
+      }
     }
+
     checks.push(await checkRuntimeArtifactsIgnored(root));
   }
 
@@ -219,6 +243,130 @@ async function checkCodexDirectPolicy(root: string): Promise<DoctorCheck> {
         );
   } catch (error) {
     return fail("codex-direct-policy", "codex_direct policy", errorMessage(error));
+  }
+}
+
+async function checkCodexCliPolicy(root: string): Promise<DoctorCheck> {
+  try {
+    const policy = await loadPolicyProfileFromFile(
+      join(root, "policies", "repo-maintenance.yaml")
+    );
+    const decision = evaluatePolicy({
+      policy,
+      action: codexCliWorkerAction()
+    });
+
+    return decision.decision === "allow"
+      ? pass(
+          "codex-cli-policy",
+          "codex_cli policy",
+          decision.ruleId ?? "default allow"
+        )
+      : fail(
+          "codex-cli-policy",
+          "codex_cli policy",
+          `decision=${decision.decision}; codex_cli local agent runs require trusted external worker policy`
+        );
+  } catch (error) {
+    return fail("codex-cli-policy", "codex_cli policy", errorMessage(error));
+  }
+}
+
+async function checkCodexCliBinary(
+  cwd: string,
+  runner: WorkerProcessRunner
+): Promise<DoctorCheck> {
+  try {
+    const result = await runner("codex", ["--version"], {
+      cwd,
+      timeoutMs: 10_000,
+      maxOutputBytes: 20_000
+    });
+    const output = `${result.stdout}${result.stderr}`.trim();
+
+    return result.exitCode === 0
+      ? pass("codex-cli-binary", "Codex CLI binary", output || "codex found")
+      : fail(
+          "codex-cli-binary",
+          "Codex CLI binary",
+          `codex --version exited ${result.exitCode}: ${output}`
+        );
+  } catch (error) {
+    return fail("codex-cli-binary", "Codex CLI binary", errorMessage(error));
+  }
+}
+
+async function checkCodexCliExecProbe(options: {
+  cwd: string;
+  model?: string;
+  runner: WorkerProcessRunner;
+}): Promise<DoctorCheck> {
+  const prompt =
+    'Return exactly this JSON and nothing else: {"runstead_codex_cli_probe":true}';
+  const command = workerCommand("codex_cli", prompt, {
+    workspace: options.cwd,
+    ...(options.model === undefined ? {} : { model: options.model })
+  });
+
+  try {
+    const result = await options.runner(command.command, command.args, {
+      cwd: options.cwd,
+      timeoutMs: 120_000,
+      maxOutputBytes: 120_000
+    });
+    const stdout = result.stdout.trim();
+    const stderr = result.stderr.trim();
+    const authHint = codexCliAuthHint(stderr);
+
+    if (result.exitCode !== 0) {
+      return fail(
+        "codex-cli-exec",
+        "Codex CLI exec probe",
+        [
+          `codex exec exited ${result.exitCode}`,
+          ...(stdout.length === 0 ? [] : [`stdout=${truncateDoctorMessage(stdout)}`]),
+          ...(stderr.length === 0 ? [] : [`stderr=${truncateDoctorMessage(stderr)}`]),
+          authHint
+        ]
+          .filter((line): line is string => line !== undefined)
+          .join("; ")
+      );
+    }
+
+    if (!stdout.includes('"runstead_codex_cli_probe":true')) {
+      return fail(
+        "codex-cli-exec",
+        "Codex CLI exec probe",
+        [
+          "codex exec completed but did not return the expected probe JSON",
+          ...(stdout.length === 0
+            ? ["stdout was empty"]
+            : [`stdout=${truncateDoctorMessage(stdout)}`]),
+          ...(stderr.length === 0 ? [] : [`stderr=${truncateDoctorMessage(stderr)}`]),
+          authHint
+        ]
+          .filter((line): line is string => line !== undefined)
+          .join("; ")
+      );
+    }
+
+    return pass(
+      "codex-cli-exec",
+      "Codex CLI exec probe",
+      [
+        `ok${
+          options.model === undefined
+            ? " using Codex CLI default model"
+            : ` using model=${options.model}`
+        }`,
+        ...(stderr.length === 0 ? [] : [`stderr=${truncateDoctorMessage(stderr)}`]),
+        authHint
+      ]
+        .filter((line): line is string => line !== undefined)
+        .join("; ")
+    );
+  } catch (error) {
+    return fail("codex-cli-exec", "Codex CLI exec probe", errorMessage(error));
   }
 }
 
@@ -397,6 +545,17 @@ function codexDirectWorkerAction() {
   };
 }
 
+function codexCliWorkerAction() {
+  return {
+    actionId: "doctor_codex_cli_worker",
+    actionType: "worker.external.start",
+    resource: {
+      type: "process",
+      id: "codex_cli"
+    }
+  };
+}
+
 function codexModelInferenceAction(resourceId = "chatgpt_codex") {
   return {
     actionId: "doctor_codex_model_inference",
@@ -409,6 +568,20 @@ function codexModelInferenceAction(resourceId = "chatgpt_codex") {
       sideEffects: ["network_write_external", "llm_data_egress"]
     }
   };
+}
+
+function codexCliAuthHint(stderr: string): string | undefined {
+  const normalized = stderr.toLowerCase();
+
+  return normalized.includes("invalid_token") ||
+    normalized.includes("authrequired") ||
+    normalized.includes("not authorized")
+    ? "Codex CLI reported a local CLI/MCP auth problem; this is separate from Runstead Codex Direct login"
+    : undefined;
+}
+
+function truncateDoctorMessage(value: string, maxLength = 500): string {
+  return value.length <= maxLength ? value : `${value.slice(0, maxLength)}...`;
 }
 
 function modelProviderResourceId(selection: ResolvedModelProvider): string {

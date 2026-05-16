@@ -316,6 +316,111 @@ describe("doctorRunstead", () => {
     }
   });
 
+  it("checks codex_cli readiness without requiring Runstead Codex Direct login", async () => {
+    const workspace = join(tmpdir(), `runstead-doctor-codex-cli-${process.pid}`);
+    const calls: { command: string; args: string[] }[] = [];
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await mkdir(workspace, { recursive: true });
+      await initRunstead({ cwd: workspace, profile: "trusted-local" });
+
+      const result = await doctorRunstead({
+        cwd: workspace,
+        codex: true,
+        worker: "codex_cli",
+        model: "gpt-5.5",
+        codexAuthStatus: () => {
+          throw new Error("Runstead Codex Direct auth should not be checked");
+        },
+        codexCliProbeRunner(command, args) {
+          calls.push({ command, args });
+
+          if (args[0] === "--version") {
+            return Promise.resolve({
+              stdout: "codex-cli 0.130.0\n",
+              stderr: "",
+              exitCode: 0
+            });
+          }
+
+          return Promise.resolve({
+            stdout: '{"runstead_codex_cli_probe":true}\n',
+            stderr: "",
+            exitCode: 0
+          });
+        }
+      });
+
+      expect(result.ok).toBe(true);
+      expect(result.checks.map((check) => check.id)).toEqual(
+        expect.arrayContaining([
+          "codex-cli-policy",
+          "codex-cli-binary",
+          "codex-cli-exec",
+          "runtime-artifacts-ignore"
+        ])
+      );
+      expect(result.checks.map((check) => check.id)).not.toContain("codex-auth");
+      expect(result.checks.map((check) => check.id)).not.toContain(
+        "codex-default-model"
+      );
+      expect(calls[1]?.args).toEqual([
+        "exec",
+        "--model",
+        "gpt-5.5",
+        "--sandbox",
+        "workspace-write",
+        "--cd",
+        workspace,
+        expect.stringContaining("runstead_codex_cli_probe")
+      ]);
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("diagnoses Codex CLI auth failures as local CLI profile problems", async () => {
+    const workspace = join(tmpdir(), `runstead-doctor-codex-cli-auth-${process.pid}`);
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await mkdir(workspace, { recursive: true });
+      await initRunstead({ cwd: workspace, profile: "trusted-local" });
+
+      const result = await doctorRunstead({
+        cwd: workspace,
+        codex: true,
+        worker: "codex_cli",
+        codexCliProbeRunner(_command, args) {
+          if (args[0] === "--version") {
+            return Promise.resolve({
+              stdout: "codex-cli 0.130.0\n",
+              stderr: "",
+              exitCode: 0
+            });
+          }
+
+          return Promise.resolve({
+            stdout: "",
+            stderr: "AuthRequired: Bearer error=\"invalid_token\" not authorized",
+            exitCode: 1
+          });
+        }
+      });
+      const execCheck = result.checks.find((check) => check.id === "codex-cli-exec");
+
+      expect(result.ok).toBe(false);
+      expect(execCheck).toMatchObject({
+        status: "fail"
+      });
+      expect(execCheck?.message).toContain("local CLI/MCP auth problem");
+      expect(execCheck?.message).toContain("separate from Runstead Codex Direct login");
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
   it("checks configured non-Codex model provider readiness without Codex login", async () => {
     const workspace = join(tmpdir(), `runstead-doctor-provider-${process.pid}`);
 
