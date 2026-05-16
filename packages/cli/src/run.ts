@@ -13,6 +13,14 @@ import {
 } from "./ci-repair-orchestrator.js";
 import type { CodexDirectTransport } from "./codex-direct-worker.js";
 import type { GitHubCliRunner } from "./github-actions.js";
+import {
+  formatLocalAgentRunReport,
+  isLocalAgentTask,
+  LOCAL_AGENT_TASK_TYPE,
+  localAgentRunExitCode,
+  runLocalAgentTask,
+  type RunLocalAgentTaskResult
+} from "./local-agent.js";
 import { withRunsteadManagerLock } from "./manager-lock.js";
 import { blockTask, listTasks } from "./tasks.js";
 import {
@@ -24,6 +32,7 @@ import type { WorkerProcessRunner } from "./wrapped-worker.js";
 
 const RUN_ONCE_SUPPORTED_TASK_TYPES = [
   "run_local_verifiers",
+  LOCAL_AGENT_TASK_TYPE,
   "ci_repair",
   "manual_review"
 ];
@@ -64,6 +73,7 @@ export interface RunOnceExecutedTaskResult {
   task: Task;
   commandResults?: RunTaskVerifierCommandResult[];
   ciRepairResult?: RunCiRepairOrchestratorResult;
+  localAgentResult?: RunLocalAgentTaskResult;
 }
 
 export async function runOnce(options: RunOnceOptions = {}): Promise<RunOnceResult> {
@@ -89,6 +99,24 @@ export async function runOnceUnlocked(
       ranTask: true,
       task: result.task,
       commandResults: result.commandResults
+    };
+  }
+
+  if (task !== undefined && isLocalAgentTask(task)) {
+    const result = await runLocalAgentTask({
+      cwd,
+      taskId: task.id,
+      ...(options.codexDirectTransport === undefined
+        ? {}
+        : { transport: options.codexDirectTransport }),
+      ...(options.now === undefined ? {} : { now: options.now })
+    });
+
+    return {
+      cwd,
+      ranTask: true,
+      task: result.task,
+      localAgentResult: result
     };
   }
 
@@ -339,6 +367,13 @@ export function formatRunOnceReport(result: RunOnceResult): string {
     ].join("\n");
   }
 
+  if (result.localAgentResult !== undefined) {
+    return [
+      "Runstead run --once",
+      ...formatLocalAgentRunReport(result.localAgentResult).split("\n").slice(1)
+    ].join("\n");
+  }
+
   if (result.task.status === "blocked" && result.commandResults === undefined) {
     return [
       "Runstead run --once",
@@ -369,6 +404,10 @@ function taskOutputReason(task: Task): string | undefined {
 }
 
 export function runOnceExitCode(result: RunOnceResult): number {
+  if (result.ranTask && result.localAgentResult !== undefined) {
+    return localAgentRunExitCode(result.localAgentResult);
+  }
+
   return result.ranTask &&
     (result.task.status === "failed" ||
       result.task.status === "blocked" ||

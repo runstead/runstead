@@ -8,6 +8,7 @@ import { describe, expect, it } from "vitest";
 
 import { createGoal } from "./goals.js";
 import { initRunstead } from "./init.js";
+import { createLocalAgentTask, LOCAL_AGENT_TASK_TYPE } from "./local-agent.js";
 import { formatRunOnceReport, runOnce, runOnceExitCode } from "./run.js";
 import type { RunCiRepairOrchestratorResult } from "./ci-repair-orchestrator.js";
 
@@ -332,6 +333,60 @@ describe("runOnce", () => {
     }
   });
 
+  it("routes queued local agent tasks through codex direct", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-run-local-agent-"));
+    const requests: unknown[] = [];
+
+    try {
+      await initRunstead({ cwd: workspace, profile: "trusted-local" });
+      const created = await createLocalAgentTask({
+        cwd: workspace,
+        prompt: "Inspect package metadata.",
+        worker: "codex_direct",
+        model: "fake-codex",
+        mode: "read-only",
+        now: new Date("2026-05-14T08:00:00.000Z")
+      });
+
+      const result = await runOnce({
+        cwd: workspace,
+        codexDirectTransport: {
+          createResponse(request) {
+            requests.push(request);
+
+            return Promise.resolve({
+              id: "resp_run_once_agent",
+              status: "completed",
+              outputText: "Local agent completed.",
+              toolCalls: [],
+              finishReason: "stop",
+              outputItems: []
+            });
+          }
+        },
+        now: new Date("2026-05-14T08:02:00.000Z")
+      });
+
+      expect(result).toMatchObject({
+        ranTask: true,
+        task: {
+          id: created.task.id,
+          type: LOCAL_AGENT_TASK_TYPE,
+          status: "completed"
+        },
+        localAgentResult: {
+          status: "completed",
+          summary: "Local agent completed."
+        }
+      });
+      expect(requests).toHaveLength(1);
+      expect(formatRunOnceReport(result)).toContain("Worker: codex_direct");
+      expect(runOnceExitCode(result)).toBe(0);
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
   it("blocks queued task types that do not have a run route", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "runstead-run-unsupported-"));
 
@@ -374,7 +429,12 @@ describe("runOnce", () => {
           status: "blocked",
           output: {
             reason: "unsupported_task_type",
-            supportedTaskTypes: ["run_local_verifiers", "ci_repair", "manual_review"]
+            supportedTaskTypes: [
+              "run_local_verifiers",
+              LOCAL_AGENT_TASK_TYPE,
+              "ci_repair",
+              "manual_review"
+            ]
           }
         }
       });
