@@ -1,6 +1,6 @@
 # Codex Direct Worker
 
-`codex_direct` is the planned Runstead-native Codex worker. It is separate from
+`codex_direct` is the Runstead-native Codex worker. It is separate from
 the existing `codex_cli` wrapped worker:
 
 - `codex_cli` starts an external `codex exec` process. Runstead gates launch,
@@ -16,7 +16,7 @@ The boundary is intentional. `codex_direct` should not be added to
 ## Architecture
 
 ```text
-repair-ci / daemon
+agent run / repair-ci / run --once / daemon
   -> worker routing
     -> codex_cli
     -> codex_direct
@@ -72,13 +72,90 @@ result. It must not ask the model to work around the denied or pending action.
 Push, publish, and pull request creation stay with the orchestrator rather than
 being exposed to the model.
 
+## Local Agent Workflow
+
+Authenticate once into Runstead's Codex Direct auth store:
+
+```bash
+pnpm exec tsx packages/cli/src/index.ts codex login
+pnpm exec tsx packages/cli/src/index.ts codex models --refresh
+```
+
+Initialize the target repository with a local policy profile:
+
+```bash
+pnpm exec tsx packages/cli/src/index.ts init \
+  --cwd /path/to/target-repo \
+  --profile trusted-local
+```
+
+Run a read-only inspection task:
+
+```bash
+pnpm exec tsx packages/cli/src/index.ts agent run \
+  --cwd /path/to/target-repo \
+  --worker codex_direct \
+  --model <codex-model> \
+  "Inspect this repo and summarize the main test commands."
+```
+
+Run an edit task with verifier evidence:
+
+```bash
+pnpm exec tsx packages/cli/src/index.ts agent run \
+  --cwd /path/to/target-repo \
+  --worker codex_direct \
+  --model <codex-model> \
+  --mode edit \
+  --allowed "src/**" \
+  --verifier "test=pnpm test" \
+  "Make the requested small code change."
+```
+
+Edit and repair modes create a workspace checkpoint before model-controlled
+writes, then run configured verifiers after the Codex Direct worker completes.
+If policy requires approval, approve the pending request and resume the same
+task:
+
+```bash
+pnpm exec tsx packages/cli/src/index.ts approval list --cwd /path/to/target-repo
+pnpm exec tsx packages/cli/src/index.ts approval approve <approval-id> --cwd /path/to/target-repo
+pnpm exec tsx packages/cli/src/index.ts agent resume <task-id> --cwd /path/to/target-repo
+```
+
+Audit summaries are available without re-running the task:
+
+```bash
+pnpm exec tsx packages/cli/src/index.ts agent report <task-id> --cwd /path/to/target-repo
+```
+
+Runstead also routes queued `local_agent_task` records through `run --once`,
+so daemon ticks can consume locally scheduled agent work. Runtime artifacts
+under `.runstead/state.db`, `evidence/`, `logs/`, `checkpoints/`, `daemon/`,
+and `reports/` are ignored by `.runstead/.gitignore` and local Git
+`info/exclude` when possible.
+
 ## CI Repair Integration
 
-`repair-ci --worker codex_direct --model <model>` should reuse the existing CI
+`repair-ci --worker codex_direct --model <model>` reuses the existing CI
 repair stages: branch creation, checkpointing, diff-scope verification,
 verifiers, commit, and PR publication. The only changed stage is worker
 execution: `codex_direct` produces governed tool-call audit records while
 `codex_cli` remains the Level 1 external wrapper.
+
+## Optional Live Smoke
+
+Unit tests use fake transports by default. To run a real local smoke against the
+configured Codex Direct backend, opt in explicitly:
+
+```bash
+RUNSTEAD_LIVE_CODEX_DIRECT=1 \
+RUNSTEAD_LIVE_CODEX_MODEL=<codex-model> \
+pnpm --filter @runstead/cli test -- local-agent-live
+```
+
+The smoke creates a temporary target repo, runs a read-only local agent task,
+and leaves normal test runs offline.
 
 ## Post-MVP Considerations
 
