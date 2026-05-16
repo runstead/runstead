@@ -432,13 +432,24 @@ describe("local agent task primitives", () => {
         summary: "Inspected package metadata through Codex CLI.",
         worker: "codex_cli",
         model: "gpt-5.5",
+        modelSource: "runstead_model_option",
         status: "completed",
+        governance: {
+          boundary: "process_wrapper",
+          hardProxyToolCalls: false
+        },
         outputValidation: {
           valid: true
         }
       });
       expect(formatLocalAgentRunReport(result)).toContain("Worker: codex_cli");
       expect(formatLocalAgentRunReport(result)).toContain("Command: codex");
+      expect(formatLocalAgentRunReport(result)).toContain(
+        "Tool proxy: none (worker-internal tool calls are not hard-proxied)"
+      );
+      expect(formatLocalAgentRunReport(result)).toContain(
+        "Model source: runstead_model_option"
+      );
       expect(formatLocalAgentRunReport(result)).toContain("Output valid: yes");
       expect(localAgentRunExitCode(result)).toBe(0);
 
@@ -449,6 +460,10 @@ describe("local agent task primitives", () => {
 
       expect(formatLocalAgentTaskReport(report)).toContain("Worker: codex_cli");
       expect(formatLocalAgentTaskReport(report)).toContain("Model: gpt-5.5");
+      expect(formatLocalAgentTaskReport(report)).toContain("Worker runtime:");
+      expect(formatLocalAgentTaskReport(report)).toContain(
+        "hard-proxied tool calls: no"
+      );
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }

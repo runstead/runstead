@@ -775,11 +775,14 @@ function formatLocalAgentWorkerResultLines(
   return [
     `Worker: ${workerResult.worker}`,
     `Command: ${workerResult.command}`,
-    ...(wrappedWorkerModel(workerResult) === undefined
-      ? []
-      : [`Model: ${wrappedWorkerModel(workerResult)}`]),
+    `Mode: wrapped external worker`,
+    `Model: ${wrappedWorkerModel(workerResult) ?? "Codex CLI default"}`,
+    `Model source: ${wrappedWorkerModel(workerResult) === undefined ? "codex_cli_config" : "runstead_model_option"}`,
+    "Tool proxy: none (worker-internal tool calls are not hard-proxied)",
     `Exit: ${workerResult.exitCode}`,
-    `Output valid: ${workerResult.outputValidation.valid ? "yes" : "no"}`
+    `Output valid: ${workerResult.outputValidation.valid ? "yes" : "no"}`,
+    `Stdout: ${Buffer.byteLength(workerResult.stdout, "utf8")} bytes`,
+    `Stderr: ${Buffer.byteLength(workerResult.stderr, "utf8")} bytes`
   ];
 }
 
@@ -834,6 +837,10 @@ export function formatLocalAgentTaskReport(report: LocalAgentTaskReport): string
       ? []
       : [`Provider: ${sections.model.provider}`]),
     ...(sections.model.model === undefined ? [] : [`Model: ${sections.model.model}`]),
+    ...(sections.model.modelSource === undefined
+      ? []
+      : [`Model source: ${sections.model.modelSource}`]),
+    ...formatWrappedWorkerTaskReportLines(sections),
     ...(sections.checkpoint === undefined
       ? []
       : [`Checkpoint: ${sections.checkpoint}`]),
@@ -872,6 +879,10 @@ export function formatLocalAgentTaskReportMarkdown(
       ? []
       : [`- Provider: ${sections.model.provider}`]),
     ...(sections.model.model === undefined ? [] : [`- Model: ${sections.model.model}`]),
+    ...(sections.model.modelSource === undefined
+      ? []
+      : [`- Model source: ${sections.model.modelSource}`]),
+    ...formatWrappedWorkerTaskReportLines(sections).map((line) => `- ${line}`),
     ...(sections.checkpoint === undefined
       ? []
       : [`- Checkpoint: ${sections.checkpoint}`]),
@@ -910,13 +921,24 @@ function localAgentReportSections(report: LocalAgentTaskReport) {
     model: {
       provider: stringOutput(report.task.output ?? {}, "modelProvider") || undefined,
       model: stringOutput(report.task.output ?? {}, "model") || undefined,
+      modelSource:
+        stringOutput(report.task.output ?? {}, "modelSource") || undefined,
       status: stringOutput(report.task.output ?? {}, "status") || undefined,
       summary: stringOutput(report.task.output ?? {}, "summary") || undefined,
       toolCalls: numberOutput(report.task.output ?? {}, "toolCalls"),
       failedToolCalls: numberOutput(report.task.output ?? {}, "failedToolCalls")
     },
+    workerRuntime: {
+      command: stringOutput(report.task.output ?? {}, "command") || undefined,
+      governance: recordOutput(report.task.output ?? {}, "governance"),
+      outputValidation: recordOutput(report.task.output ?? {}, "outputValidation"),
+      stdoutBytes: numberOutput(report.task.output ?? {}, "stdoutBytes"),
+      stderrBytes: numberOutput(report.task.output ?? {}, "stderrBytes")
+    },
     fileActivity: report.toolCalls.filter((call) =>
       [
+        "worker.native.start",
+        "worker.external.start",
         "filesystem.read",
         "filesystem.write",
         "filesystem.patch",
@@ -976,6 +998,39 @@ function formatReportVerifiers(
         (verifier) =>
           `  ${verifier.verifier}: exit=${verifier.exitCode ?? "unknown"} evidence=${verifier.evidenceId ?? "none"}`
       );
+}
+
+function formatWrappedWorkerTaskReportLines(
+  sections: ReturnType<typeof localAgentReportSections>
+): string[] {
+  if (sections.workerRuntime.command === undefined) {
+    return [];
+  }
+
+  const outputValidation = sections.workerRuntime.outputValidation;
+  const governance = sections.workerRuntime.governance;
+  const outputValid =
+    outputValidation === undefined
+      ? "unknown"
+      : outputValidation.valid === true
+        ? "yes"
+        : "no";
+  const hardProxy =
+    governance === undefined
+      ? "unknown"
+      : governance.hardProxyToolCalls === true
+        ? "yes"
+        : "no";
+
+  return [
+    "Worker runtime:",
+    `  command: ${sections.workerRuntime.command}`,
+    `  boundary: process wrapper`,
+    `  hard-proxied tool calls: ${hardProxy}`,
+    `  output valid: ${outputValid}`,
+    `  stdout bytes: ${sections.workerRuntime.stdoutBytes ?? 0}`,
+    `  stderr bytes: ${sections.workerRuntime.stderrBytes ?? 0}`
+  ];
 }
 
 function markdownToolCalls(calls: LocalAgentReportToolCall[]): string[] {
@@ -1302,14 +1357,18 @@ function localAgentTaskOutput(input: {
       exitCode: input.workerResult.exitCode,
       command: input.workerResult.command,
       args: redactedLocalWrappedWorkerArgs(input.workerResult),
+      governance: localWrappedWorkerGovernanceOutput(input.workerResult),
       outputValidation: input.workerResult.outputValidation,
       stdoutBytes: Buffer.byteLength(input.workerResult.stdout, "utf8"),
       stderrBytes: Buffer.byteLength(input.workerResult.stderr, "utf8"),
       stdoutOmitted: input.workerResult.stdout.length > 0,
       stderrOmitted: input.workerResult.stderr.length > 0,
       ...(wrappedWorkerModel(input.workerResult) === undefined
-        ? {}
-        : { model: wrappedWorkerModel(input.workerResult) }),
+        ? { modelSource: "codex_cli_config" }
+        : {
+            model: wrappedWorkerModel(input.workerResult),
+            modelSource: "runstead_model_option"
+          }),
       ...(input.checkpoint === undefined ? {} : { checkpointId: input.checkpoint.id }),
       ...(input.verifierResult === undefined
         ? {}
@@ -1360,6 +1419,7 @@ function localAgentWorkerOutput(input: {
       worker: input.workerResult.worker,
       command: input.workerResult.command,
       args: redactedLocalWrappedWorkerArgs(input.workerResult),
+      governance: localWrappedWorkerGovernanceOutput(input.workerResult),
       status: input.workerResult.exitCode === 0 ? "completed" : "failed",
       exitCode: input.workerResult.exitCode,
       outputValidation: input.workerResult.outputValidation,
@@ -1369,8 +1429,11 @@ function localAgentWorkerOutput(input: {
       stderrOmitted: input.workerResult.stderr.length > 0,
       ...(input.summary === undefined ? {} : { summary: input.summary }),
       ...(wrappedWorkerModel(input.workerResult) === undefined
-        ? {}
-        : { model: wrappedWorkerModel(input.workerResult) }),
+        ? { modelSource: "codex_cli_config" }
+        : {
+            model: wrappedWorkerModel(input.workerResult),
+            modelSource: "runstead_model_option"
+          }),
       ...(input.checkpoint === undefined ? {} : { checkpointId: input.checkpoint.id }),
       ...(input.verifierResult === undefined
         ? {}
@@ -1668,6 +1731,20 @@ function wrappedWorkerModel(workerResult: WrappedWorkerRunResult): string | unde
     : undefined;
 }
 
+function localWrappedWorkerGovernanceOutput(
+  workerResult: WrappedWorkerRunResult
+): JsonObject {
+  return {
+    enforcement: workerResult.governance.enforcement,
+    boundary: "process_wrapper",
+    hardProxyToolCalls: workerResult.governance.capabilities.hardProxyToolCalls,
+    internalToolProxy: workerResult.governance.internalToolProxy.mode,
+    workspaceCheckpoint: workerResult.governance.capabilities.workspaceCheckpoint,
+    postRunDiffVerification:
+      workerResult.governance.capabilities.postRunDiffVerification
+  };
+}
+
 function workerStartAction(input: {
   task: Task;
   cwd: string;
@@ -1896,6 +1973,12 @@ function numberOutput(output: JsonObject, key: string): number | undefined {
   const value = output[key];
 
   return typeof value === "number" ? value : undefined;
+}
+
+function recordOutput(output: JsonObject, key: string): JsonObject | undefined {
+  const value = output[key];
+
+  return isRecord(value) ? value : undefined;
 }
 
 function parseJsonObject(value: unknown): JsonObject {
