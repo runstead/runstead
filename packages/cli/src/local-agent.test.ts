@@ -14,6 +14,8 @@ import {
   attachLocalAgentVerifierEvidence,
   createLocalAgentTask,
   formatLocalAgentRunReport,
+  formatLocalAgentTaskReportJson,
+  formatLocalAgentTaskReportMarkdown,
   formatLocalAgentTaskReport,
   isLocalAgentTask,
   LOCAL_AGENT_TASK_TYPE,
@@ -306,8 +308,31 @@ describe("local agent task primitives", () => {
         taskId: created.task.id
       });
       expect(formatLocalAgentTaskReport(report)).toContain("Runstead agent report");
+      expect(formatLocalAgentTaskReport(report)).toContain("Model summary:");
+      expect(formatLocalAgentTaskReport(report)).toContain("File/tool activity:");
       expect(formatLocalAgentTaskReport(report)).toContain(
         "policy_decisions: allow medium x2"
+      );
+      expect(JSON.parse(formatLocalAgentTaskReportJson(report))).toMatchObject({
+        task: {
+          id: created.task.id
+        },
+        model: {
+          model: "gpt-5.3-codex"
+        },
+        policy: [
+          {
+            decision: "allow",
+            risk: "medium",
+            count: 2
+          }
+        ]
+      });
+      expect(formatLocalAgentTaskReportMarkdown(report)).toContain(
+        "## Model Summary"
+      );
+      expect(formatLocalAgentTaskReportMarkdown(report)).toContain(
+        "## Policy And Approval"
       );
     } finally {
       await rm(workspace, { force: true, recursive: true });

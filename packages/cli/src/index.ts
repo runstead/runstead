@@ -2599,6 +2599,8 @@ interface AgentFixCliOptions {
 interface AgentReportCliOptions {
   cwd?: string;
   actor: string;
+  json?: boolean;
+  markdown?: boolean;
 }
 
 function addCodexCommand(command: Command): void {
@@ -3321,8 +3323,14 @@ function addAgentCommand(command: Command): void {
     .description("Summarize a local agent task and its audit trail.")
     .argument("<task-id>", "Local agent task id")
     .option("--cwd <path>", "Workspace directory")
+    .option("--json", "Print the report as JSON")
+    .option("--markdown", "Print the report as Markdown")
     .option("--actor <id>", "RBAC subject for local agent reporting", "local-admin")
     .action(async (taskId: string, options: AgentReportCliOptions) => {
+      if (options.json === true && options.markdown === true) {
+        throw new Error("agent report accepts only one of --json or --markdown");
+      }
+
       await requireRbacPermission({
         ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
         actor: options.actor,
@@ -3330,14 +3338,24 @@ function addAgentCommand(command: Command): void {
         action: "read local agent reports"
       });
 
-      const { formatLocalAgentTaskReport, loadLocalAgentTaskReport } =
-        await import("./local-agent.js");
+      const {
+        formatLocalAgentTaskReport,
+        formatLocalAgentTaskReportJson,
+        formatLocalAgentTaskReportMarkdown,
+        loadLocalAgentTaskReport
+      } = await import("./local-agent.js");
       const report = await loadLocalAgentTaskReport({
         ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
         taskId
       });
 
-      console.log(formatLocalAgentTaskReport(report));
+      console.log(
+        options.json === true
+          ? formatLocalAgentTaskReportJson(report).trimEnd()
+          : options.markdown === true
+            ? formatLocalAgentTaskReportMarkdown(report)
+            : formatLocalAgentTaskReport(report)
+      );
     });
 
   command

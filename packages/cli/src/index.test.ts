@@ -207,7 +207,7 @@ describe("cli entrypoint", () => {
       );
     }
     expect(report?.options.map((option) => option.long)).toEqual(
-      expect.arrayContaining(["--cwd", "--actor"])
+      expect.arrayContaining(["--cwd", "--json", "--markdown", "--actor"])
     );
     expect(resume?.options.map((option) => option.long)).toEqual(
       expect.arrayContaining(["--cwd", "--actor"])
