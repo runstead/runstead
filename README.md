@@ -25,15 +25,81 @@ runstead audit export
 runstead report weekly --print
 ```
 
+## Recommended local practice
+
+For real local coding work today, start with **Runstead + `codex_cli`**. Codex
+CLI owns the coding-agent runtime, login session, MCP servers, plugins, and
+interactive ecosystem. Runstead owns the repo-maintenance control plane around
+that worker: task records, policy, approval, checkpoints, verifier evidence,
+diff-scope checks, audit, resume, and reports.
+
+```bash
+codex login
+runstead init --cwd /path/to/repo --profile trusted-local --create-default-goal
+runstead doctor --cwd /path/to/repo --codex --worker codex_cli --model gpt-5.5
+```
+
+Run an inspected local task through Codex CLI:
+
+```bash
+runstead agent run \
+  --cwd /path/to/repo \
+  --worker codex_cli \
+  --model gpt-5.5 \
+  --mode read-only \
+  "Inspect this repo and summarize the main test commands."
+```
+
+Run an edit task with Runstead verifier evidence:
+
+```bash
+runstead agent run \
+  --cwd /path/to/repo \
+  --worker codex_cli \
+  --model gpt-5.5 \
+  --mode edit \
+  --allowed "src/**" \
+  --verifier "test=pnpm test" \
+  "Fix the failing test with the smallest reasonable change."
+```
+
+Use the same worker for governed CI repair orchestration:
+
+```bash
+runstead repair-ci <github-actions-run-id> \
+  --cwd /path/to/repo \
+  --worker codex_cli \
+  --model gpt-5.5 \
+  --allowed "src/**" \
+  --verifier "test=pnpm test"
+```
+
+After a run, inspect the Runstead-side record:
+
+```bash
+runstead agent report <task-id> --cwd /path/to/repo
+runstead audit replay <task-id> --cwd /path/to/repo
+```
+
+Choose **Runstead + `codex_direct`** when the task requires hard-proxied
+Runstead tool calls. `codex_direct` runs the model loop inside Runstead, so
+filesystem, shell, git, verifier, and evidence actions pass through Runstead
+policy and audit before they execute. That gives stronger governance, but it
+does not yet inherit the full Codex CLI MCP/plugin ecosystem.
+
+Choose **Runstead + `claude_code`** when the repo or developer workflow already
+standardizes on Claude Code CLI. It follows the same Level 1 wrapped-worker
+model as `codex_cli`.
+
 Use `runstead init --profile trusted-local --create-default-goal` on a trusted
 local workstation when you want CI repair to start the built-in wrapped coding
 workers without the first approval prompt while still requiring approval for
 dependency changes and publishing.
 
 Use `runstead agent providers` to list model providers available to
-`codex_direct`. Codex uses `runstead codex login`; OpenAI-compatible,
-Anthropic, Gemini, and local providers use `model.provider`, `model.name`,
-`model.baseUrl`, and API key environment variables.
+`codex_direct`. The Codex Direct provider uses `runstead codex login`;
+OpenAI-compatible, Anthropic, Gemini, and local providers use `model.provider`,
+`model.name`, `model.baseUrl`, and API key environment variables.
 
 ## Setup
 
