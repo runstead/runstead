@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readFile, realpath, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 
 import type {
@@ -58,7 +58,9 @@ export interface GovernedFilesystemResult<T> {
 export async function readGovernedWorkspaceFile(
   options: ReadGovernedWorkspaceFileOptions
 ): Promise<GovernedFilesystemResult<GovernedWorkspaceFileRead>> {
-  const target = workspaceTarget(options.cwd, options.path);
+  const target = await workspaceTarget(options.cwd, options.path, {
+    allowMissingDescendants: true
+  });
   const result = await runGovernedToolAction({
     ...governedOptions(options),
     action: filesystemAction({
@@ -87,7 +89,9 @@ export async function readGovernedWorkspaceFile(
 export async function writeGovernedWorkspaceFile(
   options: WriteGovernedWorkspaceFileOptions
 ): Promise<GovernedFilesystemResult<GovernedWorkspaceFileWrite>> {
-  const target = workspaceTarget(options.cwd, options.path);
+  const target = await workspaceTarget(options.cwd, options.path, {
+    allowMissingDescendants: true
+  });
   const result = await runGovernedToolAction({
     ...governedOptions(options),
     action: filesystemAction({
@@ -147,10 +151,11 @@ function filesystemAction(input: {
   };
 }
 
-function workspaceTarget(
+async function workspaceTarget(
   cwd: string,
-  requestedPath: string
-): { absolutePath: string; relativePath: string } {
+  requestedPath: string,
+  options: { allowMissingDescendants?: boolean } = {}
+): Promise<{ absolutePath: string; relativePath: string }> {
   const root = resolve(cwd);
   const absolutePath = resolve(root, requestedPath);
   const relativePath = relative(root, absolutePath);
@@ -164,10 +169,53 @@ function workspaceTarget(
     throw new Error(`Workspace path escapes root: ${requestedPath}`);
   }
 
+  await assertNoWorkspaceSymlinkTraversal(root, relativePath, requestedPath, options);
+
   return {
     absolutePath,
     relativePath: relativePath.split(sep).join("/")
   };
+}
+
+async function assertNoWorkspaceSymlinkTraversal(
+  root: string,
+  relativePath: string,
+  requestedPath: string,
+  options: { allowMissingDescendants?: boolean }
+): Promise<void> {
+  const realRoot = await realpath(root);
+  const segments = relativePath.split(sep);
+  let current = realRoot;
+
+  for (const segment of segments) {
+    current = resolve(current, segment);
+
+    try {
+      const stats = await lstat(current);
+
+      if (stats.isSymbolicLink()) {
+        throw new Error(`Workspace path crosses symlink: ${requestedPath}`);
+      }
+    } catch (error) {
+      if (
+        options.allowMissingDescendants === true &&
+        isNodeErrorCode(error, "ENOENT")
+      ) {
+        return;
+      }
+
+      throw error;
+    }
+  }
+}
+
+function isNodeErrorCode(error: unknown, code: string): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    error.code === code
+  );
 }
 
 function filesystemOutput(input: { path: string; bytes: number }): JsonObject {

@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -168,6 +168,55 @@ describe("filesystem proxy", () => {
     } finally {
       fixture?.database.close();
       await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("rejects symlink escapes before reading or writing files", async () => {
+    const root = await mkdtemp(join(tmpdir(), "runstead-fs-proxy-"));
+    const workspace = join(root, "workspace");
+    let fixture: FilesystemProxyFixture | undefined;
+
+    try {
+      await mkdir(workspace);
+      fixture = await setupFilesystemProxyFixture(workspace, {
+        id: "policy_allow_workspace_io",
+        version: 1,
+        defaultDecision: "deny",
+        defaultRisk: "critical",
+        rules: [
+          {
+            id: "allow_workspace_io",
+            when: {
+              actionType: ["filesystem.read", "filesystem.write"]
+            },
+            decision: "allow",
+            risk: "medium"
+          }
+        ]
+      });
+      const outside = join(root, "outside.txt");
+      await writeFile(outside, "outside-secret\n", "utf8");
+      await symlink(outside, join(workspace, "leak.txt"));
+
+      await expect(
+        readGovernedWorkspaceFile({
+          ...fixture,
+          path: "leak.txt",
+          requestedBy: "test"
+        })
+      ).rejects.toThrow("Workspace path crosses symlink");
+      await expect(
+        writeGovernedWorkspaceFile({
+          ...fixture,
+          path: "leak.txt",
+          content: "changed\n",
+          requestedBy: "test"
+        })
+      ).rejects.toThrow("Workspace path crosses symlink");
+      await expect(readFile(outside, "utf8")).resolves.toBe("outside-secret\n");
+    } finally {
+      fixture?.database.close();
+      await rm(root, { force: true, recursive: true });
     }
   });
 });

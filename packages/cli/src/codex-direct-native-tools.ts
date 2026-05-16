@@ -5,6 +5,7 @@ import {
   mkdtemp,
   readFile,
   readdir,
+  realpath,
   rm,
   writeFile
 } from "node:fs/promises";
@@ -289,7 +290,9 @@ export async function inspectPackageScripts(
   options: InspectPackageScriptsOptions = {}
 ): Promise<PackageScriptsInspectionResult> {
   const root = resolve(cwd);
-  const target = workspaceTarget(root, options.path ?? ".", { allowRoot: true });
+  const target = await safeWorkspaceTarget(root, options.path ?? ".", {
+    allowRoot: true
+  });
   const packageJsonPath = join(target.absolutePath, "package.json");
   const packageJson = await readPackageJson(packageJsonPath);
   const packageManager = await detectPackageManager(target.absolutePath, packageJson);
@@ -345,6 +348,9 @@ export async function inspectWorkspacePath(
 ): Promise<WorkspaceFileInfoResult> {
   const root = resolve(cwd);
   const target = workspaceTarget(root, options.path, { allowRoot: true });
+  await assertNoWorkspaceSymlinkTraversal(root, target, options.path, {
+    allowFinalSymlink: true
+  });
   const stats = await lstat(target.absolutePath);
   const type = statsToEntryType(stats);
   const result: WorkspaceFileInfoResult = {
@@ -376,7 +382,9 @@ export async function workspaceTree(
   options: WorkspaceTreeOptions = {}
 ): Promise<WorkspaceTreeResult> {
   const root = resolve(cwd);
-  const target = workspaceTarget(root, options.path ?? ".", { allowRoot: true });
+  const target = await safeWorkspaceTarget(root, options.path ?? ".", {
+    allowRoot: true
+  });
   const maxDepth = Math.min(
     options.maxDepth ?? DEFAULT_TREE_MAX_DEPTH,
     TREE_MAX_DEPTH_LIMIT
@@ -461,7 +469,7 @@ export async function readManyWorkspaceFiles(
   let returnedBytes = 0;
 
   for (const requestedPath of options.paths) {
-    const target = workspaceTarget(root, requestedPath);
+    const target = await safeWorkspaceTarget(root, requestedPath);
     const buffer = await readFile(target.absolutePath);
     const fileBytes = buffer.byteLength;
     const remainingTotalBytes = Math.max(0, maxTotalBytes - returnedBytes);
@@ -670,6 +678,62 @@ function workspaceTarget(
   };
 }
 
+async function safeWorkspaceTarget(
+  root: string,
+  requestedPath: string,
+  options: {
+    allowRoot?: boolean;
+    allowFinalSymlink?: boolean;
+    allowMissingDescendants?: boolean;
+  } = {}
+): Promise<{ absolutePath: string; relativePath: string }> {
+  const target = workspaceTarget(root, requestedPath, options);
+
+  await assertNoWorkspaceSymlinkTraversal(root, target, requestedPath, options);
+
+  return target;
+}
+
+async function assertNoWorkspaceSymlinkTraversal(
+  root: string,
+  target: { relativePath: string },
+  requestedPath: string,
+  options: {
+    allowFinalSymlink?: boolean;
+    allowMissingDescendants?: boolean;
+  } = {}
+): Promise<void> {
+  if (target.relativePath === ".") {
+    return;
+  }
+
+  const realRoot = await realpath(root);
+  const segments = target.relativePath.split("/");
+  let current = realRoot;
+
+  for (const [index, segment] of segments.entries()) {
+    current = join(current, segment);
+    const isFinal = index === segments.length - 1;
+
+    try {
+      const stats = await lstat(current);
+
+      if (stats.isSymbolicLink() && !(isFinal && options.allowFinalSymlink === true)) {
+        throw new Error(`Workspace path crosses symlink: ${requestedPath}`);
+      }
+    } catch (error) {
+      if (
+        options.allowMissingDescendants === true &&
+        isNodeErrorCode(error, "ENOENT")
+      ) {
+        return;
+      }
+
+      throw error;
+    }
+  }
+}
+
 function normalizePath(path: string): string {
   return path
     .replaceAll("\\", "/")
@@ -788,7 +852,10 @@ async function applyUnifiedDiff(
   }
 
   for (const path of filesTouched) {
-    workspaceTarget(root, path, { allowRoot: false });
+    await safeWorkspaceTarget(root, path, {
+      allowRoot: false,
+      allowMissingDescendants: true
+    });
   }
 
   const tempDir = await mkdtemp(join(tmpdir(), "runstead-apply-patch-"));
@@ -844,7 +911,7 @@ async function applyStructuredReplacements(
       throw new Error(`Replacement search text must not be empty: ${replacement.path}`);
     }
 
-    const target = workspaceTarget(root, replacement.path);
+    const target = await safeWorkspaceTarget(root, replacement.path);
     const original = await readFile(target.absolutePath, "utf8");
     const occurrences = countOccurrences(original, replacement.search);
 
