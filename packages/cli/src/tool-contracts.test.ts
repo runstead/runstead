@@ -14,6 +14,7 @@ describe("tool contract registry", () => {
       expect.arrayContaining([
         "shell.exec",
         "filesystem.read",
+        "filesystem.list",
         "filesystem.write",
         "git.status",
         "git.diff",

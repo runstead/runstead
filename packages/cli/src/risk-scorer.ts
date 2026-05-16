@@ -12,6 +12,7 @@ export interface ActionRiskScore {
 
 const ACTION_TYPE_RISK: Record<string, PolicyRisk> = {
   "filesystem.read": "low",
+  "filesystem.list": "low",
   "git.status": "low",
   "git.diff": "low",
   "shell.exec": "medium",

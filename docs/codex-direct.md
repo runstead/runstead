@@ -24,6 +24,7 @@ agent run / repair-ci / run --once / daemon
          -> CodexResponsesTransport
          -> RunsteadToolLoop
               -> filesystem.read
+              -> filesystem.list
               -> filesystem.write
               -> shell.exec
               -> git.status
@@ -61,6 +62,7 @@ governed by their existing stricter rules.
 
 The first tool set should stay small:
 
+- `list_files` -> `filesystem.list`
 - `read_file` -> `filesystem.read`
 - `write_file` -> `filesystem.write`
 - `run_command` -> `shell.exec`

@@ -87,6 +87,7 @@ rules:
       action_type:
         in:
           - filesystem.read
+          - filesystem.list
           - git.status
           - git.diff
           - github.run.read

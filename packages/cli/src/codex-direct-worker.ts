@@ -14,6 +14,7 @@ import {
   readGovernedWorkspaceFile,
   writeGovernedWorkspaceFile
 } from "./filesystem-proxy.js";
+import { listWorkspaceFiles } from "./codex-direct-native-tools.js";
 import {
   runGovernedToolAction,
   ToolActionApprovalRequiredError,
@@ -83,6 +84,7 @@ export interface CodexDirectBudgetSummary {
 }
 
 type CodexDirectToolName =
+  | "list_files"
   | "read_file"
   | "write_file"
   | "run_command"
@@ -329,6 +331,48 @@ export function codexDirectToolDefinitions(): CodexResponsesTool[] {
   return [
     {
       type: "function",
+      name: "list_files",
+      description:
+        "List workspace files with stable relative paths, glob filters, default repository ignores, and bounded output.",
+      strict: false,
+      parameters: objectSchema(
+        {
+          glob: {
+            oneOf: [
+              {
+                type: "string"
+              },
+              {
+                type: "array",
+                items: {
+                  type: "string"
+                }
+              }
+            ],
+            description:
+              "Optional glob pattern or patterns. Defaults to all non-ignored files."
+          },
+          exclude: {
+            type: "array",
+            items: {
+              type: "string"
+            },
+            description: "Optional glob patterns to exclude."
+          },
+          maxResults: {
+            type: "number",
+            description: "Optional maximum number of entries to return."
+          },
+          includeDirs: {
+            type: "boolean",
+            description: "Include directory entries when true."
+          }
+        },
+        []
+      )
+    },
+    {
+      type: "function",
       name: "read_file",
       description: "Read a UTF-8 file inside the workspace.",
       strict: false,
@@ -450,6 +494,16 @@ async function executeCodexDirectTool(
   }
 ): Promise<string> {
   switch (options.toolCall.name) {
+    case "list_files":
+      return JSON.stringify(
+        await runGovernedListFiles({
+          ...options,
+          glob: optionalStringArray(options.toolCall.arguments.glob, "glob"),
+          exclude: optionalStringArray(options.toolCall.arguments.exclude, "exclude"),
+          maxResults: optionalPositiveInteger(options.toolCall.arguments.maxResults),
+          includeDirs: options.toolCall.arguments.includeDirs === true
+        })
+      );
     case "read_file":
       return JSON.stringify(
         await readGovernedWorkspaceFile({
@@ -488,6 +542,49 @@ async function executeCodexDirectTool(
       return JSON.stringify(await runGovernedGitRead(options, command));
     }
   }
+}
+
+async function runGovernedListFiles(
+  options: CodexDirectWorkerOptions & {
+    workerRun: WorkerRun;
+    glob?: string[];
+    exclude?: string[];
+    maxResults?: number;
+    includeDirs: boolean;
+  }
+) {
+  return runGovernedToolAction({
+    ...governedToolOptions(options),
+    action: filesystemReadAction({
+      cwd: options.cwd,
+      actionType: "filesystem.list",
+      path: ".",
+      stableParts: [
+        options.cwd,
+        options.glob ?? [],
+        options.exclude ?? [],
+        options.maxResults,
+        options.includeDirs
+      ]
+    }),
+    run: async () => {
+      const value = await listWorkspaceFiles(options.cwd, {
+        ...(options.glob === undefined ? {} : { glob: options.glob }),
+        ...(options.exclude === undefined ? {} : { exclude: options.exclude }),
+        ...(options.maxResults === undefined ? {} : { maxResults: options.maxResults }),
+        includeDirs: options.includeDirs
+      });
+
+      return {
+        value,
+        output: {
+          entries: value.entries.length,
+          truncated: value.truncated,
+          maxResults: value.maxResults
+        }
+      };
+    }
+  }).then((result) => result.value);
 }
 
 async function runGovernedShellCommand(
@@ -808,6 +905,25 @@ function gitReadAction(input: {
   };
 }
 
+function filesystemReadAction(input: {
+  cwd: string;
+  actionType: "filesystem.list";
+  path: string;
+  stableParts: unknown[];
+}): ActionEnvelope {
+  return {
+    actionId: stableActionId(input.actionType, input.stableParts),
+    actionType: input.actionType,
+    resource: {
+      type: "directory",
+      path: input.path
+    },
+    context: {
+      cwd: input.cwd
+    }
+  };
+}
+
 function modelInferenceAction(input: { task: Task; model: string }): ActionEnvelope {
   return {
     actionId: stableActionId("model_inference_request", [input.task.id, input.model]),
@@ -874,6 +990,36 @@ function optionalString(value: unknown): string | undefined {
   return undefined;
 }
 
+function optionalStringArray(value: unknown, field: string): string[] | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (typeof value === "string" && value.length > 0) {
+    return [value];
+  }
+
+  if (Array.isArray(value)) {
+    const strings: string[] = [];
+
+    for (const item of value) {
+      if (typeof item !== "string" || item.length === 0) {
+        throw new Error(
+          `Codex Direct tool argument ${field} must be a string or an array of non-empty strings`
+        );
+      }
+
+      strings.push(item);
+    }
+
+    return strings;
+  }
+
+  throw new Error(
+    `Codex Direct tool argument ${field} must be a string or an array of non-empty strings`
+  );
+}
+
 function optionalPositiveInteger(value: unknown): number | undefined {
   if (typeof value === "number" && Number.isInteger(value) && value > 0) {
     return value;
@@ -921,9 +1067,14 @@ function shellQuote(value: string): string {
 }
 
 function isCodexDirectToolName(value: string): value is CodexDirectToolName {
-  return ["read_file", "write_file", "run_command", "git_status", "git_diff"].includes(
-    value
-  );
+  return [
+    "list_files",
+    "read_file",
+    "write_file",
+    "run_command",
+    "git_status",
+    "git_diff"
+  ].includes(value);
 }
 
 function stableActionId(prefix: string, parts: unknown[]): string {

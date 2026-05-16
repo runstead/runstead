@@ -133,6 +133,7 @@ export const DEFAULT_EXTERNAL_WRITE_ACTION_TYPES = [
 ];
 export const DEFAULT_READ_WORKSPACE_ACTION_TYPES = [
   "filesystem.read",
+  "filesystem.list",
   "git.status",
   "git.diff",
   "github.run.read",

@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -109,12 +109,101 @@ describe("runCodexDirectWorker", () => {
           }
         ]);
         expect(transport.requests[0]?.tools?.map((tool) => tool.name)).toEqual([
+          "list_files",
           "read_file",
           "write_file",
           "run_command",
           "git_status",
           "git_diff"
         ]);
+      } finally {
+        database.close();
+      }
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("lists workspace files through bounded native inspection", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-codex-list-files-"));
+
+    try {
+      await mkdir(join(workspace, "src"), { recursive: true });
+      await mkdir(join(workspace, "node_modules", "pkg"), { recursive: true });
+      await writeFile(join(workspace, "src", "a.ts"), "export const a = 1;\n");
+      await writeFile(join(workspace, "src", "b.test.ts"), "test('b', () => {});\n");
+      await writeFile(join(workspace, "README.md"), "# Fixture\n");
+      await writeFile(join(workspace, "node_modules", "pkg", "index.ts"), "");
+      const initialized = await initRunstead({
+        cwd: workspace,
+        createDefaultGoal: true
+      });
+      const database = openRunsteadDatabase(initialized.stateDb);
+
+      try {
+        const task = listTasks({ cwd: workspace }).tasks[0];
+
+        if (task === undefined) {
+          throw new Error("Expected generated task");
+        }
+
+        const goal = showGoal({ cwd: workspace, id: task.goalId }).goal;
+        const transport = scriptedTransport([
+          {
+            outputText: "",
+            toolCalls: [
+              {
+                id: "call_list_files",
+                name: "list_files",
+                arguments: JSON.stringify({
+                  glob: "**/*.ts",
+                  exclude: ["**/*.test.ts"],
+                  maxResults: 5
+                })
+              }
+            ],
+            finishReason: "tool_calls",
+            outputItems: []
+          },
+          {
+            outputText: "Listed files.",
+            toolCalls: [],
+            finishReason: "stop",
+            outputItems: []
+          }
+        ]);
+        const result = await runCodexDirectWorker({
+          cwd: workspace,
+          stateDb: initialized.stateDb,
+          database,
+          policy: allowDirectToolsPolicy,
+          goal,
+          task,
+          model: "fake-codex",
+          evidenceDir: join(initialized.root, "evidence"),
+          transport
+        });
+        const toolCalls = database
+          .prepare("SELECT action_type, status FROM tool_calls ORDER BY started_at, id")
+          .all() as { action_type: string; status: string }[];
+        const toolOutput = JSON.stringify(transport.requests[1]?.input);
+
+        expect(result).toMatchObject({
+          status: "completed",
+          toolCalls: 1,
+          summary: "Listed files."
+        });
+        expect(toolCalls).toEqual(
+          expect.arrayContaining([
+            {
+              action_type: "filesystem.list",
+              status: "completed"
+            }
+          ])
+        );
+        expect(toolOutput).toContain("src/a.ts");
+        expect(toolOutput).not.toContain("src/b.test.ts");
+        expect(toolOutput).not.toContain("node_modules/pkg/index.ts");
       } finally {
         database.close();
       }
@@ -706,6 +795,7 @@ describe("runCodexDirectWorker", () => {
 
   it("defines the expected narrow native tool surface", () => {
     expect(codexDirectToolDefinitions().map((tool) => tool.name)).toEqual([
+      "list_files",
       "read_file",
       "write_file",
       "run_command",
@@ -726,6 +816,7 @@ const allowDirectToolsPolicy: PolicyProfile = {
       when: {
         actionType: [
           "filesystem.read",
+          "filesystem.list",
           "filesystem.write",
           "shell.exec",
           "git.status",
