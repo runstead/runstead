@@ -1,4 +1,12 @@
-import { access, readFile, readdir, rm, stat } from "node:fs/promises";
+import {
+  access,
+  mkdir,
+  readFile,
+  readdir,
+  rm,
+  stat,
+  writeFile
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -16,6 +24,10 @@ describe("initRunstead", () => {
       await rm(workspace, { force: true, recursive: true });
       const result = await initRunstead({ cwd: workspace });
       const config = await readFile(join(result.root, "config.yaml"), "utf8");
+      const runsteadGitignore = await readFile(
+        join(result.root, ".gitignore"),
+        "utf8"
+      );
       const goalTemplate = await readFile(
         join(
           result.root,
@@ -54,6 +66,8 @@ describe("initRunstead", () => {
 
       expect(config).toContain("domain: repo-maintenance");
       expect(config).toContain("events:\n  source: sqlite");
+      expect(runsteadGitignore).toContain("state.db");
+      expect(runsteadGitignore).toContain("evidence/");
       expect(goalTemplate).toContain("id: keep-ci-green");
       expect(result.profile).toBe("default");
       expect(rootPolicy).toContain("id: require_approval_external_worker_start");
@@ -75,6 +89,29 @@ describe("initRunstead", () => {
         expect.stringMatching(/^repo-inspection-ev_[a-f0-9]+\.json$/)
       ]);
       await expect(access(join(result.root, "events.jsonl"))).rejects.toThrow();
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("installs local git exclusions for runtime artifacts", async () => {
+    const workspace = join(tmpdir(), `runstead-cli-git-exclude-${process.pid}`);
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await mkdir(join(workspace, ".git", "info"), { recursive: true });
+      await writeFile(join(workspace, ".git", "info", "exclude"), "# local\n", "utf8");
+
+      await initRunstead({ cwd: workspace });
+
+      const exclude = await readFile(
+        join(workspace, ".git", "info", "exclude"),
+        "utf8"
+      );
+
+      expect(exclude).toContain(".runstead/state.db");
+      expect(exclude).toContain(".runstead/evidence/");
+      expect(exclude).toContain("# local");
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }

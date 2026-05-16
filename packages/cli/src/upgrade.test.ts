@@ -23,6 +23,7 @@ describe("upgradeRunsteadState", () => {
         recursive: true
       });
       await rm(join(workspace, ".runstead", "rbac.yaml"), { force: true });
+      await rm(join(workspace, ".runstead", ".gitignore"), { force: true });
       await rm(
         join(
           workspace,
@@ -47,6 +48,9 @@ describe("upgradeRunsteadState", () => {
       ).resolves.toBeUndefined();
       await expect(
         access(join(workspace, ".runstead", "rbac.yaml"))
+      ).resolves.toBeUndefined();
+      await expect(
+        access(join(workspace, ".runstead", ".gitignore"))
       ).resolves.toBeUndefined();
       await expect(
         access(
