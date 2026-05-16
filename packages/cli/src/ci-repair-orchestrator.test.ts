@@ -18,6 +18,7 @@ import {
   formatCiRepairOrchestratorReport,
   runCiRepairOrchestrator
 } from "./ci-repair-orchestrator.js";
+import type { CodexResponsesRequest } from "./codex-responses-transport.js";
 import type { CodexDirectTransport } from "./codex-direct-worker.js";
 import { resumeInterruptedTasks } from "./resume.js";
 import { runOnce } from "./run.js";
@@ -453,7 +454,7 @@ describe("runCiRepairOrchestrator", () => {
     const workspace = await mkdtemp(join(tmpdir(), "runstead-ci-codex-direct-"));
     const gitCalls: string[][] = [];
     const verifierCalls: RunTaskVerifiersOptions[] = [];
-    const codexRequests: unknown[] = [];
+    const codexRequests: CodexResponsesRequest[] = [];
     const codexDirectTransport: CodexDirectTransport = {
       createResponse(request) {
         codexRequests.push(request);
@@ -522,6 +523,19 @@ describe("runCiRepairOrchestrator", () => {
           exitCode: 0
         });
         expect(codexRequests).toHaveLength(2);
+        const firstCodexInput = codexRequests[0]?.input[0];
+        if (
+          firstCodexInput === undefined ||
+          !("role" in firstCodexInput) ||
+          firstCodexInput.role !== "user"
+        ) {
+          throw new Error("Expected first Codex Direct input to be a user message");
+        }
+        expect(firstCodexInput.content).toContain("Task preset: repair:ci");
+        expect(firstCodexInput.content).toContain("Configured verifiers: test");
+        expect(firstCodexInput.content).toContain(
+          "Repair GitHub Actions run 123."
+        );
         expect(await readFile(join(workspace, "src/fix.ts"), "utf8")).toBe(
           "export const fixed = true;\n"
         );

@@ -334,6 +334,35 @@ function workerFromCiRepairTask(task: Task): CiRepairWorkerKind | undefined {
     return worker;
   }
 
+  const context = task.output?.ciRepairOrchestrator;
+
+  if (!isRecord(context)) {
+    return undefined;
+  }
+
+  const requestedWorker = context.requestedWorker;
+  const workerResult = context.workerResult;
+
+  if (
+    requestedWorker === "codex_cli" ||
+    requestedWorker === "claude_code" ||
+    requestedWorker === "codex_direct"
+  ) {
+    return requestedWorker;
+  }
+
+  if (isRecord(workerResult)) {
+    const completedWorker = workerResult.worker;
+
+    if (
+      completedWorker === "codex_cli" ||
+      completedWorker === "claude_code" ||
+      completedWorker === "codex_direct"
+    ) {
+      return completedWorker;
+    }
+  }
+
   return undefined;
 }
 
@@ -344,7 +373,17 @@ function modelFromCiRepairTask(task: Task): string | undefined {
     return model.trim();
   }
 
-  return undefined;
+  const context = task.output?.ciRepairOrchestrator;
+
+  if (!isRecord(context)) {
+    return undefined;
+  }
+
+  const requestedModel = context.requestedModel;
+
+  return typeof requestedModel === "string" && requestedModel.trim().length > 0
+    ? requestedModel.trim()
+    : undefined;
 }
 
 async function defaultCiRepairWorker(input: {
