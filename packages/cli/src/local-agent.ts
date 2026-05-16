@@ -629,6 +629,7 @@ export function formatLocalAgentRunReport(result: RunLocalAgentTaskResult): stri
       ? []
       : [
           `Worker: ${result.workerResult.worker}`,
+          `Provider: ${result.workerResult.modelProvider}`,
           `Model: ${result.workerResult.model}`,
           `Tool calls: ${result.workerResult.toolCalls}`,
           `Failed tool calls: ${result.workerResult.failedToolCalls}`
@@ -679,6 +680,9 @@ export function formatLocalAgentTaskReport(report: LocalAgentTaskReport): string
     `Status: ${report.task.status}`,
     `Worker: ${localAgentTaskWorker(report.task)}`,
     `Mode: ${localAgentTaskMode(report.task)}`,
+    ...(sections.model.provider === undefined
+      ? []
+      : [`Provider: ${sections.model.provider}`]),
     ...(sections.model.model === undefined ? [] : [`Model: ${sections.model.model}`]),
     ...(sections.checkpoint === undefined
       ? []
@@ -714,6 +718,9 @@ export function formatLocalAgentTaskReportMarkdown(
     `- Goal: ${report.goal.id} ${report.goal.title}`,
     `- Worker: ${localAgentTaskWorker(report.task)}`,
     `- Mode: ${localAgentTaskMode(report.task)}`,
+    ...(sections.model.provider === undefined
+      ? []
+      : [`- Provider: ${sections.model.provider}`]),
     ...(sections.model.model === undefined ? [] : [`- Model: ${sections.model.model}`]),
     ...(sections.checkpoint === undefined
       ? []
@@ -751,6 +758,7 @@ function localAgentReportSections(report: LocalAgentTaskReport) {
       mode: localAgentTaskMode(report.task)
     },
     model: {
+      provider: stringOutput(report.task.output ?? {}, "modelProvider") || undefined,
       model: stringOutput(report.task.output ?? {}, "model") || undefined,
       status: stringOutput(report.task.output ?? {}, "status") || undefined,
       summary: stringOutput(report.task.output ?? {}, "summary") || undefined,
@@ -1088,6 +1096,7 @@ function localAgentTaskOutput(input: {
     summary: input.summary,
     worker: input.workerResult.worker,
     model: input.workerResult.model,
+    modelProvider: input.workerResult.modelProvider,
     status: input.workerResult.status,
     exitCode: input.workerResult.exitCode,
     toolCalls: input.workerResult.toolCalls,
@@ -1121,6 +1130,7 @@ function localAgentWorkerOutput(input: {
   return {
     worker: input.workerResult.worker,
     model: input.workerResult.model,
+    modelProvider: input.workerResult.modelProvider,
     status: input.workerResult.status,
     exitCode: input.workerResult.exitCode,
     toolCalls: input.workerResult.toolCalls,

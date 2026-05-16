@@ -528,6 +528,7 @@ describe("runCiRepairOrchestrator", () => {
         expect(result.status).toBe("waiting_approval");
         expect(result.workerResult).toMatchObject({
           worker: "codex_direct",
+          modelProvider: "chatgpt_codex",
           model: "preset-codex",
           exitCode: 0
         });

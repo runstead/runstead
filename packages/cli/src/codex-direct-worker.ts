@@ -78,6 +78,7 @@ export interface CodexDirectTransport {
 export interface CodexDirectWorkerResult {
   worker: typeof CODEX_DIRECT_WORKER_KIND;
   model: string;
+  modelProvider: string;
   status: "completed" | "waiting_approval" | "blocked" | "failed";
   exitCode: number;
   summary: string;
@@ -1831,9 +1832,11 @@ function completedWorkerResult(input: {
   approval?: CodexDirectWorkerResult["approval"];
 }): CodexDirectWorkerResult {
   const warnings = input.warnings ?? [];
+  const modelProvider = input.options.modelProviderResourceId ?? "chatgpt_codex";
   const output = {
     worker: CODEX_DIRECT_WORKER_KIND,
     model: input.options.model,
+    modelProvider,
     summary: input.summary,
     toolCalls: input.toolCalls,
     failedToolCalls: input.failedToolCalls,
@@ -1852,6 +1855,7 @@ function completedWorkerResult(input: {
   return {
     worker: CODEX_DIRECT_WORKER_KIND,
     model: input.options.model,
+    modelProvider,
     status: input.status,
     exitCode: input.exitCode,
     summary: input.summary,

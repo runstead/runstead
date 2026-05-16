@@ -290,6 +290,7 @@ describe("local agent task primitives", () => {
       expect(storedTask.output).toMatchObject({
         summary: "Inspected package metadata; no immediate risks found.",
         worker: "codex_direct",
+        modelProvider: "chatgpt_codex",
         model: "gpt-5.3-codex"
       });
       expect(requests).toHaveLength(1);
@@ -302,6 +303,7 @@ describe("local agent task primitives", () => {
           : ""
       ).toContain("Runstead local-agent mode:");
       expect(formatLocalAgentRunReport(result)).toContain("Runstead agent run");
+      expect(formatLocalAgentRunReport(result)).toContain("Provider: chatgpt_codex");
       expect(formatLocalAgentRunReport(result)).toContain(
         "tool_calls: model.inference.request completed x1"
       );
@@ -322,6 +324,7 @@ describe("local agent task primitives", () => {
           id: created.task.id
         },
         model: {
+          provider: "chatgpt_codex",
           model: "gpt-5.3-codex"
         },
         policy: [
@@ -439,6 +442,7 @@ describe("local agent task primitives", () => {
       }
 
       expect(result.status).toBe("completed");
+      expect(result.workerResult?.modelProvider).toBe("openrouter");
       expect(result.workerResult?.model).toBe("anthropic/claude-opus-4.6");
       expect(requests[0]?.model).toBe("anthropic/claude-opus-4.6");
     } finally {

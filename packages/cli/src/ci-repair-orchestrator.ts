@@ -1269,6 +1269,13 @@ export function formatCiRepairOrchestratorReport(
     ...(result.workerResult === undefined
       ? []
       : [`Worker: ${result.workerResult.worker} exit=${result.workerResult.exitCode}`]),
+    ...(result.workerResult !== undefined &&
+    isCodexDirectWorkerResult(result.workerResult)
+      ? [
+          `Provider: ${result.workerResult.modelProvider}`,
+          `Model: ${result.workerResult.model}`
+        ]
+      : []),
     ...(result.diffScope === undefined
       ? []
       : [`Diff scope: ${result.diffScope.passed ? "passed" : "failed"}`]),
@@ -3009,6 +3016,7 @@ function workerOutput(workerResult: CiRepairWorkerResult): JsonObject {
     return {
       worker: workerResult.worker,
       model: workerResult.model,
+      modelProvider: workerResult.modelProvider,
       status: workerResult.status,
       exitCode: workerResult.exitCode,
       summary: workerResult.summary,
