@@ -69,6 +69,70 @@ describe("upgradeRunsteadState", () => {
     }
   });
 
+  it("repairs old repo-maintenance policy allowlists", async () => {
+    const workspace = join(tmpdir(), `runstead-upgrade-policy-${process.pid}`);
+    const policyPath = join(
+      workspace,
+      ".runstead",
+      "policies",
+      "repo-maintenance.yaml"
+    );
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await initRunstead({ cwd: workspace, profile: "trusted-local" });
+      const currentPolicy = await readFile(policyPath, "utf8");
+      await writeFile(
+        policyPath,
+        currentPolicy
+          .replace(
+            [
+              "          - filesystem.read",
+              "          - filesystem.list",
+              "          - filesystem.search",
+              "          - filesystem.stat",
+              "          - git.status",
+              "          - git.diff",
+              "          - git.log",
+              "          - git.show",
+              "          - git.diff.summary",
+              "          - repo.metadata.read",
+              "          - evidence.read",
+              "          - workspace.facts.read",
+              "          - github.run.read",
+              "          - github.run.log.read"
+            ].join("\n"),
+            [
+              "          - filesystem.read",
+              "          - git.status",
+              "          - git.diff"
+            ].join("\n")
+          )
+          .replace(
+            [
+              "      action_type:",
+              "        in:",
+              "          - shell.exec",
+              "          - verifier.run"
+            ].join("\n"),
+            "      action_type: shell.exec"
+          ),
+        "utf8"
+      );
+
+      await upgradeRunsteadState({ cwd: workspace });
+      const repairedPolicy = await readFile(policyPath, "utf8");
+
+      expect(repairedPolicy).toContain("filesystem.list");
+      expect(repairedPolicy).toContain("filesystem.search");
+      expect(repairedPolicy).toContain("repo.metadata.read");
+      expect(repairedPolicy).toContain("workspace.facts.read");
+      expect(repairedPolicy).toContain("verifier.run");
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
   it("requires legacy .team state to be migrated first", async () => {
     const workspace = join(tmpdir(), `runstead-upgrade-team-${process.pid}`);
 
