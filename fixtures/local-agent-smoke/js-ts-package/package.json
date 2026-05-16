@@ -1,0 +1,14 @@
+{
+  "name": "runstead-smoke-js-ts-package",
+  "private": true,
+  "type": "module",
+  "packageManager": "npm@10.0.0",
+  "scripts": {
+    "test": "node --test",
+    "lint": "eslint src",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  }
+}
