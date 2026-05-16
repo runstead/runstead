@@ -242,7 +242,9 @@ export async function runCiRepairOrchestratorUnlocked(
       base,
       draft: options.draft === true,
       worker: options.worker,
-      ...(options.model === undefined ? {} : { model: options.model })
+      ...(options.provider === undefined ? {} : { provider: options.provider }),
+      ...(options.model === undefined ? {} : { model: options.model }),
+      ...(options.baseUrl === undefined ? {} : { baseUrl: options.baseUrl })
     });
 
   try {
@@ -2380,7 +2382,9 @@ interface CiRepairOrchestratorStageContext extends JsonObject {
   base?: string;
   draft?: boolean;
   requestedWorker?: CiRepairWorkerKind;
+  requestedProvider?: string;
   requestedModel?: string;
+  requestedBaseUrl?: string;
   publishActionId?: string;
   pushActionId?: string;
   branchPushed?: boolean;
@@ -2407,7 +2411,9 @@ interface CiRepairOrchestratorResumeContext extends JsonObject {
   base: string;
   draft: boolean;
   requestedWorker?: CiRepairWorkerKind;
+  requestedProvider?: string;
   requestedModel?: string;
+  requestedBaseUrl?: string;
   publishActionId: string;
   pushActionId: string;
   branchPushed: boolean;
@@ -2452,7 +2458,9 @@ function buildInitialCiRepairStageContext(input: {
   base: string;
   draft: boolean;
   worker: CiRepairWorkerKind;
+  provider?: string;
   model?: string;
+  baseUrl?: string;
 }): CiRepairOrchestratorStageContext {
   return {
     stage: "created",
@@ -2468,7 +2476,9 @@ function buildInitialCiRepairStageContext(input: {
     base: input.base,
     draft: input.draft,
     requestedWorker: input.worker,
+    ...(input.provider === undefined ? {} : { requestedProvider: input.provider }),
     ...(input.model === undefined ? {} : { requestedModel: input.model }),
+    ...(input.baseUrl === undefined ? {} : { requestedBaseUrl: input.baseUrl }),
     publishActionId: stableActionId("repo_publish_repair", [
       input.ciRepair.task.id,
       input.base,

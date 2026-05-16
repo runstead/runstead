@@ -12,7 +12,6 @@ import {
   type RunCiRepairOrchestratorResult
 } from "./ci-repair-orchestrator.js";
 import { getCodexAuthStatus, type CodexAuthStatus } from "./codex-auth.js";
-import { resolveCodexModel } from "./codex-model.js";
 import type { CodexDirectTransport } from "./codex-direct-worker.js";
 import type { GitHubCliRunner } from "./github-actions.js";
 import {
@@ -24,6 +23,7 @@ import {
   type RunLocalAgentTaskResult
 } from "./local-agent.js";
 import { withRunsteadManagerLock } from "./manager-lock.js";
+import { resolveModelProviderModel } from "./model-provider-runtime.js";
 import { blockTask, listTasks } from "./tasks.js";
 import {
   runTaskVerifiersUnlocked,
@@ -45,7 +45,9 @@ export interface RunOnceOptions {
   base?: string;
   draft?: boolean;
   worker?: CiRepairWorkerKind;
+  provider?: string;
   model?: string;
+  baseUrl?: string;
   allowedPaths?: string[];
   deniedPaths?: string[];
   githubRunner?: GitHubCliRunner;
@@ -79,6 +81,12 @@ export interface RunOnceExecutedTaskResult {
   commandResults?: RunTaskVerifierCommandResult[];
   ciRepairResult?: RunCiRepairOrchestratorResult;
   localAgentResult?: RunLocalAgentTaskResult;
+}
+
+interface RunOnceModelProvider {
+  provider?: string;
+  model?: string;
+  baseUrl?: string;
 }
 
 export async function runOnce(options: RunOnceOptions = {}): Promise<RunOnceResult> {
@@ -132,7 +140,11 @@ export async function runOnceUnlocked(
       throw new Error(`Task ${task.id} is not ready to resume CI repair`);
     }
 
-    const resolvedModel = await resolveOptionalCodexModel(cwd, options.model);
+    const modelProvider = await resolveOptionalRunModelProvider(cwd, {
+      ...(options.provider === undefined ? {} : { provider: options.provider }),
+      ...(options.model === undefined ? {} : { model: options.model }),
+      ...(options.baseUrl === undefined ? {} : { baseUrl: options.baseUrl })
+    });
     const result = await runCiRepairOrchestratorUnlocked({
       cwd,
       runId,
@@ -140,9 +152,15 @@ export async function runOnceUnlocked(
         options.worker ??
         (await defaultCiRepairWorker({
           options,
-          model: resolvedModel
+          modelProvider
         })),
-      ...(resolvedModel === undefined ? {} : { model: resolvedModel }),
+      ...(modelProvider.provider === undefined
+        ? {}
+        : { provider: modelProvider.provider }),
+      ...(modelProvider.model === undefined ? {} : { model: modelProvider.model }),
+      ...(modelProvider.baseUrl === undefined
+        ? {}
+        : { baseUrl: modelProvider.baseUrl }),
       verifierCommands: [],
       ...(options.base === undefined ? {} : { base: options.base }),
       ...(options.draft === undefined ? {} : { draft: options.draft }),
@@ -184,21 +202,31 @@ export async function runOnceUnlocked(
       throw new Error(`Task ${task.id} is missing a CI workflow run id`);
     }
 
-    const model = await resolveOptionalCodexModel(
-      cwd,
-      options.model ?? modelFromCiRepairTask(task)
-    );
+    const requestedProvider = options.provider ?? providerFromCiRepairTask(task);
+    const requestedModel = options.model ?? modelFromCiRepairTask(task);
+    const requestedBaseUrl = options.baseUrl ?? baseUrlFromCiRepairTask(task);
+    const modelProvider = await resolveOptionalRunModelProvider(cwd, {
+      ...(requestedProvider === undefined ? {} : { provider: requestedProvider }),
+      ...(requestedModel === undefined ? {} : { model: requestedModel }),
+      ...(requestedBaseUrl === undefined ? {} : { baseUrl: requestedBaseUrl })
+    });
     const worker =
       options.worker ??
       workerFromCiRepairTask(task) ??
-      (await defaultCiRepairWorker({ options, model }));
+      (await defaultCiRepairWorker({ options, modelProvider }));
     const result = await (
       options.ciRepairOrchestrator ?? runCiRepairOrchestratorUnlocked
     )({
       cwd,
       runId,
       worker,
-      ...(model === undefined ? {} : { model }),
+      ...(modelProvider.provider === undefined
+        ? {}
+        : { provider: modelProvider.provider }),
+      ...(modelProvider.model === undefined ? {} : { model: modelProvider.model }),
+      ...(modelProvider.baseUrl === undefined
+        ? {}
+        : { baseUrl: modelProvider.baseUrl }),
       verifierCommands: verifierCommandsFromCiRepairTask(task),
       ...(options.base === undefined ? {} : { base: options.base }),
       ...(options.draft === undefined ? {} : { draft: options.draft }),
@@ -278,18 +306,29 @@ export async function runOnceUnlocked(
   };
 }
 
-async function resolveOptionalCodexModel(
+async function resolveOptionalRunModelProvider(
   cwd: string,
-  explicitModel: string | undefined
-): Promise<string | undefined> {
-  if (explicitModel !== undefined) {
-    return (await resolveCodexModel({ cwd, explicitModel })).model;
-  }
-
+  requested: RunOnceModelProvider
+): Promise<RunOnceModelProvider> {
   try {
-    return (await resolveCodexModel({ cwd })).model;
+    const resolved = await resolveModelProviderModel({
+      cwd,
+      ...(requested.provider === undefined
+        ? {}
+        : { explicitProvider: requested.provider }),
+      ...(requested.model === undefined ? {} : { explicitModel: requested.model }),
+      ...(requested.baseUrl === undefined ? {} : { explicitBaseUrl: requested.baseUrl })
+    });
+
+    return {
+      provider: resolved.selection.provider,
+      model: resolved.model,
+      ...(resolved.selection.baseUrl === undefined
+        ? {}
+        : { baseUrl: resolved.selection.baseUrl })
+    };
   } catch {
-    return undefined;
+    return requested;
   }
 }
 
@@ -386,12 +425,59 @@ function modelFromCiRepairTask(task: Task): string | undefined {
     : undefined;
 }
 
+function providerFromCiRepairTask(task: Task): string | undefined {
+  const provider = task.input.provider;
+
+  if (typeof provider === "string" && provider.trim().length > 0) {
+    return provider.trim();
+  }
+
+  const context = task.output?.ciRepairOrchestrator;
+
+  if (!isRecord(context)) {
+    return undefined;
+  }
+
+  const requestedProvider = context.requestedProvider;
+
+  return typeof requestedProvider === "string" && requestedProvider.trim().length > 0
+    ? requestedProvider.trim()
+    : undefined;
+}
+
+function baseUrlFromCiRepairTask(task: Task): string | undefined {
+  const baseUrl = task.input.baseUrl;
+
+  if (typeof baseUrl === "string" && baseUrl.trim().length > 0) {
+    return baseUrl.trim();
+  }
+
+  const context = task.output?.ciRepairOrchestrator;
+
+  if (!isRecord(context)) {
+    return undefined;
+  }
+
+  const requestedBaseUrl = context.requestedBaseUrl;
+
+  return typeof requestedBaseUrl === "string" && requestedBaseUrl.trim().length > 0
+    ? requestedBaseUrl.trim()
+    : undefined;
+}
+
 async function defaultCiRepairWorker(input: {
   options: RunOnceOptions;
-  model: string | undefined;
+  modelProvider: RunOnceModelProvider;
 }): Promise<CiRepairWorkerKind> {
-  if (input.model === undefined) {
+  if (input.modelProvider.model === undefined) {
     return "codex_cli";
+  }
+
+  if (
+    input.modelProvider.provider !== undefined &&
+    input.modelProvider.provider !== "codex"
+  ) {
+    return "codex_direct";
   }
 
   const status = await (input.options.codexAuthStatus ?? getCodexAuthStatus)();

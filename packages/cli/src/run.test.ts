@@ -294,7 +294,9 @@ describe("runOnce", () => {
           source: "github_actions",
           runId: "123",
           worker: "codex_direct",
+          provider: "openrouter",
           model: "fake-codex",
+          baseUrl: "https://openrouter.ai/api/v1",
           logEvidenceType: "github_workflow_run",
           workflowRun: {
             runId: "123",
@@ -330,7 +332,9 @@ describe("runOnce", () => {
       expect(calls).toEqual([
         expect.objectContaining({
           worker: "codex_direct",
-          model: "fake-codex"
+          provider: "openrouter",
+          model: "fake-codex",
+          baseUrl: "https://openrouter.ai/api/v1"
         })
       ]);
     } finally {
@@ -377,6 +381,60 @@ describe("runOnce", () => {
         expect.objectContaining({
           worker: "codex_direct",
           model: "fake-codex"
+        })
+      ]);
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("prefers codex direct for queued ci repair with a configured non-Codex provider", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-run-ci-provider-direct-"));
+
+    try {
+      await initRunstead({ cwd: workspace });
+      await setRunsteadConfigValue({
+        cwd: workspace,
+        key: "model.provider",
+        value: "openrouter"
+      });
+      await setRunsteadConfigValue({
+        cwd: workspace,
+        key: "model.name",
+        value: "anthropic/claude-opus-4.6"
+      });
+      const goal = await createGoal({
+        cwd: workspace,
+        domain: "repo-maintenance",
+        now: new Date("2026-05-14T08:00:00.000Z")
+      });
+      const task = ciRepairTask({
+        id: "task_ci_repair_provider_direct",
+        goalId: goal.goal.id
+      });
+      const calls: unknown[] = [];
+
+      insertTask(goal.stateDb, task);
+
+      await runOnce({
+        cwd: workspace,
+        codexAuthStatus: () => {
+          throw new Error("Codex auth should not gate non-Codex providers");
+        },
+        ciRepairOrchestrator: (options) => {
+          calls.push(options);
+
+          return Promise.resolve(
+            fakeCiRepairOrchestration(workspace, goal.stateDb, task)
+          );
+        }
+      });
+
+      expect(calls).toEqual([
+        expect.objectContaining({
+          worker: "codex_direct",
+          provider: "openrouter",
+          model: "anthropic/claude-opus-4.6"
         })
       ]);
     } finally {

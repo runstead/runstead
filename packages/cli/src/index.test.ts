@@ -114,6 +114,22 @@ describe("cli entrypoint", () => {
     ).toContain("--cwd");
   });
 
+  it("exposes run once model routing options", () => {
+    const run = createProgram().commands.find((command) => command.name() === "run");
+
+    expect(run?.options.map((option) => option.long)).toEqual(
+      expect.arrayContaining([
+        "--once",
+        "--cwd",
+        "--worker",
+        "--provider",
+        "--model",
+        "--base-url",
+        "--actor"
+      ])
+    );
+  });
+
   it("exposes local agent run command", () => {
     const agent = createProgram().commands.find(
       (command) => command.name() === "agent"
