@@ -1,6 +1,5 @@
-import { execFile } from "node:child_process";
+import { spawn } from "node:child_process";
 import { resolve } from "node:path";
-import { promisify } from "node:util";
 
 import type { Goal, Task } from "@runstead/core";
 
@@ -10,7 +9,6 @@ import {
   type WorkspaceCheckpoint
 } from "./checkpoints.js";
 
-const execFileAsync = promisify(execFile);
 export const DEFAULT_WORKER_TIMEOUT_MS = 30 * 60_000;
 export const DEFAULT_WORKER_MAX_OUTPUT_BYTES = 1024 * 1024 * 10;
 
@@ -351,7 +349,7 @@ function bulletList(values: string[]): string {
   return values.map((value) => `- ${value}`).join("\n");
 }
 
-async function runWorkerProcess(
+export async function runWorkerProcess(
   command: string,
   args: string[],
   options: {
@@ -361,50 +359,108 @@ async function runWorkerProcess(
     maxOutputBytes?: number;
   }
 ): Promise<WorkerProcessResult> {
-  try {
-    const result = await execFileAsync(command, args, {
+  const maxOutputBytes = options.maxOutputBytes ?? DEFAULT_WORKER_MAX_OUTPUT_BYTES;
+  const timeoutMs = options.timeoutMs ?? DEFAULT_WORKER_TIMEOUT_MS;
+
+  return await new Promise<WorkerProcessResult>((resolveResult) => {
+    let stdout = "";
+    let stderr = "";
+    let capturedBytes = 0;
+    let outputTruncated = false;
+    let timedOut = false;
+    let settled = false;
+
+    const child = spawn(command, args, {
       cwd: options.cwd,
       env: options.env === undefined ? process.env : { ...process.env, ...options.env },
-      maxBuffer: options.maxOutputBytes ?? DEFAULT_WORKER_MAX_OUTPUT_BYTES,
-      timeout: options.timeoutMs ?? DEFAULT_WORKER_TIMEOUT_MS,
+      stdio: ["ignore", "pipe", "pipe"],
       windowsHide: true
     });
 
-    return {
-      stdout: result.stdout,
-      stderr: result.stderr,
-      exitCode: 0
+    const timeout = setTimeout(() => {
+      timedOut = true;
+      child.kill("SIGTERM");
+    }, timeoutMs);
+
+    const resolveOnce = (result: WorkerProcessResult): void => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      clearTimeout(timeout);
+      resolveResult(result);
     };
-  } catch (error) {
-    return {
-      stdout: commandOutput(error, "stdout"),
-      stderr: commandOutput(error, "stderr"),
-      exitCode: commandExitCode(error)
+
+    const capture = (key: "stdout" | "stderr", chunk: Buffer): void => {
+      if (capturedBytes >= maxOutputBytes) {
+        outputTruncated = true;
+        return;
+      }
+
+      const remainingBytes = maxOutputBytes - capturedBytes;
+      const captured =
+        chunk.byteLength > remainingBytes ? chunk.subarray(0, remainingBytes) : chunk;
+
+      if (captured.byteLength < chunk.byteLength) {
+        outputTruncated = true;
+      }
+
+      capturedBytes += captured.byteLength;
+
+      if (key === "stdout") {
+        stdout += captured.toString("utf8");
+      } else {
+        stderr += captured.toString("utf8");
+      }
     };
-  }
+
+    child.stdout.on("data", (chunk: Buffer) => {
+      capture("stdout", chunk);
+    });
+    child.stderr.on("data", (chunk: Buffer) => {
+      capture("stderr", chunk);
+    });
+
+    child.on("error", (error) => {
+      resolveOnce({
+        stdout,
+        stderr: appendWorkerProcessNotice(stderr, error.message),
+        exitCode: 1
+      });
+    });
+
+    child.on("close", (code, signal) => {
+      let finalStderr = stderr;
+
+      if (outputTruncated) {
+        finalStderr = appendWorkerProcessNotice(
+          finalStderr,
+          `worker output truncated at ${maxOutputBytes} bytes`
+        );
+      }
+
+      if (timedOut) {
+        finalStderr = appendWorkerProcessNotice(
+          finalStderr,
+          `worker timed out after ${timeoutMs} ms`
+        );
+      } else if (signal !== null) {
+        finalStderr = appendWorkerProcessNotice(
+          finalStderr,
+          `worker exited from signal ${signal}`
+        );
+      }
+
+      resolveOnce({
+        stdout,
+        stderr: finalStderr,
+        exitCode: code ?? (timedOut ? 124 : 1)
+      });
+    });
+  });
 }
 
-function commandExitCode(error: unknown): number {
-  if (
-    typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    typeof error.code === "number"
-  ) {
-    return error.code;
-  }
-
-  return 1;
-}
-
-function commandOutput(error: unknown, key: "stdout" | "stderr"): string {
-  if (typeof error === "object" && error !== null) {
-    const output = (error as Record<string, unknown>)[key];
-
-    if (typeof output === "string") {
-      return output;
-    }
-  }
-
-  return "";
+function appendWorkerProcessNotice(output: string, notice: string): string {
+  return `${output}${output.length === 0 || output.endsWith("\n") ? "" : "\n"}[runstead] ${notice}\n`;
 }

@@ -10,6 +10,7 @@ import {
   buildWrappedWorkerGovernanceManifest,
   buildWrappedWorkerInternalToolProxyStatus,
   buildWrappedWorkerPrompt,
+  runWorkerProcess,
   startWrappedWorker,
   WrappedWorkerHardProxyUnavailableError,
   workerCommand,
@@ -369,5 +370,32 @@ describe("startWrappedWorker", () => {
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }
+  });
+});
+
+describe("runWorkerProcess", () => {
+  it("runs workers with stdin ignored and captures stdout", async () => {
+    const result = await runWorkerProcess(
+      process.execPath,
+      [
+        "-e",
+        [
+          "process.stdin.resume();",
+          "process.stdin.on('data', () => process.exit(2));",
+          "process.stdin.on('end', () => console.log(JSON.stringify({ stdin: 'ignored' })));"
+        ].join("")
+      ],
+      {
+        cwd: process.cwd(),
+        timeoutMs: 5_000,
+        maxOutputBytes: 10_000
+      }
+    );
+
+    expect(result).toEqual({
+      stdout: '{"stdin":"ignored"}\n',
+      stderr: "",
+      exitCode: 0
+    });
   });
 });
