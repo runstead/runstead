@@ -90,11 +90,12 @@ describe("cli entrypoint", () => {
       (command) => command.name() === "agent"
     );
     const run = agent?.commands.find((command) => command.name() === "run");
+    const inspect = agent?.commands.find((command) => command.name() === "inspect");
     const report = agent?.commands.find((command) => command.name() === "report");
     const resume = agent?.commands.find((command) => command.name() === "resume");
 
     expect(agent?.commands.map((command) => command.name())).toEqual(
-      expect.arrayContaining(["run", "report", "resume"])
+      expect.arrayContaining(["run", "inspect", "report", "resume"])
     );
     expect(run?.options.map((option) => option.long)).toEqual(
       expect.arrayContaining([
@@ -105,6 +106,18 @@ describe("cli entrypoint", () => {
         "--allowed",
         "--denied",
         "--verifier",
+        "--max-turns",
+        "--max-tool-calls",
+        "--max-failed-tool-calls",
+        "--actor"
+      ])
+    );
+    expect(inspect?.options.map((option) => option.long)).toEqual(
+      expect.arrayContaining([
+        "--cwd",
+        "--worker",
+        "--model",
+        "--depth",
         "--max-turns",
         "--max-tool-calls",
         "--max-failed-tool-calls",
