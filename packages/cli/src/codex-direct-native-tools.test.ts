@@ -107,4 +107,30 @@ describe("codex direct native tools", () => {
       await rm(root, { force: true, recursive: true });
     }
   });
+
+  it("skips files that exceed the search scan byte limit", async () => {
+    const root = await mkdtemp(join(tmpdir(), "runstead-native-tools-"));
+
+    try {
+      const workspace = join(root, "workspace");
+      await mkdir(workspace);
+      await writeFile(join(workspace, "small.txt"), "needle\n", "utf8");
+      await writeFile(
+        join(workspace, "large.txt"),
+        `${"x".repeat(64)}needle\n`,
+        "utf8"
+      );
+
+      const result = await searchWorkspaceText(workspace, {
+        query: "needle",
+        maxBytesPerFile: 16
+      });
+
+      expect(result.matches.map((match) => match.path)).toEqual(["small.txt"]);
+      expect(result.filesSkippedTooLarge).toBe(1);
+      expect(result.maxBytesPerFile).toBe(16);
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
 });

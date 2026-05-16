@@ -444,6 +444,10 @@ export function codexDirectToolDefinitions(): CodexResponsesTool[] {
           maxMatches: {
             type: "number",
             description: "Optional maximum number of matches to return."
+          },
+          maxBytesPerFile: {
+            type: "number",
+            description: "Optional maximum bytes scanned per file."
           }
         },
         ["query"]
@@ -875,6 +879,10 @@ async function executeCodexDirectTool(
           ...optionalField(
             "maxMatches",
             optionalPositiveInteger(options.toolCall.arguments.maxMatches)
+          ),
+          ...optionalField(
+            "maxBytesPerFile",
+            optionalPositiveInteger(options.toolCall.arguments.maxBytesPerFile)
           )
         })
       );
@@ -1514,6 +1522,7 @@ async function runGovernedSearchText(
     caseSensitive: boolean;
     contextLines?: number;
     maxMatches?: number;
+    maxBytesPerFile?: number;
   }
 ) {
   return runGovernedToolAction({
@@ -1529,7 +1538,8 @@ async function runGovernedSearchText(
         options.glob ?? [],
         options.caseSensitive,
         options.contextLines,
-        options.maxMatches
+        options.maxMatches,
+        options.maxBytesPerFile
       ]
     }),
     run: async () => {
@@ -1541,7 +1551,10 @@ async function runGovernedSearchText(
         ...(options.contextLines === undefined
           ? {}
           : { contextLines: options.contextLines }),
-        ...(options.maxMatches === undefined ? {} : { maxMatches: options.maxMatches })
+        ...(options.maxMatches === undefined ? {} : { maxMatches: options.maxMatches }),
+        ...(options.maxBytesPerFile === undefined
+          ? {}
+          : { maxBytesPerFile: options.maxBytesPerFile })
       });
 
       return {
@@ -1550,7 +1563,8 @@ async function runGovernedSearchText(
           matches: value.matches.length,
           truncated: value.truncated,
           filesSearched: value.filesSearched,
-          filesTruncated: value.filesTruncated
+          filesTruncated: value.filesTruncated,
+          filesSkippedTooLarge: value.filesSkippedTooLarge
         }
       };
     }

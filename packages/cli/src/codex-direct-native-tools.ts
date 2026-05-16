@@ -24,6 +24,8 @@ const SEARCH_TEXT_MAX_MATCHES_LIMIT = 500;
 const SEARCH_TEXT_FILE_SCAN_LIMIT = 1_000;
 const SEARCH_TEXT_CONTEXT_LIMIT = 5;
 const SEARCH_TEXT_PREVIEW_LIMIT = 500;
+const DEFAULT_SEARCH_TEXT_MAX_BYTES_PER_FILE = 512 * 1024;
+const SEARCH_TEXT_MAX_BYTES_PER_FILE_LIMIT = 2 * 1024 * 1024;
 const DEFAULT_READ_MANY_BYTES_PER_FILE = 64 * 1024;
 const READ_MANY_BYTES_PER_FILE_LIMIT = 1024 * 1024;
 const DEFAULT_READ_MANY_TOTAL_BYTES = 256 * 1024;
@@ -63,6 +65,7 @@ export interface SearchWorkspaceTextOptions {
   caseSensitive?: boolean;
   contextLines?: number;
   maxMatches?: number;
+  maxBytesPerFile?: number;
 }
 
 export interface SearchWorkspaceTextContextLine {
@@ -86,8 +89,10 @@ export interface SearchWorkspaceTextResult {
   matches: SearchWorkspaceTextMatch[];
   truncated: boolean;
   maxMatches: number;
+  maxBytesPerFile: number;
   filesSearched: number;
   filesTruncated: boolean;
+  filesSkippedTooLarge: number;
 }
 
 export interface ReadManyWorkspaceFilesOptions {
@@ -509,6 +514,11 @@ export async function searchWorkspaceText(
     DEFAULT_SEARCH_TEXT_MAX_MATCHES,
     SEARCH_TEXT_MAX_MATCHES_LIMIT
   );
+  const maxBytesPerFile = boundedMaxResults(
+    options.maxBytesPerFile,
+    DEFAULT_SEARCH_TEXT_MAX_BYTES_PER_FILE,
+    SEARCH_TEXT_MAX_BYTES_PER_FILE_LIMIT
+  );
   const contextLines = Math.min(options.contextLines ?? 0, SEARCH_TEXT_CONTEXT_LIMIT);
   const regex = options.regex === true;
   const caseSensitive = options.caseSensitive === true;
@@ -522,6 +532,7 @@ export async function searchWorkspaceText(
   });
   const matches: SearchWorkspaceTextMatch[] = [];
   let filesSearched = 0;
+  let filesSkippedTooLarge = 0;
   let truncated = false;
 
   for (const entry of files.entries) {
@@ -533,7 +544,19 @@ export async function searchWorkspaceText(
       continue;
     }
 
-    const content = await readFile(resolve(root, entry.path), "utf8");
+    const absolutePath = resolve(root, entry.path);
+    const stats = await lstat(absolutePath);
+
+    if (!stats.isFile()) {
+      continue;
+    }
+
+    if (stats.size > maxBytesPerFile) {
+      filesSkippedTooLarge += 1;
+      continue;
+    }
+
+    const content = await readFile(absolutePath, "utf8");
 
     if (content.includes("\0")) {
       continue;
@@ -569,8 +592,10 @@ export async function searchWorkspaceText(
     matches,
     truncated,
     maxMatches,
+    maxBytesPerFile,
     filesSearched,
-    filesTruncated: files.truncated
+    filesTruncated: files.truncated,
+    filesSkippedTooLarge
   };
 }
 
