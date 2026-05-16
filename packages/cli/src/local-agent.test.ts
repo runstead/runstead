@@ -10,6 +10,7 @@ import type { CodexDirectTransport } from "./codex-direct-worker.js";
 import type { CodexResponsesRequest } from "./codex-responses-transport.js";
 import { initRunstead } from "./init.js";
 import {
+  attachLocalAgentVerifierEvidence,
   createLocalAgentTask,
   formatLocalAgentRunReport,
   formatLocalAgentTaskReport,
@@ -102,6 +103,54 @@ describe("local agent task primitives", () => {
           prompt: "   "
         })
       ).rejects.toThrow("Local agent prompt is required");
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("attaches verifier evidence to queued test triage prompts", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-local-agent-test-"));
+    const verifierCommand = nodeCommand("process.exit(5)");
+
+    try {
+      await initRunstead({ cwd: workspace, profile: "trusted-local" });
+      await allowLocalAgentVerifierForTest(workspace, verifierCommand);
+      const created = await createLocalAgentTask({
+        cwd: workspace,
+        prompt: "Triage the failing verifier.",
+        worker: "codex_direct",
+        model: "gpt-5.3-codex",
+        mode: "read-only",
+        verifierCommands: [
+          {
+            name: "test",
+            command: verifierCommand
+          }
+        ]
+      });
+      const verifierResult = await attachLocalAgentVerifierEvidence({
+        cwd: workspace,
+        taskId: created.task.id,
+        now: new Date("2026-05-16T08:02:00.000Z")
+      });
+      const storedTask = showTask({ cwd: workspace, id: created.task.id }).task;
+
+      expect(verifierResult.commandResults).toHaveLength(1);
+      expect(verifierResult.commandResults[0]).toMatchObject({
+        verifier: "test",
+        exitCode: 5,
+        timedOut: false
+      });
+      expect(storedTask.status).toBe("queued");
+      expect(String(storedTask.input.prompt)).toContain("Runstead verifier evidence:");
+      expect(String(storedTask.input.prompt)).toContain("test: exit=5");
+      expect(storedTask.input.verifierEvidence).toEqual([
+        expect.objectContaining({
+          verifier: "test",
+          exitCode: 5,
+          evidenceId: verifierResult.commandResults[0]?.evidenceId
+        })
+      ]);
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }

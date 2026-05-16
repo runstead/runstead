@@ -130,6 +130,64 @@ export interface LocalAgentTaskReport {
   audit: LocalAgentAuditSummary;
 }
 
+export async function attachLocalAgentVerifierEvidence(options: {
+  cwd?: string;
+  taskId: string;
+  now?: Date;
+}): Promise<RunTaskVerifiersResult> {
+  const cwd = resolve(options.cwd ?? process.cwd());
+  const state = await requireRunsteadStateDb(cwd);
+  const verifierResult = await runTaskVerifiersUnlocked({
+    cwd,
+    taskId: options.taskId,
+    claim: true,
+    mode: "evidence_only",
+    ...(options.now === undefined ? {} : { now: options.now })
+  });
+  const currentTask = showTask({ cwd, id: options.taskId }).task;
+
+  if (!isLocalAgentTask(currentTask)) {
+    throw new Error(`Task ${options.taskId} is not a local agent task`);
+  }
+
+  const prompt = requiredTaskString(currentTask, "prompt");
+  const updatedAt = (options.now ?? new Date()).toISOString();
+  const task: Task = {
+    ...currentTask,
+    status: "queued",
+    input: {
+      ...currentTask.input,
+      prompt: `${prompt}\n\n${formatVerifierEvidencePrompt(verifierResult.commandResults)}`,
+      verifierEvidence: verifierResult.commandResults.map(verifierEvidenceInput)
+    },
+    updatedAt
+  };
+  const database = openRunsteadDatabase(state.stateDb);
+
+  try {
+    appendEventAndProject(database, {
+      event: localAgentEvent(
+        "task.verifier_evidence_attached",
+        "task",
+        task.id,
+        updatedAt,
+        {
+          previousStatus: currentTask.status,
+          verifierEvidence: task.input.verifierEvidence
+        }
+      ),
+      projection: {
+        type: "task",
+        value: task
+      }
+    });
+  } finally {
+    database.close();
+  }
+
+  return verifierResult;
+}
+
 export async function createLocalAgentTask(
   options: CreateLocalAgentTaskOptions
 ): Promise<CreateLocalAgentTaskResult> {
@@ -1186,6 +1244,33 @@ function verifierCommandsFromLocalAgentTask(task: Task): CommandVerifierInput[] 
         ]
       : [];
   });
+}
+
+function formatVerifierEvidencePrompt(results: RunTaskVerifierCommandResult[]): string {
+  return [
+    "Runstead verifier evidence:",
+    ...(results.length === 0
+      ? ["- none"]
+      : results.map(
+          (result) =>
+            `- ${result.verifier}: exit=${result.exitCode ?? "unknown"} timedOut=${String(result.timedOut)} evidence=${result.evidenceId}`
+        )),
+    "Use this verifier evidence as the primary test context. Do not rerun tests unless explicitly requested."
+  ].join("\n");
+}
+
+function verifierEvidenceInput(result: RunTaskVerifierCommandResult): JsonObject {
+  return {
+    verifier: result.verifier,
+    exitCode: result.exitCode,
+    timedOut: result.timedOut,
+    forceKilled: result.forceKilled,
+    evidenceId: result.evidenceId,
+    ...(result.policyDecisionId === undefined
+      ? {}
+      : { policyDecisionId: result.policyDecisionId }),
+    ...(result.approvalId === undefined ? {} : { approvalId: result.approvalId })
+  };
 }
 
 function requiredTaskString(task: Task, field: string): string {

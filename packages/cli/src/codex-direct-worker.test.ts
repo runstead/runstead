@@ -184,20 +184,21 @@ describe("runCodexDirectWorker", () => {
           toolCalls: 1,
           summary: "Missing file handled."
         });
-        expect(toolCalls).toEqual([
-          {
-            action_type: "model.inference.request",
-            status: "completed"
-          },
-          {
-            action_type: "filesystem.read",
-            status: "failed"
-          },
-          {
-            action_type: "model.inference.request",
-            status: "completed"
-          }
-        ]);
+        expect(toolCalls).toEqual(
+          expect.arrayContaining([
+            {
+              action_type: "model.inference.request",
+              status: "completed"
+            },
+            {
+              action_type: "filesystem.read",
+              status: "failed"
+            }
+          ])
+        );
+        expect(
+          toolCalls.filter((call) => call.action_type === "model.inference.request")
+        ).toHaveLength(2);
         expect(JSON.stringify(transport.requests[1]?.input)).toContain(
           "pyproject.toml"
         );

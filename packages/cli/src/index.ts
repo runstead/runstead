@@ -2524,6 +2524,17 @@ interface AgentReviewCliOptions {
   actor: string;
 }
 
+interface AgentTestCliOptions {
+  cwd?: string;
+  worker: string;
+  model?: string;
+  verifier: string[];
+  maxTurns?: string;
+  maxToolCalls?: string;
+  maxFailedToolCalls?: string;
+  actor: string;
+}
+
 interface AgentReportCliOptions {
   cwd?: string;
   actor: string;
@@ -2926,6 +2937,102 @@ function addAgentCommand(command: Command): void {
               )
             })
       });
+      const result = await runLocalAgentTask({
+        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+        taskId: created.task.id
+      });
+      const exitCode = localAgentRunExitCode(result);
+
+      console.log(formatLocalAgentRunReport(result));
+      if (exitCode !== 0) {
+        process.exitCode = exitCode;
+      }
+    });
+
+  command
+    .command("test")
+    .description("Run verifiers first, then triage the evidence with Codex Direct.")
+    .argument("[focus...]", "Optional test triage focus")
+    .option("--cwd <path>", "Workspace directory")
+    .option("--worker <worker>", "Worker to run: codex_direct", "codex_direct")
+    .option("--model <model>", "Model to use with codex_direct")
+    .requiredOption(
+      "--verifier <name=command>",
+      "Verifier command to run before triage",
+      collectValues,
+      []
+    )
+    .option("--max-turns <number>", "Override preset Codex Direct tool turns")
+    .option("--max-tool-calls <number>", "Override preset Codex Direct tool calls")
+    .option(
+      "--max-failed-tool-calls <number>",
+      "Override preset recoverable Codex Direct tool failures"
+    )
+    .option("--actor <id>", "RBAC subject for local agent execution", "local-admin")
+    .action(async (focusParts: string[], options: AgentTestCliOptions) => {
+      await requireRbacPermission({
+        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+        actor: options.actor,
+        permission: "task.run",
+        action: "run local agent test triage"
+      });
+
+      const worker = parseCiRepairWorkerKind(options.worker);
+
+      if (worker !== "codex_direct") {
+        throw new Error("agent test currently supports --worker codex_direct only");
+      }
+
+      const verifierCommands = options.verifier.map(parseVerifierCommandOption);
+      const {
+        attachLocalAgentVerifierEvidence,
+        createLocalAgentTask,
+        formatLocalAgentRunReport,
+        localAgentRunExitCode,
+        runLocalAgentTask
+      } = await import("./local-agent.js");
+      const { resolveLocalAgentPreset } = await import("./local-agent-presets.js");
+      const focus = focusParts.join(" ").trim();
+      const resolvedPreset = resolveLocalAgentPreset("test:triage", {
+        ...(focus.length === 0 ? {} : { prompt: focus }),
+        verifierNames: verifierCommands.map((command) => command.name)
+      });
+      const created = await createLocalAgentTask({
+        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+        prompt: resolvedPreset.prompt,
+        preset: resolvedPreset.preset.id,
+        title: "Local agent test triage",
+        worker,
+        ...(options.model === undefined ? {} : { model: options.model }),
+        mode: resolvedPreset.preset.mode,
+        checkpoint: resolvedPreset.preset.checkpoint,
+        verifierCommands,
+        ...(options.maxTurns === undefined
+          ? { maxTurns: resolvedPreset.preset.maxTurns }
+          : { maxTurns: parseRequiredInteger(options.maxTurns, "--max-turns") }),
+        ...(options.maxToolCalls === undefined
+          ? { maxToolCalls: resolvedPreset.preset.maxToolCalls }
+          : {
+              maxToolCalls: parseRequiredInteger(
+                options.maxToolCalls,
+                "--max-tool-calls"
+              )
+            }),
+        ...(options.maxFailedToolCalls === undefined
+          ? { maxFailedToolCalls: resolvedPreset.preset.maxFailedToolCalls }
+          : {
+              maxFailedToolCalls: parseRequiredInteger(
+                options.maxFailedToolCalls,
+                "--max-failed-tool-calls"
+              )
+            })
+      });
+
+      await attachLocalAgentVerifierEvidence({
+        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+        taskId: created.task.id
+      });
+
       const result = await runLocalAgentTask({
         ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
         taskId: created.task.id
