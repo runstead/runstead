@@ -438,7 +438,7 @@ async function checkClaudeCodePrintProbe(options: {
   runner: WorkerProcessRunner;
 }): Promise<DoctorCheck> {
   const prompt =
-    'Return exactly this JSON and nothing else: {"runstead_claude_code_probe":true}';
+    "Return structured output with summary runstead_claude_code_probe, no changed files, no commands, no risks, and no approval needed.";
   const command = workerCommand("claude_code", prompt, {
     ...(options.model === undefined ? {} : { model: options.model })
   });
@@ -468,7 +468,7 @@ async function checkClaudeCodePrintProbe(options: {
       );
     }
 
-    if (!stdout.includes('"runstead_claude_code_probe":true')) {
+    if (!claudeCodeProbeSucceeded(stdout)) {
       return fail(
         "claude-code-print",
         "Claude Code CLI print probe",
@@ -744,6 +744,32 @@ function claudeCodeAuthHint(output: string): string | undefined {
     normalized.includes("invalid api key")
     ? "Claude Code CLI reported a local Claude auth/profile problem; this is separate from Runstead Codex Direct login"
     : undefined;
+}
+
+function claudeCodeProbeSucceeded(stdout: string): boolean {
+  try {
+    const parsed = JSON.parse(stdout) as unknown;
+
+    if (isRecord(parsed) && parsed.runstead_claude_code_probe === true) {
+      return true;
+    }
+
+    if (
+      isRecord(parsed) &&
+      isRecord(parsed.structured_output) &&
+      parsed.structured_output.summary === "runstead_claude_code_probe"
+    ) {
+      return true;
+    }
+
+    return (
+      isRecord(parsed) &&
+      typeof parsed.result === "string" &&
+      parsed.result.includes('"runstead_claude_code_probe":true')
+    );
+  } catch {
+    return stdout.includes('"runstead_claude_code_probe":true');
+  }
 }
 
 function truncateDoctorMessage(value: string, maxLength = 500): string {

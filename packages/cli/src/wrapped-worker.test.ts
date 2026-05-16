@@ -193,6 +193,10 @@ describe("workerCommand", () => {
       command: "claude",
       args: [
         "-p",
+        "--output-format",
+        "json",
+        "--json-schema",
+        expect.stringContaining('"summary"'),
         "--permission-mode",
         "default",
         "--disallowedTools",
@@ -207,6 +211,10 @@ describe("workerCommand", () => {
         "-p",
         "--model",
         "sonnet",
+        "--output-format",
+        "json",
+        "--json-schema",
+        expect.stringContaining('"summary"'),
         "--permission-mode",
         "default",
         "--disallowedTools",
@@ -331,6 +339,56 @@ describe("startWrappedWorker", () => {
         timeoutMs: 1_800_000,
         maxOutputBytes: 10485760
       }
+    ]);
+  });
+
+  it("validates Claude Code JSON envelope structured output", async () => {
+    const structuredOutput = {
+      summary: "done through claude",
+      files_changed: [],
+      commands_run: [],
+      risks: [],
+      needs_approval: false,
+      approval_reason: null
+    };
+    const runner: WorkerProcessRunner = () =>
+      Promise.resolve({
+        stdout: JSON.stringify({
+          type: "result",
+          subtype: "success",
+          result: "",
+          structured_output: structuredOutput
+        }),
+        stderr: "",
+        exitCode: 0
+      });
+
+    const result = await startWrappedWorker({
+      worker: "claude_code",
+      goal,
+      task,
+      workspace: "/repo",
+      evidenceDir: "/repo/.runstead/evidence",
+      model: "sonnet",
+      runner
+    });
+
+    expect(result.outputValidation).toEqual({ valid: true });
+    expect(result.structuredOutput).toEqual(structuredOutput);
+    expect(result.args).toEqual([
+      "-p",
+      "--model",
+      "sonnet",
+      "--output-format",
+      "json",
+      "--json-schema",
+      expect.stringContaining('"summary"'),
+      "--permission-mode",
+      "default",
+      "--disallowedTools",
+      expect.stringContaining("Bash(git push *)"),
+      "--",
+      result.prompt
     ]);
   });
 

@@ -142,6 +142,27 @@ const CLAUDE_DISALLOWED_TOOLS = [
   "Bash(bun add *)"
 ];
 
+const WRAPPED_WORKER_STRUCTURED_OUTPUT_SCHEMA = {
+  type: "object",
+  properties: {
+    summary: { type: "string" },
+    files_changed: { type: "array", items: { type: "string" } },
+    commands_run: { type: "array", items: { type: "string" } },
+    risks: { type: "array", items: { type: "string" } },
+    needs_approval: { type: "boolean" },
+    approval_reason: { type: ["string", "null"] }
+  },
+  required: [
+    "summary",
+    "files_changed",
+    "commands_run",
+    "risks",
+    "needs_approval",
+    "approval_reason"
+  ],
+  additionalProperties: false
+};
+
 export function buildWrappedWorkerPrompt(input: WrappedWorkerPromptInput): string {
   const governance = buildWrappedWorkerGovernanceManifest(input);
 
@@ -361,6 +382,10 @@ export function workerCommand(
         args: [
           "-p",
           ...(model === undefined || model.length === 0 ? [] : ["--model", model]),
+          "--output-format",
+          "json",
+          "--json-schema",
+          JSON.stringify(WRAPPED_WORKER_STRUCTURED_OUTPUT_SCHEMA),
           "--permission-mode",
           "default",
           "--disallowedTools",
@@ -533,48 +558,83 @@ function validateWrappedWorkerStructuredOutput(
     };
   }
 
-  if (!isRecord(parsed)) {
+  const structuredCandidate = wrappedWorkerStructuredOutputCandidate(parsed);
+
+  if (!isRecord(structuredCandidate)) {
     return {
       valid: false,
       reason: "worker JSON output must be an object"
     };
   }
 
-  if (typeof parsed.summary !== "string") {
+  if (typeof structuredCandidate.summary !== "string") {
     return invalidWorkerOutputField("summary");
   }
 
-  if (!isStringArray(parsed.files_changed)) {
+  if (!isStringArray(structuredCandidate.files_changed)) {
     return invalidWorkerOutputField("files_changed");
   }
 
-  if (!isStringArray(parsed.commands_run)) {
+  if (!isStringArray(structuredCandidate.commands_run)) {
     return invalidWorkerOutputField("commands_run");
   }
 
-  if (!isStringArray(parsed.risks)) {
+  if (!isStringArray(structuredCandidate.risks)) {
     return invalidWorkerOutputField("risks");
   }
 
-  if (typeof parsed.needs_approval !== "boolean") {
+  if (typeof structuredCandidate.needs_approval !== "boolean") {
     return invalidWorkerOutputField("needs_approval");
   }
 
-  if (parsed.approval_reason !== null && typeof parsed.approval_reason !== "string") {
+  if (
+    structuredCandidate.approval_reason !== null &&
+    typeof structuredCandidate.approval_reason !== "string"
+  ) {
     return invalidWorkerOutputField("approval_reason");
   }
 
   return {
     valid: true,
     output: {
-      summary: parsed.summary,
-      files_changed: parsed.files_changed,
-      commands_run: parsed.commands_run,
-      risks: parsed.risks,
-      needs_approval: parsed.needs_approval,
-      approval_reason: parsed.approval_reason
+      summary: structuredCandidate.summary,
+      files_changed: structuredCandidate.files_changed,
+      commands_run: structuredCandidate.commands_run,
+      risks: structuredCandidate.risks,
+      needs_approval: structuredCandidate.needs_approval,
+      approval_reason: structuredCandidate.approval_reason
     }
   };
+}
+
+function wrappedWorkerStructuredOutputCandidate(parsed: unknown): unknown {
+  if (!isRecord(parsed)) {
+    return parsed;
+  }
+
+  if (isRecord(parsed.structured_output)) {
+    return parsed.structured_output;
+  }
+
+  if (isRecord(parsed.result)) {
+    return parsed.result;
+  }
+
+  if (typeof parsed.result === "string") {
+    const result = parsed.result.trim();
+
+    if (result.length === 0) {
+      return parsed;
+    }
+
+    try {
+      return JSON.parse(result) as unknown;
+    } catch {
+      return parsed;
+    }
+  }
+
+  return parsed;
 }
 
 function invalidWorkerOutputField(field: string): WrappedWorkerOutputValidation {
