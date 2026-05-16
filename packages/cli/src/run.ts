@@ -11,6 +11,7 @@ import {
   type RunCiRepairOrchestratorOptions,
   type RunCiRepairOrchestratorResult
 } from "./ci-repair-orchestrator.js";
+import { getCodexAuthStatus, type CodexAuthStatus } from "./codex-auth.js";
 import type { CodexDirectTransport } from "./codex-direct-worker.js";
 import type { GitHubCliRunner } from "./github-actions.js";
 import {
@@ -50,6 +51,9 @@ export interface RunOnceOptions {
   gitRunner?: CiRepairGitRunner;
   workerRunner?: WorkerProcessRunner;
   codexDirectTransport?: CodexDirectTransport;
+  codexAuthStatus?: () => Promise<
+    Pick<CodexAuthStatus, "loggedIn" | "accessTokenExpired">
+  >;
   verifierRunner?: (
     options: Parameters<typeof runTaskVerifiersUnlocked>[0]
   ) => ReturnType<typeof runTaskVerifiersUnlocked>;
@@ -130,7 +134,12 @@ export async function runOnceUnlocked(
     const result = await runCiRepairOrchestratorUnlocked({
       cwd,
       runId,
-      worker: options.worker ?? "codex_cli",
+      worker:
+        options.worker ??
+        (await defaultCiRepairWorker({
+          options,
+          model: options.model
+        })),
       ...(options.model === undefined ? {} : { model: options.model }),
       verifierCommands: [],
       ...(options.base === undefined ? {} : { base: options.base }),
@@ -173,8 +182,11 @@ export async function runOnceUnlocked(
       throw new Error(`Task ${task.id} is missing a CI workflow run id`);
     }
 
-    const worker = options.worker ?? workerFromCiRepairTask(task) ?? "codex_cli";
     const model = options.model ?? modelFromCiRepairTask(task);
+    const worker =
+      options.worker ??
+      workerFromCiRepairTask(task) ??
+      (await defaultCiRepairWorker({ options, model }));
     const result = await (
       options.ciRepairOrchestrator ?? runCiRepairOrchestratorUnlocked
     )({
@@ -313,6 +325,21 @@ function modelFromCiRepairTask(task: Task): string | undefined {
   }
 
   return undefined;
+}
+
+async function defaultCiRepairWorker(input: {
+  options: RunOnceOptions;
+  model: string | undefined;
+}): Promise<CiRepairWorkerKind> {
+  if (input.model === undefined) {
+    return "codex_cli";
+  }
+
+  const status = await (input.options.codexAuthStatus ?? getCodexAuthStatus)();
+
+  return status.loggedIn && status.accessTokenExpired !== true
+    ? "codex_direct"
+    : "codex_cli";
 }
 
 function verifierCommandsFromCiRepairTask(task: Task): CommandVerifierInput[] {

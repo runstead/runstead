@@ -143,6 +143,10 @@ verifiers, commit, and PR publication. The only changed stage is worker
 execution: `codex_direct` produces governed tool-call audit records while
 `codex_cli` remains the Level 1 external wrapper.
 
+For queued `ci_repair` tasks, `runstead run --once --model <model>` prefers
+`codex_direct` when local Codex credentials are present and not expired. Without
+local Codex credentials or a model, the runner falls back to `codex_cli`.
+
 ## Optional Live Smoke
 
 Unit tests use fake transports by default. To run a real local smoke against the

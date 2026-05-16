@@ -333,6 +333,97 @@ describe("runOnce", () => {
     }
   });
 
+  it("prefers codex direct for queued ci repair when local Codex auth and a model are available", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-run-ci-codex-direct-"));
+
+    try {
+      await initRunstead({ cwd: workspace });
+      const goal = await createGoal({
+        cwd: workspace,
+        domain: "repo-maintenance",
+        now: new Date("2026-05-14T08:00:00.000Z")
+      });
+      const task = ciRepairTask({
+        id: "task_ci_repair_default_codex_direct",
+        goalId: goal.goal.id,
+        model: "fake-codex"
+      });
+      const calls: unknown[] = [];
+
+      insertTask(goal.stateDb, task);
+
+      await runOnce({
+        cwd: workspace,
+        codexAuthStatus: () =>
+          Promise.resolve({
+            loggedIn: true,
+            accessTokenExpired: false
+          }),
+        ciRepairOrchestrator: (options) => {
+          calls.push(options);
+
+          return Promise.resolve(
+            fakeCiRepairOrchestration(workspace, goal.stateDb, task)
+          );
+        }
+      });
+
+      expect(calls).toEqual([
+        expect.objectContaining({
+          worker: "codex_direct",
+          model: "fake-codex"
+        })
+      ]);
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("falls back to codex cli for queued ci repair without local Codex auth", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-run-ci-codex-cli-"));
+
+    try {
+      await initRunstead({ cwd: workspace });
+      const goal = await createGoal({
+        cwd: workspace,
+        domain: "repo-maintenance",
+        now: new Date("2026-05-14T08:00:00.000Z")
+      });
+      const task = ciRepairTask({
+        id: "task_ci_repair_default_codex_cli",
+        goalId: goal.goal.id,
+        model: "fake-codex"
+      });
+      const calls: unknown[] = [];
+
+      insertTask(goal.stateDb, task);
+
+      await runOnce({
+        cwd: workspace,
+        codexAuthStatus: () =>
+          Promise.resolve({
+            loggedIn: false
+          }),
+        ciRepairOrchestrator: (options) => {
+          calls.push(options);
+
+          return Promise.resolve(
+            fakeCiRepairOrchestration(workspace, goal.stateDb, task)
+          );
+        }
+      });
+
+      expect(calls).toEqual([
+        expect.objectContaining({
+          worker: "codex_cli",
+          model: "fake-codex"
+        })
+      ]);
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
   it("routes queued local agent tasks through codex direct", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "runstead-run-local-agent-"));
     const requests: unknown[] = [];
@@ -646,6 +737,39 @@ function fakeCiRepairOrchestration(
       created: false
     },
     branchName: "runstead/task_ci_repair_ready/ci-123"
+  };
+}
+
+function ciRepairTask(input: { id: string; goalId: string; model?: string }): Task {
+  return {
+    id: input.id,
+    goalId: input.goalId,
+    domain: "repo-maintenance",
+    type: "ci_repair",
+    status: "queued",
+    priority: "high",
+    attempt: 0,
+    maxAttempts: 1,
+    input: {
+      source: "github_actions",
+      runId: "123",
+      ...(input.model === undefined ? {} : { model: input.model }),
+      logEvidenceType: "github_workflow_run",
+      workflowRun: {
+        runId: "123",
+        status: "completed",
+        conclusion: "failure"
+      },
+      commands: [
+        {
+          name: "test",
+          command: "pnpm test"
+        }
+      ]
+    },
+    verifiers: ["evidence:github_workflow_run", "command:test"],
+    createdAt: "2026-05-14T07:59:00.000Z",
+    updatedAt: "2026-05-14T07:59:00.000Z"
   };
 }
 
