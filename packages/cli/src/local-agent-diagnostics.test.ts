@@ -76,6 +76,55 @@ describe("local agent diagnostics", () => {
     );
   });
 
+  it("does not classify completed model summaries as Codex model failures", () => {
+    const diagnostics = diagnoseLocalAgentRun({
+      task: localAgentTask({ id: "task_1", status: "completed" }),
+      status: "completed",
+      summary:
+        "The repository uses an unsupported legacy data model, but the inspection completed.",
+      workerResult: {
+        failedToolCalls: 1,
+        warnings: []
+      }
+    });
+
+    expect(diagnostics.map((diagnostic) => diagnostic.cause)).toEqual([
+      "completed with 1 recoverable failed tool call"
+    ]);
+
+    const storedDiagnostics = diagnoseLocalAgentTask(
+      localAgentTask({
+        status: "completed",
+        output: {
+          summary:
+            "The repository uses an unsupported legacy data model, but the inspection completed.",
+          failedToolCalls: 1
+        }
+      })
+    );
+
+    expect(storedDiagnostics.map((diagnostic) => diagnostic.cause)).toEqual([
+      "completed with 1 recoverable failed tool call"
+    ]);
+
+    const verifierFailureDiagnostics = diagnoseLocalAgentTask(
+      localAgentTask({
+        status: "failed",
+        output: {
+          status: "completed",
+          summary:
+            "The repository uses an unsupported legacy data model, but the inspection completed.",
+          failedToolCalls: 1,
+          verifierStatus: "failed"
+        }
+      })
+    );
+
+    expect(
+      verifierFailureDiagnostics.map((diagnostic) => diagnostic.likelyReason)
+    ).not.toContain("The selected Codex model is unavailable to the current account.");
+  });
+
   it("classifies stored task output diagnostics", () => {
     const diagnostics = diagnoseLocalAgentTask(
       localAgentTask({

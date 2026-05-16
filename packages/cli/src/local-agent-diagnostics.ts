@@ -17,7 +17,8 @@ export interface LocalAgentRunDiagnosticInput {
   status: string;
   summary: string;
   workerResult?:
-    | Pick<CodexDirectWorkerResult, "failedToolCalls" | "warnings" | "budget">
+    | (Pick<CodexDirectWorkerResult, "failedToolCalls" | "warnings" | "budget"> &
+        Partial<Pick<CodexDirectWorkerResult, "status">>)
     | undefined;
   verifierResults?: RunTaskVerifierCommandResult[] | undefined;
   approval?:
@@ -31,27 +32,30 @@ export interface LocalAgentRunDiagnosticInput {
 export function diagnoseLocalAgentRun(
   input: LocalAgentRunDiagnosticInput
 ): LocalAgentDiagnostic[] {
+  const workerStatus = input.workerResult?.status ?? input.status;
+
   return compactDiagnostics([
     approvalDiagnostic(input.task.id, input.approval),
     budgetDiagnostic(input.workerResult?.budget),
     verifierDiagnostic(input.verifierResults),
     policyDeniedDiagnostic(input.status, input.summary),
-    codexAuthDiagnostic(input.summary),
-    codexModelDiagnostic(input.summary),
+    codexAuthDiagnostic(workerStatus, input.summary),
+    codexModelDiagnostic(workerStatus, input.summary),
     failedToolCallsDiagnostic(input.workerResult?.failedToolCalls)
   ]);
 }
 
 export function diagnoseLocalAgentTask(task: Task): LocalAgentDiagnostic[] {
   const output = task.output ?? {};
+  const workerStatus = stringOutput(output, "status") || task.status;
 
   return compactDiagnostics([
     approvalDiagnostic(task.id, approvalFromOutput(output)),
     budgetDiagnostic(budgetFromOutput(output.budget)),
     verifierOutputDiagnostic(output),
     policyDeniedDiagnostic(task.status, stringOutput(output, "summary")),
-    codexAuthDiagnostic(stringOutput(output, "summary")),
-    codexModelDiagnostic(stringOutput(output, "summary")),
+    codexAuthDiagnostic(workerStatus, stringOutput(output, "summary")),
+    codexModelDiagnostic(workerStatus, stringOutput(output, "summary")),
     failedToolCallsDiagnostic(numberOutput(output, "failedToolCalls"))
   ]);
 }
@@ -163,7 +167,14 @@ function policyDeniedDiagnostic(
     : undefined;
 }
 
-function codexAuthDiagnostic(summary: string): LocalAgentDiagnostic | undefined {
+function codexAuthDiagnostic(
+  status: string,
+  summary: string
+): LocalAgentDiagnostic | undefined {
+  if (status !== "failed") {
+    return undefined;
+  }
+
   const normalized = summary.toLowerCase();
   const authSignals = ["401", "unauthorized", "access token", "credentials", "login"];
 
@@ -177,7 +188,14 @@ function codexAuthDiagnostic(summary: string): LocalAgentDiagnostic | undefined 
     : undefined;
 }
 
-function codexModelDiagnostic(summary: string): LocalAgentDiagnostic | undefined {
+function codexModelDiagnostic(
+  status: string,
+  summary: string
+): LocalAgentDiagnostic | undefined {
+  if (status !== "failed") {
+    return undefined;
+  }
+
   const normalized = summary.toLowerCase();
   const modelSignals = ["not found", "does not exist", "unsupported"];
 
