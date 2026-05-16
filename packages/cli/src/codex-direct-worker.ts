@@ -2584,7 +2584,9 @@ function gitDiffCommand(input: {
     ? "git diff --staged"
     : input.base === undefined
       ? "git diff"
-      : `git diff ${shellQuote(input.base)}...HEAD`;
+      : `git diff --end-of-options ${shellQuote(
+          `${safeGitRevision(input.base, "base")}...HEAD`
+        )}`;
 
   return input.path === undefined ? base : `${base} -- ${shellQuote(input.path)}`;
 }
@@ -2601,7 +2603,9 @@ function gitDiffSummaryCommand(
     ? `git diff --staged ${mode}`
     : input.base === undefined
       ? `git diff ${mode}`
-      : `git diff ${mode} ${shellQuote(input.base)}...HEAD`;
+      : `git diff ${mode} --end-of-options ${shellQuote(
+          `${safeGitRevision(input.base, "base")}...HEAD`
+        )}`;
 
   return input.path === undefined ? base : `${base} -- ${shellQuote(input.path)}`;
 }
@@ -2696,7 +2700,7 @@ function gitLogCommand(input: {
   ];
 
   if (input.range !== undefined) {
-    parts.push(shellQuote(input.range));
+    parts.push("--end-of-options", shellQuote(safeGitRevision(input.range, "range")));
   }
 
   if (input.path !== undefined) {
@@ -2713,7 +2717,8 @@ function gitShowCommand(input: { ref: string; path: string | undefined }): strin
     "--patch",
     "--find-renames",
     "--format=fuller",
-    shellQuote(input.ref)
+    "--end-of-options",
+    shellQuote(safeGitRevision(input.ref, "ref"))
   ];
 
   if (input.path !== undefined) {
@@ -2749,6 +2754,20 @@ function parseGitLogOutput(stdout: string): {
 
 function shellQuote(value: string): string {
   return `'${value.replaceAll("'", "'\\''")}'`;
+}
+
+function safeGitRevision(value: string, field: "base" | "range" | "ref"): string {
+  const trimmed = value.trim();
+
+  if (trimmed.length === 0) {
+    throw new Error(`Git revision argument ${field} must not be empty`);
+  }
+
+  if (trimmed.startsWith("-")) {
+    throw new Error(`Git revision argument ${field} must not start with '-'`);
+  }
+
+  return trimmed;
 }
 
 function isCodexDirectToolName(value: string): value is CodexDirectToolName {

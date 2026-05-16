@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -1269,6 +1269,106 @@ describe("runCodexDirectWorker", () => {
     }
   }, 10000);
 
+  it("rejects git revision arguments that look like options", async () => {
+    const root = await mkdtemp(join(tmpdir(), "runstead-codex-git-options-"));
+    const workspace = join(root, "workspace");
+    const logOutput = join(root, "git-log-output");
+    const showOutput = join(root, "git-show-output");
+    const diffOutput = join(root, "git-diff-output");
+
+    try {
+      await mkdir(workspace);
+      await execFileAsync("git", ["init"], { cwd: workspace });
+      await execFileAsync("git", ["config", "user.name", "Runstead"], {
+        cwd: workspace
+      });
+      await execFileAsync("git", ["config", "user.email", "runstead@example.com"], {
+        cwd: workspace
+      });
+      await writeFile(join(workspace, "README.md"), "# Fixture\n");
+      await execFileAsync("git", ["add", "README.md"], { cwd: workspace });
+      await execFileAsync("git", ["commit", "-m", "initial fixture"], {
+        cwd: workspace
+      });
+      const initialized = await initRunstead({
+        cwd: workspace,
+        createDefaultGoal: true
+      });
+      const database = openRunsteadDatabase(initialized.stateDb);
+
+      try {
+        const task = listTasks({ cwd: workspace }).tasks[0];
+
+        if (task === undefined) {
+          throw new Error("Expected generated task");
+        }
+
+        const goal = showGoal({ cwd: workspace, id: task.goalId }).goal;
+        const transport = scriptedTransport([
+          {
+            outputText: "",
+            toolCalls: [
+              {
+                id: "call_git_log_option",
+                name: "git_log",
+                arguments: JSON.stringify({
+                  range: `--output=${logOutput}`
+                })
+              },
+              {
+                id: "call_git_show_option",
+                name: "git_show",
+                arguments: JSON.stringify({
+                  ref: `--output=${showOutput}`
+                })
+              },
+              {
+                id: "call_git_diff_option",
+                name: "git_diff",
+                arguments: JSON.stringify({
+                  base: `--output=${diffOutput}`
+                })
+              }
+            ],
+            finishReason: "tool_calls",
+            outputItems: []
+          },
+          {
+            outputText: "Rejected unsafe git revisions.",
+            toolCalls: [],
+            finishReason: "stop",
+            outputItems: []
+          }
+        ]);
+        const result = await runCodexDirectWorker({
+          cwd: workspace,
+          stateDb: initialized.stateDb,
+          database,
+          policy: allowDirectToolsPolicy,
+          goal,
+          task,
+          model: "fake-codex",
+          evidenceDir: join(initialized.root, "evidence"),
+          transport
+        });
+        const toolOutput = JSON.stringify(transport.requests[1]?.input);
+
+        expect(result).toMatchObject({
+          status: "completed",
+          summary: "Rejected unsafe git revisions."
+        });
+        expect(toolOutput).toContain("must not start with");
+        await expect(access(logOutput)).rejects.toThrow();
+        await expect(access(showOutput)).rejects.toThrow();
+        await expect(access(`${diffOutput}...HEAD`)).rejects.toThrow();
+      } finally {
+        database.close();
+      }
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  }, 10000);
+
   it("returns bounded git diff summaries", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "runstead-codex-diff-summary-"));
 
@@ -1419,7 +1519,7 @@ describe("runCodexDirectWorker", () => {
 
         expect(result.status).toBe("completed");
         expect(diffCall.output_json).toContain(
-          "git diff 'origin/main'...HEAD -- 'src/index.ts'"
+          "git diff --end-of-options 'origin/main...HEAD' -- 'src/index.ts'"
         );
       } finally {
         database.close();
