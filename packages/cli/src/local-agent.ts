@@ -6,7 +6,8 @@ import {
   type Goal,
   type JsonObject,
   type RunsteadEvent,
-  type Task
+  type Task,
+  type WorkerRun
 } from "@runstead/core";
 import {
   appendEventAndProject,
@@ -15,6 +16,11 @@ import {
 } from "@runstead/state-sqlite";
 
 import type { CiRepairWorkerKind } from "./ci-repair-orchestrator.js";
+import {
+  createWorkspaceCheckpoint,
+  recordWorkspaceCheckpointCreatedEvent,
+  type WorkspaceCheckpoint
+} from "./checkpoints.js";
 import {
   CODEX_DIRECT_WORKER_KIND,
   createCodexDirectTransport,
@@ -34,6 +40,11 @@ import type { ActionEnvelope, PolicyProfile } from "./policy.js";
 import { requireRunsteadRoot, requireRunsteadStateDb } from "./runstead-root.js";
 import { finishWorkerRun, startWorkerRun } from "./runtime-audit.js";
 import { claimTask, showTask } from "./tasks.js";
+import {
+  runTaskVerifiersUnlocked,
+  type RunTaskVerifierCommandResult,
+  type RunTaskVerifiersResult
+} from "./verifier-runner.js";
 import type { CommandVerifierInput } from "./verifier-evidence.js";
 
 export const LOCAL_AGENT_TASK_TYPE = "local_agent_task";
@@ -79,6 +90,8 @@ export interface RunLocalAgentTaskResult {
   status: "completed" | "waiting_approval" | "blocked" | "failed";
   summary: string;
   audit: LocalAgentAuditSummary;
+  checkpoint?: WorkspaceCheckpoint;
+  verifierResults?: RunTaskVerifierCommandResult[];
   approval?: CodexDirectWorkerResult["approval"];
 }
 
@@ -222,10 +235,6 @@ export async function runLocalAgentTask(
     throw new Error("Local agent task execution currently supports codex_direct only");
   }
 
-  if (localAgentTaskMode(claimedTask) !== "read-only") {
-    throw new Error("Local agent task execution currently supports read-only mode only");
-  }
-
   const model = localAgentTaskModel(claimedTask);
 
   if (model === undefined) {
@@ -300,8 +309,13 @@ async function runLocalAgentTaskWithDatabase(options: {
     enforcementLevel: "policy_enforced",
     ...(options.now === undefined ? {} : { now: options.now })
   });
+  let checkpoint: WorkspaceCheckpoint | undefined;
 
   try {
+    checkpoint = await createLocalAgentCheckpointIfNeeded({
+      ...options,
+      workerRun: orchestratorRun
+    });
     const governed = await runGovernedToolAction({
       cwd: options.cwd,
       stateDb: options.stateDb,
@@ -335,25 +349,40 @@ async function runLocalAgentTaskWithDatabase(options: {
 
         return {
           value,
-          output: localAgentWorkerOutput(value)
+          output: localAgentWorkerOutput({ workerResult: value })
         };
       }
     });
     const workerResult = governed.value;
-    const finalStatus = localAgentTaskStatus(workerResult.status);
+    const verifierResult =
+      workerResult.status === "completed"
+        ? await runLocalAgentVerifiersIfNeeded(options)
+        : undefined;
+    const finalStatus = localAgentFinalTaskStatus(workerResult, verifierResult);
+    const summary = localAgentFinalSummary(workerResult, verifierResult);
     const finalTask = finalizeLocalAgentTask({
       database: options.database,
       task: options.task,
       status: finalStatus,
-      output: localAgentTaskOutput(workerResult),
+      output: localAgentTaskOutput({
+        workerResult,
+        summary,
+        ...(checkpoint === undefined ? {} : { checkpoint }),
+        ...(verifierResult === undefined ? {} : { verifierResult })
+      }),
       ...(options.now === undefined ? {} : { now: options.now })
     });
 
     finishWorkerRun({
       database: options.database,
       workerRun: orchestratorRun,
-      status: workerResult.status === "completed" ? "completed" : workerResult.status,
-      output: localAgentWorkerOutput(workerResult),
+      status: finalStatus === "completed" ? "completed" : localAgentResultStatus(finalStatus),
+      output: localAgentWorkerOutput({
+        workerResult,
+        summary,
+        ...(checkpoint === undefined ? {} : { checkpoint }),
+        ...(verifierResult === undefined ? {} : { verifierResult })
+      }),
       ...(options.now === undefined ? {} : { now: options.now })
     });
 
@@ -362,13 +391,17 @@ async function runLocalAgentTaskWithDatabase(options: {
       task: finalTask,
       goal: options.goal,
       workerResult,
-      status: workerResult.status,
-      summary: workerResult.summary,
+      status: localAgentResultStatus(finalStatus),
+      summary,
       audit: summarizeLocalAgentAudit(options.database, finalTask.id),
+      ...(checkpoint === undefined ? {} : { checkpoint }),
+      ...(verifierResult === undefined
+        ? {}
+        : { verifierResults: verifierResult.commandResults }),
       ...(workerResult.approval === undefined ? {} : { approval: workerResult.approval })
     };
   } catch (error) {
-    const failure = localAgentFailureFromError(error);
+    const failure = localAgentFailureFromError(error, checkpoint);
     const finalTask = finalizeLocalAgentTask({
       database: options.database,
       task: options.task,
@@ -392,6 +425,7 @@ async function runLocalAgentTaskWithDatabase(options: {
       status: failure.resultStatus,
       summary: String(failure.output.summary),
       audit: summarizeLocalAgentAudit(options.database, finalTask.id),
+      ...(checkpoint === undefined ? {} : { checkpoint }),
       ...(failure.approval === undefined ? {} : { approval: failure.approval })
     };
   }
@@ -436,6 +470,18 @@ export function formatLocalAgentRunReport(result: RunLocalAgentTaskResult): stri
           `Model: ${result.workerResult.model}`,
           `Tool calls: ${result.workerResult.toolCalls}`
         ]),
+    ...(result.checkpoint === undefined
+      ? []
+      : [`Checkpoint: ${result.checkpoint.id}`]),
+    ...(result.verifierResults === undefined
+      ? []
+      : [
+          "Verifiers:",
+          ...result.verifierResults.map(
+            (command) =>
+              `  ${command.verifier}: exit=${command.exitCode ?? "unknown"} evidence=${command.evidenceId}`
+          )
+        ]),
     ...(result.approval === undefined
       ? []
       : [`Approval: waiting ${result.approval.id}`]),
@@ -457,6 +503,7 @@ export function formatLocalAgentTaskReport(report: LocalAgentTaskReport): string
     `Worker: ${localAgentTaskWorker(report.task)}`,
     `Mode: ${localAgentTaskMode(report.task)}`,
     ...formatOptionalOutputLine(report.task, "Model", "model"),
+    ...formatOptionalOutputLine(report.task, "Checkpoint", "checkpointId"),
     ...formatOptionalOutputLine(report.task, "Summary", "summary"),
     ...formatLocalAgentAuditSummary(report.audit)
   ].join("\n");
@@ -507,16 +554,159 @@ async function createDefaultCodexDirectTransport(options: {
 
 function buildLocalAgentPrompt(task: Task): string {
   const prompt = requiredTaskString(task, "prompt");
+  const mode = localAgentTaskMode(task);
 
   return [
     prompt,
     "",
     "Runstead local-agent mode:",
-    `- mode: ${localAgentTaskMode(task)}`,
-    "- Read-only mode must not call write_file or run_command.",
-    "- Use git_status, git_diff, and read_file when useful.",
+    `- mode: ${mode}`,
+    ...localAgentModePromptRules(task),
     "- End with a concise summary of what you inspected and any risks or next steps."
   ].join("\n");
+}
+
+function localAgentModePromptRules(task: Task): string[] {
+  const mode = localAgentTaskMode(task);
+  const allowedPaths = localAgentTaskStringArray(task, "allowedPaths");
+  const deniedPaths = localAgentTaskStringArray(task, "deniedPaths");
+  const pathRules = [
+    ...(allowedPaths.length === 0
+      ? []
+      : [`- Stay within allowed paths: ${allowedPaths.join(", ")}`]),
+    ...(deniedPaths.length === 0
+      ? []
+      : [`- Do not change denied paths: ${deniedPaths.join(", ")}`])
+  ];
+
+  if (mode === "read-only") {
+    return [
+      "- Read-only mode must not call write_file or run_command.",
+      "- Use git_status, git_diff, and read_file when useful.",
+      ...pathRules
+    ];
+  }
+
+  return [
+    "- Edit and repair modes may call write_file for scoped workspace changes.",
+    "- Runstead creates the pre-edit checkpoint and runs configured verifiers after your model turn.",
+    "- Avoid run_command unless the prompt explicitly requests command execution.",
+    ...pathRules
+  ];
+}
+
+async function createLocalAgentCheckpointIfNeeded(options: {
+  cwd: string;
+  root: string;
+  stateDb: string;
+  database: RunsteadDatabase;
+  policy: PolicyProfile;
+  task: Task;
+  workerRun: WorkerRun;
+  now?: Date;
+}): Promise<WorkspaceCheckpoint | undefined> {
+  if (!localAgentTaskNeedsCheckpoint(options.task)) {
+    return undefined;
+  }
+
+  const checkpointDir = join(options.root, "checkpoints");
+  const governed = await runGovernedToolAction({
+    cwd: options.cwd,
+    stateDb: options.stateDb,
+    database: options.database,
+    policy: options.policy,
+    task: options.task,
+    workerRun: options.workerRun,
+    action: checkpointCreateAction({
+      task: options.task,
+      cwd: options.cwd,
+      checkpointDir
+    }),
+    requestedBy: "runstead:local-agent",
+    ...(options.now === undefined ? {} : { now: options.now }),
+    run: async () => {
+      const value = await createWorkspaceCheckpoint({
+        workspace: options.cwd,
+        checkpointDir,
+        ...(options.now === undefined ? {} : { now: options.now })
+      });
+      recordWorkspaceCheckpointCreatedEvent({
+        stateDb: options.stateDb,
+        checkpoint: value,
+        actor: "runstead:local-agent",
+        ...(options.now === undefined ? {} : { now: options.now })
+      });
+
+      return {
+        value,
+        output: checkpointOutput(value)
+      };
+    }
+  });
+
+  return governed.value;
+}
+
+async function runLocalAgentVerifiersIfNeeded(options: {
+  cwd: string;
+  task: Task;
+  now?: Date;
+}): Promise<RunTaskVerifiersResult | undefined> {
+  if (
+    localAgentTaskMode(options.task) === "read-only" ||
+    verifierCommandsFromLocalAgentTask(options.task).length === 0
+  ) {
+    return undefined;
+  }
+
+  return runTaskVerifiersUnlocked({
+    cwd: options.cwd,
+    taskId: options.task.id,
+    claim: false,
+    mode: "evidence_only",
+    ...(options.now === undefined ? {} : { now: options.now })
+  });
+}
+
+function localAgentFinalTaskStatus(
+  workerResult: CodexDirectWorkerResult,
+  verifierResult?: RunTaskVerifiersResult
+): Task["status"] {
+  if (workerResult.status !== "completed") {
+    return localAgentTaskStatus(workerResult.status);
+  }
+
+  return verifierResult?.task.status ?? "completed";
+}
+
+function localAgentResultStatus(status: Task["status"]): RunLocalAgentTaskResult["status"] {
+  switch (status) {
+    case "completed":
+      return "completed";
+    case "waiting_approval":
+      return "waiting_approval";
+    case "blocked":
+      return "blocked";
+    case "failed":
+      return "failed";
+    default:
+      return "failed";
+  }
+}
+
+function localAgentFinalSummary(
+  workerResult: CodexDirectWorkerResult,
+  verifierResult?: RunTaskVerifiersResult
+): string {
+  if (verifierResult === undefined) {
+    return workerResult.summary;
+  }
+
+  const verifierSummary = verifierResult.task.output?.summary;
+
+  return typeof verifierSummary === "string" && verifierSummary.length > 0
+    ? `${workerResult.summary} Verifiers: ${verifierSummary}`
+    : workerResult.summary;
 }
 
 function finalizeLocalAgentTask(input: {
@@ -548,27 +738,57 @@ function finalizeLocalAgentTask(input: {
   return task;
 }
 
-function localAgentTaskOutput(workerResult: CodexDirectWorkerResult): JsonObject {
+function localAgentTaskOutput(input: {
+  workerResult: CodexDirectWorkerResult;
+  summary: string;
+  checkpoint?: WorkspaceCheckpoint;
+  verifierResult?: RunTaskVerifiersResult;
+}): JsonObject {
   return {
-    summary: workerResult.summary,
-    worker: workerResult.worker,
-    model: workerResult.model,
-    status: workerResult.status,
-    exitCode: workerResult.exitCode,
-    toolCalls: workerResult.toolCalls,
-    workerRunId: workerResult.workerRun.id,
-    ...(workerResult.approval === undefined ? {} : { approval: workerResult.approval })
+    summary: input.summary,
+    worker: input.workerResult.worker,
+    model: input.workerResult.model,
+    status: input.workerResult.status,
+    exitCode: input.workerResult.exitCode,
+    toolCalls: input.workerResult.toolCalls,
+    workerRunId: input.workerResult.workerRun.id,
+    ...(input.checkpoint === undefined
+      ? {}
+      : { checkpointId: input.checkpoint.id }),
+    ...(input.verifierResult === undefined
+      ? {}
+      : {
+          verifiers: input.verifierResult.commandResults,
+          verifierStatus: input.verifierResult.task.status
+        }),
+    ...(input.workerResult.approval === undefined
+      ? {}
+      : { approval: input.workerResult.approval })
   };
 }
 
-function localAgentWorkerOutput(workerResult: CodexDirectWorkerResult): JsonObject {
+function localAgentWorkerOutput(input: {
+  workerResult: CodexDirectWorkerResult;
+  summary?: string;
+  checkpoint?: WorkspaceCheckpoint;
+  verifierResult?: RunTaskVerifiersResult;
+}): JsonObject {
   return {
-    worker: workerResult.worker,
-    model: workerResult.model,
-    status: workerResult.status,
-    exitCode: workerResult.exitCode,
-    toolCalls: workerResult.toolCalls,
-    summary: workerResult.summary
+    worker: input.workerResult.worker,
+    model: input.workerResult.model,
+    status: input.workerResult.status,
+    exitCode: input.workerResult.exitCode,
+    toolCalls: input.workerResult.toolCalls,
+    summary: input.summary ?? input.workerResult.summary,
+    ...(input.checkpoint === undefined
+      ? {}
+      : { checkpointId: input.checkpoint.id }),
+    ...(input.verifierResult === undefined
+      ? {}
+      : {
+          verifiers: input.verifierResult.commandResults,
+          verifierStatus: input.verifierResult.task.status
+        })
   };
 }
 
@@ -703,7 +923,10 @@ function formatOptionalOutputLine(
     : [];
 }
 
-function localAgentFailureFromError(error: unknown): {
+function localAgentFailureFromError(
+  error: unknown,
+  checkpoint?: WorkspaceCheckpoint
+): {
   taskStatus: Task["status"];
   workerStatus: "failed" | "waiting_approval" | "blocked";
   resultStatus: RunLocalAgentTaskResult["status"];
@@ -724,6 +947,7 @@ function localAgentFailureFromError(error: unknown): {
       resultStatus: "waiting_approval",
       output: {
         summary: error.message,
+        ...(checkpoint === undefined ? {} : { checkpointId: checkpoint.id }),
         approval
       },
       approval
@@ -736,7 +960,8 @@ function localAgentFailureFromError(error: unknown): {
       workerStatus: "blocked",
       resultStatus: "blocked",
       output: {
-        summary: error.message
+        summary: error.message,
+        ...(checkpoint === undefined ? {} : { checkpointId: checkpoint.id })
       }
     };
   }
@@ -746,7 +971,8 @@ function localAgentFailureFromError(error: unknown): {
     workerStatus: "failed",
     resultStatus: "failed",
     output: {
-      summary: error instanceof Error ? error.message : String(error)
+      summary: error instanceof Error ? error.message : String(error),
+      ...(checkpoint === undefined ? {} : { checkpointId: checkpoint.id })
     }
   };
 }
@@ -784,6 +1010,36 @@ function workerStartAction(input: {
   };
 }
 
+function checkpointCreateAction(input: {
+  task: Task;
+  cwd: string;
+  checkpointDir: string;
+}): ActionEnvelope {
+  return {
+    actionId: stableActionId("checkpoint_create", [
+      input.task.id,
+      input.cwd,
+      input.checkpointDir
+    ]),
+    actionType: "checkpoint.create",
+    resource: {
+      type: "repository",
+      id: input.cwd
+    },
+    context: {
+      cwd: input.cwd
+    }
+  };
+}
+
+function checkpointOutput(checkpoint: WorkspaceCheckpoint): JsonObject {
+  return {
+    checkpointId: checkpoint.id,
+    head: checkpoint.head ?? "",
+    untrackedFiles: checkpoint.untrackedFiles
+  };
+}
+
 function localAgentTaskWorker(task: Task): LocalAgentWorkerKind {
   const worker = task.input.worker;
 
@@ -804,12 +1060,24 @@ function localAgentTaskMode(task: Task): LocalAgentMode {
   return "read-only";
 }
 
+function localAgentTaskNeedsCheckpoint(task: Task): boolean {
+  return localAgentTaskMode(task) !== "read-only" && task.input.checkpoint !== false;
+}
+
 function localAgentTaskModel(task: Task): string | undefined {
   const model = task.input.model;
 
   return typeof model === "string" && model.trim().length > 0
     ? model.trim()
     : undefined;
+}
+
+function localAgentTaskStringArray(task: Task, field: string): string[] {
+  const value = task.input[field];
+
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string")
+    : [];
 }
 
 function localAgentTaskMaxTurns(task: Task): number | undefined {
@@ -820,6 +1088,32 @@ function localAgentTaskMaxTurns(task: Task): number | undefined {
     : undefined;
 }
 
+function verifierCommandsFromLocalAgentTask(task: Task): CommandVerifierInput[] {
+  const commands = task.input.commands;
+
+  if (!Array.isArray(commands)) {
+    return [];
+  }
+
+  return commands.flatMap((command): CommandVerifierInput[] => {
+    if (!isRecord(command)) {
+      return [];
+    }
+
+    const name = command.name;
+    const commandText = command.command;
+
+    return typeof name === "string" && typeof commandText === "string"
+      ? [
+          {
+            name,
+            command: commandText
+          }
+        ]
+      : [];
+  });
+}
+
 function requiredTaskString(task: Task, field: string): string {
   const value = task.input[field];
 
@@ -828,6 +1122,10 @@ function requiredTaskString(task: Task, field: string): string {
   }
 
   return value.trim();
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
 }
 
 function stableActionId(prefix: string, parts: unknown[]): string {

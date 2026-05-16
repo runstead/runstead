@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -253,36 +253,151 @@ describe("local agent task primitives", () => {
     }
   });
 
-  it("blocks edit execution until edit-mode guardrails are implemented", async () => {
+  it("runs edit mode with a checkpoint and configured verifiers", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "runstead-local-agent-edit-"));
+    const verifierCommand = nodeCommand("process.exit(0)");
+    const requests: CodexResponsesRequest[] = [];
+    const transport: CodexDirectTransport = {
+      createResponse(request) {
+        requests.push(request);
+
+        if (requests.length === 1) {
+          return Promise.resolve({
+            id: "resp_local_agent_edit_1",
+            status: "completed",
+            outputText: "",
+            toolCalls: [
+              {
+                id: "call_write_readme",
+                name: "write_file",
+                arguments: JSON.stringify({
+                  path: "README.md",
+                  content: "# Edited by Runstead\n",
+                  createDirs: false
+                })
+              }
+            ],
+            finishReason: "tool_calls",
+            outputItems: []
+          });
+        }
+
+        return Promise.resolve({
+          id: "resp_local_agent_edit_2",
+          status: "completed",
+          outputText: "Updated README.",
+          toolCalls: [],
+          finishReason: "stop",
+          outputItems: []
+        });
+      }
+    };
 
     try {
       await initRunstead({ cwd: workspace, profile: "trusted-local" });
+      await allowLocalAgentEditPolicyForTest(workspace, verifierCommand);
       const created = await createLocalAgentTask({
         cwd: workspace,
         prompt: "Update the README.",
         worker: "codex_direct",
         model: "gpt-5.3-codex",
-        mode: "edit"
-      });
-
-      await expect(
-        runLocalAgentTask({
-          cwd: workspace,
-          taskId: created.task.id,
-          transport: {
-            createResponse() {
-              return Promise.reject(
-                new Error("should not start codex_direct transport")
-              );
-            }
+        mode: "edit",
+        verifierCommands: [
+          {
+            name: "test",
+            command: verifierCommand
           }
+        ]
+      });
+      const result = await runLocalAgentTask({
+        cwd: workspace,
+        taskId: created.task.id,
+        transport
+      });
+      const storedTask = showTask({ cwd: workspace, id: created.task.id }).task;
+
+      expect(result.status).toBe("completed");
+      expect(result.checkpoint?.id).toMatch(/^chk_/);
+      expect(result.verifierResults).toEqual([
+        expect.objectContaining({
+          verifier: "test",
+          exitCode: 0,
+          timedOut: false
         })
-      ).rejects.toThrow(
-        "Local agent task execution currently supports read-only mode only"
+      ]);
+      expect(result.summary).toContain("Updated README.");
+      expect(result.summary).toContain("Verifiers: All verifier commands passed");
+      expect(await readFile(join(workspace, "README.md"), "utf8")).toBe(
+        "# Edited by Runstead\n"
+      );
+      expect(storedTask.status).toBe("completed");
+      expect(storedTask.output).toMatchObject({
+        checkpointId: result.checkpoint?.id,
+        verifierStatus: "completed"
+      });
+      expect(formatLocalAgentRunReport(result)).toContain(
+        `Checkpoint: ${result.checkpoint?.id}`
+      );
+      expect(formatLocalAgentRunReport(result)).toContain("test: exit=0 evidence=");
+      expect(requests).toHaveLength(2);
+      expect(result.audit.toolCalls).toEqual(
+        expect.arrayContaining([
+          {
+            name: "checkpoint.create",
+            status: "completed",
+            count: 1
+          },
+          {
+            name: "filesystem.write",
+            status: "completed",
+            count: 1
+          },
+          {
+            name: "shell.exec",
+            status: "completed",
+            count: 1
+          }
+        ])
       );
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }
   });
 });
+
+function nodeCommand(script: string): string {
+  return `${JSON.stringify(process.execPath)} -e ${JSON.stringify(script)}`;
+}
+
+async function allowLocalAgentEditPolicyForTest(
+  workspace: string,
+  verifierCommand: string
+): Promise<void> {
+  const policyPath = join(workspace, ".runstead", "policies", "repo-maintenance.yaml");
+  const raw = await readFile(policyPath, "utf8");
+  const writeAllowed = raw.replace(
+    "          - checkpoint.restore\n",
+    "          - checkpoint.restore\n          - filesystem.write\n"
+  );
+  const verifierPattern = JSON.stringify(`^${escapeRegex(verifierCommand)}$`);
+  const verifierRule = `  - id: allow_local_agent_edit_test_verifier
+    when:
+      action_type: shell.exec
+      command:
+        matches_any:
+          - ${verifierPattern}
+    decision: allow
+    risk: low
+
+`;
+
+  await writeFile(
+    policyPath,
+    writeAllowed.replace("rules:\n", `rules:\n\n${verifierRule}`),
+    "utf8"
+  );
+}
+
+function escapeRegex(value: string): string {
+  return value.replace(/[\\^$.*+?()[\]{}|]/g, "\\$&");
+}
