@@ -109,9 +109,15 @@ export interface ReadManyWorkspaceFile {
   truncated: boolean;
 }
 
+export interface ReadManyWorkspaceFileError {
+  path: string;
+  error: string;
+}
+
 export interface ReadManyWorkspaceFilesResult {
   cwd: string;
   files: ReadManyWorkspaceFile[];
+  errors: ReadManyWorkspaceFileError[];
   bytes: number;
   returnedBytes: number;
   truncated: boolean;
@@ -470,32 +476,46 @@ export async function readManyWorkspaceFiles(
     READ_MANY_TOTAL_BYTES_LIMIT
   );
   const files: ReadManyWorkspaceFile[] = [];
+  const errors: ReadManyWorkspaceFileError[] = [];
   let bytes = 0;
   let returnedBytes = 0;
 
   for (const requestedPath of options.paths) {
-    const target = await safeWorkspaceTarget(root, requestedPath);
-    const buffer = await readFile(target.absolutePath);
-    const fileBytes = buffer.byteLength;
-    const remainingTotalBytes = Math.max(0, maxTotalBytes - returnedBytes);
-    const fileReturnedBytes = Math.min(fileBytes, maxBytesPerFile, remainingTotalBytes);
-    const content = buffer.subarray(0, fileReturnedBytes).toString("utf8");
-    const truncated = fileReturnedBytes < fileBytes;
+    try {
+      const target = await safeWorkspaceTarget(root, requestedPath);
+      const buffer = await readFile(target.absolutePath);
+      const fileBytes = buffer.byteLength;
+      const remainingTotalBytes = Math.max(0, maxTotalBytes - returnedBytes);
+      const fileReturnedBytes = Math.min(
+        fileBytes,
+        maxBytesPerFile,
+        remainingTotalBytes
+      );
+      const content = buffer.subarray(0, fileReturnedBytes).toString("utf8");
+      const contentBytes = Buffer.byteLength(content, "utf8");
+      const truncated = fileReturnedBytes < fileBytes;
 
-    bytes += fileBytes;
-    returnedBytes += Buffer.byteLength(content, "utf8");
-    files.push({
-      path: target.relativePath,
-      content,
-      bytes: fileBytes,
-      returnedBytes: Buffer.byteLength(content, "utf8"),
-      truncated
-    });
+      bytes += fileBytes;
+      returnedBytes += contentBytes;
+      files.push({
+        path: target.relativePath,
+        content,
+        bytes: fileBytes,
+        returnedBytes: contentBytes,
+        truncated
+      });
+    } catch (error) {
+      errors.push({
+        path: readableWorkspacePath(root, requestedPath),
+        error: errorMessage(error)
+      });
+    }
   }
 
   return {
     cwd: root,
     files,
+    errors,
     bytes,
     returnedBytes,
     truncated: files.some((file) => file.truncated),
@@ -701,6 +721,14 @@ function workspaceTarget(
     absolutePath,
     relativePath: relativePath.length === 0 ? "." : relativePath
   };
+}
+
+function readableWorkspacePath(root: string, requestedPath: string): string {
+  try {
+    return workspaceTarget(root, requestedPath, { allowRoot: true }).relativePath;
+  } catch {
+    return normalizePath(requestedPath) || ".";
+  }
 }
 
 async function safeWorkspaceTarget(
@@ -1270,6 +1298,10 @@ async function exists(path: string): Promise<boolean> {
 
 function isNodeErrorCode(error: unknown, code: string): boolean {
   return isRecord(error) && error.code === code;
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

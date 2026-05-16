@@ -348,7 +348,7 @@ describe("runCodexDirectWorker", () => {
                 id: "call_read_many",
                 name: "read_many_files",
                 arguments: JSON.stringify({
-                  paths: ["src/a.txt", "src/b.txt"],
+                  paths: ["src/a.txt", "src/missing.txt", "src/b.txt"],
                   maxBytesPerFile: 5,
                   maxTotalBytes: 8
                 })
@@ -387,8 +387,10 @@ describe("runCodexDirectWorker", () => {
         });
         expect(readCall.status).toBe("completed");
         expect(readCall.output_json).toContain('"files":2');
+        expect(readCall.output_json).toContain('"errors":1');
         expect(toolOutput).toContain("src/a.txt");
         expect(toolOutput).toContain("alpha");
+        expect(toolOutput).toContain("src/missing.txt");
         expect(toolOutput).toContain("src/b.txt");
         expect(toolOutput).toContain('\\"truncated\\":true');
         expect(toolOutput).not.toContain("bravo-charlie");

@@ -1504,6 +1504,7 @@ async function runGovernedReadManyFiles(
         value,
         output: {
           files: value.files.length,
+          errors: value.errors.length,
           bytes: value.bytes,
           returnedBytes: value.returnedBytes,
           truncated: value.truncated

@@ -11,7 +11,7 @@ import {
 } from "./codex-direct-native-tools.js";
 
 describe("codex direct native tools", () => {
-  it("rejects symlink escapes for multi-file reads and structured patches", async () => {
+  it("reports symlink escapes for multi-file reads and rejects structured patches", async () => {
     const root = await mkdtemp(join(tmpdir(), "runstead-native-tools-"));
 
     try {
@@ -21,9 +21,17 @@ describe("codex direct native tools", () => {
       await writeFile(outside, "outside-secret\n", "utf8");
       await symlink(outside, join(workspace, "leak.txt"));
 
-      await expect(
-        readManyWorkspaceFiles(workspace, { paths: ["leak.txt"] })
-      ).rejects.toThrow("Workspace path crosses symlink");
+      const readResult = await readManyWorkspaceFiles(workspace, {
+        paths: ["leak.txt"]
+      });
+
+      expect(readResult.files).toEqual([]);
+      expect(readResult.errors).toEqual([
+        {
+          path: "leak.txt",
+          error: "Workspace path crosses symlink: leak.txt"
+        }
+      ]);
       await expect(
         applyWorkspacePatch(workspace, {
           replacements: [
@@ -52,9 +60,44 @@ describe("codex direct native tools", () => {
       await writeFile(join(outsideDirectory, "secret.txt"), "outside-secret\n", "utf8");
       await symlink(outsideDirectory, join(workspace, "linked"));
 
-      await expect(
-        readManyWorkspaceFiles(workspace, { paths: ["linked/secret.txt"] })
-      ).rejects.toThrow("Workspace path crosses symlink");
+      const result = await readManyWorkspaceFiles(workspace, {
+        paths: ["linked/secret.txt"]
+      });
+
+      expect(result.files).toEqual([]);
+      expect(result.errors).toEqual([
+        {
+          path: "linked/secret.txt",
+          error: "Workspace path crosses symlink: linked/secret.txt"
+        }
+      ]);
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("continues multi-file reads when one requested file is missing", async () => {
+    const root = await mkdtemp(join(tmpdir(), "runstead-native-tools-"));
+
+    try {
+      const workspace = join(root, "workspace");
+      await mkdir(workspace);
+      await writeFile(join(workspace, "present.txt"), "present\n", "utf8");
+
+      const result = await readManyWorkspaceFiles(workspace, {
+        paths: ["missing.txt", "present.txt"]
+      });
+
+      expect(result.files).toMatchObject([
+        {
+          path: "present.txt",
+          content: "present\n",
+          truncated: false
+        }
+      ]);
+      expect(result.errors).toHaveLength(1);
+      expect(result.errors[0]?.path).toBe("missing.txt");
+      expect(result.errors[0]?.error).toContain("ENOENT");
     } finally {
       await rm(root, { force: true, recursive: true });
     }
