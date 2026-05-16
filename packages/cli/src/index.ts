@@ -2758,13 +2758,18 @@ function addAgentCommand(command: Command): void {
           ? resolvedPreset === undefined
             ? {}
             : { maxTurns: resolvedPreset.preset.maxTurns }
-          : { maxTurns: parseRequiredInteger(options.maxTurns, "--max-turns") }),
+          : {
+              maxTurns: parseRequiredPositiveInteger(
+                options.maxTurns,
+                "--max-turns"
+              )
+            }),
         ...(options.maxToolCalls === undefined
           ? resolvedPreset === undefined
             ? {}
             : { maxToolCalls: resolvedPreset.preset.maxToolCalls }
           : {
-              maxToolCalls: parseRequiredInteger(
+              maxToolCalls: parseRequiredPositiveInteger(
                 options.maxToolCalls,
                 "--max-tool-calls"
               )
@@ -2774,7 +2779,7 @@ function addAgentCommand(command: Command): void {
             ? {}
             : { maxFailedToolCalls: resolvedPreset.preset.maxFailedToolCalls }
           : {
-              maxFailedToolCalls: parseRequiredInteger(
+              maxFailedToolCalls: parseRequiredPositiveInteger(
                 options.maxFailedToolCalls,
                 "--max-failed-tool-calls"
               )
@@ -2844,11 +2849,16 @@ function addAgentCommand(command: Command): void {
         checkpoint: resolvedPreset.preset.checkpoint,
         ...(options.maxTurns === undefined
           ? { maxTurns: resolvedPreset.preset.maxTurns }
-          : { maxTurns: parseRequiredInteger(options.maxTurns, "--max-turns") }),
+          : {
+              maxTurns: parseRequiredPositiveInteger(
+                options.maxTurns,
+                "--max-turns"
+              )
+            }),
         ...(options.maxToolCalls === undefined
           ? { maxToolCalls: resolvedPreset.preset.maxToolCalls }
           : {
-              maxToolCalls: parseRequiredInteger(
+              maxToolCalls: parseRequiredPositiveInteger(
                 options.maxToolCalls,
                 "--max-tool-calls"
               )
@@ -2856,7 +2866,7 @@ function addAgentCommand(command: Command): void {
         ...(options.maxFailedToolCalls === undefined
           ? { maxFailedToolCalls: resolvedPreset.preset.maxFailedToolCalls }
           : {
-              maxFailedToolCalls: parseRequiredInteger(
+              maxFailedToolCalls: parseRequiredPositiveInteger(
                 options.maxFailedToolCalls,
                 "--max-failed-tool-calls"
               )
@@ -2933,11 +2943,16 @@ function addAgentCommand(command: Command): void {
         gitDiffStaged: options.staged === true,
         ...(options.maxTurns === undefined
           ? { maxTurns: resolvedPreset.preset.maxTurns }
-          : { maxTurns: parseRequiredInteger(options.maxTurns, "--max-turns") }),
+          : {
+              maxTurns: parseRequiredPositiveInteger(
+                options.maxTurns,
+                "--max-turns"
+              )
+            }),
         ...(options.maxToolCalls === undefined
           ? { maxToolCalls: resolvedPreset.preset.maxToolCalls }
           : {
-              maxToolCalls: parseRequiredInteger(
+              maxToolCalls: parseRequiredPositiveInteger(
                 options.maxToolCalls,
                 "--max-tool-calls"
               )
@@ -2945,7 +2960,7 @@ function addAgentCommand(command: Command): void {
         ...(options.maxFailedToolCalls === undefined
           ? { maxFailedToolCalls: resolvedPreset.preset.maxFailedToolCalls }
           : {
-              maxFailedToolCalls: parseRequiredInteger(
+              maxFailedToolCalls: parseRequiredPositiveInteger(
                 options.maxFailedToolCalls,
                 "--max-failed-tool-calls"
               )
@@ -3027,11 +3042,16 @@ function addAgentCommand(command: Command): void {
         verifierCommands,
         ...(options.maxTurns === undefined
           ? { maxTurns: resolvedPreset.preset.maxTurns }
-          : { maxTurns: parseRequiredInteger(options.maxTurns, "--max-turns") }),
+          : {
+              maxTurns: parseRequiredPositiveInteger(
+                options.maxTurns,
+                "--max-turns"
+              )
+            }),
         ...(options.maxToolCalls === undefined
           ? { maxToolCalls: resolvedPreset.preset.maxToolCalls }
           : {
-              maxToolCalls: parseRequiredInteger(
+              maxToolCalls: parseRequiredPositiveInteger(
                 options.maxToolCalls,
                 "--max-tool-calls"
               )
@@ -3039,7 +3059,7 @@ function addAgentCommand(command: Command): void {
         ...(options.maxFailedToolCalls === undefined
           ? { maxFailedToolCalls: resolvedPreset.preset.maxFailedToolCalls }
           : {
-              maxFailedToolCalls: parseRequiredInteger(
+              maxFailedToolCalls: parseRequiredPositiveInteger(
                 options.maxFailedToolCalls,
                 "--max-failed-tool-calls"
               )
@@ -3238,11 +3258,16 @@ async function runAgentFixLikeCommand(input: {
     verifierCommands,
     ...(input.options.maxTurns === undefined
       ? { maxTurns: resolvedPreset.preset.maxTurns }
-      : { maxTurns: parseRequiredInteger(input.options.maxTurns, "--max-turns") }),
+      : {
+          maxTurns: parseRequiredPositiveInteger(
+            input.options.maxTurns,
+            "--max-turns"
+          )
+        }),
     ...(input.options.maxToolCalls === undefined
       ? { maxToolCalls: resolvedPreset.preset.maxToolCalls }
       : {
-          maxToolCalls: parseRequiredInteger(
+          maxToolCalls: parseRequiredPositiveInteger(
             input.options.maxToolCalls,
             "--max-tool-calls"
           )
@@ -3250,7 +3275,7 @@ async function runAgentFixLikeCommand(input: {
     ...(input.options.maxFailedToolCalls === undefined
       ? { maxFailedToolCalls: resolvedPreset.preset.maxFailedToolCalls }
       : {
-          maxFailedToolCalls: parseRequiredInteger(
+          maxFailedToolCalls: parseRequiredPositiveInteger(
             input.options.maxFailedToolCalls,
             "--max-failed-tool-calls"
           )
@@ -3453,6 +3478,23 @@ function parseRequiredInteger(value: string, optionName: string): number {
 
   if (parsed === undefined) {
     throw new Error(`${optionName} is required`);
+  }
+
+  return parsed;
+}
+
+export function parseRequiredPositiveInteger(
+  value: string,
+  optionName: string
+): number {
+  if (!/^[1-9]\d*$/.test(value)) {
+    throw new Error(`${optionName} must be a positive integer`);
+  }
+
+  const parsed = Number(value);
+
+  if (!Number.isSafeInteger(parsed)) {
+    throw new Error(`${optionName} must be a positive integer`);
   }
 
   return parsed;

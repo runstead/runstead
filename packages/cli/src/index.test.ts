@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
   createProgram,
   inferProgramName,
+  parseRequiredPositiveInteger,
   requireVerifierCommandOptions,
   requireSecretPrintAcknowledgement,
   requireUnmanagedHelperAcknowledgement
@@ -528,6 +529,17 @@ describe("cli entrypoint", () => {
         command: "pnpm test"
       }
     ]);
+  });
+
+  it("parses budget options as strict positive integers", () => {
+    expect(parseRequiredPositiveInteger("1", "--max-tool-calls")).toBe(1);
+    expect(parseRequiredPositiveInteger("42", "--max-tool-calls")).toBe(42);
+
+    for (const value of ["0", "-1", "1abc", "abc", "1.5"]) {
+      expect(() =>
+        parseRequiredPositiveInteger(value, "--max-tool-calls")
+      ).toThrow("--max-tool-calls must be a positive integer");
+    }
   });
 
   it("labels ad-hoc side-effect helpers as unmanaged", () => {
