@@ -2513,6 +2513,17 @@ interface AgentInspectCliOptions {
   actor: string;
 }
 
+interface AgentReviewCliOptions {
+  cwd?: string;
+  worker: string;
+  model?: string;
+  staged?: boolean;
+  maxTurns?: string;
+  maxToolCalls?: string;
+  maxFailedToolCalls?: string;
+  actor: string;
+}
+
 interface AgentReportCliOptions {
   cwd?: string;
   actor: string;
@@ -2803,6 +2814,94 @@ function addAgentCommand(command: Command): void {
         prompt: resolvedPreset.prompt,
         preset: resolvedPreset.preset.id,
         title: `Local agent ${resolvedPreset.preset.id}`,
+        worker,
+        ...(options.model === undefined ? {} : { model: options.model }),
+        mode: resolvedPreset.preset.mode,
+        checkpoint: resolvedPreset.preset.checkpoint,
+        ...(options.maxTurns === undefined
+          ? { maxTurns: resolvedPreset.preset.maxTurns }
+          : { maxTurns: parseRequiredInteger(options.maxTurns, "--max-turns") }),
+        ...(options.maxToolCalls === undefined
+          ? { maxToolCalls: resolvedPreset.preset.maxToolCalls }
+          : {
+              maxToolCalls: parseRequiredInteger(
+                options.maxToolCalls,
+                "--max-tool-calls"
+              )
+            }),
+        ...(options.maxFailedToolCalls === undefined
+          ? { maxFailedToolCalls: resolvedPreset.preset.maxFailedToolCalls }
+          : {
+              maxFailedToolCalls: parseRequiredInteger(
+                options.maxFailedToolCalls,
+                "--max-failed-tool-calls"
+              )
+            })
+      });
+      const result = await runLocalAgentTask({
+        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+        taskId: created.task.id
+      });
+      const exitCode = localAgentRunExitCode(result);
+
+      console.log(formatLocalAgentRunReport(result));
+      if (exitCode !== 0) {
+        process.exitCode = exitCode;
+      }
+    });
+
+  command
+    .command("review")
+    .description("Run a preset read-only review of the current git diff.")
+    .argument("[focus...]", "Optional review focus")
+    .option("--cwd <path>", "Workspace directory")
+    .option("--worker <worker>", "Worker to run: codex_direct", "codex_direct")
+    .option("--model <model>", "Model to use with codex_direct")
+    .option("--staged", "Review the staged diff instead of the unstaged diff")
+    .option("--max-turns <number>", "Override preset Codex Direct tool turns")
+    .option("--max-tool-calls <number>", "Override preset Codex Direct tool calls")
+    .option(
+      "--max-failed-tool-calls <number>",
+      "Override preset recoverable Codex Direct tool failures"
+    )
+    .option("--actor <id>", "RBAC subject for local agent execution", "local-admin")
+    .action(async (focusParts: string[], options: AgentReviewCliOptions) => {
+      await requireRbacPermission({
+        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+        actor: options.actor,
+        permission: "task.run",
+        action: "run local agent review"
+      });
+
+      const worker = parseCiRepairWorkerKind(options.worker);
+
+      if (worker !== "codex_direct") {
+        throw new Error("agent review currently supports --worker codex_direct only");
+      }
+
+      const {
+        createLocalAgentTask,
+        formatLocalAgentRunReport,
+        localAgentRunExitCode,
+        runLocalAgentTask
+      } = await import("./local-agent.js");
+      const { resolveLocalAgentPreset } = await import("./local-agent-presets.js");
+      const focus = focusParts.join(" ").trim();
+      const scope = options.staged === true ? "staged" : "unstaged";
+      const resolvedPreset = resolveLocalAgentPreset("review:diff", {
+        prompt: [
+          `Review the ${scope} git diff only.`,
+          options.staged === true
+            ? "When calling git_diff, pass staged=true."
+            : "When calling git_diff, leave staged unset or false.",
+          ...(focus.length === 0 ? [] : [focus])
+        ].join("\n")
+      });
+      const created = await createLocalAgentTask({
+        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+        prompt: resolvedPreset.prompt,
+        preset: resolvedPreset.preset.id,
+        title: `Local agent review ${scope} diff`,
         worker,
         ...(options.model === undefined ? {} : { model: options.model }),
         mode: resolvedPreset.preset.mode,

@@ -401,6 +401,10 @@ export function codexDirectToolDefinitions(): CodexResponsesTool[] {
           path: {
             type: "string",
             description: "Optional workspace-relative path to diff."
+          },
+          staged: {
+            type: "boolean",
+            description: "Return the staged diff when true."
           }
         },
         []
@@ -470,8 +474,8 @@ async function executeCodexDirectTool(
       return JSON.stringify(await runGovernedGitRead(options, "git status --short"));
     case "git_diff": {
       const path = optionalString(options.toolCall.arguments.path);
-      const command =
-        path === undefined ? "git diff" : `git diff -- ${shellQuote(path)}`;
+      const staged = options.toolCall.arguments.staged === true;
+      const command = gitDiffCommand({ path, staged });
 
       return JSON.stringify(await runGovernedGitRead(options, command));
     }
@@ -874,6 +878,12 @@ function optionalTimeoutMs(value: unknown): { timeoutMs?: number } {
   const timeoutMs = optionalPositiveInteger(value);
 
   return timeoutMs === undefined ? {} : { timeoutMs };
+}
+
+function gitDiffCommand(input: { path: string | undefined; staged: boolean }): string {
+  const base = input.staged ? "git diff --staged" : "git diff";
+
+  return input.path === undefined ? base : `${base} -- ${shellQuote(input.path)}`;
 }
 
 function shellQuote(value: string): string {

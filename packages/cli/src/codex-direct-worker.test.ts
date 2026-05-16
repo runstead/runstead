@@ -210,6 +210,71 @@ describe("runCodexDirectWorker", () => {
     }
   });
 
+  it("supports staged git diff tool calls", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-codex-staged-diff-"));
+
+    try {
+      const initialized = await initRunstead({
+        cwd: workspace,
+        createDefaultGoal: true
+      });
+      const database = openRunsteadDatabase(initialized.stateDb);
+
+      try {
+        const task = listTasks({ cwd: workspace }).tasks[0];
+
+        if (task === undefined) {
+          throw new Error("Expected generated task");
+        }
+
+        const goal = showGoal({ cwd: workspace, id: task.goalId }).goal;
+        const result = await runCodexDirectWorker({
+          cwd: workspace,
+          stateDb: initialized.stateDb,
+          database,
+          policy: allowDirectToolsPolicy,
+          goal,
+          task,
+          model: "fake-codex",
+          evidenceDir: join(initialized.root, "evidence"),
+          transport: scriptedTransport([
+            {
+              outputText: "",
+              toolCalls: [
+                {
+                  id: "call_staged_diff",
+                  name: "git_diff",
+                  arguments: JSON.stringify({
+                    staged: true,
+                    path: "src/index.ts"
+                  })
+                }
+              ],
+              finishReason: "tool_calls",
+              outputItems: []
+            },
+            {
+              outputText: "Reviewed staged diff.",
+              toolCalls: [],
+              finishReason: "stop",
+              outputItems: []
+            }
+          ])
+        });
+        const diffCall = database
+          .prepare("SELECT output_json FROM tool_calls WHERE action_type = 'git.diff'")
+          .get() as { output_json: string };
+
+        expect(result.status).toBe("completed");
+        expect(diffCall.output_json).toContain("git diff --staged -- 'src/index.ts'");
+      } finally {
+        database.close();
+      }
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
   it("fails edit-style runs when the tool budget is exhausted", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "runstead-codex-tool-budget-"));
 
