@@ -493,13 +493,22 @@ describe("runCiRepairOrchestrator", () => {
         profile: "trusted-local",
         createDefaultGoal: true
       });
+      await writeFile(
+        join(workspace, ".runstead", "agent-presets.yaml"),
+        [
+          "presets:",
+          "  repair:ci:",
+          "    model: preset-codex",
+          "    prompt_focus: Keep the CI repair patch tiny."
+        ].join("\n"),
+        "utf8"
+      );
       await allowCodexDirectWorkspaceWritesForTest(workspace);
 
       const result = await runCiRepairOrchestrator({
         cwd: workspace,
         runId: "123",
         worker: "codex_direct",
-        model: "fake-codex",
         base: "main",
         allowedPaths: ["src/**"],
         verifierCommands: [{ name: "test", command: "pnpm test" }],
@@ -519,7 +528,7 @@ describe("runCiRepairOrchestrator", () => {
         expect(result.status).toBe("waiting_approval");
         expect(result.workerResult).toMatchObject({
           worker: "codex_direct",
-          model: "fake-codex",
+          model: "preset-codex",
           exitCode: 0
         });
         expect(codexRequests).toHaveLength(2);
@@ -532,6 +541,7 @@ describe("runCiRepairOrchestrator", () => {
           throw new Error("Expected first Codex Direct input to be a user message");
         }
         expect(firstCodexInput.content).toContain("Task preset: repair:ci");
+        expect(firstCodexInput.content).toContain("Keep the CI repair patch tiny.");
         expect(firstCodexInput.content).toContain("Configured verifiers: test");
         expect(firstCodexInput.content).toContain(
           "Repair GitHub Actions run 123."

@@ -63,7 +63,7 @@ import {
   ToolActionDeniedError
 } from "./governed-action.js";
 import { showGoal } from "./goals.js";
-import { resolveLocalAgentPreset } from "./local-agent-presets.js";
+import { resolveConfiguredLocalAgentPreset } from "./local-agent-presets.js";
 import { loadPolicyProfileFromFile } from "./policy-loader.js";
 import {
   fingerprintPolicyProfile,
@@ -1516,9 +1516,11 @@ async function startCiRepairWorker(options: {
     });
   }
 
+  const localAgentPreset = await ciRepairPreset(options);
+  const explicitModel = options.model ?? localAgentPreset.model;
   const model = await resolveCodexModel({
     cwd: options.cwd,
-    ...(options.model === undefined ? {} : { explicitModel: options.model })
+    ...(explicitModel === undefined ? {} : { explicitModel })
   });
 
   const transport =
@@ -1526,7 +1528,6 @@ async function startCiRepairWorker(options: {
     (await createDefaultCodexDirectTransport({
       ...(options.now === undefined ? {} : { now: options.now })
     }));
-  const localAgentPreset = ciRepairPreset(options);
   const result = await runCodexDirectWorker({
     cwd: options.cwd,
     stateDb: options.stateDb,
@@ -1552,11 +1553,14 @@ async function startCiRepairWorker(options: {
 }
 
 function ciRepairPreset(options: {
+  cwd: string;
   workflowRunId: string;
   evidenceId: string;
   verifierCommands: CommandVerifierInput[];
 }) {
-  return resolveLocalAgentPreset("repair:ci", {
+  return resolveConfiguredLocalAgentPreset(
+    "repair:ci",
+    {
     verifierNames: options.verifierCommands.map((command) => command.name),
     prompt: [
       `Repair GitHub Actions run ${options.workflowRunId}.`,
@@ -1569,7 +1573,11 @@ function ciRepairPreset(options: {
         .map((command) => `- ${command.name}: ${command.command}`)
         .join("\n")
     ].join("\n")
-  });
+    },
+    {
+      cwd: options.cwd
+    }
+  );
 }
 
 async function createDefaultCodexDirectTransport(options: {
