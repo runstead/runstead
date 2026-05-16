@@ -59,9 +59,13 @@ are routed through governed actions such as `filesystem.read`,
 `model.inference.request`, which records `network_write_external` and
 `llm_data_egress` side effects. The default policy requires approval for both
 contracts. `runstead init --profile trusted-local` may allow the built-in
-`codex_direct` worker and the `chatgpt_codex` model resource, but protected
+`codex_direct` worker and trusted model provider resources such as
+`chatgpt_codex`, `openai`, `openrouter`, `anthropic`, `gemini`, local
+OpenAI-compatible endpoints, and other bundled provider ids. The selected
+provider id is recorded in the policy decision for each model request. Protected
 paths, dependency changes, publishing, and other external writes still keep
-their stricter rules.
+their stricter rules. Run `runstead upgrade` in older trusted-local workspaces
+to merge newly supported provider resource ids into the policy allowlist.
 
 Mutating unmanaged helpers now require explicit acknowledgement with
 `--unmanaged`:

@@ -20,8 +20,11 @@ agent run / repair-ci / run --once / daemon
   -> worker routing
     -> codex_cli
     -> codex_direct
-         -> CodexAuthStore
-         -> CodexResponsesTransport
+         -> ModelProviderRuntime
+              -> CodexAuthStore + CodexResponsesTransport
+              -> OpenAI-compatible Chat Completions transport
+              -> Anthropic Messages transport
+              -> Gemini generateContent transport
          -> RunsteadToolLoop
               -> filesystem.read
               -> filesystem.list
@@ -41,31 +44,36 @@ agent run / repair-ci / run --once / daemon
               -> policy / approval / audit / evidence
 ```
 
-`CodexAuthStore` owns Runstead's provider credentials under
-`$RUNSTEAD_HOME/auth.json` or `~/.runstead/auth.json`. Repository
-`.runstead/config.yaml` may store provider and model choices, but it must not
-store access or refresh tokens. Importing Codex CLI credentials, if supported,
-must be explicit and one-shot because Codex refresh tokens can conflict across
-clients.
+`ModelProviderRuntime` resolves the selected provider from CLI flags,
+`.runstead/config.yaml`, environment, model-name inference, then the default
+Codex provider. Repository config may store provider and model choices, but it
+must not store access or refresh tokens.
 
-`CodexResponsesTransport` implements the minimal Codex Responses API surface
-needed by the worker. It should use injectable `fetch` for tests. The default
-Codex endpoint is experimental and must be configurable because
-`https://chatgpt.com/backend-api/codex` is not a stable public API.
+`CodexAuthStore` owns Runstead's Codex credentials under
+`$RUNSTEAD_HOME/auth.json` or `~/.runstead/auth.json`. Importing Codex CLI
+credentials, if supported, must be explicit and one-shot because Codex refresh
+tokens can conflict across clients.
+
+The non-Codex provider transports adapt OpenAI-compatible Chat Completions,
+Anthropic Messages, and Gemini generateContent responses into the same internal
+Codex Responses-style turn format. That keeps the governed Runstead tool loop
+identical regardless of provider.
 
 ## Action Contracts
 
 Native worker startup uses `worker.native.start` with resource id
-`codex_direct`. Model calls use `model.inference.request` with resource id
-`chatgpt_codex` and side effects:
+`codex_direct`. Model calls use `model.inference.request` with the selected
+provider resource id, such as `chatgpt_codex`, `openrouter`, `anthropic`, or
+`gemini`, and side effects:
 
 - `network_write_external`
 - `llm_data_egress`
 
 The default repo-maintenance policy requires approval for both contracts.
-`trusted-local` can allow `codex_direct` and `chatgpt_codex`, while protected
-paths, dependency changes, publishing, and other external writes remain
-governed by their existing stricter rules.
+`trusted-local` can allow `codex_direct` and the bundled trusted provider
+resource ids, while protected paths, dependency changes, publishing, and other
+external writes remain governed by their existing stricter rules. Existing
+workspaces should run `runstead upgrade` after provider allowlists change.
 
 ## Tool Loop
 
@@ -97,11 +105,42 @@ being exposed to the model.
 
 ## Local Agent Workflow
 
-Authenticate once into Runstead's Codex Direct auth store:
+List the providers Runstead can route through the `codex_direct` local agent:
+
+```bash
+pnpm exec tsx packages/cli/src/index.ts agent providers
+```
+
+For the Codex backend, authenticate once into Runstead's Codex Direct auth
+store:
 
 ```bash
 pnpm exec tsx packages/cli/src/index.ts codex login
 pnpm exec tsx packages/cli/src/index.ts codex models --refresh
+```
+
+For other providers, configure provider, model, and credentials instead of
+using `runstead codex login`:
+
+```bash
+pnpm exec tsx packages/cli/src/index.ts config set \
+  --cwd /path/to/target-repo \
+  model.provider openrouter
+pnpm exec tsx packages/cli/src/index.ts config set \
+  --cwd /path/to/target-repo \
+  model.name anthropic/claude-opus-4.6
+export OPENROUTER_API_KEY=...
+```
+
+You can also pass per-run overrides:
+
+```bash
+pnpm exec tsx packages/cli/src/index.ts agent run \
+  --cwd /path/to/target-repo \
+  --worker codex_direct \
+  --provider anthropic \
+  --model claude-opus-4.6 \
+  "Inspect this repo and summarize the main test commands."
 ```
 
 Initialize the target repository with a local policy profile:
@@ -118,7 +157,7 @@ Run a read-only inspection task:
 pnpm exec tsx packages/cli/src/index.ts agent run \
   --cwd /path/to/target-repo \
   --worker codex_direct \
-  --model <codex-model> \
+  --model <model> \
   "Inspect this repo and summarize the main test commands."
 ```
 
@@ -128,7 +167,7 @@ Run an edit task with verifier evidence:
 pnpm exec tsx packages/cli/src/index.ts agent run \
   --cwd /path/to/target-repo \
   --worker codex_direct \
-  --model <codex-model> \
+  --model <model> \
   --mode edit \
   --allowed "src/**" \
   --verifier "test=pnpm test" \
@@ -152,6 +191,10 @@ Audit summaries are available without re-running the task:
 pnpm exec tsx packages/cli/src/index.ts agent report <task-id> --cwd /path/to/target-repo
 ```
 
+Reports include both `Provider` and `Model` so it is clear whether a run used
+Codex, OpenRouter, Anthropic, Gemini, a local OpenAI-compatible endpoint, or
+another configured provider.
+
 Runstead also routes queued `local_agent_task` records through `run --once`,
 so daemon ticks can consume locally scheduled agent work. Runtime artifacts
 under `.runstead/state.db`, `evidence/`, `logs/`, `checkpoints/`, `daemon/`,
@@ -160,7 +203,8 @@ and `reports/` are ignored by `.runstead/.gitignore` and local Git
 
 ## CI Repair Integration
 
-`repair-ci --worker codex_direct --model <model>` reuses the existing CI
+`repair-ci --worker codex_direct --provider <provider> --model <model>` reuses
+the existing CI
 repair stages: branch creation, checkpointing, diff-scope verification,
 verifiers, commit, and PR publication. The only changed stage is worker
 execution: `codex_direct` produces governed tool-call audit records while
@@ -170,10 +214,14 @@ For queued `ci_repair` tasks, `runstead run --once --model <model>` prefers
 `codex_direct` when local Codex credentials are present and not expired. Without
 local Codex credentials or a model, the runner falls back to `codex_cli`.
 
+When a non-Codex provider is configured in `.runstead/config.yaml` or
+`RUNSTEAD_MODEL_PROVIDER`, `codex_direct` uses that provider instead of the
+Codex auth store.
+
 ## Optional Live Smoke
 
 Unit tests use fake transports by default. To run a real local smoke against the
-configured Codex Direct backend, opt in explicitly:
+configured Codex backend, opt in explicitly:
 
 ```bash
 RUNSTEAD_LIVE_CODEX_DIRECT=1 \
@@ -192,9 +240,9 @@ automatically reuse Codex CLI credentials, because refresh tokens can conflict
 across clients. A future pool should be explicit about account ownership,
 refresh locking, and per-worker assignment.
 
-Model discovery uses the live Codex models endpoint, writes a token-free local
-cache, and can fall back to configured model ids. That is enough for the first
-direct worker path without adding a larger provider catalog.
+Codex model discovery uses the live Codex models endpoint, writes a token-free
+local cache, and can fall back to configured model ids. Non-Codex providers use
+explicit model ids from config, environment, or CLI flags.
 
 Streaming is also deferred. The MVP transport uses request/response calls so
 each model request has one `model.inference.request` policy decision and one

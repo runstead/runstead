@@ -7,10 +7,11 @@ Runstead turns them into tasks, dispatches worker agents, guards actions with
 policy, verifies outputs with evidence, records audit logs, and resumes after
 failures.
 
-Runstead currently provides **Level 1 wrapped execution** for external coding
-agents: it gates worker launch, checkpoints the workspace, verifies results,
-and audits side effects. Full **Level 2 tool-proxied execution**, where every
-internal worker tool call passes through Runstead, is future work.
+Runstead provides **Level 1 wrapped execution** for external coding agents: it
+gates worker launch, checkpoints the workspace, verifies results, and audits
+side effects. It also provides a native `codex_direct` local agent path where
+Runstead proxies model tool calls through governed filesystem, shell, git, and
+evidence actions.
 
 The first supported product path is **repo-maintenance**: create a long-running
 goal, run governed local verifiers, capture evidence, request approvals for
@@ -28,6 +29,11 @@ Use `runstead init --profile trusted-local --create-default-goal` on a trusted
 local workstation when you want CI repair to start the built-in wrapped coding
 workers without the first approval prompt while still requiring approval for
 dependency changes and publishing.
+
+Use `runstead agent providers` to list model providers available to
+`codex_direct`. Codex uses `runstead codex login`; OpenAI-compatible,
+Anthropic, Gemini, and local providers use `model.provider`, `model.name`,
+`model.baseUrl`, and API key environment variables.
 
 ## Setup
 
