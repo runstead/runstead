@@ -6,7 +6,9 @@ import {
   createProgram,
   formatCliError,
   inferProgramName,
+  localAgentPresetRunsVerifiersFirst,
   parseRequiredPositiveInteger,
+  resolvePresetVerifierCommandOptions,
   requireVerifierCommandOptions,
   RunsteadCliError,
   requireSecretPrintAcknowledgement,
@@ -561,6 +563,72 @@ describe("cli entrypoint", () => {
         command: "pnpm test"
       }
     ]);
+  });
+
+  it("resolves preset verifier contracts", async () => {
+    await expect(
+      resolvePresetVerifierCommandOptions({
+        values: [],
+        commandName: "agent run",
+        preset: {
+          preset: {
+            id: "repair:test",
+            verifierPolicy: "required"
+          }
+        }
+      })
+    ).rejects.toThrow("agent run preset repair:test requires at least one");
+
+    await expect(
+      resolvePresetVerifierCommandOptions({
+        values: [],
+        commandName: "agent run",
+        preset: {
+          preset: {
+            id: "fix:small",
+            verifierPolicy: "auto"
+          }
+        },
+        discover: () =>
+          Promise.resolve([
+            {
+              name: "test",
+              command: "pnpm test"
+            }
+          ])
+      })
+    ).resolves.toEqual([
+      {
+        name: "test",
+        command: "pnpm test"
+      }
+    ]);
+
+    await expect(
+      resolvePresetVerifierCommandOptions({
+        values: [],
+        commandName: "agent run",
+        preset: {
+          preset: {
+            id: "test:triage",
+            verifierPolicy: "required"
+          },
+          verifierCommands: [
+            {
+              name: "lint",
+              command: "pnpm lint"
+            }
+          ]
+        }
+      })
+    ).resolves.toEqual([
+      {
+        name: "lint",
+        command: "pnpm lint"
+      }
+    ]);
+    expect(localAgentPresetRunsVerifiersFirst("required")).toBe(true);
+    expect(localAgentPresetRunsVerifiersFirst("auto")).toBe(false);
   });
 
   it("parses budget options as strict positive integers", () => {

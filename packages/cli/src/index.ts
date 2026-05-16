@@ -4,6 +4,8 @@ import { Command } from "commander";
 import { pathToFileURL } from "node:url";
 
 import { getRunsteadStatus } from "./status.js";
+import type { LocalAgentVerifierPolicy } from "./local-agent-presets.js";
+import type { CommandVerifierInput } from "./verifier-evidence.js";
 
 export interface CreateProgramOptions {
   entrypoint?: string;
@@ -2809,6 +2811,7 @@ function addAgentCommand(command: Command): void {
       }
 
       const {
+        attachLocalAgentVerifierEvidence,
         createLocalAgentTask,
         formatLocalAgentRunReport,
         localAgentRunExitCode,
@@ -2817,14 +2820,6 @@ function addAgentCommand(command: Command): void {
       const { resolveConfiguredLocalAgentPreset } = await import(
         "./local-agent-presets.js"
       );
-      let verifierCommands = await resolveVerifierCommandOptions(
-        options.verifier,
-        "agent run",
-        {
-          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-          required: false
-        }
-      );
       const prompt = promptParts.join(" ").trim();
       let resolvedPreset =
         options.preset === undefined
@@ -2832,19 +2827,21 @@ function addAgentCommand(command: Command): void {
           : await resolveConfiguredLocalAgentPreset(
               options.preset,
               {
-                ...(prompt.length === 0 ? {} : { prompt }),
-                verifierNames: verifierCommands.map((command) => command.name)
+                ...(prompt.length === 0 ? {} : { prompt })
               },
               {
                 ...(options.cwd === undefined ? {} : { cwd: options.cwd })
               }
             );
 
-      if (
-        verifierCommands.length === 0 &&
-        resolvedPreset?.verifierCommands !== undefined
-      ) {
-        verifierCommands = resolvedPreset.verifierCommands;
+      const verifierCommands = await resolvePresetVerifierCommandOptions({
+        values: options.verifier,
+        commandName: "agent run",
+        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+        ...(resolvedPreset === undefined ? {} : { preset: resolvedPreset })
+      });
+
+      if (resolvedPreset !== undefined) {
         resolvedPreset = await resolveConfiguredLocalAgentPreset(
           resolvedPreset.preset.id,
           {
@@ -2899,7 +2896,7 @@ function addAgentCommand(command: Command): void {
                 options.maxToolCalls,
                 "--max-tool-calls"
               )
-            }),
+        }),
         ...(options.maxFailedToolCalls === undefined
           ? resolvedPreset === undefined
             ? {}
@@ -2911,6 +2908,17 @@ function addAgentCommand(command: Command): void {
               )
             })
       });
+
+      if (
+        resolvedPreset !== undefined &&
+        localAgentPresetRunsVerifiersFirst(resolvedPreset.preset.verifierPolicy)
+      ) {
+        await attachLocalAgentVerifierEvidence({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          taskId: created.task.id
+        });
+      }
+
       const result = await runLocalAgentTask({
         ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
         taskId: created.task.id
@@ -3778,14 +3786,18 @@ export function requireVerifierCommandOptions(
 async function resolveVerifierCommandOptions(
   values: string[],
   commandName: string,
-  options: { cwd?: string; required: boolean }
-): Promise<{ name: string; command: string }[]> {
+  options: {
+    cwd?: string;
+    required: boolean;
+    discover?: (options: { cwd?: string }) => Promise<CommandVerifierInput[]>;
+  }
+): Promise<CommandVerifierInput[]> {
   const autoRequested = values.some((value) => value.trim() === "auto");
   const manual = values
     .filter((value) => value.trim() !== "auto")
     .map(parseVerifierCommandOption);
   const discovered = autoRequested
-    ? await discoverVerifierCommandOptions({
+    ? await (options.discover ?? discoverVerifierCommandOptions)({
         ...(options.cwd === undefined ? {} : { cwd: options.cwd })
       })
     : [];
@@ -3806,18 +3818,75 @@ async function resolveVerifierCommandOptions(
   return commands;
 }
 
+export async function resolvePresetVerifierCommandOptions(input: {
+  values: string[];
+  commandName: string;
+  cwd?: string;
+  preset?: {
+    preset: {
+      id: string;
+      verifierPolicy: LocalAgentVerifierPolicy;
+    };
+    verifierCommands?: CommandVerifierInput[];
+  };
+  discover?: (options: { cwd?: string }) => Promise<CommandVerifierInput[]>;
+}): Promise<CommandVerifierInput[]> {
+  const explicit = await resolveVerifierCommandOptions(
+    input.values,
+    input.commandName,
+    {
+      ...(input.cwd === undefined ? {} : { cwd: input.cwd }),
+      required: false,
+      ...(input.discover === undefined ? {} : { discover: input.discover })
+    }
+  );
+
+  if (explicit.length > 0 || input.preset === undefined) {
+    return explicit;
+  }
+
+  if (
+    input.preset.verifierCommands !== undefined &&
+    input.preset.verifierCommands.length > 0
+  ) {
+    return input.preset.verifierCommands;
+  }
+
+  if (input.preset.preset.verifierPolicy === "auto") {
+    return resolveVerifierCommandOptions(["auto"], input.commandName, {
+      ...(input.cwd === undefined ? {} : { cwd: input.cwd }),
+      required: false,
+      ...(input.discover === undefined ? {} : { discover: input.discover })
+    });
+  }
+
+  if (input.preset.preset.verifierPolicy === "required") {
+    throw new Error(
+      `${input.commandName} preset ${input.preset.preset.id} requires at least one --verifier name=command, --verifier auto, or preset verifier`
+    );
+  }
+
+  return [];
+}
+
+export function localAgentPresetRunsVerifiersFirst(
+  policy: LocalAgentVerifierPolicy
+): boolean {
+  return policy === "required";
+}
+
 async function discoverVerifierCommandOptions(options: {
   cwd?: string;
-}): Promise<{ name: string; command: string }[]> {
+}): Promise<CommandVerifierInput[]> {
   const { discoverVerifierCommands } = await import("./verifier-discovery.js");
 
   return discoverVerifierCommands(options);
 }
 
 function mergeVerifierCommands(
-  commands: { name: string; command: string }[]
-): { name: string; command: string }[] {
-  const merged = new Map<string, { name: string; command: string }>();
+  commands: CommandVerifierInput[]
+): CommandVerifierInput[] {
+  const merged = new Map<string, CommandVerifierInput>();
 
   for (const command of commands) {
     merged.set(command.name, command);
