@@ -2535,6 +2535,19 @@ interface AgentTestCliOptions {
   actor: string;
 }
 
+interface AgentFixCliOptions {
+  cwd?: string;
+  worker: string;
+  model?: string;
+  allowed: string[];
+  denied: string[];
+  verifier: string[];
+  maxTurns?: string;
+  maxToolCalls?: string;
+  maxFailedToolCalls?: string;
+  actor: string;
+}
+
 interface AgentReportCliOptions {
   cwd?: string;
   actor: string;
@@ -3046,6 +3059,72 @@ function addAgentCommand(command: Command): void {
     });
 
   command
+    .command("fix")
+    .description("Run a checkpointed small-fix agent task with required verifiers.")
+    .argument("<prompt...>", "Fix prompt for the local agent")
+    .option("--cwd <path>", "Workspace directory")
+    .option("--worker <worker>", "Worker to run: codex_direct", "codex_direct")
+    .option("--model <model>", "Model to use with codex_direct")
+    .option("--allowed <pattern>", "Allowed workspace path pattern", collectValues, [])
+    .option("--denied <pattern>", "Denied workspace path pattern", collectValues, [])
+    .requiredOption(
+      "--verifier <name=command>",
+      "Verifier command to run after the fix",
+      collectValues,
+      []
+    )
+    .option("--max-turns <number>", "Override preset Codex Direct tool turns")
+    .option("--max-tool-calls <number>", "Override preset Codex Direct tool calls")
+    .option(
+      "--max-failed-tool-calls <number>",
+      "Override preset recoverable Codex Direct tool failures"
+    )
+    .option("--actor <id>", "RBAC subject for local agent execution", "local-admin")
+    .action(async (promptParts: string[], options: AgentFixCliOptions) => {
+      await runAgentFixLikeCommand({
+        prompt: promptParts.join(" ").trim(),
+        presetId: "fix:small",
+        title: "Local agent small fix",
+        action: "run local agent fix",
+        verifierFirst: false,
+        options
+      });
+    });
+
+  command
+    .command("repair-test")
+    .description("Run verifier-first checkpointed repair for a failing local test.")
+    .argument("[focus...]", "Optional repair focus")
+    .option("--cwd <path>", "Workspace directory")
+    .option("--worker <worker>", "Worker to run: codex_direct", "codex_direct")
+    .option("--model <model>", "Model to use with codex_direct")
+    .option("--allowed <pattern>", "Allowed workspace path pattern", collectValues, [])
+    .option("--denied <pattern>", "Denied workspace path pattern", collectValues, [])
+    .requiredOption(
+      "--verifier <name=command>",
+      "Verifier command to run before and after repair",
+      collectValues,
+      []
+    )
+    .option("--max-turns <number>", "Override preset Codex Direct tool turns")
+    .option("--max-tool-calls <number>", "Override preset Codex Direct tool calls")
+    .option(
+      "--max-failed-tool-calls <number>",
+      "Override preset recoverable Codex Direct tool failures"
+    )
+    .option("--actor <id>", "RBAC subject for local agent execution", "local-admin")
+    .action(async (focusParts: string[], options: AgentFixCliOptions) => {
+      await runAgentFixLikeCommand({
+        prompt: focusParts.join(" ").trim(),
+        presetId: "repair:test",
+        title: "Local agent test repair",
+        action: "run local agent test repair",
+        verifierFirst: true,
+        options
+      });
+    });
+
+  command
     .command("report")
     .description("Summarize a local agent task and its audit trail.")
     .argument("<task-id>", "Local agent task id")
@@ -3096,6 +3175,96 @@ function addAgentCommand(command: Command): void {
         process.exitCode = exitCode;
       }
     });
+}
+
+async function runAgentFixLikeCommand(input: {
+  prompt: string;
+  presetId: "fix:small" | "repair:test";
+  title: string;
+  action: string;
+  verifierFirst: boolean;
+  options: AgentFixCliOptions;
+}): Promise<void> {
+  await requireRbacPermission({
+    ...(input.options.cwd === undefined ? {} : { cwd: input.options.cwd }),
+    actor: input.options.actor,
+    permission: "task.run",
+    action: input.action
+  });
+
+  const worker = parseCiRepairWorkerKind(input.options.worker);
+
+  if (worker !== "codex_direct") {
+    throw new Error(`${input.presetId} currently supports --worker codex_direct only`);
+  }
+
+  if (input.presetId === "fix:small" && input.prompt.length === 0) {
+    throw new Error("agent fix prompt is required");
+  }
+
+  const verifierCommands = input.options.verifier.map(parseVerifierCommandOption);
+  const {
+    attachLocalAgentVerifierEvidence,
+    createLocalAgentTask,
+    formatLocalAgentRunReport,
+    localAgentRunExitCode,
+    runLocalAgentTask
+  } = await import("./local-agent.js");
+  const { resolveLocalAgentPreset } = await import("./local-agent-presets.js");
+  const resolvedPreset = resolveLocalAgentPreset(input.presetId, {
+    ...(input.prompt.length === 0 ? {} : { prompt: input.prompt }),
+    verifierNames: verifierCommands.map((command) => command.name)
+  });
+  const created = await createLocalAgentTask({
+    ...(input.options.cwd === undefined ? {} : { cwd: input.options.cwd }),
+    prompt: resolvedPreset.prompt,
+    preset: resolvedPreset.preset.id,
+    title: input.title,
+    worker,
+    ...(input.options.model === undefined ? {} : { model: input.options.model }),
+    mode: resolvedPreset.preset.mode,
+    checkpoint: resolvedPreset.preset.checkpoint,
+    allowedPaths: input.options.allowed,
+    deniedPaths: input.options.denied,
+    verifierCommands,
+    ...(input.options.maxTurns === undefined
+      ? { maxTurns: resolvedPreset.preset.maxTurns }
+      : { maxTurns: parseRequiredInteger(input.options.maxTurns, "--max-turns") }),
+    ...(input.options.maxToolCalls === undefined
+      ? { maxToolCalls: resolvedPreset.preset.maxToolCalls }
+      : {
+          maxToolCalls: parseRequiredInteger(
+            input.options.maxToolCalls,
+            "--max-tool-calls"
+          )
+        }),
+    ...(input.options.maxFailedToolCalls === undefined
+      ? { maxFailedToolCalls: resolvedPreset.preset.maxFailedToolCalls }
+      : {
+          maxFailedToolCalls: parseRequiredInteger(
+            input.options.maxFailedToolCalls,
+            "--max-failed-tool-calls"
+          )
+        })
+  });
+
+  if (input.verifierFirst) {
+    await attachLocalAgentVerifierEvidence({
+      ...(input.options.cwd === undefined ? {} : { cwd: input.options.cwd }),
+      taskId: created.task.id
+    });
+  }
+
+  const result = await runLocalAgentTask({
+    ...(input.options.cwd === undefined ? {} : { cwd: input.options.cwd }),
+    taskId: created.task.id
+  });
+  const exitCode = localAgentRunExitCode(result);
+
+  console.log(formatLocalAgentRunReport(result));
+  if (exitCode !== 0) {
+    process.exitCode = exitCode;
+  }
 }
 
 function addCiRepairOrchestrationCommand(command: Command): void {

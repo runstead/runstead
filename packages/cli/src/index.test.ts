@@ -93,11 +93,24 @@ describe("cli entrypoint", () => {
     const inspect = agent?.commands.find((command) => command.name() === "inspect");
     const review = agent?.commands.find((command) => command.name() === "review");
     const test = agent?.commands.find((command) => command.name() === "test");
+    const fix = agent?.commands.find((command) => command.name() === "fix");
+    const repairTest = agent?.commands.find(
+      (command) => command.name() === "repair-test"
+    );
     const report = agent?.commands.find((command) => command.name() === "report");
     const resume = agent?.commands.find((command) => command.name() === "resume");
 
     expect(agent?.commands.map((command) => command.name())).toEqual(
-      expect.arrayContaining(["run", "inspect", "review", "test", "report", "resume"])
+      expect.arrayContaining([
+        "run",
+        "inspect",
+        "review",
+        "test",
+        "fix",
+        "repair-test",
+        "report",
+        "resume"
+      ])
     );
     expect(run?.options.map((option) => option.long)).toEqual(
       expect.arrayContaining([
@@ -150,6 +163,22 @@ describe("cli entrypoint", () => {
         "--actor"
       ])
     );
+    for (const command of [fix, repairTest]) {
+      expect(command?.options.map((option) => option.long)).toEqual(
+        expect.arrayContaining([
+          "--cwd",
+          "--worker",
+          "--model",
+          "--allowed",
+          "--denied",
+          "--verifier",
+          "--max-turns",
+          "--max-tool-calls",
+          "--max-failed-tool-calls",
+          "--actor"
+        ])
+      );
+    }
     expect(report?.options.map((option) => option.long)).toEqual(
       expect.arrayContaining(["--cwd", "--actor"])
     );
