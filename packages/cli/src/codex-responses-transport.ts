@@ -82,7 +82,7 @@ export class CodexResponsesTransport {
       method: "POST",
       headers: {
         ...codexBackendHeaders(this.accessToken),
-        Accept: "application/json",
+        Accept: "text/event-stream",
         Authorization: `Bearer ${this.accessToken}`,
         "Content-Type": "application/json",
         ...codexSessionHeaders(request.sessionId)
@@ -94,7 +94,7 @@ export class CodexResponsesTransport {
       throw new Error(`Codex Responses request failed with status ${response.status}`);
     }
 
-    return normalizeCodexResponsesPayload(await response.json());
+    return normalizeCodexResponsesStream(await response.text());
   }
 }
 
@@ -110,6 +110,7 @@ export function buildCodexResponsesPayload(
     instructions: request.instructions,
     input: normalizeInputItems(request.input),
     store: false,
+    stream: true,
     tool_choice: request.tools === undefined ? "none" : "auto",
     parallel_tool_calls: request.tools !== undefined,
     ...(request.tools === undefined ? {} : { tools: normalizeTools(request.tools) }),
@@ -119,6 +120,56 @@ export function buildCodexResponsesPayload(
     },
     include: ["reasoning.encrypted_content"]
   };
+}
+
+export function normalizeCodexResponsesStream(stream: string): CodexResponsesResult {
+  const outputItems = new Map<number, unknown>();
+  const textParts: string[] = [];
+  let responseId: string | undefined;
+  let responseStatus: string | undefined;
+
+  for (const event of parseServerSentEvents(stream)) {
+    if (!isRecord(event)) {
+      continue;
+    }
+
+    if (event.type === "response.completed" && isRecord(event.response)) {
+      const response = event.response;
+
+      if (typeof response.id === "string") {
+        responseId = response.id;
+      }
+      if (typeof response.status === "string") {
+        responseStatus = response.status;
+      }
+      if (Array.isArray(response.output) && response.output.length > 0) {
+        response.output.forEach((item, index) => outputItems.set(index, item));
+      }
+      continue;
+    }
+
+    if (event.type === "response.output_item.done") {
+      const outputIndex = integerOrUndefined(event.output_index);
+
+      if (outputIndex !== undefined) {
+        outputItems.set(outputIndex, event.item);
+      }
+      continue;
+    }
+
+    if (event.type === "response.output_text.done" && typeof event.text === "string") {
+      textParts.push(event.text);
+    }
+  }
+
+  return normalizeCodexResponsesPayload({
+    ...(responseId === undefined ? {} : { id: responseId }),
+    status: responseStatus ?? "completed",
+    output: [...outputItems.entries()]
+      .sort(([left], [right]) => left - right)
+      .map(([, item]) => item),
+    ...(textParts.length === 0 ? {} : { output_text: textParts.join("") })
+  });
 }
 
 export function normalizeCodexResponsesPayload(payload: unknown): CodexResponsesResult {
@@ -256,6 +307,29 @@ function codexSessionHeaders(sessionId: string | undefined): Record<string, stri
   };
 }
 
+function parseServerSentEvents(stream: string): unknown[] {
+  return stream
+    .split(/\r?\n\r?\n/)
+    .flatMap((block) => {
+      const data = block
+        .split(/\r?\n/)
+        .filter((line) => line.startsWith("data:"))
+        .map((line) => line.slice("data:".length).trimStart())
+        .join("\n")
+        .trim();
+
+      if (data.length === 0 || data === "[DONE]") {
+        return [];
+      }
+
+      try {
+        return [JSON.parse(data) as unknown];
+      } catch {
+        return [];
+      }
+    });
+}
+
 function extractOutputText(content: unknown): string {
   if (!Array.isArray(content)) {
     return "";
@@ -282,6 +356,10 @@ function extractOutputText(content: unknown): string {
 
 function trimTrailingSlash(value: string): string {
   return value.trim().replace(/\/+$/, "");
+}
+
+function integerOrUndefined(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isInteger(value) ? value : undefined;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -3,7 +3,8 @@ import { describe, expect, it } from "vitest";
 import {
   CodexResponsesTransport,
   buildCodexResponsesPayload,
-  normalizeCodexResponsesPayload
+  normalizeCodexResponsesPayload,
+  normalizeCodexResponsesStream
 } from "./codex-responses-transport.js";
 
 describe("CodexResponsesTransport", () => {
@@ -35,6 +36,7 @@ describe("CodexResponsesTransport", () => {
       model: "gpt-5.1-codex",
       instructions: "You are a governed Runstead worker.",
       store: false,
+      stream: true,
       tool_choice: "auto",
       parallel_tool_calls: true,
       reasoning: {
@@ -63,17 +65,25 @@ describe("CodexResponsesTransport", () => {
         });
 
         return Promise.resolve(
-          jsonResponse({
-            id: "resp_1",
-            status: "completed",
-            output: [
-              {
+          textResponse(
+            sse("response.output_item.done", {
+              type: "response.output_item.done",
+              output_index: 0,
+              item: {
                 type: "message",
                 status: "completed",
                 content: [{ type: "output_text", text: "Done." }]
               }
-            ]
-          })
+            }) +
+              sse("response.completed", {
+                type: "response.completed",
+                response: {
+                  id: "resp_1",
+                  status: "completed",
+                  output: []
+                }
+              })
+          )
         );
       }
     });
@@ -92,6 +102,7 @@ describe("CodexResponsesTransport", () => {
 
     expect(String(request?.input)).toBe("https://codex.example/api/responses");
     expect(request?.init?.headers).toMatchObject({
+      Accept: "text/event-stream",
       Authorization: `Bearer ${accessToken}`,
       "ChatGPT-Account-ID": "acct-responses-1",
       originator: "codex_cli_rs",
@@ -102,6 +113,7 @@ describe("CodexResponsesTransport", () => {
       /^codex_cli_rs\//
     );
     expect(body.store).toBe(false);
+    expect(body.stream).toBe(true);
     expect(JSON.stringify(body)).not.toContain(accessToken);
     expect(result).toMatchObject({
       id: "resp_1",
@@ -143,6 +155,68 @@ describe("CodexResponsesTransport", () => {
     expect(incompleteResult.finishReason).toBe("incomplete");
   });
 
+  it("normalizes streamed text and function call events", () => {
+    const textResult = normalizeCodexResponsesStream(
+      [
+        sse("response.output_text.done", {
+          type: "response.output_text.done",
+          text: "Done.",
+          output_index: 0
+        }),
+        sse("response.completed", {
+          type: "response.completed",
+          response: {
+            id: "resp_1",
+            status: "completed",
+            output: []
+          }
+        })
+      ].join("\n")
+    );
+    const toolResult = normalizeCodexResponsesStream(
+      [
+        sse("response.output_item.done", {
+          type: "response.output_item.done",
+          output_index: 0,
+          item: {
+            id: "fc_1",
+            type: "function_call",
+            status: "completed",
+            call_id: "call_1",
+            name: "git_status",
+            arguments: "{}"
+          }
+        }),
+        sse("response.completed", {
+          type: "response.completed",
+          response: {
+            id: "resp_2",
+            status: "completed",
+            output: []
+          }
+        })
+      ].join("\n")
+    );
+
+    expect(textResult).toMatchObject({
+      id: "resp_1",
+      outputText: "Done.",
+      finishReason: "stop"
+    });
+    expect(toolResult).toMatchObject({
+      id: "resp_2",
+      finishReason: "tool_calls",
+      toolCalls: [
+        {
+          id: "call_1",
+          name: "git_status",
+          arguments: "{}",
+          responseItemId: "fc_1"
+        }
+      ]
+    });
+  });
+
   it("does not include bearer tokens in transport errors", async () => {
     const transport = new CodexResponsesTransport({
       accessToken: "secret-token",
@@ -181,11 +255,24 @@ function base64Url(value: string): string {
     .replaceAll("=", "");
 }
 
+function sse(event: string, data: unknown): string {
+  return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+}
+
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
     headers: {
       "content-type": "application/json"
+    }
+  });
+}
+
+function textResponse(body: string, status = 200): Response {
+  return new Response(body, {
+    status,
+    headers: {
+      "content-type": "text/event-stream"
     }
   });
 }
