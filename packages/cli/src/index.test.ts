@@ -106,6 +106,8 @@ describe("cli entrypoint", () => {
         "--denied",
         "--verifier",
         "--max-turns",
+        "--max-tool-calls",
+        "--max-failed-tool-calls",
         "--actor"
       ])
     );

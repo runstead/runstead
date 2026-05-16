@@ -64,6 +64,9 @@ export interface CreateLocalAgentTaskOptions {
   deniedPaths?: string[];
   verifierCommands?: CommandVerifierInput[];
   maxTurns?: number;
+  maxToolCalls?: number;
+  maxFailedToolCalls?: number;
+  finalizeOnBudget?: boolean;
   checkpoint?: boolean;
   commit?: boolean;
   now?: Date;
@@ -341,6 +344,8 @@ async function runLocalAgentTaskWithDatabase(options: {
           transport: options.transport,
           prompt: buildLocalAgentPrompt(options.task),
           ...(maxTurns === undefined ? {} : { maxTurns }),
+          ...localAgentTaskToolBudget(options.task),
+          finalizeOnBudget: localAgentTaskFinalizeOnBudget(options.task),
           ...(options.now === undefined ? {} : { now: options.now })
         });
 
@@ -468,8 +473,10 @@ export function formatLocalAgentRunReport(result: RunLocalAgentTaskResult): stri
       : [
           `Worker: ${result.workerResult.worker}`,
           `Model: ${result.workerResult.model}`,
-          `Tool calls: ${result.workerResult.toolCalls}`
+          `Tool calls: ${result.workerResult.toolCalls}`,
+          `Failed tool calls: ${result.workerResult.failedToolCalls}`
         ]),
+    ...formatLocalAgentWarnings(result.workerResult?.warnings),
     ...(result.checkpoint === undefined ? [] : [`Checkpoint: ${result.checkpoint.id}`]),
     ...(result.verifierResults === undefined
       ? []
@@ -502,6 +509,7 @@ export function formatLocalAgentTaskReport(report: LocalAgentTaskReport): string
     `Mode: ${localAgentTaskMode(report.task)}`,
     ...formatOptionalOutputLine(report.task, "Model", "model"),
     ...formatOptionalOutputLine(report.task, "Checkpoint", "checkpointId"),
+    ...formatOutputWarnings(report.task),
     ...formatOptionalOutputLine(report.task, "Summary", "summary"),
     ...formatLocalAgentAuditSummary(report.audit)
   ].join("\n");
@@ -533,6 +541,15 @@ function localAgentTaskInput(input: {
     ...(input.options.maxTurns === undefined
       ? {}
       : { maxTurns: input.options.maxTurns }),
+    ...(input.options.maxToolCalls === undefined
+      ? {}
+      : { maxToolCalls: input.options.maxToolCalls }),
+    ...(input.options.maxFailedToolCalls === undefined
+      ? {}
+      : { maxFailedToolCalls: input.options.maxFailedToolCalls }),
+    ...(input.options.finalizeOnBudget === undefined
+      ? {}
+      : { finalizeOnBudget: input.options.finalizeOnBudget }),
     ...(input.options.checkpoint === undefined
       ? {}
       : { checkpoint: input.options.checkpoint }),
@@ -754,7 +771,14 @@ function localAgentTaskOutput(input: {
     status: input.workerResult.status,
     exitCode: input.workerResult.exitCode,
     toolCalls: input.workerResult.toolCalls,
+    failedToolCalls: input.workerResult.failedToolCalls,
     workerRunId: input.workerResult.workerRun.id,
+    ...(input.workerResult.warnings.length === 0
+      ? {}
+      : { warnings: input.workerResult.warnings }),
+    ...(input.workerResult.budget === undefined
+      ? {}
+      : { budget: input.workerResult.budget }),
     ...(input.checkpoint === undefined ? {} : { checkpointId: input.checkpoint.id }),
     ...(input.verifierResult === undefined
       ? {}
@@ -780,7 +804,14 @@ function localAgentWorkerOutput(input: {
     status: input.workerResult.status,
     exitCode: input.workerResult.exitCode,
     toolCalls: input.workerResult.toolCalls,
+    failedToolCalls: input.workerResult.failedToolCalls,
     summary: input.summary ?? input.workerResult.summary,
+    ...(input.workerResult.warnings.length === 0
+      ? {}
+      : { warnings: input.workerResult.warnings }),
+    ...(input.workerResult.budget === undefined
+      ? {}
+      : { budget: input.workerResult.budget }),
     ...(input.checkpoint === undefined ? {} : { checkpointId: input.checkpoint.id }),
     ...(input.verifierResult === undefined
       ? {}
@@ -911,6 +942,22 @@ function formatOptionalOutputLine(task: Task, label: string, key: string): strin
   const value = task.output?.[key];
 
   return typeof value === "string" && value.length > 0 ? [`${label}: ${value}`] : [];
+}
+
+function formatOutputWarnings(task: Task): string[] {
+  const warnings = task.output?.warnings;
+
+  return Array.isArray(warnings)
+    ? formatLocalAgentWarnings(
+        warnings.filter((warning): warning is string => typeof warning === "string")
+      )
+    : [];
+}
+
+function formatLocalAgentWarnings(warnings: string[] | undefined): string[] {
+  return warnings === undefined || warnings.length === 0
+    ? []
+    : ["Warnings:", ...warnings.map((warning) => `  ${warning}`)];
 }
 
 function localAgentFailureFromError(
@@ -1082,6 +1129,30 @@ function localAgentTaskMaxTurns(task: Task): number | undefined {
   return typeof maxTurns === "number" && Number.isInteger(maxTurns) && maxTurns > 0
     ? maxTurns
     : undefined;
+}
+
+function localAgentTaskToolBudget(task: Task): {
+  maxToolCalls?: number;
+  maxFailedToolCalls?: number;
+} {
+  return {
+    ...positiveIntegerInput(task, "maxToolCalls"),
+    ...positiveIntegerInput(task, "maxFailedToolCalls")
+  };
+}
+
+function localAgentTaskFinalizeOnBudget(task: Task): boolean {
+  const value = task.input.finalizeOnBudget;
+
+  return typeof value === "boolean" ? value : localAgentTaskMode(task) === "read-only";
+}
+
+function positiveIntegerInput(task: Task, field: string): Record<string, number> {
+  const value = task.input[field];
+
+  return typeof value === "number" && Number.isInteger(value) && value > 0
+    ? { [field]: value }
+    : {};
 }
 
 function verifierCommandsFromLocalAgentTask(task: Task): CommandVerifierInput[] {

@@ -2497,6 +2497,8 @@ interface AgentRunCliOptions {
   denied: string[];
   verifier: string[];
   maxTurns?: string;
+  maxToolCalls?: string;
+  maxFailedToolCalls?: string;
   actor: string;
 }
 
@@ -2647,6 +2649,11 @@ function addAgentCommand(command: Command): void {
       []
     )
     .option("--max-turns <number>", "Maximum Codex Direct tool turns")
+    .option("--max-tool-calls <number>", "Maximum Codex Direct tool calls")
+    .option(
+      "--max-failed-tool-calls <number>",
+      "Maximum recoverable Codex Direct tool failures"
+    )
     .option("--actor <id>", "RBAC subject for local agent execution", "local-admin")
     .action(async (promptParts: string[], options: AgentRunCliOptions) => {
       await requireRbacPermission({
@@ -2705,7 +2712,27 @@ function addAgentCommand(command: Command): void {
           ? resolvedPreset === undefined
             ? {}
             : { maxTurns: resolvedPreset.preset.maxTurns }
-          : { maxTurns: parseRequiredInteger(options.maxTurns, "--max-turns") })
+          : { maxTurns: parseRequiredInteger(options.maxTurns, "--max-turns") }),
+        ...(options.maxToolCalls === undefined
+          ? resolvedPreset === undefined
+            ? {}
+            : { maxToolCalls: resolvedPreset.preset.maxToolCalls }
+          : {
+              maxToolCalls: parseRequiredInteger(
+                options.maxToolCalls,
+                "--max-tool-calls"
+              )
+            }),
+        ...(options.maxFailedToolCalls === undefined
+          ? resolvedPreset === undefined
+            ? {}
+            : { maxFailedToolCalls: resolvedPreset.preset.maxFailedToolCalls }
+          : {
+              maxFailedToolCalls: parseRequiredInteger(
+                options.maxFailedToolCalls,
+                "--max-failed-tool-calls"
+              )
+            })
       });
       const result = await runLocalAgentTask({
         ...(options.cwd === undefined ? {} : { cwd: options.cwd }),

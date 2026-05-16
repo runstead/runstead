@@ -210,6 +210,230 @@ describe("runCodexDirectWorker", () => {
     }
   });
 
+  it("fails edit-style runs when the tool budget is exhausted", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-codex-tool-budget-"));
+
+    try {
+      const initialized = await initRunstead({
+        cwd: workspace,
+        createDefaultGoal: true
+      });
+      const database = openRunsteadDatabase(initialized.stateDb);
+
+      try {
+        const task = listTasks({ cwd: workspace }).tasks[0];
+
+        if (task === undefined) {
+          throw new Error("Expected generated task");
+        }
+
+        const goal = showGoal({ cwd: workspace, id: task.goalId }).goal;
+        const transport = scriptedTransport([
+          {
+            outputText: "",
+            toolCalls: [
+              {
+                id: "call_status",
+                name: "git_status",
+                arguments: "{}"
+              }
+            ],
+            finishReason: "tool_calls",
+            outputItems: []
+          },
+          {
+            outputText: "",
+            toolCalls: [
+              {
+                id: "call_diff",
+                name: "git_diff",
+                arguments: "{}"
+              }
+            ],
+            finishReason: "tool_calls",
+            outputItems: []
+          }
+        ]);
+        const result = await runCodexDirectWorker({
+          cwd: workspace,
+          stateDb: initialized.stateDb,
+          database,
+          policy: allowDirectToolsPolicy,
+          goal,
+          task,
+          model: "fake-codex",
+          evidenceDir: join(initialized.root, "evidence"),
+          transport,
+          maxToolCalls: 1
+        });
+
+        expect(result.status).toBe("failed");
+        expect(result.exitCode).toBe(1);
+        expect(result.toolCalls).toBe(1);
+        expect(result.summary).toContain("tool budget exhausted after 1 tool calls");
+        expect(result.budget).toMatchObject({
+          reason: "tool_calls",
+          maxToolCalls: 1,
+          toolCalls: 1
+        });
+        expect(transport.requests).toHaveLength(2);
+      } finally {
+        database.close();
+      }
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("asks for a no-tool final summary when budget finalization is enabled", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-codex-budget-finalize-"));
+
+    try {
+      const initialized = await initRunstead({
+        cwd: workspace,
+        createDefaultGoal: true
+      });
+      const database = openRunsteadDatabase(initialized.stateDb);
+
+      try {
+        const task = listTasks({ cwd: workspace }).tasks[0];
+
+        if (task === undefined) {
+          throw new Error("Expected generated task");
+        }
+
+        const goal = showGoal({ cwd: workspace, id: task.goalId }).goal;
+        const transport = scriptedTransport([
+          {
+            outputText: "",
+            toolCalls: [
+              {
+                id: "call_status",
+                name: "git_status",
+                arguments: "{}"
+              }
+            ],
+            finishReason: "tool_calls",
+            outputItems: []
+          },
+          {
+            outputText: "",
+            toolCalls: [
+              {
+                id: "call_diff",
+                name: "git_diff",
+                arguments: "{}"
+              }
+            ],
+            finishReason: "tool_calls",
+            outputItems: []
+          },
+          {
+            outputText: "Summary from gathered evidence.",
+            toolCalls: [],
+            finishReason: "stop",
+            outputItems: []
+          }
+        ]);
+        const result = await runCodexDirectWorker({
+          cwd: workspace,
+          stateDb: initialized.stateDb,
+          database,
+          policy: allowDirectToolsPolicy,
+          goal,
+          task,
+          model: "fake-codex",
+          evidenceDir: join(initialized.root, "evidence"),
+          transport,
+          maxToolCalls: 1,
+          finalizeOnBudget: true
+        });
+
+        expect(result.status).toBe("completed");
+        expect(result.exitCode).toBe(0);
+        expect(result.summary).toBe("Summary from gathered evidence.");
+        expect(result.warnings[0]).toContain(
+          "tool budget exhausted after 1 tool calls"
+        );
+        expect(result.budget?.reason).toBe("tool_calls");
+        expect(transport.requests).toHaveLength(3);
+        expect(transport.requests[2]?.tools).toBeUndefined();
+      } finally {
+        database.close();
+      }
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("stops after too many recoverable tool failures", async () => {
+    const workspace = await mkdtemp(
+      join(tmpdir(), "runstead-codex-failed-tool-budget-")
+    );
+
+    try {
+      const initialized = await initRunstead({
+        cwd: workspace,
+        createDefaultGoal: true
+      });
+      const database = openRunsteadDatabase(initialized.stateDb);
+
+      try {
+        const task = listTasks({ cwd: workspace }).tasks[0];
+
+        if (task === undefined) {
+          throw new Error("Expected generated task");
+        }
+
+        const goal = showGoal({ cwd: workspace, id: task.goalId }).goal;
+        const transport = scriptedTransport([
+          {
+            outputText: "",
+            toolCalls: [
+              {
+                id: "call_missing_file",
+                name: "read_file",
+                arguments: JSON.stringify({
+                  path: "missing.txt"
+                })
+              }
+            ],
+            finishReason: "tool_calls",
+            outputItems: []
+          }
+        ]);
+        const result = await runCodexDirectWorker({
+          cwd: workspace,
+          stateDb: initialized.stateDb,
+          database,
+          policy: allowDirectToolsPolicy,
+          goal,
+          task,
+          model: "fake-codex",
+          evidenceDir: join(initialized.root, "evidence"),
+          transport,
+          maxFailedToolCalls: 1
+        });
+
+        expect(result.status).toBe("failed");
+        expect(result.toolCalls).toBe(1);
+        expect(result.failedToolCalls).toBe(1);
+        expect(result.summary).toContain(
+          "failed-tool budget exhausted after 1 failed tool calls"
+        );
+        expect(result.budget).toMatchObject({
+          reason: "failed_tool_calls",
+          maxFailedToolCalls: 1
+        });
+        expect(transport.requests).toHaveLength(1);
+      } finally {
+        database.close();
+      }
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
   it("stops when a tool call requires approval", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "runstead-codex-approval-"));
 

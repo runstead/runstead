@@ -35,6 +35,10 @@ describe("local agent task primitives", () => {
         worker: "codex_direct",
         model: "gpt-5.3-codex",
         mode: "read-only",
+        maxTurns: 8,
+        maxToolCalls: 8,
+        maxFailedToolCalls: 3,
+        finalizeOnBudget: true,
         verifierCommands: [
           {
             name: "test",
@@ -55,6 +59,10 @@ describe("local agent task primitives", () => {
           worker: "codex_direct",
           model: "gpt-5.3-codex",
           mode: "read-only",
+          maxTurns: 8,
+          maxToolCalls: 8,
+          maxFailedToolCalls: 3,
+          finalizeOnBudget: true,
           commands: [
             {
               name: "test",
@@ -141,7 +149,9 @@ describe("local agent task primitives", () => {
           .prepare("SELECT action_type, status FROM tool_calls ORDER BY started_at, id")
           .all() as { action_type: string; status: string }[];
         const workerRuns = database
-          .prepare("SELECT worker_type, status FROM worker_runs ORDER BY started_at, id")
+          .prepare(
+            "SELECT worker_type, status FROM worker_runs ORDER BY started_at, id"
+          )
           .all() as { worker_type: string; status: string }[];
 
         expect(toolCalls).toHaveLength(2);
@@ -243,9 +253,7 @@ describe("local agent task primitives", () => {
         cwd: workspace,
         taskId: created.task.id
       });
-      expect(formatLocalAgentTaskReport(report)).toContain(
-        "Runstead agent report"
-      );
+      expect(formatLocalAgentTaskReport(report)).toContain("Runstead agent report");
       expect(formatLocalAgentTaskReport(report)).toContain(
         "policy_decisions: allow medium x2"
       );

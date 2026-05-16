@@ -42,6 +42,9 @@ export interface CodexDirectWorkerOptions {
   evidenceDir: string;
   transport: CodexDirectTransport;
   maxTurns?: number;
+  maxToolCalls?: number;
+  maxFailedToolCalls?: number;
+  finalizeOnBudget?: boolean;
   now?: Date;
 }
 
@@ -56,6 +59,9 @@ export interface CodexDirectWorkerResult {
   exitCode: number;
   summary: string;
   toolCalls: number;
+  failedToolCalls: number;
+  warnings: string[];
+  budget?: CodexDirectBudgetSummary;
   workerRun: WorkerRun;
   approval?: {
     id: string;
@@ -63,6 +69,17 @@ export interface CodexDirectWorkerResult {
     policyDecisionId: string;
     reason: string;
   };
+}
+
+export type CodexDirectBudgetReason = "turns" | "tool_calls" | "failed_tool_calls";
+
+export interface CodexDirectBudgetSummary {
+  reason: CodexDirectBudgetReason;
+  maxTurns: number;
+  maxToolCalls?: number;
+  maxFailedToolCalls?: number;
+  toolCalls: number;
+  failedToolCalls: number;
 }
 
 type CodexDirectToolName =
@@ -107,13 +124,11 @@ export async function runCodexDirectWorker(
     }
   ];
   let executedToolCalls = 0;
+  let failedToolCalls = 0;
+  const maxTurns = options.maxTurns ?? DEFAULT_CODEX_DIRECT_MAX_TURNS;
 
   try {
-    for (
-      let turn = 0;
-      turn < (options.maxTurns ?? DEFAULT_CODEX_DIRECT_MAX_TURNS);
-      turn += 1
-    ) {
+    for (let turn = 0; turn < maxTurns; turn += 1) {
       const request: CodexResponsesRequest = {
         model: options.model,
         instructions: buildCodexDirectInstructions(options),
@@ -136,19 +151,38 @@ export async function runCodexDirectWorker(
           status: "completed",
           exitCode: 0,
           summary,
-          toolCalls: executedToolCalls
+          toolCalls: executedToolCalls,
+          failedToolCalls
         });
       }
 
       for (const rawToolCall of response.toolCalls) {
+        if (
+          options.maxToolCalls !== undefined &&
+          executedToolCalls >= options.maxToolCalls
+        ) {
+          return finalizeBudgetExceededWorkerResult({
+            options,
+            workerRun,
+            messages,
+            reason: "tool_calls",
+            maxTurns,
+            toolCalls: executedToolCalls,
+            failedToolCalls
+          });
+        }
+
         const toolCall = parseCodexDirectToolCall(rawToolCall);
-        const toolOutput = await runCodexDirectTool({
+        const toolResult = await runCodexDirectTool({
           ...options,
           workerRun,
           toolCall
         });
 
         executedToolCalls += 1;
+        if (toolResult.failed) {
+          failedToolCalls += 1;
+        }
         messages.push({
           type: "function_call",
           call_id: rawToolCall.id,
@@ -158,18 +192,34 @@ export async function runCodexDirectWorker(
         messages.push({
           type: "function_call_output",
           call_id: rawToolCall.id,
-          output: toolOutput
+          output: toolResult.output
         });
+
+        if (
+          options.maxFailedToolCalls !== undefined &&
+          failedToolCalls >= options.maxFailedToolCalls
+        ) {
+          return finalizeBudgetExceededWorkerResult({
+            options,
+            workerRun,
+            messages,
+            reason: "failed_tool_calls",
+            maxTurns,
+            toolCalls: executedToolCalls,
+            failedToolCalls
+          });
+        }
       }
     }
 
-    return completedWorkerResult({
+    return finalizeBudgetExceededWorkerResult({
       options,
       workerRun,
-      status: "failed",
-      exitCode: 1,
-      summary: "Codex Direct worker exceeded its tool-turn limit.",
-      toolCalls: executedToolCalls
+      messages,
+      reason: "turns",
+      maxTurns,
+      toolCalls: executedToolCalls,
+      failedToolCalls
     });
   } catch (error) {
     if (error instanceof ToolActionApprovalRequiredError) {
@@ -180,6 +230,7 @@ export async function runCodexDirectWorker(
         exitCode: 2,
         summary: error.message,
         toolCalls: executedToolCalls,
+        failedToolCalls,
         approval: {
           id: error.approval.id,
           actionId: error.approval.actionId,
@@ -196,7 +247,8 @@ export async function runCodexDirectWorker(
         status: "blocked",
         exitCode: 3,
         summary: error.message,
-        toolCalls: executedToolCalls
+        toolCalls: executedToolCalls,
+        failedToolCalls
       });
     }
 
@@ -206,7 +258,8 @@ export async function runCodexDirectWorker(
       status: "failed",
       exitCode: 1,
       summary: error instanceof Error ? error.message : String(error),
-      toolCalls: executedToolCalls
+      toolCalls: executedToolCalls,
+      failedToolCalls
     });
   }
 }
@@ -361,9 +414,12 @@ async function runCodexDirectTool(
     workerRun: WorkerRun;
     toolCall: CodexDirectToolCall;
   }
-): Promise<string> {
+): Promise<{ output: string; failed: boolean }> {
   try {
-    return await executeCodexDirectTool(options);
+    return {
+      output: await executeCodexDirectTool(options),
+      failed: false
+    };
   } catch (error) {
     if (
       error instanceof ToolActionApprovalRequiredError ||
@@ -372,7 +428,10 @@ async function runCodexDirectTool(
       throw error;
     }
 
-    return JSON.stringify(toolExecutionErrorOutput(error));
+    return {
+      output: JSON.stringify(toolExecutionErrorOutput(error)),
+      failed: true
+    };
   }
 }
 
@@ -475,6 +534,114 @@ async function runGovernedGitRead(
   }).then((result) => result.value);
 }
 
+async function finalizeBudgetExceededWorkerResult(input: {
+  options: CodexDirectWorkerOptions;
+  workerRun: WorkerRun;
+  messages: CodexResponsesInputItem[];
+  reason: CodexDirectBudgetReason;
+  maxTurns: number;
+  toolCalls: number;
+  failedToolCalls: number;
+}): Promise<CodexDirectWorkerResult> {
+  const budget = codexDirectBudgetSummary(input);
+  const warning = codexDirectBudgetWarning(budget);
+
+  if (input.options.finalizeOnBudget === true) {
+    input.messages.push({
+      role: "user",
+      content: [
+        `Runstead budget exhausted: ${warning}`,
+        "Do not request or assume any more tool calls.",
+        "Return a concise final summary from the evidence already gathered."
+      ].join("\n")
+    });
+
+    try {
+      const response = await runGovernedModelInference({
+        ...input.options,
+        workerRun: input.workerRun,
+        request: {
+          model: input.options.model,
+          instructions: buildCodexDirectInstructions(input.options),
+          input: input.messages,
+          sessionId: input.options.task.id
+        }
+      });
+      const summary = response.outputText || "Codex Direct worker stopped on budget.";
+
+      return completedWorkerResult({
+        options: input.options,
+        workerRun: input.workerRun,
+        status: "completed",
+        exitCode: 0,
+        summary,
+        toolCalls: input.toolCalls,
+        failedToolCalls: input.failedToolCalls,
+        warnings: [warning],
+        budget
+      });
+    } catch (error) {
+      return completedWorkerResult({
+        options: input.options,
+        workerRun: input.workerRun,
+        status: "failed",
+        exitCode: 1,
+        summary: `${warning} Final summary request failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+        toolCalls: input.toolCalls,
+        failedToolCalls: input.failedToolCalls,
+        warnings: [warning],
+        budget
+      });
+    }
+  }
+
+  return completedWorkerResult({
+    options: input.options,
+    workerRun: input.workerRun,
+    status: "failed",
+    exitCode: 1,
+    summary: warning,
+    toolCalls: input.toolCalls,
+    failedToolCalls: input.failedToolCalls,
+    warnings: [warning],
+    budget
+  });
+}
+
+function codexDirectBudgetSummary(input: {
+  options: CodexDirectWorkerOptions;
+  reason: CodexDirectBudgetReason;
+  maxTurns: number;
+  toolCalls: number;
+  failedToolCalls: number;
+}): CodexDirectBudgetSummary {
+  return {
+    reason: input.reason,
+    maxTurns: input.maxTurns,
+    ...(input.options.maxToolCalls === undefined
+      ? {}
+      : { maxToolCalls: input.options.maxToolCalls }),
+    ...(input.options.maxFailedToolCalls === undefined
+      ? {}
+      : { maxFailedToolCalls: input.options.maxFailedToolCalls }),
+    toolCalls: input.toolCalls,
+    failedToolCalls: input.failedToolCalls
+  };
+}
+
+function codexDirectBudgetWarning(budget: CodexDirectBudgetSummary): string {
+  switch (budget.reason) {
+    case "turns":
+      return `Codex Direct worker turn budget exhausted after ${budget.maxTurns} turns and ${budget.toolCalls} tool calls.`;
+    case "tool_calls":
+      return `Codex Direct worker tool budget exhausted after ${budget.toolCalls} tool calls.`;
+    case "failed_tool_calls":
+      return `Codex Direct worker failed-tool budget exhausted after ${budget.failedToolCalls} failed tool calls.`;
+  }
+}
+
 function completedWorkerResult(input: {
   options: CodexDirectWorkerOptions;
   workerRun: WorkerRun;
@@ -482,13 +649,20 @@ function completedWorkerResult(input: {
   exitCode: number;
   summary: string;
   toolCalls: number;
+  failedToolCalls: number;
+  warnings?: string[];
+  budget?: CodexDirectBudgetSummary;
   approval?: CodexDirectWorkerResult["approval"];
 }): CodexDirectWorkerResult {
+  const warnings = input.warnings ?? [];
   const output = {
     worker: CODEX_DIRECT_WORKER_KIND,
     model: input.options.model,
     summary: input.summary,
     toolCalls: input.toolCalls,
+    failedToolCalls: input.failedToolCalls,
+    ...(warnings.length === 0 ? {} : { warnings }),
+    ...(input.budget === undefined ? {} : { budget: input.budget }),
     ...(input.approval === undefined ? {} : { approval: input.approval })
   };
   const workerRun = finishWorkerRun({
@@ -506,7 +680,10 @@ function completedWorkerResult(input: {
     exitCode: input.exitCode,
     summary: input.summary,
     toolCalls: input.toolCalls,
+    failedToolCalls: input.failedToolCalls,
+    warnings,
     workerRun,
+    ...(input.budget === undefined ? {} : { budget: input.budget }),
     ...(input.approval === undefined ? {} : { approval: input.approval })
   };
 }
