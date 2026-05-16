@@ -74,6 +74,7 @@ export interface WrappedWorkerRunOptions extends WrappedWorkerPromptInput {
   checkpointDir?: string;
   checkpointBefore?: WorkspaceCheckpoint;
   checkpointRunner?: GitCheckpointRunner;
+  model?: string;
   env?: Record<string, string>;
   timeoutMs?: number;
   maxOutputBytes?: number;
@@ -274,7 +275,8 @@ export async function startWrappedWorker(
   const prompt = buildWrappedWorkerPrompt(options);
   const governance = buildWrappedWorkerGovernanceManifest(options);
   const command = workerCommand(options.worker, prompt, {
-    workspace: options.workspace
+    workspace: options.workspace,
+    ...(options.model === undefined ? {} : { model: options.model })
   });
   const checkpointBefore =
     options.checkpointBefore ??
@@ -314,7 +316,7 @@ export async function startWrappedWorker(
 export function workerCommand(
   worker: WrappedWorkerKind,
   prompt: string,
-  options: { workspace?: string } = {}
+  options: { workspace?: string; model?: string } = {}
 ): { command: string; args: string[] } {
   switch (worker) {
     case "claude_code":
@@ -329,11 +331,14 @@ export function workerCommand(
           prompt
         ]
       };
-    case "codex_cli":
+    case "codex_cli": {
+      const model = options.model?.trim();
+
       return {
         command: "codex",
         args: [
           "exec",
+          ...(model === undefined || model.length === 0 ? [] : ["--model", model]),
           "--sandbox",
           "workspace-write",
           ...(options.workspace === undefined
@@ -342,6 +347,7 @@ export function workerCommand(
           prompt
         ]
       };
+    }
   }
 }
 

@@ -195,6 +195,24 @@ describe("workerCommand", () => {
       command: "codex",
       args: ["exec", "--sandbox", "workspace-write", "--cd", "/repo", "prompt"]
     });
+    expect(
+      workerCommand("codex_cli", "prompt", {
+        workspace: "/repo",
+        model: "gpt-5.5"
+      })
+    ).toEqual({
+      command: "codex",
+      args: [
+        "exec",
+        "--model",
+        "gpt-5.5",
+        "--sandbox",
+        "workspace-write",
+        "--cd",
+        "/repo",
+        "prompt"
+      ]
+    });
   });
 });
 
@@ -231,6 +249,7 @@ describe("startWrappedWorker", () => {
       task,
       workspace: "/repo",
       evidenceDir: "/repo/.runstead/evidence",
+      model: "gpt-5.5",
       runner
     });
 
@@ -244,6 +263,8 @@ describe("startWrappedWorker", () => {
     expect(result.args[0]).toBe("exec");
     expect(result.args).toEqual([
       "exec",
+      "--model",
+      "gpt-5.5",
       "--sandbox",
       "workspace-write",
       "--cd",
@@ -267,7 +288,16 @@ describe("startWrappedWorker", () => {
     expect(calls).toEqual([
       {
         command: "codex",
-        args: ["exec", "--sandbox", "workspace-write", "--cd", "/repo", result.prompt],
+        args: [
+          "exec",
+          "--model",
+          "gpt-5.5",
+          "--sandbox",
+          "workspace-write",
+          "--cd",
+          "/repo",
+          result.prompt
+        ],
         cwd: "/repo",
         timeoutMs: 1_800_000,
         maxOutputBytes: 10485760

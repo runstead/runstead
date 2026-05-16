@@ -82,6 +82,7 @@ describe("runCiRepairOrchestrator", () => {
         cwd: workspace,
         runId: "123",
         worker: "codex_cli",
+        model: "gpt-5.5",
         base: "main",
         allowedPaths: ["src/**"],
         deniedPaths: [".env"],
@@ -112,6 +113,7 @@ describe("runCiRepairOrchestrator", () => {
       expect(verifierCalls[0]?.taskId).toBe(first.ciRepair.task.id);
       expect(verifierCalls[0]?.claim).toBe(false);
       expect(verifierCalls[0]?.mode).toBe("evidence_only");
+      expect(workerCalls[0]).toContain("exec\n--model\ngpt-5.5\n--sandbox");
       expect(workerCalls[0]).toContain("Repair GitHub Actions run 123.");
       expect(formatCiRepairOrchestratorReport(first)).toContain(
         `waiting approval ${first.approval?.id}`
