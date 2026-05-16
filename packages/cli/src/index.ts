@@ -2566,6 +2566,8 @@ interface AgentReviewCliOptions {
   worker: string;
   model?: string;
   staged?: boolean;
+  base?: string;
+  unpushed?: boolean;
   maxTurns?: string;
   maxToolCalls?: string;
   maxFailedToolCalls?: string;
@@ -3022,6 +3024,8 @@ function addAgentCommand(command: Command): void {
     .option("--worker <worker>", "Worker to run: codex_direct", "codex_direct")
     .option("--model <model>", "Model to use with codex_direct")
     .option("--staged", "Review the staged diff instead of the unstaged diff")
+    .option("--base <ref>", "Review HEAD against a base ref")
+    .option("--unpushed", "Review commits ahead of the upstream branch")
     .option("--max-turns <number>", "Override preset Codex Direct tool turns")
     .option("--max-tool-calls <number>", "Override preset Codex Direct tool calls")
     .option(
@@ -3043,6 +3047,8 @@ function addAgentCommand(command: Command): void {
         throw new Error("agent review currently supports --worker codex_direct only");
       }
 
+      assertSingleReviewScope(options);
+
       const {
         createLocalAgentTask,
         formatLocalAgentRunReport,
@@ -3053,15 +3059,23 @@ function addAgentCommand(command: Command): void {
         "./local-agent-presets.js"
       );
       const focus = focusParts.join(" ").trim();
-      const scope = options.staged === true ? "staged" : "unstaged";
+      const scope = localAgentReviewScope(options);
+      const gitDiffBase =
+        scope.kind === "base"
+          ? scope.base
+          : scope.kind === "unpushed"
+            ? "@{upstream}"
+            : undefined;
       const resolvedPreset = await resolveConfiguredLocalAgentPreset(
-        options.staged === true ? "review:staged" : "review:diff",
+        scope.kind === "staged"
+          ? "review:staged"
+          : scope.kind === "unpushed"
+            ? "review:unpushed"
+            : "review:diff",
         {
           prompt: [
-            `Review the ${scope} git diff only.`,
-            options.staged === true
-              ? "When calling git_diff, pass staged=true."
-              : "When calling git_diff, leave staged unset or false.",
+            scope.prompt,
+            scope.gitDiffInstruction,
             ...(focus.length === 0 ? [] : [focus])
           ].join("\n")
         },
@@ -3074,12 +3088,13 @@ function addAgentCommand(command: Command): void {
         ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
         prompt: resolvedPreset.prompt,
         preset: resolvedPreset.preset.id,
-        title: `Local agent review ${scope} diff`,
+        title: `Local agent review ${scope.title}`,
         worker,
         ...(model === undefined ? {} : { model }),
         mode: resolvedPreset.preset.mode,
         checkpoint: resolvedPreset.preset.checkpoint,
         gitDiffStaged: options.staged === true,
+        ...(gitDiffBase === undefined ? {} : { gitDiffBase }),
         ...(options.maxTurns === undefined
           ? { maxTurns: resolvedPreset.preset.maxTurns }
           : {
@@ -3669,6 +3684,69 @@ function localAgentInspectPresetId(
   }
 
   throw new Error("--depth must be smoke or standard");
+}
+
+function assertSingleReviewScope(options: AgentReviewCliOptions): void {
+  const scopes = [
+    options.staged === true,
+    options.base !== undefined,
+    options.unpushed === true
+  ].filter(Boolean);
+
+  if (scopes.length > 1) {
+    throw new Error("agent review accepts only one of --staged, --base, or --unpushed");
+  }
+}
+
+function localAgentReviewScope(options: AgentReviewCliOptions):
+  | {
+      kind: "staged" | "unstaged" | "unpushed";
+      title: string;
+      prompt: string;
+      gitDiffInstruction: string;
+    }
+  | {
+      kind: "base";
+      base: string;
+      title: string;
+      prompt: string;
+      gitDiffInstruction: string;
+    } {
+  if (options.staged === true) {
+    return {
+      kind: "staged",
+      title: "staged diff",
+      prompt: "Review the staged git diff only.",
+      gitDiffInstruction: "When calling git_diff, pass staged=true."
+    };
+  }
+
+  if (options.unpushed === true) {
+    return {
+      kind: "unpushed",
+      title: "unpushed commits",
+      prompt: "Review commits ahead of the upstream branch only.",
+      gitDiffInstruction:
+        "When calling git_diff, pass base='@{upstream}' and leave staged unset."
+    };
+  }
+
+  if (options.base !== undefined) {
+    return {
+      kind: "base",
+      base: options.base,
+      title: `${options.base}...HEAD`,
+      prompt: `Review the git diff from ${options.base} to HEAD only.`,
+      gitDiffInstruction: `When calling git_diff, pass base='${options.base}' and leave staged unset.`
+    };
+  }
+
+  return {
+    kind: "unstaged",
+    title: "unstaged diff",
+    prompt: "Review the unstaged git diff only.",
+    gitDiffInstruction: "When calling git_diff, leave staged unset or false."
+  };
 }
 
 function parseVerifierCommandOption(value: string): { name: string; command: string } {

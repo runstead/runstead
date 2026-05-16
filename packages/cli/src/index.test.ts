@@ -174,6 +174,8 @@ describe("cli entrypoint", () => {
         "--worker",
         "--model",
         "--staged",
+        "--base",
+        "--unpushed",
         "--max-turns",
         "--max-tool-calls",
         "--max-failed-tool-calls",

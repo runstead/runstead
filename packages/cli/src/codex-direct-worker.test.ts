@@ -283,6 +283,80 @@ describe("runCodexDirectWorker", () => {
     }
   });
 
+  it("enforces task-scoped base git diff tool calls", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-codex-base-diff-"));
+
+    try {
+      const initialized = await initRunstead({
+        cwd: workspace,
+        createDefaultGoal: true
+      });
+      const database = openRunsteadDatabase(initialized.stateDb);
+
+      try {
+        const task = listTasks({ cwd: workspace }).tasks[0];
+
+        if (task === undefined) {
+          throw new Error("Expected generated task");
+        }
+
+        const scopedTask = {
+          ...task,
+          input: {
+            ...task.input,
+            gitDiffBase: "origin/main"
+          }
+        };
+        const goal = showGoal({ cwd: workspace, id: task.goalId }).goal;
+        const result = await runCodexDirectWorker({
+          cwd: workspace,
+          stateDb: initialized.stateDb,
+          database,
+          policy: allowDirectToolsPolicy,
+          goal,
+          task: scopedTask,
+          model: "fake-codex",
+          evidenceDir: join(initialized.root, "evidence"),
+          transport: scriptedTransport([
+            {
+              outputText: "",
+              toolCalls: [
+                {
+                  id: "call_base_diff",
+                  name: "git_diff",
+                  arguments: JSON.stringify({
+                    base: "ignored/base",
+                    path: "src/index.ts"
+                  })
+                }
+              ],
+              finishReason: "tool_calls",
+              outputItems: []
+            },
+            {
+              outputText: "Reviewed base diff.",
+              toolCalls: [],
+              finishReason: "stop",
+              outputItems: []
+            }
+          ])
+        });
+        const diffCall = database
+          .prepare("SELECT output_json FROM tool_calls WHERE action_type = 'git.diff'")
+          .get() as { output_json: string };
+
+        expect(result.status).toBe("completed");
+        expect(diffCall.output_json).toContain(
+          "git diff 'origin/main'...HEAD -- 'src/index.ts'"
+        );
+      } finally {
+        database.close();
+      }
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
   it("fails edit-style runs when the tool budget is exhausted", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "runstead-codex-tool-budget-"));
 

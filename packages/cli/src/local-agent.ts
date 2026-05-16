@@ -78,6 +78,7 @@ export interface CreateLocalAgentTaskOptions {
   maxFailedToolCalls?: number;
   finalizeOnBudget?: boolean;
   gitDiffStaged?: boolean;
+  gitDiffBase?: string;
   checkpoint?: boolean;
   commit?: boolean;
   now?: Date;
@@ -849,6 +850,9 @@ function localAgentTaskInput(input: {
     ...(input.options.gitDiffStaged === undefined
       ? {}
       : { gitDiffStaged: input.options.gitDiffStaged }),
+    ...(input.options.gitDiffBase === undefined
+      ? {}
+      : { gitDiffBase: input.options.gitDiffBase }),
     ...(input.options.checkpoint === undefined
       ? {}
       : { checkpoint: input.options.checkpoint }),

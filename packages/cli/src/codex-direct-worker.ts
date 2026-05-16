@@ -405,6 +405,10 @@ export function codexDirectToolDefinitions(): CodexResponsesTool[] {
           staged: {
             type: "boolean",
             description: "Return the staged diff when true."
+          },
+          base: {
+            type: "string",
+            description: "Optional base ref for base...HEAD diffs."
           }
         },
         []
@@ -476,7 +480,8 @@ async function executeCodexDirectTool(
       const path = optionalString(options.toolCall.arguments.path);
       const requestedStaged = options.toolCall.arguments.staged === true;
       const staged = taskGitDiffStaged(options.task) ?? requestedStaged;
-      const command = gitDiffCommand({ path, staged });
+      const base = taskGitDiffBase(options.task) ?? optionalString(options.toolCall.arguments.base);
+      const command = gitDiffCommand({ path, staged, base });
 
       return JSON.stringify(await runGovernedGitRead(options, command));
     }
@@ -887,8 +892,24 @@ function taskGitDiffStaged(task: Task): boolean | undefined {
   return typeof value === "boolean" ? value : undefined;
 }
 
-function gitDiffCommand(input: { path: string | undefined; staged: boolean }): string {
-  const base = input.staged ? "git diff --staged" : "git diff";
+function taskGitDiffBase(task: Task): string | undefined {
+  const value = task.input.gitDiffBase;
+
+  return typeof value === "string" && value.trim().length > 0
+    ? value.trim()
+    : undefined;
+}
+
+function gitDiffCommand(input: {
+  path: string | undefined;
+  staged: boolean;
+  base: string | undefined;
+}): string {
+  const base = input.staged
+    ? "git diff --staged"
+    : input.base === undefined
+      ? "git diff"
+      : `git diff ${shellQuote(input.base)}...HEAD`;
 
   return input.path === undefined ? base : `${base} -- ${shellQuote(input.path)}`;
 }
