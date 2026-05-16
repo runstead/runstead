@@ -88,6 +88,7 @@ rules:
         in:
           - filesystem.read
           - filesystem.list
+          - filesystem.search
           - git.status
           - git.diff
           - github.run.read

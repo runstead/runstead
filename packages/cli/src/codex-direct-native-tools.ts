@@ -1,10 +1,15 @@
 import type { Dirent } from "node:fs";
-import { readdir } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import { relative, resolve, sep } from "node:path";
 
 const DEFAULT_IGNORED_DIRECTORIES = [".git", "node_modules", "dist", ".runstead"];
 const DEFAULT_LIST_FILES_MAX_RESULTS = 200;
 const LIST_FILES_MAX_RESULTS_LIMIT = 1_000;
+const DEFAULT_SEARCH_TEXT_MAX_MATCHES = 100;
+const SEARCH_TEXT_MAX_MATCHES_LIMIT = 500;
+const SEARCH_TEXT_FILE_SCAN_LIMIT = 1_000;
+const SEARCH_TEXT_CONTEXT_LIMIT = 5;
+const SEARCH_TEXT_PREVIEW_LIMIT = 500;
 
 export interface ListWorkspaceFilesOptions {
   glob?: string[];
@@ -23,6 +28,40 @@ export interface ListWorkspaceFilesResult {
   entries: ListWorkspaceFileEntry[];
   truncated: boolean;
   maxResults: number;
+}
+
+export interface SearchWorkspaceTextOptions {
+  query: string;
+  regex?: boolean;
+  glob?: string[];
+  caseSensitive?: boolean;
+  contextLines?: number;
+  maxMatches?: number;
+}
+
+export interface SearchWorkspaceTextContextLine {
+  line: number;
+  text: string;
+}
+
+export interface SearchWorkspaceTextMatch {
+  path: string;
+  line: number;
+  preview: string;
+  before?: SearchWorkspaceTextContextLine[];
+  after?: SearchWorkspaceTextContextLine[];
+}
+
+export interface SearchWorkspaceTextResult {
+  cwd: string;
+  query: string;
+  regex: boolean;
+  caseSensitive: boolean;
+  matches: SearchWorkspaceTextMatch[];
+  truncated: boolean;
+  maxMatches: number;
+  filesSearched: number;
+  filesTruncated: boolean;
 }
 
 export async function listWorkspaceFiles(
@@ -97,6 +136,81 @@ export async function listWorkspaceFiles(
     entries,
     truncated,
     maxResults
+  };
+}
+
+export async function searchWorkspaceText(
+  cwd: string,
+  options: SearchWorkspaceTextOptions
+): Promise<SearchWorkspaceTextResult> {
+  const root = resolve(cwd);
+  const maxMatches = boundedMaxResults(
+    options.maxMatches,
+    DEFAULT_SEARCH_TEXT_MAX_MATCHES,
+    SEARCH_TEXT_MAX_MATCHES_LIMIT
+  );
+  const contextLines = Math.min(options.contextLines ?? 0, SEARCH_TEXT_CONTEXT_LIMIT);
+  const regex = options.regex === true;
+  const caseSensitive = options.caseSensitive === true;
+  const matcher = createTextMatcher(options.query, {
+    regex,
+    caseSensitive
+  });
+  const files = await listWorkspaceFiles(root, {
+    ...(options.glob === undefined ? {} : { glob: options.glob }),
+    maxResults: SEARCH_TEXT_FILE_SCAN_LIMIT
+  });
+  const matches: SearchWorkspaceTextMatch[] = [];
+  let filesSearched = 0;
+  let truncated = false;
+
+  for (const entry of files.entries) {
+    if (truncated) {
+      break;
+    }
+
+    if (entry.type !== "file") {
+      continue;
+    }
+
+    const content = await readFile(resolve(root, entry.path), "utf8");
+
+    if (content.includes("\0")) {
+      continue;
+    }
+
+    filesSearched += 1;
+    const lines = content.split(/\r?\n/);
+
+    for (const [index, line] of lines.entries()) {
+      if (!matcher(line)) {
+        continue;
+      }
+
+      matches.push({
+        path: entry.path,
+        line: index + 1,
+        preview: truncatePreview(line),
+        ...contextForMatch(lines, index, contextLines)
+      });
+
+      if (matches.length >= maxMatches) {
+        truncated = true;
+        break;
+      }
+    }
+  }
+
+  return {
+    cwd: root,
+    query: options.query,
+    regex,
+    caseSensitive,
+    matches,
+    truncated,
+    maxMatches,
+    filesSearched,
+    filesTruncated: files.truncated
   };
 }
 
@@ -204,4 +318,53 @@ function direntType(dirent: Dirent): ListWorkspaceFileEntry["type"] {
   }
 
   return "other";
+}
+
+function createTextMatcher(
+  query: string,
+  options: { regex: boolean; caseSensitive: boolean }
+): (line: string) => boolean {
+  if (options.regex) {
+    const expression = new RegExp(query, options.caseSensitive ? "" : "i");
+
+    return (line) => expression.test(line);
+  }
+
+  const needle = options.caseSensitive ? query : query.toLowerCase();
+
+  return (line) => (options.caseSensitive ? line : line.toLowerCase()).includes(needle);
+}
+
+function contextForMatch(
+  lines: string[],
+  index: number,
+  contextLines: number
+): Pick<SearchWorkspaceTextMatch, "before" | "after"> {
+  if (contextLines <= 0) {
+    return {};
+  }
+
+  const before = lines
+    .slice(Math.max(0, index - contextLines), index)
+    .map((line, offset, selected) => ({
+      line: index - selected.length + offset + 1,
+      text: truncatePreview(line)
+    }));
+  const after = lines
+    .slice(index + 1, index + 1 + contextLines)
+    .map((line, offset) => ({
+      line: index + offset + 2,
+      text: truncatePreview(line)
+    }));
+
+  return {
+    ...(before.length === 0 ? {} : { before }),
+    ...(after.length === 0 ? {} : { after })
+  };
+}
+
+function truncatePreview(value: string): string {
+  return value.length <= SEARCH_TEXT_PREVIEW_LIMIT
+    ? value
+    : `${value.slice(0, SEARCH_TEXT_PREVIEW_LIMIT)}...`;
 }

@@ -15,6 +15,7 @@ describe("tool contract registry", () => {
         "shell.exec",
         "filesystem.read",
         "filesystem.list",
+        "filesystem.search",
         "filesystem.write",
         "git.status",
         "git.diff",

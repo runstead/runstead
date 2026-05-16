@@ -14,7 +14,10 @@ import {
   readGovernedWorkspaceFile,
   writeGovernedWorkspaceFile
 } from "./filesystem-proxy.js";
-import { listWorkspaceFiles } from "./codex-direct-native-tools.js";
+import {
+  listWorkspaceFiles,
+  searchWorkspaceText
+} from "./codex-direct-native-tools.js";
 import {
   runGovernedToolAction,
   ToolActionApprovalRequiredError,
@@ -85,6 +88,7 @@ export interface CodexDirectBudgetSummary {
 
 type CodexDirectToolName =
   | "list_files"
+  | "search_text"
   | "read_file"
   | "write_file"
   | "run_command"
@@ -373,6 +377,52 @@ export function codexDirectToolDefinitions(): CodexResponsesTool[] {
     },
     {
       type: "function",
+      name: "search_text",
+      description:
+        "Search workspace text with bounded structured results. Returns path, line, and preview for each match.",
+      strict: false,
+      parameters: objectSchema(
+        {
+          query: {
+            type: "string",
+            description: "Text or regular expression to search for."
+          },
+          regex: {
+            type: "boolean",
+            description: "Treat query as a regular expression when true."
+          },
+          glob: {
+            oneOf: [
+              {
+                type: "string"
+              },
+              {
+                type: "array",
+                items: {
+                  type: "string"
+                }
+              }
+            ],
+            description: "Optional file glob or globs to search."
+          },
+          caseSensitive: {
+            type: "boolean",
+            description: "Use case-sensitive matching when true."
+          },
+          contextLines: {
+            type: "number",
+            description: "Optional surrounding line count per match."
+          },
+          maxMatches: {
+            type: "number",
+            description: "Optional maximum number of matches to return."
+          }
+        },
+        ["query"]
+      )
+    },
+    {
+      type: "function",
       name: "read_file",
       description: "Read a UTF-8 file inside the workspace.",
       strict: false,
@@ -504,6 +554,21 @@ async function executeCodexDirectTool(
           includeDirs: options.toolCall.arguments.includeDirs === true
         })
       );
+    case "search_text":
+      return JSON.stringify(
+        await runGovernedSearchText({
+          ...options,
+          query: requiredString(options.toolCall.arguments.query, "query"),
+          regex: options.toolCall.arguments.regex === true,
+          glob: optionalStringArray(options.toolCall.arguments.glob, "glob"),
+          caseSensitive: options.toolCall.arguments.caseSensitive === true,
+          contextLines: optionalNonNegativeInteger(
+            options.toolCall.arguments.contextLines,
+            "contextLines"
+          ),
+          maxMatches: optionalPositiveInteger(options.toolCall.arguments.maxMatches)
+        })
+      );
     case "read_file":
       return JSON.stringify(
         await readGovernedWorkspaceFile({
@@ -542,6 +607,58 @@ async function executeCodexDirectTool(
       return JSON.stringify(await runGovernedGitRead(options, command));
     }
   }
+}
+
+async function runGovernedSearchText(
+  options: CodexDirectWorkerOptions & {
+    workerRun: WorkerRun;
+    query: string;
+    regex: boolean;
+    glob?: string[];
+    caseSensitive: boolean;
+    contextLines?: number;
+    maxMatches?: number;
+  }
+) {
+  return runGovernedToolAction({
+    ...governedToolOptions(options),
+    action: filesystemReadAction({
+      cwd: options.cwd,
+      actionType: "filesystem.search",
+      path: ".",
+      stableParts: [
+        options.cwd,
+        options.query,
+        options.regex,
+        options.glob ?? [],
+        options.caseSensitive,
+        options.contextLines,
+        options.maxMatches
+      ]
+    }),
+    run: async () => {
+      const value = await searchWorkspaceText(options.cwd, {
+        query: options.query,
+        regex: options.regex,
+        ...(options.glob === undefined ? {} : { glob: options.glob }),
+        caseSensitive: options.caseSensitive,
+        ...(options.contextLines === undefined
+          ? {}
+          : { contextLines: options.contextLines }),
+        ...(options.maxMatches === undefined ? {} : { maxMatches: options.maxMatches })
+      });
+
+      return {
+        value,
+        output: {
+          matches: value.matches.length,
+          truncated: value.truncated,
+          filesSearched: value.filesSearched,
+          filesTruncated: value.filesTruncated
+        }
+      };
+    }
+  }).then((result) => result.value);
 }
 
 async function runGovernedListFiles(
@@ -907,7 +1024,7 @@ function gitReadAction(input: {
 
 function filesystemReadAction(input: {
   cwd: string;
-  actionType: "filesystem.list";
+  actionType: "filesystem.list" | "filesystem.search";
   path: string;
   stableParts: unknown[];
 }): ActionEnvelope {
@@ -1028,6 +1145,18 @@ function optionalPositiveInteger(value: unknown): number | undefined {
   return undefined;
 }
 
+function optionalNonNegativeInteger(value: unknown, field: string): number | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (typeof value === "number" && Number.isInteger(value) && value >= 0) {
+    return value;
+  }
+
+  throw new Error(`Codex Direct tool argument ${field} must be a non-negative integer`);
+}
+
 function optionalTimeoutMs(value: unknown): { timeoutMs?: number } {
   const timeoutMs = optionalPositiveInteger(value);
 
@@ -1069,6 +1198,7 @@ function shellQuote(value: string): string {
 function isCodexDirectToolName(value: string): value is CodexDirectToolName {
   return [
     "list_files",
+    "search_text",
     "read_file",
     "write_file",
     "run_command",

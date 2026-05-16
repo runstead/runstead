@@ -33,6 +33,14 @@ const TOOL_CONTRACTS: ToolContract[] = [
     policyRequired: true
   },
   {
+    actionType: "filesystem.search",
+    tool: "filesystem",
+    resourceTypes: ["directory"],
+    sideEffects: ["read_workspace"],
+    evidenceRequired: false,
+    policyRequired: true
+  },
+  {
     actionType: "filesystem.write",
     tool: "filesystem",
     resourceTypes: ["file", "directory"],
