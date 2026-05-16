@@ -89,6 +89,21 @@ describe("cli entrypoint", () => {
     ).toContain("--refresh");
   });
 
+  it("exposes local config commands", () => {
+    const config = createProgram().commands.find(
+      (command) => command.name() === "config"
+    );
+
+    expect(config?.commands.map((command) => command.name())).toEqual(
+      expect.arrayContaining(["get", "set"])
+    );
+    expect(
+      config?.commands
+        .find((command) => command.name() === "set")
+        ?.options.map((option) => option.long)
+    ).toContain("--cwd");
+  });
+
   it("exposes local agent run command", () => {
     const agent = createProgram().commands.find(
       (command) => command.name() === "agent"

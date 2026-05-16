@@ -12,6 +12,7 @@ import {
   type RunCiRepairOrchestratorResult
 } from "./ci-repair-orchestrator.js";
 import { getCodexAuthStatus, type CodexAuthStatus } from "./codex-auth.js";
+import { resolveCodexModel } from "./codex-model.js";
 import type { CodexDirectTransport } from "./codex-direct-worker.js";
 import type { GitHubCliRunner } from "./github-actions.js";
 import {
@@ -131,6 +132,7 @@ export async function runOnceUnlocked(
       throw new Error(`Task ${task.id} is not ready to resume CI repair`);
     }
 
+    const resolvedModel = await resolveOptionalCodexModel(cwd, options.model);
     const result = await runCiRepairOrchestratorUnlocked({
       cwd,
       runId,
@@ -138,9 +140,9 @@ export async function runOnceUnlocked(
         options.worker ??
         (await defaultCiRepairWorker({
           options,
-          model: options.model
+          model: resolvedModel
         })),
-      ...(options.model === undefined ? {} : { model: options.model }),
+      ...(resolvedModel === undefined ? {} : { model: resolvedModel }),
       verifierCommands: [],
       ...(options.base === undefined ? {} : { base: options.base }),
       ...(options.draft === undefined ? {} : { draft: options.draft }),
@@ -182,7 +184,10 @@ export async function runOnceUnlocked(
       throw new Error(`Task ${task.id} is missing a CI workflow run id`);
     }
 
-    const model = options.model ?? modelFromCiRepairTask(task);
+    const model = await resolveOptionalCodexModel(
+      cwd,
+      options.model ?? modelFromCiRepairTask(task)
+    );
     const worker =
       options.worker ??
       workerFromCiRepairTask(task) ??
@@ -271,6 +276,21 @@ export async function runOnceUnlocked(
     ranTask: false,
     reason: "no_queued_task"
   };
+}
+
+async function resolveOptionalCodexModel(
+  cwd: string,
+  explicitModel: string | undefined
+): Promise<string | undefined> {
+  if (explicitModel !== undefined) {
+    return (await resolveCodexModel({ cwd, explicitModel })).model;
+  }
+
+  try {
+    return (await resolveCodexModel({ cwd })).model;
+  } catch {
+    return undefined;
+  }
 }
 
 export function pickNextQueuedTask(cwd = process.cwd()): Task | undefined {

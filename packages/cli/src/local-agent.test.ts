@@ -8,6 +8,7 @@ import { describe, expect, it } from "vitest";
 import { decideApproval } from "./approvals.js";
 import type { CodexDirectTransport } from "./codex-direct-worker.js";
 import type { CodexResponsesRequest } from "./codex-responses-transport.js";
+import { setRunsteadConfigValue } from "./config.js";
 import { initRunstead } from "./init.js";
 import {
   attachLocalAgentVerifierEvidence,
@@ -308,6 +309,50 @@ describe("local agent task primitives", () => {
       expect(formatLocalAgentTaskReport(report)).toContain(
         "policy_decisions: allow medium x2"
       );
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("uses the configured Codex model when the task omits a model", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-local-agent-model-"));
+    const requests: CodexResponsesRequest[] = [];
+    const transport: CodexDirectTransport = {
+      createResponse(request) {
+        requests.push(request);
+
+        return Promise.resolve({
+          id: "resp_local_agent_configured_model",
+          status: "completed",
+          outputText: "Inspected package metadata.",
+          toolCalls: [],
+          finishReason: "stop",
+          outputItems: []
+        });
+      }
+    };
+
+    try {
+      await initRunstead({ cwd: workspace, profile: "trusted-local" });
+      await setRunsteadConfigValue({
+        cwd: workspace,
+        key: "codex.model",
+        value: "configured-codex"
+      });
+      const created = await createLocalAgentTask({
+        cwd: workspace,
+        prompt: "Inspect this repo.",
+        worker: "codex_direct",
+        mode: "read-only"
+      });
+
+      await runLocalAgentTask({
+        cwd: workspace,
+        taskId: created.task.id,
+        transport
+      });
+
+      expect(requests[0]?.model).toBe("configured-codex");
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }

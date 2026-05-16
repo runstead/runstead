@@ -9,6 +9,7 @@ import { describe, expect, it } from "vitest";
 import { createGoal } from "./goals.js";
 import { initRunstead } from "./init.js";
 import { createLocalAgentTask, LOCAL_AGENT_TASK_TYPE } from "./local-agent.js";
+import { setRunsteadConfigValue } from "./config.js";
 import { formatRunOnceReport, runOnce, runOnceExitCode } from "./run.js";
 import type { RunCiRepairOrchestratorResult } from "./ci-repair-orchestrator.js";
 
@@ -231,6 +232,10 @@ describe("runOnce", () => {
       const result = await runOnce({
         cwd: workspace,
         authToken: "ghs_token",
+        codexAuthStatus: () =>
+          Promise.resolve({
+            loggedIn: false
+          }),
         ciRepairOrchestrator: (options) => {
           calls.push(options);
 
@@ -372,6 +377,58 @@ describe("runOnce", () => {
         expect.objectContaining({
           worker: "codex_direct",
           model: "fake-codex"
+        })
+      ]);
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("uses configured Codex model when queued ci repair omits a model", async () => {
+    const workspace = await mkdtemp(
+      join(tmpdir(), "runstead-run-ci-configured-model-")
+    );
+
+    try {
+      await initRunstead({ cwd: workspace });
+      await setRunsteadConfigValue({
+        cwd: workspace,
+        key: "codex.model",
+        value: "configured-codex"
+      });
+      const goal = await createGoal({
+        cwd: workspace,
+        domain: "repo-maintenance",
+        now: new Date("2026-05-14T08:00:00.000Z")
+      });
+      const task = ciRepairTask({
+        id: "task_ci_repair_configured_model",
+        goalId: goal.goal.id
+      });
+      const calls: unknown[] = [];
+
+      insertTask(goal.stateDb, task);
+
+      await runOnce({
+        cwd: workspace,
+        codexAuthStatus: () =>
+          Promise.resolve({
+            loggedIn: true,
+            accessTokenExpired: false
+          }),
+        ciRepairOrchestrator: (options) => {
+          calls.push(options);
+
+          return Promise.resolve(
+            fakeCiRepairOrchestration(workspace, goal.stateDb, task)
+          );
+        }
+      });
+
+      expect(calls).toEqual([
+        expect.objectContaining({
+          worker: "codex_direct",
+          model: "configured-codex"
         })
       ]);
     } finally {

@@ -22,6 +22,7 @@ import {
   type CreateCiRepairTaskResult
 } from "./ci-repair.js";
 import { resolveCodexRuntimeCredentials } from "./codex-auth.js";
+import { resolveCodexModel } from "./codex-model.js";
 import {
   CODEX_DIRECT_WORKER_KIND,
   createCodexDirectTransport,
@@ -1512,9 +1513,10 @@ async function startCiRepairWorker(options: {
     });
   }
 
-  if (options.model === undefined || options.model.trim().length === 0) {
-    throw new Error("--model is required when --worker codex_direct is used");
-  }
+  const model = await resolveCodexModel({
+    cwd: options.cwd,
+    ...(options.model === undefined ? {} : { explicitModel: options.model })
+  });
 
   const transport =
     options.codexDirectTransport ??
@@ -1528,7 +1530,7 @@ async function startCiRepairWorker(options: {
     policy: options.policy,
     goal: options.goal,
     task: options.task,
-    model: options.model.trim(),
+    model: model.model,
     evidenceDir: join(options.root, "evidence"),
     transport,
     prompt: [

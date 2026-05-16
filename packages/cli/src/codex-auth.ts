@@ -947,7 +947,7 @@ async function writeCodexModelCache(
   await chmod(cachePath, 0o600).catch(() => undefined);
 }
 
-function codexModelsFromEnvironment(): CodexModel[] {
+export function codexModelsFromEnvironment(): CodexModel[] {
   const configured = process.env.RUNSTEAD_CODEX_MODELS;
 
   if (configured === undefined || configured.trim().length === 0) {

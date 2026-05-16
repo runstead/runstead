@@ -29,6 +29,7 @@ import {
   type CodexDirectWorkerResult
 } from "./codex-direct-worker.js";
 import { resolveCodexRuntimeCredentials } from "./codex-auth.js";
+import { resolveCodexModel } from "./codex-model.js";
 import {
   runGovernedToolAction,
   ToolActionApprovalRequiredError,
@@ -303,11 +304,11 @@ export async function runLocalAgentTask(
     throw new Error("Local agent task execution currently supports codex_direct only");
   }
 
-  const model = localAgentTaskModel(claimedTask);
-
-  if (model === undefined) {
-    throw new Error("--model is required when --worker codex_direct is used");
-  }
+  const explicitModel = localAgentTaskModel(claimedTask);
+  const model = await resolveCodexModel({
+    cwd,
+    ...(explicitModel === undefined ? {} : { explicitModel })
+  });
 
   const startedAt = (options.now ?? new Date()).toISOString();
   const runningTask: Task = {
@@ -345,7 +346,7 @@ export async function runLocalAgentTask(
       policy,
       goal,
       task: runningTask,
-      model,
+      model: model.model,
       transport,
       ...(options.now === undefined ? {} : { now: options.now })
     });
