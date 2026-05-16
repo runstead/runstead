@@ -257,11 +257,7 @@ async function checkCodexCliPolicy(root: string): Promise<DoctorCheck> {
     });
 
     return decision.decision === "allow"
-      ? pass(
-          "codex-cli-policy",
-          "codex_cli policy",
-          decision.ruleId ?? "default allow"
-        )
+      ? pass("codex-cli-policy", "codex_cli policy", decision.ruleId ?? "default allow")
       : fail(
           "codex-cli-policy",
           "codex_cli policy",

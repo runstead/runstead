@@ -403,7 +403,7 @@ describe("doctorRunstead", () => {
 
           return Promise.resolve({
             stdout: "",
-            stderr: "AuthRequired: Bearer error=\"invalid_token\" not authorized",
+            stderr: 'AuthRequired: Bearer error="invalid_token" not authorized',
             exitCode: 1
           });
         }

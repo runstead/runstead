@@ -166,25 +166,27 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
         worker?: string;
         model?: string;
       }) => {
-      const { doctorRunstead } = await import("./doctor.js");
-      const worker =
-        options.worker === undefined ? undefined : parseDoctorCodexWorker(options.worker);
-      const result = await doctorRunstead({
-        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-        ...(options.codex === undefined ? {} : { codex: options.codex }),
-        ...(worker === undefined ? {} : { worker }),
-        ...(options.model === undefined ? {} : { model: options.model })
-      });
+        const { doctorRunstead } = await import("./doctor.js");
+        const worker =
+          options.worker === undefined
+            ? undefined
+            : parseDoctorCodexWorker(options.worker);
+        const result = await doctorRunstead({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          ...(options.codex === undefined ? {} : { codex: options.codex }),
+          ...(worker === undefined ? {} : { worker }),
+          ...(options.model === undefined ? {} : { model: options.model })
+        });
 
-      console.log(`Runstead doctor for ${result.root}`);
+        console.log(`Runstead doctor for ${result.root}`);
 
-      for (const check of result.checks) {
-        console.log(`[${check.status}] ${check.label}: ${check.message}`);
-      }
+        for (const check of result.checks) {
+          console.log(`[${check.status}] ${check.label}: ${check.message}`);
+        }
 
-      if (!result.ok) {
-        process.exitCode = 1;
-      }
+        if (!result.ok) {
+          process.exitCode = 1;
+        }
       }
     );
 
@@ -2874,7 +2876,11 @@ function addAgentCommand(command: Command): void {
     .description("Run a governed local agent task against the current workspace.")
     .argument("[prompt...]", "Task prompt for the local agent")
     .option("--cwd <path>", "Workspace directory")
-    .option("--worker <worker>", "Worker to run: codex_direct or codex_cli", "codex_direct")
+    .option(
+      "--worker <worker>",
+      "Worker to run: codex_direct or codex_cli",
+      "codex_direct"
+    )
     .option("--provider <provider>", "Model provider to use with codex_direct")
     .option("--model <model>", "Model to use with codex_direct or codex_cli")
     .option("--base-url <url>", "Model provider base URL")
@@ -2906,7 +2912,9 @@ function addAgentCommand(command: Command): void {
       const worker = parseCiRepairWorkerKind(options.worker);
 
       if (worker !== "codex_direct" && worker !== "codex_cli") {
-        throw new Error("agent run currently supports --worker codex_direct or codex_cli");
+        throw new Error(
+          "agent run currently supports --worker codex_direct or codex_cli"
+        );
       }
 
       const {

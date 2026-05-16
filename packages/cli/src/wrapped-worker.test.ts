@@ -465,9 +465,7 @@ describe("wrapped worker output validation", () => {
       valid: false,
       reason: "worker produced no structured output"
     });
-    expect(result.stderr).toContain(
-      "[runstead] worker produced no structured output"
-    );
+    expect(result.stderr).toContain("[runstead] worker produced no structured output");
   });
 
   it("fails an otherwise successful worker when stdout is not contract JSON", async () => {

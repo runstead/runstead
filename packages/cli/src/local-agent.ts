@@ -345,7 +345,9 @@ export async function runLocalAgentTask(
   const worker = localAgentTaskWorker(claimedTask);
 
   if (worker !== CODEX_DIRECT_WORKER_KIND && worker !== "codex_cli") {
-    throw new Error("Local agent task execution currently supports codex_direct or codex_cli");
+    throw new Error(
+      "Local agent task execution currently supports codex_direct or codex_cli"
+    );
   }
 
   const explicitProvider = localAgentTaskProvider(claimedTask);
@@ -420,7 +422,9 @@ export async function runLocalAgentTask(
       ...(worker === "codex_cli" && explicitModel !== undefined
         ? { model: explicitModel }
         : {}),
-      ...(options.workerRunner === undefined ? {} : { workerRunner: options.workerRunner }),
+      ...(options.workerRunner === undefined
+        ? {}
+        : { workerRunner: options.workerRunner }),
       ...(options.now === undefined ? {} : { now: options.now })
     });
   } finally {
@@ -485,10 +489,9 @@ async function runLocalAgentTaskWithDatabase(options: {
       }
     });
     const workerResult = governed.value;
-    const verifierResult =
-      localAgentWorkerCompleted(workerResult)
-        ? await runLocalAgentVerifiersIfNeeded(options)
-        : undefined;
+    const verifierResult = localAgentWorkerCompleted(workerResult)
+      ? await runLocalAgentVerifiersIfNeeded(options)
+      : undefined;
     const finalStatus = localAgentFinalTaskStatus(workerResult, verifierResult);
     const summary = localAgentFinalSummary(workerResult, verifierResult);
     const finalTask = finalizeLocalAgentTask({
@@ -921,8 +924,7 @@ function localAgentReportSections(report: LocalAgentTaskReport) {
     model: {
       provider: stringOutput(report.task.output ?? {}, "modelProvider") || undefined,
       model: stringOutput(report.task.output ?? {}, "model") || undefined,
-      modelSource:
-        stringOutput(report.task.output ?? {}, "modelSource") || undefined,
+      modelSource: stringOutput(report.task.output ?? {}, "modelSource") || undefined,
       status: stringOutput(report.task.output ?? {}, "status") || undefined,
       summary: stringOutput(report.task.output ?? {}, "summary") || undefined,
       toolCalls: numberOutput(report.task.output ?? {}, "toolCalls"),
@@ -1715,7 +1717,9 @@ function localAgentWorkerCompleted(workerResult: LocalAgentWorkerResult): boolea
     : workerResult.exitCode === 0;
 }
 
-function redactedLocalWrappedWorkerArgs(workerResult: WrappedWorkerRunResult): string[] {
+function redactedLocalWrappedWorkerArgs(
+  workerResult: WrappedWorkerRunResult
+): string[] {
   const omitted = "[omitted from Runstead durable state]";
 
   return workerResult.args.map((arg) => (arg === workerResult.prompt ? omitted : arg));
