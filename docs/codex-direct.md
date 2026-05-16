@@ -26,6 +26,7 @@ agent run / repair-ci / run --once / daemon
               -> filesystem.read
               -> filesystem.list
               -> filesystem.search
+              -> filesystem.stat
               -> filesystem.write
               -> shell.exec
               -> git.status
@@ -67,6 +68,8 @@ The first tool set should stay small:
 - `search_text` -> `filesystem.search`
 - `read_file` -> `filesystem.read`
 - `read_many_files` -> `filesystem.read`
+- `file_info` -> `filesystem.stat`
+- `tree` -> `filesystem.list`
 - `write_file` -> `filesystem.write`
 - `run_command` -> `shell.exec`
 - `git_status` -> `git.status`

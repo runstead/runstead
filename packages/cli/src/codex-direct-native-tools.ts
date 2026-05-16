@@ -1,5 +1,5 @@
 import type { Dirent } from "node:fs";
-import { readFile, readdir } from "node:fs/promises";
+import { lstat, readFile, readdir } from "node:fs/promises";
 import { relative, resolve, sep } from "node:path";
 
 const DEFAULT_IGNORED_DIRECTORIES = [".git", "node_modules", "dist", ".runstead"];
@@ -14,6 +14,13 @@ const DEFAULT_READ_MANY_BYTES_PER_FILE = 64 * 1024;
 const READ_MANY_BYTES_PER_FILE_LIMIT = 1024 * 1024;
 const DEFAULT_READ_MANY_TOTAL_BYTES = 256 * 1024;
 const READ_MANY_TOTAL_BYTES_LIMIT = 2 * 1024 * 1024;
+const DEFAULT_FILE_INFO_MAX_ENTRIES = 100;
+const FILE_INFO_MAX_ENTRIES_LIMIT = 500;
+const BINARY_SAMPLE_BYTES = 8192;
+const DEFAULT_TREE_MAX_DEPTH = 3;
+const TREE_MAX_DEPTH_LIMIT = 8;
+const DEFAULT_TREE_MAX_ENTRIES = 200;
+const TREE_MAX_ENTRIES_LIMIT = 1_000;
 
 export interface ListWorkspaceFilesOptions {
   glob?: string[];
@@ -92,6 +99,54 @@ export interface ReadManyWorkspaceFilesResult {
   maxTotalBytes: number;
 }
 
+export interface WorkspaceFileInfoOptions {
+  path: string;
+  maxEntries?: number;
+}
+
+export interface WorkspaceDirectorySummary {
+  entries: ListWorkspaceFileEntry[];
+  counts: {
+    files: number;
+    directories: number;
+    symlinks: number;
+    other: number;
+  };
+  truncated: boolean;
+  maxEntries: number;
+}
+
+export interface WorkspaceFileInfoResult {
+  cwd: string;
+  path: string;
+  type: ListWorkspaceFileEntry["type"];
+  bytes: number;
+  mtimeMs: number;
+  mtime: string;
+  binary?: boolean;
+  directory?: WorkspaceDirectorySummary;
+}
+
+export interface WorkspaceTreeOptions {
+  path?: string;
+  maxDepth?: number;
+  maxEntries?: number;
+  includeFiles?: boolean;
+}
+
+export interface WorkspaceTreeEntry extends ListWorkspaceFileEntry {
+  depth: number;
+}
+
+export interface WorkspaceTreeResult {
+  cwd: string;
+  path: string;
+  entries: WorkspaceTreeEntry[];
+  truncated: boolean;
+  maxDepth: number;
+  maxEntries: number;
+}
+
 export async function listWorkspaceFiles(
   cwd: string,
   options: ListWorkspaceFilesOptions = {}
@@ -113,10 +168,7 @@ export async function listWorkspaceFiles(
       return;
     }
 
-    const dirents = await readdir(directory, { withFileTypes: true });
-    const sorted = dirents.toSorted((left, right) =>
-      left.name.localeCompare(right.name)
-    );
+    const sorted = await sortedDirents(directory);
 
     for (const dirent of sorted) {
       if (truncated) {
@@ -164,6 +216,110 @@ export async function listWorkspaceFiles(
     entries,
     truncated,
     maxResults
+  };
+}
+
+export async function inspectWorkspacePath(
+  cwd: string,
+  options: WorkspaceFileInfoOptions
+): Promise<WorkspaceFileInfoResult> {
+  const root = resolve(cwd);
+  const target = workspaceTarget(root, options.path, { allowRoot: true });
+  const stats = await lstat(target.absolutePath);
+  const type = statsToEntryType(stats);
+  const result: WorkspaceFileInfoResult = {
+    cwd: root,
+    path: target.relativePath,
+    type,
+    bytes: stats.size,
+    mtimeMs: stats.mtimeMs,
+    mtime: stats.mtime.toISOString()
+  };
+
+  if (type === "file") {
+    result.binary = await isBinaryFile(target.absolutePath);
+  }
+
+  if (type === "directory") {
+    result.directory = await summarizeDirectory(
+      target.absolutePath,
+      target.relativePath,
+      {
+        maxEntries: options.maxEntries
+      }
+    );
+  }
+
+  return result;
+}
+
+export async function workspaceTree(
+  cwd: string,
+  options: WorkspaceTreeOptions = {}
+): Promise<WorkspaceTreeResult> {
+  const root = resolve(cwd);
+  const target = workspaceTarget(root, options.path ?? ".", { allowRoot: true });
+  const maxDepth = Math.min(
+    options.maxDepth ?? DEFAULT_TREE_MAX_DEPTH,
+    TREE_MAX_DEPTH_LIMIT
+  );
+  const maxEntries = boundedMaxResults(
+    options.maxEntries,
+    DEFAULT_TREE_MAX_ENTRIES,
+    TREE_MAX_ENTRIES_LIMIT
+  );
+  const includeFiles = options.includeFiles !== false;
+  const entries: WorkspaceTreeEntry[] = [];
+  let truncated = false;
+
+  async function walk(directory: string, depth: number): Promise<void> {
+    if (truncated || depth > maxDepth) {
+      return;
+    }
+
+    const dirents = await sortedDirents(directory);
+
+    for (const dirent of dirents) {
+      if (truncated) {
+        return;
+      }
+
+      if (dirent.isDirectory() && DEFAULT_IGNORED_DIRECTORIES.includes(dirent.name)) {
+        continue;
+      }
+
+      const absolutePath = resolve(directory, dirent.name);
+      const relativePath = workspaceRelativePath(root, absolutePath);
+      const type = direntType(dirent);
+
+      if (includeFiles || type === "directory") {
+        entries.push({
+          path: relativePath,
+          type,
+          depth
+        });
+
+        if (entries.length >= maxEntries) {
+          truncated = true;
+          return;
+        }
+      }
+
+      if (dirent.isDirectory()) {
+        await walk(absolutePath, depth + 1);
+      }
+    }
+  }
+
+  await walk(target.absolutePath, 1);
+
+  return {
+    cwd: root,
+    path: target.relativePath,
+    entries,
+    truncated,
+    maxDepth,
+    maxEntries
   };
 }
 
@@ -376,13 +532,14 @@ function workspaceRelativePath(root: string, absolutePath: string): string {
 
 function workspaceTarget(
   root: string,
-  requestedPath: string
+  requestedPath: string,
+  options: { allowRoot?: boolean } = {}
 ): { absolutePath: string; relativePath: string } {
   const absolutePath = resolve(root, requestedPath);
   const relativePath = workspaceRelativePath(root, absolutePath);
 
   if (
-    relativePath.length === 0 ||
+    (relativePath.length === 0 && options.allowRoot !== true) ||
     relativePath === ".." ||
     relativePath.startsWith("../")
   ) {
@@ -391,7 +548,7 @@ function workspaceTarget(
 
   return {
     absolutePath,
-    relativePath
+    relativePath: relativePath.length === 0 ? "." : relativePath
   };
 }
 
@@ -417,6 +574,89 @@ function direntType(dirent: Dirent): ListWorkspaceFileEntry["type"] {
   }
 
   return "other";
+}
+
+function statsToEntryType(
+  stats: Awaited<ReturnType<typeof lstat>>
+): ListWorkspaceFileEntry["type"] {
+  if (stats.isFile()) {
+    return "file";
+  }
+
+  if (stats.isDirectory()) {
+    return "directory";
+  }
+
+  if (stats.isSymbolicLink()) {
+    return "symlink";
+  }
+
+  return "other";
+}
+
+async function summarizeDirectory(
+  directory: string,
+  relativeDirectory: string,
+  options: { maxEntries?: number }
+): Promise<WorkspaceDirectorySummary> {
+  const maxEntries = boundedMaxResults(
+    options.maxEntries,
+    DEFAULT_FILE_INFO_MAX_ENTRIES,
+    FILE_INFO_MAX_ENTRIES_LIMIT
+  );
+  const dirents = await sortedDirents(directory);
+  const counts = {
+    files: 0,
+    directories: 0,
+    symlinks: 0,
+    other: 0
+  };
+  const entries: ListWorkspaceFileEntry[] = [];
+
+  for (const dirent of dirents) {
+    const type = direntType(dirent);
+
+    switch (type) {
+      case "file":
+        counts.files += 1;
+        break;
+      case "directory":
+        counts.directories += 1;
+        break;
+      case "symlink":
+        counts.symlinks += 1;
+        break;
+      case "other":
+        counts.other += 1;
+        break;
+    }
+
+    if (entries.length < maxEntries) {
+      entries.push({
+        path: normalizePath(`${relativeDirectory}/${dirent.name}`),
+        type
+      });
+    }
+  }
+
+  return {
+    entries,
+    counts,
+    truncated: dirents.length > maxEntries,
+    maxEntries
+  };
+}
+
+async function sortedDirents(directory: string): Promise<Dirent[]> {
+  const dirents = await readdir(directory, { withFileTypes: true });
+
+  return dirents.toSorted((left, right) => left.name.localeCompare(right.name));
+}
+
+async function isBinaryFile(path: string): Promise<boolean> {
+  const sample = (await readFile(path)).subarray(0, BINARY_SAMPLE_BYTES);
+
+  return sample.includes(0);
 }
 
 function createTextMatcher(

@@ -15,9 +15,11 @@ import {
   writeGovernedWorkspaceFile
 } from "./filesystem-proxy.js";
 import {
+  inspectWorkspacePath,
   listWorkspaceFiles,
   readManyWorkspaceFiles,
-  searchWorkspaceText
+  searchWorkspaceText,
+  workspaceTree
 } from "./codex-direct-native-tools.js";
 import {
   runGovernedToolAction,
@@ -92,6 +94,8 @@ type CodexDirectToolName =
   | "search_text"
   | "read_file"
   | "read_many_files"
+  | "file_info"
+  | "tree"
   | "write_file"
   | "run_command"
   | "git_status"
@@ -467,6 +471,55 @@ export function codexDirectToolDefinitions(): CodexResponsesTool[] {
     },
     {
       type: "function",
+      name: "file_info",
+      description:
+        "Return file or directory metadata including size, mtime, binary hint, and directory summary.",
+      strict: false,
+      parameters: objectSchema(
+        {
+          path: {
+            type: "string",
+            description: "Workspace-relative path. Defaults to the workspace root."
+          },
+          maxEntries: {
+            type: "number",
+            description:
+              "Optional maximum child entries to include for directory summaries."
+          }
+        },
+        []
+      )
+    },
+    {
+      type: "function",
+      name: "tree",
+      description:
+        "Return a bounded tree view rooted at a workspace-relative directory path.",
+      strict: false,
+      parameters: objectSchema(
+        {
+          path: {
+            type: "string",
+            description: "Workspace-relative directory path. Defaults to root."
+          },
+          maxDepth: {
+            type: "number",
+            description: "Optional maximum tree depth."
+          },
+          maxEntries: {
+            type: "number",
+            description: "Optional maximum entries returned."
+          },
+          includeFiles: {
+            type: "boolean",
+            description: "Include file entries. Defaults to true."
+          }
+        },
+        []
+      )
+    },
+    {
+      type: "function",
       name: "write_file",
       description: "Write a UTF-8 file inside the workspace.",
       strict: false,
@@ -618,6 +671,24 @@ async function executeCodexDirectTool(
           )
         })
       );
+    case "file_info":
+      return JSON.stringify(
+        await runGovernedFileInfo({
+          ...options,
+          path: optionalString(options.toolCall.arguments.path) ?? ".",
+          maxEntries: optionalPositiveInteger(options.toolCall.arguments.maxEntries)
+        })
+      );
+    case "tree":
+      return JSON.stringify(
+        await runGovernedTree({
+          ...options,
+          path: optionalString(options.toolCall.arguments.path) ?? ".",
+          maxDepth: optionalPositiveInteger(options.toolCall.arguments.maxDepth),
+          maxEntries: optionalPositiveInteger(options.toolCall.arguments.maxEntries),
+          includeFiles: options.toolCall.arguments.includeFiles !== false
+        })
+      );
     case "write_file":
       return JSON.stringify(
         await writeGovernedWorkspaceFile({
@@ -649,6 +720,89 @@ async function executeCodexDirectTool(
       return JSON.stringify(await runGovernedGitRead(options, command));
     }
   }
+}
+
+async function runGovernedFileInfo(
+  options: CodexDirectWorkerOptions & {
+    workerRun: WorkerRun;
+    path: string;
+    maxEntries?: number;
+  }
+) {
+  return runGovernedToolAction({
+    ...governedToolOptions(options),
+    action: filesystemReadAction({
+      cwd: options.cwd,
+      actionType: "filesystem.stat",
+      path: options.path,
+      stableParts: [options.cwd, options.path, options.maxEntries]
+    }),
+    run: async () => {
+      const value = await inspectWorkspacePath(options.cwd, {
+        path: options.path,
+        ...(options.maxEntries === undefined ? {} : { maxEntries: options.maxEntries })
+      });
+
+      return {
+        value,
+        output: {
+          path: value.path,
+          type: value.type,
+          bytes: value.bytes,
+          ...(value.directory === undefined
+            ? {}
+            : {
+                entries: value.directory.entries.length,
+                truncated: value.directory.truncated
+              })
+        }
+      };
+    }
+  }).then((result) => result.value);
+}
+
+async function runGovernedTree(
+  options: CodexDirectWorkerOptions & {
+    workerRun: WorkerRun;
+    path: string;
+    maxDepth?: number;
+    maxEntries?: number;
+    includeFiles: boolean;
+  }
+) {
+  return runGovernedToolAction({
+    ...governedToolOptions(options),
+    action: filesystemReadAction({
+      cwd: options.cwd,
+      actionType: "filesystem.list",
+      path: options.path,
+      stableParts: [
+        options.cwd,
+        options.path,
+        options.maxDepth,
+        options.maxEntries,
+        options.includeFiles
+      ]
+    }),
+    run: async () => {
+      const value = await workspaceTree(options.cwd, {
+        path: options.path,
+        ...(options.maxDepth === undefined ? {} : { maxDepth: options.maxDepth }),
+        ...(options.maxEntries === undefined ? {} : { maxEntries: options.maxEntries }),
+        includeFiles: options.includeFiles
+      });
+
+      return {
+        value,
+        output: {
+          path: value.path,
+          entries: value.entries.length,
+          truncated: value.truncated,
+          maxDepth: value.maxDepth
+        }
+      };
+    }
+  }).then((result) => result.value);
 }
 
 async function runGovernedReadManyFiles(
@@ -1112,7 +1266,11 @@ function gitReadAction(input: {
 
 function filesystemReadAction(input: {
   cwd: string;
-  actionType: "filesystem.list" | "filesystem.search" | "filesystem.read";
+  actionType:
+    | "filesystem.list"
+    | "filesystem.search"
+    | "filesystem.read"
+    | "filesystem.stat";
   path: string;
   filesTouched?: string[];
   stableParts: unknown[];
@@ -1309,6 +1467,8 @@ function isCodexDirectToolName(value: string): value is CodexDirectToolName {
     "search_text",
     "read_file",
     "read_many_files",
+    "file_info",
+    "tree",
     "write_file",
     "run_command",
     "git_status",
