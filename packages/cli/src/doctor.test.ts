@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 
 import { doctorRunstead } from "./doctor.js";
 import { initRunstead } from "./init.js";
+import { setRunsteadConfigValue } from "./config.js";
 
 describe("doctorRunstead", () => {
   it("passes for an initialized workspace", async () => {
@@ -284,6 +285,7 @@ describe("doctorRunstead", () => {
       const result = await doctorRunstead({
         cwd: workspace,
         codex: true,
+        modelProviderEnv: {},
         codexAuthStatus: () =>
           Promise.resolve({
             loggedIn: true,
@@ -303,11 +305,97 @@ describe("doctorRunstead", () => {
           "runstead-initialized",
           "trusted-local-policy",
           "codex-direct-policy",
+          "model-provider",
           "codex-auth",
           "codex-default-model",
           "runtime-artifacts-ignore"
         ])
       );
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("checks configured non-Codex model provider readiness without Codex login", async () => {
+    const workspace = join(tmpdir(), `runstead-doctor-provider-${process.pid}`);
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await mkdir(workspace, { recursive: true });
+      await initRunstead({ cwd: workspace, profile: "trusted-local" });
+      await setRunsteadConfigValue({
+        cwd: workspace,
+        key: "model.provider",
+        value: "openrouter"
+      });
+      await setRunsteadConfigValue({
+        cwd: workspace,
+        key: "model.name",
+        value: "anthropic/claude-opus-4.6"
+      });
+
+      const result = await doctorRunstead({
+        cwd: workspace,
+        codex: true,
+        modelProviderEnv: {
+          OPENROUTER_API_KEY: "token"
+        },
+        codexAuthStatus: () => {
+          throw new Error("Codex auth should not be checked for OpenRouter");
+        }
+      });
+
+      expect(result.ok).toBe(true);
+      expect(result.checks.map((check) => check.id)).toEqual(
+        expect.arrayContaining([
+          "trusted-local-policy",
+          "model-provider",
+          "model-provider-auth"
+        ])
+      );
+      expect(result.checks.map((check) => check.id)).not.toContain("codex-auth");
+      expect(
+        result.checks.find((check) => check.id === "model-provider")
+      ).toMatchObject({
+        status: "pass",
+        message: expect.stringContaining("provider=openrouter")
+      });
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("reports missing non-Codex provider credentials", async () => {
+    const workspace = join(tmpdir(), `runstead-doctor-provider-auth-${process.pid}`);
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await mkdir(workspace, { recursive: true });
+      await initRunstead({ cwd: workspace, profile: "trusted-local" });
+      await setRunsteadConfigValue({
+        cwd: workspace,
+        key: "model.provider",
+        value: "anthropic"
+      });
+      await setRunsteadConfigValue({
+        cwd: workspace,
+        key: "model.name",
+        value: "claude-opus-4.6"
+      });
+
+      const result = await doctorRunstead({
+        cwd: workspace,
+        codex: true,
+        modelProviderEnv: {}
+      });
+
+      expect(result.ok).toBe(false);
+      expect(
+        result.checks.find((check) => check.id === "model-provider-auth")
+      ).toMatchObject({
+        status: "fail",
+        message: expect.stringContaining("ANTHROPIC_API_KEY")
+      });
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }
@@ -324,6 +412,7 @@ describe("doctorRunstead", () => {
       const result = await doctorRunstead({
         cwd: workspace,
         codex: true,
+        modelProviderEnv: {},
         codexAuthStatus: () =>
           Promise.resolve({
             loggedIn: true,

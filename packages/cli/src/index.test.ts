@@ -126,12 +126,14 @@ describe("cli entrypoint", () => {
     const repairTest = agent?.commands.find(
       (command) => command.name() === "repair-test"
     );
+    const providers = agent?.commands.find((command) => command.name() === "providers");
     const report = agent?.commands.find((command) => command.name() === "report");
     const resume = agent?.commands.find((command) => command.name() === "resume");
     const undo = agent?.commands.find((command) => command.name() === "undo");
 
     expect(agent?.commands.map((command) => command.name())).toEqual(
       expect.arrayContaining([
+        "providers",
         "run",
         "inspect",
         "review",
@@ -212,6 +214,9 @@ describe("cli entrypoint", () => {
         ])
       );
     }
+    expect(providers?.options.map((option) => option.long)).toEqual(
+      expect.arrayContaining(["--json"])
+    );
     expect(report?.options.map((option) => option.long)).toEqual(
       expect.arrayContaining(["--cwd", "--json", "--markdown", "--actor"])
     );

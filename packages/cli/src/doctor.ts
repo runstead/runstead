@@ -9,6 +9,7 @@ import {
 
 import { getCodexAuthStatus, type CodexAuthStatus } from "./codex-auth.js";
 import { resolveCodexModel, type ResolveCodexModelResult } from "./codex-model.js";
+import { resolveModelProvider, type ResolvedModelProvider } from "./model-provider.js";
 import { loadPolicyProfileFromFile } from "./policy-loader.js";
 import { evaluatePolicy } from "./policy.js";
 import { resolveRunsteadRoot } from "./runstead-root.js";
@@ -36,6 +37,7 @@ export interface DoctorRunsteadOptions {
     Pick<CodexAuthStatus, "loggedIn" | "accessTokenExpired" | "authPath">
   >;
   codexModelResolver?: (options: { cwd?: string }) => Promise<ResolveCodexModelResult>;
+  modelProviderEnv?: NodeJS.ProcessEnv;
 }
 
 export async function doctorRunstead(
@@ -94,11 +96,34 @@ export async function doctorRunstead(
   checks.push(await checkStateDatabase(join(root, "state.db")));
 
   if (options.codex === true) {
+    const modelProvider = await checkModelProviderSelection(
+      cwd,
+      options.codexModelResolver,
+      options.modelProviderEnv
+    );
+
     checks.push(checkRunsteadInitialized(resolvedRoot));
-    checks.push(await checkTrustedLocalCodexPolicy(root));
+    checks.push(
+      await checkTrustedLocalCodexPolicy(
+        root,
+        modelProvider.selection === undefined
+          ? "chatgpt_codex"
+          : modelProviderResourceId(modelProvider.selection)
+      )
+    );
     checks.push(await checkCodexDirectPolicy(root));
-    checks.push(await checkCodexDirectAuth(options.codexAuthStatus));
-    checks.push(await checkCodexDefaultModel(cwd, options.codexModelResolver));
+    checks.push(modelProvider.check);
+    if (modelProvider.selection?.profile.apiMode === "codex_responses") {
+      checks.push(await checkCodexDirectAuth(options.codexAuthStatus));
+      checks.push(await checkCodexDefaultModel(cwd, options.codexModelResolver));
+    } else if (modelProvider.selection !== undefined) {
+      checks.push(
+        checkModelProviderCredentials(
+          modelProvider.selection,
+          options.modelProviderEnv ?? process.env
+        )
+      );
+    }
     checks.push(await checkRuntimeArtifactsIgnored(root));
   }
 
@@ -132,7 +157,10 @@ function checkRunsteadInitialized(resolvedRoot: {
   );
 }
 
-async function checkTrustedLocalCodexPolicy(root: string): Promise<DoctorCheck> {
+async function checkTrustedLocalCodexPolicy(
+  root: string,
+  modelResourceId: string
+): Promise<DoctorCheck> {
   try {
     const policy = await loadPolicyProfileFromFile(
       join(root, "policies", "repo-maintenance.yaml")
@@ -143,26 +171,26 @@ async function checkTrustedLocalCodexPolicy(root: string): Promise<DoctorCheck> 
     });
     const modelDecision = evaluatePolicy({
       policy,
-      action: codexModelInferenceAction()
+      action: codexModelInferenceAction(modelResourceId)
     });
 
     if (workerDecision.decision !== "allow" || modelDecision.decision !== "allow") {
       return fail(
         "trusted-local-policy",
-        "trusted-local Codex policy",
-        `worker=${workerDecision.decision} model=${modelDecision.decision}; use init --profile trusted-local or update policy`
+        "trusted-local provider policy",
+        `worker=${workerDecision.decision} model=${modelDecision.decision} provider=${modelResourceId}; use init --profile trusted-local or run upgrade`
       );
     }
 
     return pass(
       "trusted-local-policy",
-      "trusted-local Codex policy",
+      "trusted-local provider policy",
       `worker rule ${workerDecision.ruleId ?? "default"}, model rule ${modelDecision.ruleId ?? "default"}`
     );
   } catch (error) {
     return fail(
       "trusted-local-policy",
-      "trusted-local Codex policy",
+      "trusted-local provider policy",
       errorMessage(error)
     );
   }
@@ -192,6 +220,92 @@ async function checkCodexDirectPolicy(root: string): Promise<DoctorCheck> {
   } catch (error) {
     return fail("codex-direct-policy", "codex_direct policy", errorMessage(error));
   }
+}
+
+async function checkModelProviderSelection(
+  cwd: string,
+  codexModelResolver?: DoctorRunsteadOptions["codexModelResolver"],
+  env?: NodeJS.ProcessEnv
+): Promise<{
+  check: DoctorCheck;
+  selection?: ResolvedModelProvider;
+}> {
+  try {
+    const selection = await resolveModelProvider({
+      cwd,
+      ...(env === undefined ? {} : { env })
+    });
+    let model = selection.model;
+    let modelSource: string | undefined = selection.modelSource;
+
+    if (model === undefined && selection.profile.apiMode === "codex_responses") {
+      const result = await (codexModelResolver ?? resolveCodexModel)({ cwd });
+
+      model = result.model;
+      modelSource = result.source;
+    }
+
+    if (model === undefined) {
+      return {
+        selection,
+        check: fail(
+          "model-provider",
+          "model provider",
+          `provider=${selection.provider}; no model selected; configure model.name or pass --model`
+        )
+      };
+    }
+
+    return {
+      selection,
+      check: pass(
+        "model-provider",
+        "model provider",
+        `provider=${selection.provider} model=${model} mode=${selection.profile.apiMode} source=${selection.providerSource}/${modelSource ?? "unknown"}`
+      )
+    };
+  } catch (error) {
+    return {
+      check: fail("model-provider", "model provider", errorMessage(error))
+    };
+  }
+}
+
+function checkModelProviderCredentials(
+  selection: ResolvedModelProvider,
+  env: NodeJS.ProcessEnv
+): DoctorCheck {
+  if (modelProviderApiKeyOptional(selection)) {
+    return pass(
+      "model-provider-auth",
+      `${selection.profile.displayName} credentials`,
+      "API key optional for local OpenAI-compatible endpoints"
+    );
+  }
+
+  const envNames =
+    selection.apiKeyEnv === undefined
+      ? selection.profile.envVars
+      : [selection.apiKeyEnv];
+  const configured = envNames.find((name) => {
+    const value = env[name]?.trim();
+
+    return value !== undefined && value.length > 0;
+  });
+
+  if (configured !== undefined) {
+    return pass(
+      "model-provider-auth",
+      `${selection.profile.displayName} credentials`,
+      `using ${configured}`
+    );
+  }
+
+  return fail(
+    "model-provider-auth",
+    `${selection.profile.displayName} credentials`,
+    `missing API key; set ${envNames.join(" or ")} or configure model.apiKeyEnv`
+  );
 }
 
 async function checkCodexDirectAuth(
@@ -283,18 +397,26 @@ function codexDirectWorkerAction() {
   };
 }
 
-function codexModelInferenceAction() {
+function codexModelInferenceAction(resourceId = "chatgpt_codex") {
   return {
     actionId: "doctor_codex_model_inference",
     actionType: "model.inference.request",
     resource: {
       type: "model_provider",
-      id: "chatgpt_codex"
+      id: resourceId
     },
     context: {
       sideEffects: ["network_write_external", "llm_data_egress"]
     }
   };
+}
+
+function modelProviderResourceId(selection: ResolvedModelProvider): string {
+  return selection.provider === "codex" ? "chatgpt_codex" : selection.provider;
+}
+
+function modelProviderApiKeyOptional(selection: ResolvedModelProvider): boolean {
+  return selection.provider === "custom" || selection.provider === "lmstudio";
 }
 
 async function checkReadableFile(
