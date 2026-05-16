@@ -644,7 +644,7 @@ async function runLocalAgentWorker(options: {
     });
   }
 
-  throw new Error(`Local agent task execution does not support ${options.worker}`);
+  throw new Error("Local agent task execution reached an unsupported worker");
 }
 
 export async function loadLocalAgentTaskReport(options: {
@@ -1745,9 +1745,7 @@ function wrappedWorkerModelSource(workerResult: WrappedWorkerRunResult): string 
     : "runstead_model_option";
 }
 
-function wrappedWorkerDefaultModelSource(
-  workerResult: WrappedWorkerRunResult
-): string {
+function wrappedWorkerDefaultModelSource(workerResult: WrappedWorkerRunResult): string {
   return workerResult.worker === "codex_cli"
     ? "codex_cli_config"
     : "claude_code_config";

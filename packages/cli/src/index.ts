@@ -171,9 +171,7 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
       }) => {
         const { doctorRunstead } = await import("./doctor.js");
         const worker =
-          options.worker === undefined
-            ? undefined
-            : parseDoctorWorker(options.worker);
+          options.worker === undefined ? undefined : parseDoctorWorker(options.worker);
         const result = await doctorRunstead({
           ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
           ...(options.codex === undefined ? {} : { codex: options.codex }),

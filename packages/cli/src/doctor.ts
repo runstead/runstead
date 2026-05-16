@@ -347,11 +347,7 @@ async function checkClaudeCodeBinary(
     const output = `${result.stdout}${result.stderr}`.trim();
 
     return result.exitCode === 0
-      ? pass(
-          "claude-code-binary",
-          "Claude Code CLI binary",
-          output || "claude found"
-        )
+      ? pass("claude-code-binary", "Claude Code CLI binary", output || "claude found")
       : fail(
           "claude-code-binary",
           "Claude Code CLI binary",
@@ -505,7 +501,11 @@ async function checkClaudeCodePrintProbe(options: {
         .join("; ")
     );
   } catch (error) {
-    return fail("claude-code-print", "Claude Code CLI print probe", errorMessage(error));
+    return fail(
+      "claude-code-print",
+      "Claude Code CLI print probe",
+      errorMessage(error)
+    );
   }
 }
 
