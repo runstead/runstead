@@ -97,6 +97,7 @@ rules:
           - git.diff.summary
           - repo.metadata.read
           - evidence.read
+          - workspace.facts.read
           - github.run.read
           - github.run.log.read
     decision: allow

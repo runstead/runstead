@@ -32,6 +32,7 @@ agent run / repair-ci / run --once / daemon
               -> verifier.run
               -> repo.metadata.read
               -> evidence.read
+              -> workspace.facts.read
               -> git.status
               -> git.diff
               -> git.log
@@ -87,6 +88,7 @@ The first tool set should stay small:
 - `git_show` -> `git.show`
 - `diff_summary` -> `git.diff.summary`
 - `read_evidence` -> `evidence.read`
+- `workspace_facts` -> `workspace.facts.read`
 
 If policy requires approval, the worker must stop with an approval-required
 result. It must not ask the model to work around the denied or pending action.

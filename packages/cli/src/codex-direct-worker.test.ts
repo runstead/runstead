@@ -130,7 +130,8 @@ describe("runCodexDirectWorker", () => {
           "git_log",
           "git_show",
           "diff_summary",
-          "read_evidence"
+          "read_evidence",
+          "workspace_facts"
         ]);
       } finally {
         database.close();
@@ -916,6 +917,86 @@ describe("runCodexDirectWorker", () => {
         expect(evidenceCall.output_json).toContain(evidence.evidence.id);
         expect(toolOutput).toContain("artifact ok");
         expect(toolOutput).toContain(evidence.evidence.id);
+      } finally {
+        database.close();
+      }
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("returns cached workspace facts from repo inspection evidence", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-codex-workspace-facts-"));
+
+    try {
+      await writeFile(
+        join(workspace, "package.json"),
+        JSON.stringify({
+          scripts: {
+            test: "node --test"
+          }
+        })
+      );
+      const initialized = await initRunstead({
+        cwd: workspace,
+        createDefaultGoal: true
+      });
+      const database = openRunsteadDatabase(initialized.stateDb);
+
+      try {
+        const task = listTasks({ cwd: workspace }).tasks[0];
+
+        if (task === undefined) {
+          throw new Error("Expected generated task");
+        }
+
+        const goal = showGoal({ cwd: workspace, id: task.goalId }).goal;
+        const transport = scriptedTransport([
+          {
+            outputText: "",
+            toolCalls: [
+              {
+                id: "call_workspace_facts",
+                name: "workspace_facts",
+                arguments: "{}"
+              }
+            ],
+            finishReason: "tool_calls",
+            outputItems: []
+          },
+          {
+            outputText: "Read workspace facts.",
+            toolCalls: [],
+            finishReason: "stop",
+            outputItems: []
+          }
+        ]);
+        const result = await runCodexDirectWorker({
+          cwd: workspace,
+          stateDb: initialized.stateDb,
+          database,
+          policy: allowDirectToolsPolicy,
+          goal,
+          task,
+          model: "fake-codex",
+          evidenceDir: join(initialized.root, "evidence"),
+          transport
+        });
+        const factsCall = database
+          .prepare("SELECT status, output_json FROM tool_calls WHERE action_type = ?")
+          .get("workspace.facts.read") as { status: string; output_json: string };
+        const toolOutput = JSON.stringify(transport.requests[1]?.input);
+
+        expect(result).toMatchObject({
+          status: "completed",
+          toolCalls: 1,
+          summary: "Read workspace facts."
+        });
+        expect(factsCall.status).toBe("completed");
+        expect(factsCall.output_json).toContain('"cached":true');
+        expect(toolOutput).toContain("repo_inspection");
+        expect(toolOutput).toContain('\\"cached\\":true');
+        expect(toolOutput).toContain("npm test");
       } finally {
         database.close();
       }
@@ -1713,7 +1794,8 @@ describe("runCodexDirectWorker", () => {
       "git_log",
       "git_show",
       "diff_summary",
-      "read_evidence"
+      "read_evidence",
+      "workspace_facts"
     ]);
   });
 });
@@ -1743,6 +1825,7 @@ const allowDirectToolsPolicy: PolicyProfile = {
           "git.show",
           "git.diff.summary",
           "evidence.read",
+          "workspace.facts.read",
           "model.inference.request"
         ]
       },

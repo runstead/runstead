@@ -19,6 +19,10 @@ import {
   type CommandVerifierInput
 } from "./verifier-evidence.js";
 import {
+  storeRepoInspectionEvidence,
+  type RepoInspectionSnapshot
+} from "./inspection-evidence.js";
+import {
   readGovernedWorkspaceFile,
   writeGovernedWorkspaceFile
 } from "./filesystem-proxy.js";
@@ -116,7 +120,8 @@ type CodexDirectToolName =
   | "git_log"
   | "git_show"
   | "diff_summary"
-  | "read_evidence";
+  | "read_evidence"
+  | "workspace_facts";
 
 interface CodexDirectToolCall {
   id: string;
@@ -776,6 +781,23 @@ export function codexDirectToolDefinitions(): CodexResponsesTool[] {
         },
         ["id"]
       )
+    },
+    {
+      type: "function",
+      name: "workspace_facts",
+      description:
+        "Return cached structured workspace facts, refreshing repo inspection evidence when requested.",
+      strict: false,
+      parameters: objectSchema(
+        {
+          refresh: {
+            type: "boolean",
+            description:
+              "Collect fresh workspace facts instead of using cached evidence."
+          }
+        },
+        []
+      )
     }
   ];
 }
@@ -975,7 +997,48 @@ async function executeCodexDirectTool(
           maxBytes: optionalPositiveInteger(options.toolCall.arguments.maxBytes)
         })
       );
+    case "workspace_facts":
+      return JSON.stringify(
+        await runGovernedWorkspaceFacts({
+          ...options,
+          refresh: options.toolCall.arguments.refresh === true
+        })
+      );
   }
+}
+
+async function runGovernedWorkspaceFacts(
+  options: CodexDirectWorkerOptions & {
+    workerRun: WorkerRun;
+    refresh: boolean;
+  }
+) {
+  return runGovernedToolAction({
+    ...governedToolOptions(options),
+    action: workspaceFactsReadAction({
+      cwd: options.cwd,
+      refresh: options.refresh
+    }),
+    run: async () => {
+      const value = await readWorkspaceFacts({
+        cwd: options.cwd,
+        evidenceDir: options.evidenceDir,
+        database: options.database,
+        refresh: options.refresh,
+        ...(options.now === undefined ? {} : { now: options.now })
+      });
+
+      return {
+        value,
+        output: {
+          cached: value.cached,
+          evidenceId: value.evidence.id,
+          gitDetected: value.facts.git.isGitRepo,
+          packageManager: value.facts.packageManager.packageManager ?? "none"
+        }
+      };
+    }
+  }).then((result) => result.value);
 }
 
 async function runGovernedReadEvidence(
@@ -1954,6 +2017,23 @@ function evidenceReadAction(input: {
   };
 }
 
+function workspaceFactsReadAction(input: {
+  cwd: string;
+  refresh: boolean;
+}): ActionEnvelope {
+  return {
+    actionId: stableActionId("workspace.facts.read", [input.cwd, input.refresh]),
+    actionType: "workspace.facts.read",
+    resource: {
+      type: "repository",
+      id: input.cwd
+    },
+    context: {
+      cwd: input.cwd
+    }
+  };
+}
+
 function modelInferenceAction(input: { task: Task; model: string }): ActionEnvelope {
   return {
     actionId: stableActionId("model_inference_request", [input.task.id, input.model]),
@@ -2215,6 +2295,131 @@ async function readEvidenceArtifact(input: {
       returnedBytes: Buffer.byteLength(returnedContent, "utf8"),
       truncated
     }
+  };
+}
+
+async function readWorkspaceFacts(input: {
+  cwd: string;
+  evidenceDir: string;
+  database: RunsteadDatabase;
+  refresh: boolean;
+  now?: Date;
+}): Promise<{
+  cached: boolean;
+  evidence: {
+    id: string;
+    type: string;
+    subjectType: string;
+    subjectId: string;
+    uri: string;
+    hash?: string;
+    summary?: string;
+    createdAt: string;
+  };
+  facts: RepoInspectionSnapshot;
+}> {
+  if (!input.refresh) {
+    const cached = await readLatestWorkspaceFacts(input.database);
+
+    if (cached !== undefined) {
+      return {
+        cached: true,
+        evidence: cached.evidence,
+        facts: cached.facts
+      };
+    }
+  }
+
+  const stored = await storeRepoInspectionEvidence({
+    cwd: input.cwd,
+    runsteadRoot: dirname(input.evidenceDir),
+    database: input.database,
+    ...(input.now === undefined ? {} : { now: input.now })
+  });
+
+  return {
+    cached: false,
+    evidence: {
+      id: stored.evidence.id,
+      type: stored.evidence.type,
+      subjectType: stored.evidence.subjectType,
+      subjectId: stored.evidence.subjectId,
+      uri: stored.evidence.uri,
+      ...(stored.evidence.hash === undefined ? {} : { hash: stored.evidence.hash }),
+      ...(stored.evidence.summary === undefined
+        ? {}
+        : { summary: stored.evidence.summary }),
+      createdAt: stored.evidence.createdAt
+    },
+    facts: stored.snapshot
+  };
+}
+
+async function readLatestWorkspaceFacts(database: RunsteadDatabase): Promise<
+  | {
+      evidence: {
+        id: string;
+        type: string;
+        subjectType: string;
+        subjectId: string;
+        uri: string;
+        hash?: string;
+        summary?: string;
+        createdAt: string;
+      };
+      facts: RepoInspectionSnapshot;
+    }
+  | undefined
+> {
+  const row = database
+    .prepare(
+      `
+      SELECT id, type, subject_type, subject_id, uri, hash, summary, created_at
+      FROM evidence
+      WHERE type = 'repo_inspection'
+      ORDER BY created_at DESC, id DESC
+      LIMIT 1
+    `
+    )
+    .get() as
+    | {
+        id: string;
+        type: string;
+        subject_type: string;
+        subject_id: string;
+        uri: string;
+        hash: string | null;
+        summary: string | null;
+        created_at: string;
+      }
+    | undefined;
+
+  if (row === undefined) {
+    return undefined;
+  }
+
+  const artifactPath = filePathFromEvidenceUri(row.uri);
+
+  if (artifactPath === undefined) {
+    return undefined;
+  }
+
+  const facts = JSON.parse(
+    await readFile(artifactPath, "utf8")
+  ) as RepoInspectionSnapshot;
+
+  return {
+    evidence: {
+      id: row.id,
+      type: row.type,
+      subjectType: row.subject_type,
+      subjectId: row.subject_id,
+      uri: row.uri,
+      ...(row.hash === null ? {} : { hash: row.hash }),
+      ...(row.summary === null ? {} : { summary: row.summary }),
+      createdAt: row.created_at
+    },
+    facts
   };
 }
 
@@ -2514,7 +2719,8 @@ function isCodexDirectToolName(value: string): value is CodexDirectToolName {
     "git_log",
     "git_show",
     "diff_summary",
-    "read_evidence"
+    "read_evidence",
+    "workspace_facts"
   ].includes(value);
 }
 
