@@ -9,6 +9,48 @@ export interface CreateProgramOptions {
   entrypoint?: string;
 }
 
+export class RunsteadCliError extends Error {
+  readonly hint: string | undefined;
+
+  constructor(message: string, hint?: string) {
+    super(message);
+    this.name = "Error";
+    this.hint = hint;
+  }
+}
+
+export function formatCliError(
+  error: unknown,
+  options: { debug?: boolean } = {}
+): string {
+  if (options.debug === true && error instanceof Error && error.stack !== undefined) {
+    return error.stack;
+  }
+
+  const message = error instanceof Error ? error.message : String(error);
+  const hint = error instanceof RunsteadCliError ? error.hint : undefined;
+
+  return [
+    `Error: ${message}`,
+    ...(hint === undefined ? [] : [`Hint: ${hint}`])
+  ].join("\n");
+}
+
+export async function runCli(argv = process.argv): Promise<void> {
+  try {
+    await createProgram({
+      ...(argv[1] === undefined ? {} : { entrypoint: argv[1] })
+    }).parseAsync(argv);
+  } catch (error) {
+    console.error(
+      formatCliError(error, {
+        debug: process.env.RUNSTEAD_DEBUG === "1"
+      })
+    );
+    process.exitCode = 1;
+  }
+}
+
 export function createProgram(options: CreateProgramOptions = {}): Command {
   const program = new Command();
 
@@ -3488,13 +3530,19 @@ export function parseRequiredPositiveInteger(
   optionName: string
 ): number {
   if (!/^[1-9]\d*$/.test(value)) {
-    throw new Error(`${optionName} must be a positive integer`);
+    throw new RunsteadCliError(
+      `${optionName} must be a positive integer`,
+      `use ${optionName} 8`
+    );
   }
 
   const parsed = Number(value);
 
   if (!Number.isSafeInteger(parsed)) {
-    throw new Error(`${optionName} must be a positive integer`);
+    throw new RunsteadCliError(
+      `${optionName} must be a positive integer`,
+      `use ${optionName} 8`
+    );
   }
 
   return parsed;
@@ -3660,7 +3708,5 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 const entrypoint = process.argv[1] ? pathToFileURL(process.argv[1]).href : undefined;
 
 if (entrypoint === import.meta.url) {
-  await createProgram({
-    ...(process.argv[1] === undefined ? {} : { entrypoint: process.argv[1] })
-  }).parseAsync(process.argv);
+  await runCli(process.argv);
 }

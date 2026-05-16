@@ -4,9 +4,11 @@ import { describe, expect, it } from "vitest";
 
 import {
   createProgram,
+  formatCliError,
   inferProgramName,
   parseRequiredPositiveInteger,
   requireVerifierCommandOptions,
+  RunsteadCliError,
   requireSecretPrintAcknowledgement,
   requireUnmanagedHelperAcknowledgement
 } from "./index.js";
@@ -540,6 +542,22 @@ describe("cli entrypoint", () => {
         parseRequiredPositiveInteger(value, "--max-tool-calls")
       ).toThrow("--max-tool-calls must be a positive integer");
     }
+  });
+
+  it("formats CLI errors without stack traces by default", () => {
+    const error = new RunsteadCliError(
+      "--max-tool-calls must be a positive integer",
+      "use --max-tool-calls 8"
+    );
+
+    expect(formatCliError(error)).toBe(
+      "Error: --max-tool-calls must be a positive integer\nHint: use --max-tool-calls 8"
+    );
+    expect(formatCliError(error)).not.toContain("at ");
+    expect(formatCliError(error, { debug: true })).toContain(
+      "--max-tool-calls must be a positive integer"
+    );
+    expect(formatCliError(new Error("plain failure"))).toBe("Error: plain failure");
   });
 
   it("labels ad-hoc side-effect helpers as unmanaged", () => {
