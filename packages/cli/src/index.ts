@@ -2501,6 +2501,11 @@ interface AgentRunCliOptions {
   actor: string;
 }
 
+interface AgentReportCliOptions {
+  cwd?: string;
+  actor: string;
+}
+
 function addCodexCommand(command: Command): void {
   command
     .command("login")
@@ -2681,6 +2686,30 @@ function addAgentCommand(command: Command): void {
       if (exitCode !== 0) {
         process.exitCode = exitCode;
       }
+    });
+
+  command
+    .command("report")
+    .description("Summarize a local agent task and its audit trail.")
+    .argument("<task-id>", "Local agent task id")
+    .option("--cwd <path>", "Workspace directory")
+    .option("--actor <id>", "RBAC subject for local agent reporting", "local-admin")
+    .action(async (taskId: string, options: AgentReportCliOptions) => {
+      await requireRbacPermission({
+        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+        actor: options.actor,
+        permission: "audit.read",
+        action: "read local agent reports"
+      });
+
+      const { formatLocalAgentTaskReport, loadLocalAgentTaskReport } =
+        await import("./local-agent.js");
+      const report = await loadLocalAgentTaskReport({
+        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+        taskId
+      });
+
+      console.log(formatLocalAgentTaskReport(report));
     });
 }
 

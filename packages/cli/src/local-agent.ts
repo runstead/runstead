@@ -33,7 +33,7 @@ import { loadPolicyProfileFromFile } from "./policy-loader.js";
 import type { ActionEnvelope, PolicyProfile } from "./policy.js";
 import { requireRunsteadRoot, requireRunsteadStateDb } from "./runstead-root.js";
 import { finishWorkerRun, startWorkerRun } from "./runtime-audit.js";
-import { claimTask } from "./tasks.js";
+import { claimTask, showTask } from "./tasks.js";
 import type { CommandVerifierInput } from "./verifier-evidence.js";
 
 export const LOCAL_AGENT_TASK_TYPE = "local_agent_task";
@@ -78,7 +78,34 @@ export interface RunLocalAgentTaskResult {
   workerResult?: CodexDirectWorkerResult;
   status: "completed" | "waiting_approval" | "blocked" | "failed";
   summary: string;
+  audit: LocalAgentAuditSummary;
   approval?: CodexDirectWorkerResult["approval"];
+}
+
+export interface LocalAgentAuditCount {
+  name: string;
+  status: string;
+  count: number;
+}
+
+export interface LocalAgentPolicyDecisionCount {
+  decision: string;
+  risk: string;
+  count: number;
+}
+
+export interface LocalAgentAuditSummary {
+  workerRuns: LocalAgentAuditCount[];
+  toolCalls: LocalAgentAuditCount[];
+  policyDecisions: LocalAgentPolicyDecisionCount[];
+  approvals: LocalAgentAuditCount[];
+}
+
+export interface LocalAgentTaskReport {
+  cwd: string;
+  task: Task;
+  goal: Goal;
+  audit: LocalAgentAuditSummary;
 }
 
 export async function createLocalAgentTask(
@@ -337,6 +364,7 @@ async function runLocalAgentTaskWithDatabase(options: {
       workerResult,
       status: workerResult.status,
       summary: workerResult.summary,
+      audit: summarizeLocalAgentAudit(options.database, finalTask.id),
       ...(workerResult.approval === undefined ? {} : { approval: workerResult.approval })
     };
   } catch (error) {
@@ -363,8 +391,36 @@ async function runLocalAgentTaskWithDatabase(options: {
       goal: options.goal,
       status: failure.resultStatus,
       summary: String(failure.output.summary),
+      audit: summarizeLocalAgentAudit(options.database, finalTask.id),
       ...(failure.approval === undefined ? {} : { approval: failure.approval })
     };
+  }
+}
+
+export async function loadLocalAgentTaskReport(options: {
+  cwd?: string;
+  taskId: string;
+}): Promise<LocalAgentTaskReport> {
+  const cwd = resolve(options.cwd ?? process.cwd());
+  const state = await requireRunsteadStateDb(cwd);
+  const task = showTask({ cwd, id: options.taskId }).task;
+
+  if (!isLocalAgentTask(task)) {
+    throw new Error(`Task ${options.taskId} is not a local agent task`);
+  }
+
+  const goal = showGoal({ cwd, id: task.goalId }).goal;
+  const database = openRunsteadDatabase(state.stateDb);
+
+  try {
+    return {
+      cwd,
+      task,
+      goal,
+      audit: summarizeLocalAgentAudit(database, task.id)
+    };
+  } finally {
+    database.close();
   }
 }
 
@@ -383,12 +439,27 @@ export function formatLocalAgentRunReport(result: RunLocalAgentTaskResult): stri
     ...(result.approval === undefined
       ? []
       : [`Approval: waiting ${result.approval.id}`]),
-    `Summary: ${result.summary}`
+    `Summary: ${result.summary}`,
+    ...formatLocalAgentAuditSummary(result.audit)
   ].join("\n");
 }
 
 export function localAgentRunExitCode(result: RunLocalAgentTaskResult): number {
   return result.status === "completed" ? 0 : 1;
+}
+
+export function formatLocalAgentTaskReport(report: LocalAgentTaskReport): string {
+  return [
+    "Runstead agent report",
+    `Task: ${report.task.id}`,
+    `Goal: ${report.goal.id} ${report.goal.title}`,
+    `Status: ${report.task.status}`,
+    `Worker: ${localAgentTaskWorker(report.task)}`,
+    `Mode: ${localAgentTaskMode(report.task)}`,
+    ...formatOptionalOutputLine(report.task, "Model", "model"),
+    ...formatOptionalOutputLine(report.task, "Summary", "summary"),
+    ...formatLocalAgentAuditSummary(report.audit)
+  ].join("\n");
 }
 
 function localAgentTaskInput(input: {
@@ -499,6 +570,137 @@ function localAgentWorkerOutput(workerResult: CodexDirectWorkerResult): JsonObje
     toolCalls: workerResult.toolCalls,
     summary: workerResult.summary
   };
+}
+
+function summarizeLocalAgentAudit(
+  database: RunsteadDatabase,
+  taskId: string
+): LocalAgentAuditSummary {
+  const workerRuns = readAuditCounts(
+    database,
+    `
+      SELECT worker_type AS name, status, COUNT(*) AS count
+      FROM worker_runs
+      WHERE task_id = ?
+      GROUP BY worker_type, status
+      ORDER BY worker_type, status
+    `,
+    taskId
+  );
+  const toolCalls = readAuditCounts(
+    database,
+    `
+      SELECT action_type AS name, status, COUNT(*) AS count
+      FROM tool_calls
+      WHERE task_id = ?
+      GROUP BY action_type, status
+      ORDER BY action_type, status
+    `,
+    taskId
+  );
+  const policyDecisions = readPolicyDecisionCounts(
+    database,
+    `
+      SELECT pd.decision, pd.risk, COUNT(*) AS count
+      FROM policy_decisions pd
+      JOIN tool_calls tc ON tc.policy_decision_id = pd.id
+      WHERE tc.task_id = ?
+      GROUP BY pd.decision, pd.risk
+      ORDER BY pd.decision, pd.risk
+    `,
+    taskId
+  );
+  const approvals = readAuditCounts(
+    database,
+    `
+      SELECT a.status AS name, a.risk AS status, COUNT(*) AS count
+      FROM approvals a
+      JOIN policy_decisions pd ON pd.id = a.policy_decision_id
+      JOIN tool_calls tc ON tc.policy_decision_id = pd.id
+      WHERE tc.task_id = ?
+      GROUP BY a.status, a.risk
+      ORDER BY a.status, a.risk
+    `,
+    taskId
+  );
+
+  return {
+    workerRuns,
+    toolCalls,
+    policyDecisions,
+    approvals
+  };
+}
+
+function readAuditCounts(
+  database: RunsteadDatabase,
+  sql: string,
+  taskId: string
+): LocalAgentAuditCount[] {
+  return (database.prepare(sql).all(taskId) as unknown[]).map((row) => {
+    const record = row as Record<string, unknown>;
+
+    return {
+      name: String(record.name),
+      status: String(record.status),
+      count: Number(record.count)
+    };
+  });
+}
+
+function readPolicyDecisionCounts(
+  database: RunsteadDatabase,
+  sql: string,
+  taskId: string
+): LocalAgentPolicyDecisionCount[] {
+  return (database.prepare(sql).all(taskId) as unknown[]).map((row) => {
+    const record = row as Record<string, unknown>;
+
+    return {
+      decision: String(record.decision),
+      risk: String(record.risk),
+      count: Number(record.count)
+    };
+  });
+}
+
+function formatLocalAgentAuditSummary(audit: LocalAgentAuditSummary): string[] {
+  return [
+    "Audit:",
+    ...formatAuditCountGroup("  worker_runs", audit.workerRuns),
+    ...formatAuditCountGroup("  tool_calls", audit.toolCalls),
+    ...formatPolicyDecisionCounts(audit.policyDecisions),
+    ...formatAuditCountGroup("  approvals", audit.approvals)
+  ];
+}
+
+function formatAuditCountGroup(
+  label: string,
+  rows: LocalAgentAuditCount[]
+): string[] {
+  return rows.length === 0
+    ? [`${label}: none`]
+    : rows.map((row) => `${label}: ${row.name} ${row.status} x${row.count}`);
+}
+
+function formatPolicyDecisionCounts(rows: LocalAgentPolicyDecisionCount[]): string[] {
+  return rows.length === 0
+    ? ["  policy_decisions: none"]
+    : rows.map(
+        (row) => `  policy_decisions: ${row.decision} ${row.risk} x${row.count}`
+      );
+}
+
+function formatOptionalOutputLine(
+  task: Task,
+  label: string,
+  key: string
+): string[] {
+  const value = task.output?.[key];
+
+  return typeof value === "string" && value.length > 0
+    ? [`${label}: ${value}`]
+    : [];
 }
 
 function localAgentFailureFromError(error: unknown): {

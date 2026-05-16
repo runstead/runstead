@@ -11,8 +11,10 @@ import { initRunstead } from "./init.js";
 import {
   createLocalAgentTask,
   formatLocalAgentRunReport,
+  formatLocalAgentTaskReport,
   isLocalAgentTask,
   LOCAL_AGENT_TASK_TYPE,
+  loadLocalAgentTaskReport,
   localAgentRunExitCode,
   runLocalAgentTask
 } from "./local-agent.js";
@@ -154,16 +156,19 @@ describe("local agent task primitives", () => {
             }
           ])
         );
-        expect(workerRuns).toEqual([
-          {
-            worker_type: "local_agent_orchestrator",
-            status: "completed"
-          },
-          {
-            worker_type: "codex_direct",
-            status: "completed"
-          }
-        ]);
+        expect(workerRuns).toHaveLength(2);
+        expect(workerRuns).toEqual(
+          expect.arrayContaining([
+            {
+              worker_type: "local_agent_orchestrator",
+              status: "completed"
+            },
+            {
+              worker_type: "codex_direct",
+              status: "completed"
+            }
+          ])
+        );
       } finally {
         database.close();
       }
@@ -177,6 +182,41 @@ describe("local agent task primitives", () => {
         model: "gpt-5.3-codex",
         toolCalls: 0
       });
+      expect(result.audit.workerRuns).toEqual(
+        expect.arrayContaining([
+          {
+            name: "codex_direct",
+            status: "completed",
+            count: 1
+          },
+          {
+            name: "local_agent_orchestrator",
+            status: "completed",
+            count: 1
+          }
+        ])
+      );
+      expect(result.audit.toolCalls).toEqual(
+        expect.arrayContaining([
+          {
+            name: "model.inference.request",
+            status: "completed",
+            count: 1
+          },
+          {
+            name: "worker.native.start",
+            status: "completed",
+            count: 1
+          }
+        ])
+      );
+      expect(result.audit.policyDecisions).toEqual([
+        {
+          decision: "allow",
+          risk: "medium",
+          count: 2
+        }
+      ]);
       expect(storedTask.status).toBe("completed");
       expect(storedTask.output).toMatchObject({
         summary: "Inspected package metadata; no immediate risks found.",
@@ -193,7 +233,21 @@ describe("local agent task primitives", () => {
           : ""
       ).toContain("Runstead local-agent mode:");
       expect(formatLocalAgentRunReport(result)).toContain("Runstead agent run");
+      expect(formatLocalAgentRunReport(result)).toContain(
+        "tool_calls: model.inference.request completed x1"
+      );
       expect(localAgentRunExitCode(result)).toBe(0);
+
+      const report = await loadLocalAgentTaskReport({
+        cwd: workspace,
+        taskId: created.task.id
+      });
+      expect(formatLocalAgentTaskReport(report)).toContain(
+        "Runstead agent report"
+      );
+      expect(formatLocalAgentTaskReport(report)).toContain(
+        "policy_decisions: allow medium x2"
+      );
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }

@@ -90,8 +90,11 @@ describe("cli entrypoint", () => {
       (command) => command.name() === "agent"
     );
     const run = agent?.commands.find((command) => command.name() === "run");
+    const report = agent?.commands.find((command) => command.name() === "report");
 
-    expect(agent?.commands.map((command) => command.name())).toContain("run");
+    expect(agent?.commands.map((command) => command.name())).toEqual(
+      expect.arrayContaining(["run", "report"])
+    );
     expect(run?.options.map((option) => option.long)).toEqual(
       expect.arrayContaining([
         "--worker",
@@ -103,6 +106,9 @@ describe("cli entrypoint", () => {
         "--max-turns",
         "--actor"
       ])
+    );
+    expect(report?.options.map((option) => option.long)).toEqual(
+      expect.arrayContaining(["--cwd", "--actor"])
     );
   });
 
