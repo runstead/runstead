@@ -469,6 +469,135 @@ describe("local agent task primitives", () => {
     }
   });
 
+  it("runs a claude_code read-only local agent task through the wrapped worker", async () => {
+    const workspace = await mkdtemp(
+      join(tmpdir(), "runstead-local-agent-claude-code-")
+    );
+    const workerCalls: {
+      command: string;
+      args: string[];
+      cwd: string;
+    }[] = [];
+
+    try {
+      await initRunstead({ cwd: workspace, profile: "trusted-local" });
+      const created = await createLocalAgentTask({
+        cwd: workspace,
+        prompt: "Inspect this repo and summarize package metadata.",
+        worker: "claude_code",
+        model: "sonnet",
+        mode: "read-only",
+        now: new Date("2026-05-16T08:00:00.000Z")
+      });
+      const result = await runLocalAgentTask({
+        cwd: workspace,
+        taskId: created.task.id,
+        workerRunner(command, args, options) {
+          workerCalls.push({
+            command,
+            args,
+            cwd: options.cwd
+          });
+
+          return Promise.resolve({
+            stdout: JSON.stringify({
+              summary: "Inspected package metadata through Claude Code CLI.",
+              files_changed: [],
+              commands_run: [],
+              risks: [],
+              needs_approval: false,
+              approval_reason: null
+            }),
+            stderr: "",
+            exitCode: 0
+          });
+        },
+        now: new Date("2026-05-16T08:01:00.000Z")
+      });
+      const storedTask = showTask({ cwd: workspace, id: created.task.id }).task;
+      const database = openRunsteadDatabase(created.stateDb);
+
+      try {
+        const toolCalls = database
+          .prepare("SELECT action_type, status FROM tool_calls ORDER BY started_at, id")
+          .all() as { action_type: string; status: string }[];
+
+        expect(toolCalls).toEqual([
+          {
+            action_type: "worker.external.start",
+            status: "completed"
+          }
+        ]);
+      } finally {
+        database.close();
+      }
+
+      expect(result.status).toBe("completed");
+      expect(result.summary).toBe(
+        "Inspected package metadata through Claude Code CLI."
+      );
+      expect(result.workerResult).toMatchObject({
+        worker: "claude_code",
+        command: "claude",
+        exitCode: 0,
+        outputValidation: {
+          valid: true
+        }
+      });
+      expect(workerCalls).toHaveLength(1);
+      expect(workerCalls[0]?.command).toBe("claude");
+      expect(workerCalls[0]?.args).toEqual([
+        "-p",
+        "--model",
+        "sonnet",
+        "--permission-mode",
+        "default",
+        "--disallowedTools",
+        expect.stringContaining("Bash(git push *)"),
+        expect.stringContaining("Runstead local-agent mode:")
+      ]);
+      expect(storedTask.status).toBe("completed");
+      expect(storedTask.output).toMatchObject({
+        summary: "Inspected package metadata through Claude Code CLI.",
+        worker: "claude_code",
+        model: "sonnet",
+        modelSource: "runstead_model_option",
+        status: "completed",
+        governance: {
+          boundary: "process_wrapper",
+          hardProxyToolCalls: false
+        },
+        outputValidation: {
+          valid: true
+        }
+      });
+      expect(formatLocalAgentRunReport(result)).toContain("Worker: claude_code");
+      expect(formatLocalAgentRunReport(result)).toContain("Command: claude");
+      expect(formatLocalAgentRunReport(result)).toContain(
+        "Tool proxy: none (worker-internal tool calls are not hard-proxied)"
+      );
+      expect(formatLocalAgentRunReport(result)).toContain(
+        "Model source: runstead_model_option"
+      );
+      expect(formatLocalAgentRunReport(result)).toContain("Output valid: yes");
+      expect(localAgentRunExitCode(result)).toBe(0);
+
+      const report = await loadLocalAgentTaskReport({
+        cwd: workspace,
+        taskId: created.task.id
+      });
+
+      expect(formatLocalAgentTaskReport(report)).toContain("Worker: claude_code");
+      expect(formatLocalAgentTaskReport(report)).toContain("Model: sonnet");
+      expect(formatLocalAgentTaskReport(report)).toContain("Worker runtime:");
+      expect(formatLocalAgentTaskReport(report)).toContain(
+        "hard-proxied tool calls: no"
+      );
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
   it("uses the configured Codex model when the task omits a model", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "runstead-local-agent-model-"));
     const requests: CodexResponsesRequest[] = [];

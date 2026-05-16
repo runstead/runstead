@@ -344,9 +344,13 @@ export async function runLocalAgentTask(
 
   const worker = localAgentTaskWorker(claimedTask);
 
-  if (worker !== CODEX_DIRECT_WORKER_KIND && worker !== "codex_cli") {
+  if (
+    worker !== CODEX_DIRECT_WORKER_KIND &&
+    worker !== "codex_cli" &&
+    worker !== "claude_code"
+  ) {
     throw new Error(
-      "Local agent task execution currently supports codex_direct or codex_cli"
+      "Local agent task execution currently supports codex_direct, codex_cli, or claude_code"
     );
   }
 
@@ -419,7 +423,7 @@ export async function runLocalAgentTask(
             modelProviderNetworkDomains: runtime.networkDomains
           }),
       ...(transport === undefined ? {} : { transport }),
-      ...(worker === "codex_cli" && explicitModel !== undefined
+      ...(worker !== CODEX_DIRECT_WORKER_KIND && explicitModel !== undefined
         ? { model: explicitModel }
         : {}),
       ...(options.workerRunner === undefined
@@ -618,7 +622,7 @@ async function runLocalAgentWorker(options: {
     });
   }
 
-  if (options.worker === "codex_cli") {
+  if (options.worker === "codex_cli" || options.worker === "claude_code") {
     return startWrappedWorker({
       worker: options.worker,
       goal: options.goal,

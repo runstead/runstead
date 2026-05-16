@@ -2878,7 +2878,7 @@ function addAgentCommand(command: Command): void {
     .option("--cwd <path>", "Workspace directory")
     .option(
       "--worker <worker>",
-      "Worker to run: codex_direct or codex_cli",
+      "Worker to run: codex_direct, codex_cli, or claude_code",
       "codex_direct"
     )
     .option("--provider <provider>", "Model provider to use with codex_direct")
@@ -2911,9 +2911,13 @@ function addAgentCommand(command: Command): void {
 
       const worker = parseCiRepairWorkerKind(options.worker);
 
-      if (worker !== "codex_direct" && worker !== "codex_cli") {
+      if (
+        worker !== "codex_direct" &&
+        worker !== "codex_cli" &&
+        worker !== "claude_code"
+      ) {
         throw new Error(
-          "agent run currently supports --worker codex_direct or codex_cli"
+          "agent run currently supports --worker codex_direct, codex_cli, or claude_code"
         );
       }
 
