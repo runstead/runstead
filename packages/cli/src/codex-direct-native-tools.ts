@@ -1,8 +1,19 @@
 import type { Dirent } from "node:fs";
-import { access, lstat, readFile, readdir } from "node:fs/promises";
+import {
+  access,
+  lstat,
+  mkdtemp,
+  readFile,
+  readdir,
+  rm,
+  writeFile
+} from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join, relative, resolve, sep } from "node:path";
 
 import { parse as parseYaml } from "yaml";
+
+import { runShellCommand } from "./shell-executor.js";
 
 const DEFAULT_IGNORED_DIRECTORIES = [".git", "node_modules", "dist", ".runstead"];
 const DEFAULT_LIST_FILES_MAX_RESULTS = 200;
@@ -182,6 +193,25 @@ export interface PackageScriptsInspectionResult {
   };
 }
 
+export interface ApplyWorkspacePatchReplacement {
+  path: string;
+  search: string;
+  replace: string;
+  replaceAll?: boolean;
+}
+
+export interface ApplyWorkspacePatchOptions {
+  patch?: string;
+  replacements?: ApplyWorkspacePatchReplacement[];
+}
+
+export interface ApplyWorkspacePatchResult {
+  mode: "unified_diff" | "replacements";
+  filesTouched: string[];
+  applied: boolean;
+  summary: string;
+}
+
 export async function listWorkspaceFiles(
   cwd: string,
   options: ListWorkspaceFilesOptions = {}
@@ -286,6 +316,27 @@ export async function inspectPackageScripts(
       turboTasks: [...turboTasks].sort()
     }
   };
+}
+
+export async function applyWorkspacePatch(
+  cwd: string,
+  options: ApplyWorkspacePatchOptions
+): Promise<ApplyWorkspacePatchResult> {
+  const root = resolve(cwd);
+
+  if (options.patch !== undefined && options.replacements !== undefined) {
+    throw new Error("apply_patch accepts either patch or replacements, not both");
+  }
+
+  if (options.patch !== undefined) {
+    return applyUnifiedDiff(root, options.patch);
+  }
+
+  if (options.replacements !== undefined) {
+    return applyStructuredReplacements(root, options.replacements);
+  }
+
+  throw new Error("apply_patch requires patch or replacements");
 }
 
 export async function inspectWorkspacePath(
@@ -726,6 +777,175 @@ async function isBinaryFile(path: string): Promise<boolean> {
   const sample = (await readFile(path)).subarray(0, BINARY_SAMPLE_BYTES);
 
   return sample.includes(0);
+}
+
+async function applyUnifiedDiff(
+  root: string,
+  patch: string
+): Promise<ApplyWorkspacePatchResult> {
+  const filesTouched = parseUnifiedDiffTouchedFiles(patch);
+
+  if (filesTouched.length === 0) {
+    throw new Error("Unified diff does not contain any workspace file paths");
+  }
+
+  for (const path of filesTouched) {
+    workspaceTarget(root, path, { allowRoot: false });
+  }
+
+  const tempDir = await mkdtemp(join(tmpdir(), "runstead-apply-patch-"));
+  const patchPath = join(tempDir, "change.patch");
+
+  try {
+    await writeFile(patchPath, patch, "utf8");
+    const check = await runShellCommand({
+      command: `git apply --check --whitespace=nowarn ${shellQuote(patchPath)}`,
+      cwd: root
+    });
+
+    if (check.exitCode !== 0) {
+      throw new Error(check.stderr || check.stdout || "git apply --check failed");
+    }
+
+    const applied = await runShellCommand({
+      command: `git apply --whitespace=nowarn ${shellQuote(patchPath)}`,
+      cwd: root
+    });
+
+    if (applied.exitCode !== 0) {
+      throw new Error(applied.stderr || applied.stdout || "git apply failed");
+    }
+
+    return {
+      mode: "unified_diff",
+      filesTouched,
+      applied: true,
+      summary: `Applied unified diff to ${filesTouched.length} file(s)`
+    };
+  } finally {
+    await rm(tempDir, { force: true, recursive: true });
+  }
+}
+
+async function applyStructuredReplacements(
+  root: string,
+  replacements: ApplyWorkspacePatchReplacement[]
+): Promise<ApplyWorkspacePatchResult> {
+  if (replacements.length === 0) {
+    throw new Error("apply_patch replacements must not be empty");
+  }
+
+  const filesTouched = uniqueStrings(
+    replacements.map(
+      (replacement) => workspaceTarget(root, replacement.path).relativePath
+    )
+  );
+
+  for (const replacement of replacements) {
+    if (replacement.search.length === 0) {
+      throw new Error(`Replacement search text must not be empty: ${replacement.path}`);
+    }
+
+    const target = workspaceTarget(root, replacement.path);
+    const original = await readFile(target.absolutePath, "utf8");
+    const occurrences = countOccurrences(original, replacement.search);
+
+    if (occurrences === 0) {
+      throw new Error(`Replacement search text not found: ${replacement.path}`);
+    }
+
+    if (occurrences > 1 && replacement.replaceAll !== true) {
+      throw new Error(
+        `Replacement search text is ambiguous in ${replacement.path}; set replaceAll to true`
+      );
+    }
+
+    const updated =
+      replacement.replaceAll === true
+        ? original.split(replacement.search).join(replacement.replace)
+        : original.replace(replacement.search, replacement.replace);
+
+    await writeFile(target.absolutePath, updated, "utf8");
+  }
+
+  return {
+    mode: "replacements",
+    filesTouched,
+    applied: true,
+    summary: `Applied ${replacements.length} structured replacement(s) to ${filesTouched.length} file(s)`
+  };
+}
+
+function parseUnifiedDiffTouchedFiles(patch: string): string[] {
+  const paths: string[] = [];
+
+  for (const line of patch.split(/\r?\n/)) {
+    if (line.startsWith("+++ ")) {
+      const path = normalizeDiffPath(line.slice(4).trim(), "b/");
+
+      if (path !== undefined) {
+        paths.push(path);
+      }
+    } else if (line.startsWith("--- ")) {
+      const path = normalizeDiffPath(line.slice(4).trim(), "a/");
+
+      if (path !== undefined) {
+        paths.push(path);
+      }
+    } else if (line.startsWith("diff --git ")) {
+      const parts = line.split(/\s+/);
+      const left = parts[2];
+      const right = parts[3];
+
+      for (const path of [left, right]) {
+        const normalized =
+          path?.startsWith("a/") === true
+            ? normalizeDiffPath(path, "a/")
+            : path?.startsWith("b/") === true
+              ? normalizeDiffPath(path, "b/")
+              : undefined;
+
+        if (normalized !== undefined) {
+          paths.push(normalized);
+        }
+      }
+    }
+  }
+
+  return uniqueStrings(paths);
+}
+
+function normalizeDiffPath(path: string, prefix: "a/" | "b/"): string | undefined {
+  if (path === "/dev/null") {
+    return undefined;
+  }
+
+  const unquoted = path.startsWith('"') ? unquoteGitPath(path) : path;
+  const withoutPrefix = unquoted.startsWith(prefix)
+    ? unquoted.slice(prefix.length)
+    : unquoted;
+
+  return normalizePath(withoutPrefix);
+}
+
+function unquoteGitPath(path: string): string {
+  try {
+    return JSON.parse(path) as string;
+  } catch {
+    return path;
+  }
+}
+
+function countOccurrences(value: string, search: string): number {
+  return value.split(search).length - 1;
+}
+
+function uniqueStrings(values: string[]): string[] {
+  return [...new Set(values)];
+}
+
+function shellQuote(value: string): string {
+  return `'${value.replaceAll("'", "'\\''")}'`;
 }
 
 async function readPackageJson(path: string): Promise<

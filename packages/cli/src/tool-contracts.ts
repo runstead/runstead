@@ -57,6 +57,14 @@ const TOOL_CONTRACTS: ToolContract[] = [
     policyRequired: true
   },
   {
+    actionType: "filesystem.patch",
+    tool: "filesystem",
+    resourceTypes: ["file", "directory"],
+    sideEffects: ["write_workspace"],
+    evidenceRequired: true,
+    policyRequired: true
+  },
+  {
     actionType: "git.status",
     tool: "git",
     resourceTypes: ["repository"],

@@ -740,6 +740,7 @@ function localAgentReportSections(report: LocalAgentTaskReport) {
       [
         "filesystem.read",
         "filesystem.write",
+        "filesystem.patch",
         "git.status",
         "git.diff",
         "shell.exec"
@@ -907,7 +908,7 @@ function localAgentModePromptRules(task: Task): string[] {
   }
 
   return [
-    "- Edit and repair modes may call write_file for scoped workspace changes.",
+    "- Edit and repair modes should prefer apply_patch for scoped workspace changes; use write_file only for generated whole-file contents.",
     "- Runstead creates the pre-edit checkpoint and runs configured verifiers after your model turn.",
     "- Avoid run_command unless the prompt explicitly requests command execution.",
     ...pathRules

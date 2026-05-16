@@ -15,6 +15,7 @@ import {
   writeGovernedWorkspaceFile
 } from "./filesystem-proxy.js";
 import {
+  applyWorkspacePatch,
   inspectWorkspacePath,
   inspectPackageScripts,
   listWorkspaceFiles,
@@ -98,6 +99,7 @@ type CodexDirectToolName =
   | "file_info"
   | "tree"
   | "package_scripts"
+  | "apply_patch"
   | "write_file"
   | "run_command"
   | "git_status"
@@ -539,6 +541,45 @@ export function codexDirectToolDefinitions(): CodexResponsesTool[] {
     },
     {
       type: "function",
+      name: "apply_patch",
+      description:
+        "Apply a unified diff or structured text replacements inside the workspace.",
+      strict: false,
+      parameters: objectSchema(
+        {
+          patch: {
+            type: "string",
+            description: "Unified diff to apply."
+          },
+          replacements: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                path: {
+                  type: "string"
+                },
+                search: {
+                  type: "string"
+                },
+                replace: {
+                  type: "string"
+                },
+                replaceAll: {
+                  type: "boolean"
+                }
+              },
+              required: ["path", "search", "replace"],
+              additionalProperties: false
+            },
+            description: "Structured search/replace edits to apply."
+          }
+        },
+        []
+      )
+    },
+    {
+      type: "function",
       name: "write_file",
       description: "Write a UTF-8 file inside the workspace.",
       strict: false,
@@ -715,6 +756,16 @@ async function executeCodexDirectTool(
           path: optionalString(options.toolCall.arguments.path) ?? "."
         })
       );
+    case "apply_patch":
+      return JSON.stringify(
+        await runGovernedApplyPatch({
+          ...options,
+          patch: optionalString(options.toolCall.arguments.patch),
+          replacements: optionalReplacementArray(
+            options.toolCall.arguments.replacements
+          )
+        })
+      );
     case "write_file":
       return JSON.stringify(
         await writeGovernedWorkspaceFile({
@@ -746,6 +797,47 @@ async function executeCodexDirectTool(
       return JSON.stringify(await runGovernedGitRead(options, command));
     }
   }
+}
+
+async function runGovernedApplyPatch(
+  options: CodexDirectWorkerOptions & {
+    workerRun: WorkerRun;
+    patch?: string;
+    replacements?: {
+      path: string;
+      search: string;
+      replace: string;
+      replaceAll?: boolean;
+    }[];
+  }
+) {
+  const filesTouched = codexDirectPatchFilesTouched(options);
+
+  return runGovernedToolAction({
+    ...governedToolOptions(options),
+    action: filesystemPatchAction({
+      cwd: options.cwd,
+      filesTouched,
+      stableParts: [options.cwd, options.patch, options.replacements ?? []]
+    }),
+    run: async () => {
+      const value = await applyWorkspacePatch(options.cwd, {
+        ...(options.patch === undefined ? {} : { patch: options.patch }),
+        ...(options.replacements === undefined
+          ? {}
+          : { replacements: options.replacements })
+      });
+
+      return {
+        value,
+        output: {
+          mode: value.mode,
+          filesTouched: value.filesTouched,
+          applied: value.applied
+        }
+      };
+    }
+  }).then((result) => result.value);
 }
 
 async function runGovernedPackageScripts(
@@ -1370,6 +1462,26 @@ function repositoryMetadataReadAction(input: {
   };
 }
 
+function filesystemPatchAction(input: {
+  cwd: string;
+  filesTouched: string[];
+  stableParts: unknown[];
+}): ActionEnvelope {
+  return {
+    actionId: stableActionId("filesystem.patch", input.stableParts),
+    actionType: "filesystem.patch",
+    resource: {
+      type: "file",
+      path: input.filesTouched[0] ?? "."
+    },
+    context: {
+      cwd: input.cwd,
+      filesTouched: input.filesTouched,
+      sideEffects: ["write_workspace"]
+    }
+  };
+}
+
 function modelInferenceAction(input: { task: Task; model: string }): ActionEnvelope {
   return {
     actionId: stableActionId("model_inference_request", [input.task.id, input.model]),
@@ -1484,6 +1596,82 @@ function requiredStringArray(value: unknown, field: string): string[] {
   return strings;
 }
 
+function optionalReplacementArray(value: unknown):
+  | {
+      path: string;
+      search: string;
+      replace: string;
+      replaceAll?: boolean;
+    }[]
+  | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (!Array.isArray(value)) {
+    throw new Error("Codex Direct tool argument replacements must be an array");
+  }
+
+  return value.map((item) => {
+    if (!isRecord(item)) {
+      throw new Error("Codex Direct replacement entries must be objects");
+    }
+
+    return {
+      path: requiredString(item.path, "path"),
+      search: requiredString(item.search, "search"),
+      replace:
+        typeof item.replace === "string"
+          ? item.replace
+          : requiredString(item.replace, "replace"),
+      ...(item.replaceAll === undefined ? {} : { replaceAll: item.replaceAll === true })
+    };
+  });
+}
+
+function codexDirectPatchFilesTouched(input: {
+  patch?: string;
+  replacements?: { path: string }[];
+}): string[] {
+  if (input.replacements !== undefined) {
+    return [...new Set(input.replacements.map((replacement) => replacement.path))];
+  }
+
+  if (input.patch !== undefined) {
+    return [...new Set(parseCodexDirectPatchPaths(input.patch))];
+  }
+
+  return [];
+}
+
+function parseCodexDirectPatchPaths(patch: string): string[] {
+  return patch
+    .split(/\r?\n/)
+    .flatMap((line) => {
+      if (line.startsWith("+++ ")) {
+        return [normalizeCodexDirectDiffPath(line.slice(4).trim(), "b/")];
+      }
+
+      if (line.startsWith("--- ")) {
+        return [normalizeCodexDirectDiffPath(line.slice(4).trim(), "a/")];
+      }
+
+      return [];
+    })
+    .filter((path): path is string => path !== undefined);
+}
+
+function normalizeCodexDirectDiffPath(
+  path: string,
+  prefix: "a/" | "b/"
+): string | undefined {
+  if (path === "/dev/null") {
+    return undefined;
+  }
+
+  return path.startsWith(prefix) ? path.slice(prefix.length) : path;
+}
+
 function optionalPositiveInteger(value: unknown): number | undefined {
   if (typeof value === "number" && Number.isInteger(value) && value > 0) {
     return value;
@@ -1551,6 +1739,7 @@ function isCodexDirectToolName(value: string): value is CodexDirectToolName {
     "file_info",
     "tree",
     "package_scripts",
+    "apply_patch",
     "write_file",
     "run_command",
     "git_status",

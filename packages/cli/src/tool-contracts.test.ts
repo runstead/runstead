@@ -18,6 +18,7 @@ describe("tool contract registry", () => {
         "filesystem.search",
         "filesystem.stat",
         "filesystem.write",
+        "filesystem.patch",
         "git.status",
         "git.diff",
         "git.branch.create",

@@ -72,6 +72,7 @@ The first tool set should stay small:
 - `file_info` -> `filesystem.stat`
 - `tree` -> `filesystem.list`
 - `package_scripts` -> `repo.metadata.read`
+- `apply_patch` -> `filesystem.patch`
 - `write_file` -> `filesystem.write`
 - `run_command` -> `shell.exec`
 - `git_status` -> `git.status`

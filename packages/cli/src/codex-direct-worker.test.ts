@@ -1,6 +1,8 @@
+import { execFile } from "node:child_process";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { promisify } from "node:util";
 
 import { openRunsteadDatabase } from "@runstead/state-sqlite";
 import { describe, expect, it } from "vitest";
@@ -16,6 +18,8 @@ import { showGoal } from "./goals.js";
 import { initRunstead } from "./init.js";
 import type { PolicyProfile } from "./policy.js";
 import { listTasks } from "./tasks.js";
+
+const execFileAsync = promisify(execFile);
 
 describe("runCodexDirectWorker", () => {
   it("executes model-requested tools through governed action audit", async () => {
@@ -116,6 +120,7 @@ describe("runCodexDirectWorker", () => {
           "file_info",
           "tree",
           "package_scripts",
+          "apply_patch",
           "write_file",
           "run_command",
           "git_status",
@@ -574,6 +579,166 @@ describe("runCodexDirectWorker", () => {
         expect(toolOutput).toContain('\\"command\\":\\"pnpm test\\"');
         expect(toolOutput).toContain('\\"command\\":\\"pnpm exec turbo run lint\\"');
         expect(toolOutput).toContain("packages/*");
+      } finally {
+        database.close();
+      }
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("applies structured patches through governed filesystem patch actions", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-codex-apply-patch-"));
+
+    try {
+      await mkdir(join(workspace, "src"), { recursive: true });
+      await writeFile(join(workspace, "src", "message.txt"), "before\n");
+      const initialized = await initRunstead({
+        cwd: workspace,
+        createDefaultGoal: true
+      });
+      const database = openRunsteadDatabase(initialized.stateDb);
+
+      try {
+        const task = listTasks({ cwd: workspace }).tasks[0];
+
+        if (task === undefined) {
+          throw new Error("Expected generated task");
+        }
+
+        const goal = showGoal({ cwd: workspace, id: task.goalId }).goal;
+        const transport = scriptedTransport([
+          {
+            outputText: "",
+            toolCalls: [
+              {
+                id: "call_apply_patch",
+                name: "apply_patch",
+                arguments: JSON.stringify({
+                  replacements: [
+                    {
+                      path: "src/message.txt",
+                      search: "before",
+                      replace: "after"
+                    }
+                  ]
+                })
+              }
+            ],
+            finishReason: "tool_calls",
+            outputItems: []
+          },
+          {
+            outputText: "Applied patch.",
+            toolCalls: [],
+            finishReason: "stop",
+            outputItems: []
+          }
+        ]);
+        const result = await runCodexDirectWorker({
+          cwd: workspace,
+          stateDb: initialized.stateDb,
+          database,
+          policy: allowDirectToolsPolicy,
+          goal,
+          task,
+          model: "fake-codex",
+          evidenceDir: join(initialized.root, "evidence"),
+          transport
+        });
+        const patchCall = database
+          .prepare("SELECT status, output_json FROM tool_calls WHERE action_type = ?")
+          .get("filesystem.patch") as { status: string; output_json: string };
+
+        expect(result).toMatchObject({
+          status: "completed",
+          toolCalls: 1,
+          summary: "Applied patch."
+        });
+        await expect(
+          readFile(join(workspace, "src", "message.txt"), "utf8")
+        ).resolves.toBe("after\n");
+        expect(patchCall.status).toBe("completed");
+        expect(patchCall.output_json).toContain("src/message.txt");
+      } finally {
+        database.close();
+      }
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("applies unified diffs through governed filesystem patch actions", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-codex-unified-patch-"));
+
+    try {
+      await execFileAsync("git", ["init"], { cwd: workspace });
+      await mkdir(join(workspace, "src"), { recursive: true });
+      await writeFile(join(workspace, "src", "message.txt"), "before\n");
+      const initialized = await initRunstead({
+        cwd: workspace,
+        createDefaultGoal: true
+      });
+      const database = openRunsteadDatabase(initialized.stateDb);
+
+      try {
+        const task = listTasks({ cwd: workspace }).tasks[0];
+
+        if (task === undefined) {
+          throw new Error("Expected generated task");
+        }
+
+        const goal = showGoal({ cwd: workspace, id: task.goalId }).goal;
+        const transport = scriptedTransport([
+          {
+            outputText: "",
+            toolCalls: [
+              {
+                id: "call_unified_patch",
+                name: "apply_patch",
+                arguments: JSON.stringify({
+                  patch: [
+                    "diff --git a/src/message.txt b/src/message.txt",
+                    "--- a/src/message.txt",
+                    "+++ b/src/message.txt",
+                    "@@ -1 +1 @@",
+                    "-before",
+                    "+after",
+                    ""
+                  ].join("\n")
+                })
+              }
+            ],
+            finishReason: "tool_calls",
+            outputItems: []
+          },
+          {
+            outputText: "Applied unified patch.",
+            toolCalls: [],
+            finishReason: "stop",
+            outputItems: []
+          }
+        ]);
+        const result = await runCodexDirectWorker({
+          cwd: workspace,
+          stateDb: initialized.stateDb,
+          database,
+          policy: allowDirectToolsPolicy,
+          goal,
+          task,
+          model: "fake-codex",
+          evidenceDir: join(initialized.root, "evidence"),
+          transport
+        });
+
+        expect(result).toMatchObject({
+          status: "completed",
+          toolCalls: 1,
+          summary: "Applied unified patch."
+        });
+        await expect(
+          readFile(join(workspace, "src", "message.txt"), "utf8")
+        ).resolves.toBe("after\n");
       } finally {
         database.close();
       }
@@ -1172,6 +1337,7 @@ describe("runCodexDirectWorker", () => {
       "file_info",
       "tree",
       "package_scripts",
+      "apply_patch",
       "write_file",
       "run_command",
       "git_status",
@@ -1195,6 +1361,7 @@ const allowDirectToolsPolicy: PolicyProfile = {
           "filesystem.search",
           "filesystem.stat",
           "filesystem.write",
+          "filesystem.patch",
           "repo.metadata.read",
           "shell.exec",
           "git.status",
