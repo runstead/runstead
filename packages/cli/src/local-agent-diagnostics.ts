@@ -1,9 +1,6 @@
 import type { JsonObject, Task } from "@runstead/core";
 
-import type {
-  CodexDirectBudgetSummary,
-  CodexDirectWorkerResult
-} from "./codex-direct-worker.js";
+import type { CodexDirectBudgetSummary } from "./codex-direct-worker.js";
 import type { RunTaskVerifierCommandResult } from "./verifier-runner.js";
 
 export interface LocalAgentDiagnostic {
@@ -17,8 +14,12 @@ export interface LocalAgentRunDiagnosticInput {
   status: string;
   summary: string;
   workerResult?:
-    | (Pick<CodexDirectWorkerResult, "failedToolCalls" | "warnings" | "budget"> &
-        Partial<Pick<CodexDirectWorkerResult, "status">>)
+    | {
+        failedToolCalls?: number;
+        warnings?: string[];
+        budget?: CodexDirectBudgetSummary;
+        status?: string;
+      }
     | undefined;
   verifierResults?: RunTaskVerifierCommandResult[] | undefined;
   approval?:

@@ -88,7 +88,10 @@ describe("local agent smoke fixtures", () => {
       });
 
       expect(result.status).toBe("completed");
-      expect(result.workerResult?.toolCalls).toBe(2);
+      expect(result.workerResult).toMatchObject({
+        worker: "codex_direct",
+        toolCalls: 2
+      });
       expect(result.summary).toContain("Python fixture");
     } finally {
       await rm(workspace, { force: true, recursive: true });
@@ -142,7 +145,10 @@ describe("local agent smoke fixtures", () => {
       });
 
       expect(result.status).toBe("completed");
-      expect(result.workerResult?.toolCalls).toBe(1);
+      expect(result.workerResult).toMatchObject({
+        worker: "codex_direct",
+        toolCalls: 1
+      });
       expect(result.summary).toContain("staged JS/TS fixture diff");
     } finally {
       await rm(workspace, { force: true, recursive: true });

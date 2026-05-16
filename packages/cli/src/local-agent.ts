@@ -40,7 +40,8 @@ import { showGoal } from "./goals.js";
 import {
   diagnoseLocalAgentRun,
   diagnoseLocalAgentTask,
-  formatLocalAgentDiagnostics
+  formatLocalAgentDiagnostics,
+  type LocalAgentRunDiagnosticInput
 } from "./local-agent-diagnostics.js";
 import { loadPolicyProfileFromFile } from "./policy-loader.js";
 import type { ActionEnvelope, PolicyProfile } from "./policy.js";
@@ -57,6 +58,11 @@ import {
   createModelProviderRuntime,
   resolveModelProviderModel
 } from "./model-provider-runtime.js";
+import {
+  startWrappedWorker,
+  type WorkerProcessRunner,
+  type WrappedWorkerRunResult
+} from "./wrapped-worker.js";
 
 export const LOCAL_AGENT_TASK_TYPE = "local_agent_task";
 
@@ -98,6 +104,7 @@ export interface RunLocalAgentTaskOptions {
   cwd?: string;
   taskId: string;
   transport?: CodexDirectTransport;
+  workerRunner?: WorkerProcessRunner;
   now?: Date;
 }
 
@@ -120,7 +127,7 @@ export interface RunLocalAgentTaskResult {
   cwd: string;
   task: Task;
   goal: Goal;
-  workerResult?: CodexDirectWorkerResult;
+  workerResult?: LocalAgentWorkerResult;
   status: "completed" | "waiting_approval" | "blocked" | "failed";
   summary: string;
   audit: LocalAgentAuditSummary;
@@ -128,6 +135,8 @@ export interface RunLocalAgentTaskResult {
   verifierResults?: RunTaskVerifierCommandResult[];
   approval?: CodexDirectWorkerResult["approval"];
 }
+
+export type LocalAgentWorkerResult = CodexDirectWorkerResult | WrappedWorkerRunResult;
 
 export interface LocalAgentAuditCount {
   name: string;
@@ -333,26 +342,32 @@ export async function runLocalAgentTask(
     throw new Error(`Task ${options.taskId} is not a local agent task`);
   }
 
-  if (localAgentTaskWorker(claimedTask) !== CODEX_DIRECT_WORKER_KIND) {
-    throw new Error("Local agent task execution currently supports codex_direct only");
+  const worker = localAgentTaskWorker(claimedTask);
+
+  if (worker !== CODEX_DIRECT_WORKER_KIND && worker !== "codex_cli") {
+    throw new Error("Local agent task execution currently supports codex_direct or codex_cli");
   }
 
   const explicitProvider = localAgentTaskProvider(claimedTask);
   const explicitModel = localAgentTaskModel(claimedTask);
   const explicitBaseUrl = localAgentTaskBaseUrl(claimedTask);
-  const providerOptions = {
-    cwd,
-    ...(explicitProvider === undefined ? {} : { explicitProvider }),
-    ...(explicitModel === undefined ? {} : { explicitModel }),
-    ...(explicitBaseUrl === undefined ? {} : { explicitBaseUrl })
-  };
   const runtime =
-    options.transport === undefined
-      ? await createModelProviderRuntime({
-          ...providerOptions,
-          ...(options.now === undefined ? {} : { now: options.now })
-        })
-      : await resolveModelProviderModel(providerOptions);
+    worker === CODEX_DIRECT_WORKER_KIND
+      ? options.transport === undefined
+        ? await createModelProviderRuntime({
+            cwd,
+            ...(explicitProvider === undefined ? {} : { explicitProvider }),
+            ...(explicitModel === undefined ? {} : { explicitModel }),
+            ...(explicitBaseUrl === undefined ? {} : { explicitBaseUrl }),
+            ...(options.now === undefined ? {} : { now: options.now })
+          })
+        : await resolveModelProviderModel({
+            cwd,
+            ...(explicitProvider === undefined ? {} : { explicitProvider }),
+            ...(explicitModel === undefined ? {} : { explicitModel }),
+            ...(explicitBaseUrl === undefined ? {} : { explicitBaseUrl })
+          })
+      : undefined;
 
   const startedAt = (options.now ?? new Date()).toISOString();
   const runningTask: Task = {
@@ -367,8 +382,10 @@ export async function runLocalAgentTask(
     join(root.root, "policies", "repo-maintenance.yaml")
   );
   const transport =
-    options.transport ??
-    (runtime as Awaited<ReturnType<typeof createModelProviderRuntime>>).transport;
+    worker === CODEX_DIRECT_WORKER_KIND
+      ? (options.transport ??
+        (runtime as Awaited<ReturnType<typeof createModelProviderRuntime>>).transport)
+      : undefined;
   const database = openRunsteadDatabase(state.stateDb);
 
   try {
@@ -391,10 +408,19 @@ export async function runLocalAgentTask(
       policy,
       goal,
       task: runningTask,
-      model: runtime.model,
-      modelProviderResourceId: runtime.modelProviderResourceId,
-      modelProviderNetworkDomains: runtime.networkDomains,
-      transport,
+      worker,
+      ...(runtime === undefined
+        ? {}
+        : {
+            model: runtime.model,
+            modelProviderResourceId: runtime.modelProviderResourceId,
+            modelProviderNetworkDomains: runtime.networkDomains
+          }),
+      ...(transport === undefined ? {} : { transport }),
+      ...(worker === "codex_cli" && explicitModel !== undefined
+        ? { model: explicitModel }
+        : {}),
+      ...(options.workerRunner === undefined ? {} : { workerRunner: options.workerRunner }),
       ...(options.now === undefined ? {} : { now: options.now })
     });
   } finally {
@@ -410,10 +436,12 @@ async function runLocalAgentTaskWithDatabase(options: {
   policy: PolicyProfile;
   goal: Goal;
   task: Task;
-  model: string;
-  modelProviderResourceId: string;
-  modelProviderNetworkDomains: string[];
-  transport: CodexDirectTransport;
+  worker: LocalAgentWorkerKind;
+  model?: string;
+  modelProviderResourceId?: string;
+  modelProviderNetworkDomains?: string[];
+  transport?: CodexDirectTransport;
+  workerRunner?: WorkerProcessRunner;
   now?: Date;
 }): Promise<RunLocalAgentTaskResult> {
   const orchestratorRun = startWorkerRun({
@@ -440,29 +468,14 @@ async function runLocalAgentTaskWithDatabase(options: {
       action: workerStartAction({
         task: options.task,
         cwd: options.cwd,
-        worker: CODEX_DIRECT_WORKER_KIND
+        worker: options.worker
       }),
       requestedBy: "runstead:local-agent",
       ...(options.now === undefined ? {} : { now: options.now }),
       run: async () => {
-        const maxTurns = localAgentTaskMaxTurns(options.task);
-        const value = await runCodexDirectWorker({
-          cwd: options.cwd,
-          stateDb: options.stateDb,
-          database: options.database,
-          policy: options.policy,
-          goal: options.goal,
-          task: options.task,
-          model: options.model,
-          modelProviderResourceId: options.modelProviderResourceId,
-          modelProviderNetworkDomains: options.modelProviderNetworkDomains,
-          evidenceDir: join(options.root, "evidence"),
-          transport: options.transport,
-          prompt: buildLocalAgentPrompt(options.task),
-          ...(maxTurns === undefined ? {} : { maxTurns }),
-          ...localAgentTaskToolBudget(options.task),
-          finalizeOnBudget: localAgentTaskFinalizeOnBudget(options.task),
-          ...(options.now === undefined ? {} : { now: options.now })
+        const value = await runLocalAgentWorker({
+          ...options,
+          ...(checkpoint === undefined ? {} : { checkpoint })
         });
 
         return {
@@ -473,7 +486,7 @@ async function runLocalAgentTaskWithDatabase(options: {
     });
     const workerResult = governed.value;
     const verifierResult =
-      workerResult.status === "completed"
+      localAgentWorkerCompleted(workerResult)
         ? await runLocalAgentVerifiersIfNeeded(options)
         : undefined;
     const finalStatus = localAgentFinalTaskStatus(workerResult, verifierResult);
@@ -517,7 +530,8 @@ async function runLocalAgentTaskWithDatabase(options: {
       ...(verifierResult === undefined
         ? {}
         : { verifierResults: verifierResult.commandResults }),
-      ...(workerResult.approval === undefined
+      ...(!isCodexDirectLocalAgentWorkerResult(workerResult) ||
+      workerResult.approval === undefined
         ? {}
         : { approval: workerResult.approval })
     };
@@ -550,6 +564,80 @@ async function runLocalAgentTaskWithDatabase(options: {
       ...(failure.approval === undefined ? {} : { approval: failure.approval })
     };
   }
+}
+
+async function runLocalAgentWorker(options: {
+  cwd: string;
+  root: string;
+  stateDb: string;
+  database: RunsteadDatabase;
+  policy: PolicyProfile;
+  goal: Goal;
+  task: Task;
+  worker: LocalAgentWorkerKind;
+  model?: string;
+  modelProviderResourceId?: string;
+  modelProviderNetworkDomains?: string[];
+  transport?: CodexDirectTransport;
+  workerRunner?: WorkerProcessRunner;
+  checkpoint?: WorkspaceCheckpoint;
+  now?: Date;
+}): Promise<LocalAgentWorkerResult> {
+  if (options.worker === CODEX_DIRECT_WORKER_KIND) {
+    const maxTurns = localAgentTaskMaxTurns(options.task);
+
+    if (
+      options.model === undefined ||
+      options.modelProviderResourceId === undefined ||
+      options.modelProviderNetworkDomains === undefined ||
+      options.transport === undefined
+    ) {
+      throw new Error("Codex Direct local agent runtime is incomplete");
+    }
+
+    return runCodexDirectWorker({
+      cwd: options.cwd,
+      stateDb: options.stateDb,
+      database: options.database,
+      policy: options.policy,
+      goal: options.goal,
+      task: options.task,
+      model: options.model,
+      modelProviderResourceId: options.modelProviderResourceId,
+      modelProviderNetworkDomains: options.modelProviderNetworkDomains,
+      evidenceDir: join(options.root, "evidence"),
+      transport: options.transport,
+      prompt: buildLocalAgentPrompt(options.task),
+      ...(maxTurns === undefined ? {} : { maxTurns }),
+      ...localAgentTaskToolBudget(options.task),
+      finalizeOnBudget: localAgentTaskFinalizeOnBudget(options.task),
+      ...(options.now === undefined ? {} : { now: options.now })
+    });
+  }
+
+  if (options.worker === "codex_cli") {
+    return startWrappedWorker({
+      worker: options.worker,
+      goal: options.goal,
+      task: options.task,
+      workspace: options.cwd,
+      evidenceDir: join(options.root, "evidence"),
+      allowedScope: localAgentAllowedScope(options.task),
+      deniedActions: localAgentDeniedActions(options.task),
+      verifierContract: verifierCommandsFromLocalAgentTask(options.task).map(
+        (command) => `${command.name}: ${command.command}`
+      ),
+      policySummary: "repo-maintenance policy enforced by Runstead local agent",
+      instructions: [buildLocalAgentPrompt(options.task)],
+      ...(options.model === undefined ? {} : { model: options.model }),
+      ...(options.checkpoint === undefined
+        ? {}
+        : { checkpointBefore: options.checkpoint }),
+      ...(options.workerRunner === undefined ? {} : { runner: options.workerRunner })
+    });
+  }
+
+  throw new Error(`Local agent task execution does not support ${options.worker}`);
 }
 
 export async function loadLocalAgentTaskReport(options: {
@@ -627,14 +715,13 @@ export function formatLocalAgentRunReport(result: RunLocalAgentTaskResult): stri
     `Status: ${result.status}`,
     ...(result.workerResult === undefined
       ? []
-      : [
-          `Worker: ${result.workerResult.worker}`,
-          `Provider: ${result.workerResult.modelProvider}`,
-          `Model: ${result.workerResult.model}`,
-          `Tool calls: ${result.workerResult.toolCalls}`,
-          `Failed tool calls: ${result.workerResult.failedToolCalls}`
-        ]),
-    ...formatLocalAgentWarnings(result.workerResult?.warnings),
+      : formatLocalAgentWorkerResultLines(result.workerResult)),
+    ...formatLocalAgentWarnings(
+      result.workerResult !== undefined &&
+        isCodexDirectLocalAgentWorkerResult(result.workerResult)
+        ? result.workerResult.warnings
+        : undefined
+    ),
     ...(result.checkpoint === undefined ? [] : [`Checkpoint: ${result.checkpoint.id}`]),
     ...(result.verifierResults === undefined
       ? []
@@ -648,7 +735,9 @@ export function formatLocalAgentRunReport(result: RunLocalAgentTaskResult): stri
     ...(result.approval === undefined
       ? []
       : [`Approval: waiting ${result.approval.id}`]),
-    ...formatLocalAgentDiagnostics(diagnoseLocalAgentRun(result)),
+    ...formatLocalAgentDiagnostics(
+      diagnoseLocalAgentRun(localAgentRunDiagnosticsInput(result))
+    ),
     `Summary: ${result.summary}`,
     ...formatLocalAgentAuditSummary(result.audit)
   ].join("\n");
@@ -668,6 +757,67 @@ export function formatLocalAgentUndoReport(result: UndoLocalAgentTaskResult): st
 
 export function localAgentRunExitCode(result: RunLocalAgentTaskResult): number {
   return result.status === "completed" ? 0 : 1;
+}
+
+function formatLocalAgentWorkerResultLines(
+  workerResult: LocalAgentWorkerResult
+): string[] {
+  if (isCodexDirectLocalAgentWorkerResult(workerResult)) {
+    return [
+      `Worker: ${workerResult.worker}`,
+      `Provider: ${workerResult.modelProvider}`,
+      `Model: ${workerResult.model}`,
+      `Tool calls: ${workerResult.toolCalls}`,
+      `Failed tool calls: ${workerResult.failedToolCalls}`
+    ];
+  }
+
+  return [
+    `Worker: ${workerResult.worker}`,
+    `Command: ${workerResult.command}`,
+    ...(wrappedWorkerModel(workerResult) === undefined
+      ? []
+      : [`Model: ${wrappedWorkerModel(workerResult)}`]),
+    `Exit: ${workerResult.exitCode}`,
+    `Output valid: ${workerResult.outputValidation.valid ? "yes" : "no"}`
+  ];
+}
+
+function localAgentRunDiagnosticsInput(
+  result: RunLocalAgentTaskResult
+): LocalAgentRunDiagnosticInput {
+  if (
+    result.workerResult === undefined ||
+    !isCodexDirectLocalAgentWorkerResult(result.workerResult)
+  ) {
+    return {
+      task: result.task,
+      status: result.status,
+      summary: result.summary,
+      ...(result.verifierResults === undefined
+        ? {}
+        : { verifierResults: result.verifierResults }),
+      ...(result.approval === undefined ? {} : { approval: result.approval })
+    };
+  }
+
+  return {
+    task: result.task,
+    status: result.status,
+    summary: result.summary,
+    workerResult: {
+      status: result.workerResult.status,
+      failedToolCalls: result.workerResult.failedToolCalls,
+      warnings: result.workerResult.warnings,
+      ...(result.workerResult.budget === undefined
+        ? {}
+        : { budget: result.workerResult.budget })
+    },
+    ...(result.verifierResults === undefined
+      ? {}
+      : { verifierResults: result.verifierResults }),
+    ...(result.approval === undefined ? {} : { approval: result.approval })
+  };
 }
 
 export function formatLocalAgentTaskReport(report: LocalAgentTaskReport): string {
@@ -941,6 +1091,32 @@ function localAgentModePromptRules(task: Task): string[] {
   ];
 }
 
+function localAgentAllowedScope(task: Task): string[] {
+  const allowedPaths = localAgentTaskStringArray(task, "allowedPaths");
+
+  if (allowedPaths.length > 0) {
+    return allowedPaths;
+  }
+
+  return localAgentTaskMode(task) === "read-only"
+    ? ["read-only workspace inspection"]
+    : ["repository working tree"];
+}
+
+function localAgentDeniedActions(task: Task): string[] {
+  const deniedPaths = localAgentTaskStringArray(task, "deniedPaths");
+  const denied = [
+    ...(localAgentTaskMode(task) === "read-only"
+      ? ["modify files", "run mutating commands"]
+      : []),
+    ...deniedPaths.map((path) => `modify ${path}`)
+  ];
+
+  return denied.length === 0
+    ? ["access secrets", "push or publish without approval"]
+    : denied;
+}
+
 async function createLocalAgentCheckpointIfNeeded(options: {
   cwd: string;
   root: string;
@@ -1015,11 +1191,19 @@ async function runLocalAgentVerifiersIfNeeded(options: {
 }
 
 function localAgentFinalTaskStatus(
-  workerResult: CodexDirectWorkerResult,
+  workerResult: LocalAgentWorkerResult,
   verifierResult?: RunTaskVerifiersResult
 ): Task["status"] {
-  if (workerResult.status !== "completed") {
-    return localAgentTaskStatus(workerResult.status);
+  if (isCodexDirectLocalAgentWorkerResult(workerResult)) {
+    if (workerResult.status !== "completed") {
+      return localAgentTaskStatus(workerResult.status);
+    }
+
+    return verifierResult?.task.status ?? "completed";
+  }
+
+  if (workerResult.exitCode !== 0) {
+    return "failed";
   }
 
   return verifierResult?.task.status ?? "completed";
@@ -1043,9 +1227,27 @@ function localAgentResultStatus(
 }
 
 function localAgentFinalSummary(
-  workerResult: CodexDirectWorkerResult,
+  workerResult: LocalAgentWorkerResult,
   verifierResult?: RunTaskVerifiersResult
 ): string {
+  if (!isCodexDirectLocalAgentWorkerResult(workerResult)) {
+    const summary =
+      workerResult.structuredOutput?.summary ??
+      (workerResult.stderr.length === 0
+        ? `Wrapped worker exited ${workerResult.exitCode}`
+        : workerResult.stderr.trim());
+
+    if (verifierResult === undefined) {
+      return summary;
+    }
+
+    const verifierSummary = verifierResult.task.output?.summary;
+
+    return typeof verifierSummary === "string" && verifierSummary.length > 0
+      ? `${summary} Verifiers: ${verifierSummary}`
+      : summary;
+  }
+
   if (verifierResult === undefined) {
     return workerResult.summary;
   }
@@ -1087,11 +1289,37 @@ function finalizeLocalAgentTask(input: {
 }
 
 function localAgentTaskOutput(input: {
-  workerResult: CodexDirectWorkerResult;
+  workerResult: LocalAgentWorkerResult;
   summary: string;
   checkpoint?: WorkspaceCheckpoint;
   verifierResult?: RunTaskVerifiersResult;
 }): JsonObject {
+  if (!isCodexDirectLocalAgentWorkerResult(input.workerResult)) {
+    return {
+      summary: input.summary,
+      worker: input.workerResult.worker,
+      status: input.workerResult.exitCode === 0 ? "completed" : "failed",
+      exitCode: input.workerResult.exitCode,
+      command: input.workerResult.command,
+      args: redactedLocalWrappedWorkerArgs(input.workerResult),
+      outputValidation: input.workerResult.outputValidation,
+      stdoutBytes: Buffer.byteLength(input.workerResult.stdout, "utf8"),
+      stderrBytes: Buffer.byteLength(input.workerResult.stderr, "utf8"),
+      stdoutOmitted: input.workerResult.stdout.length > 0,
+      stderrOmitted: input.workerResult.stderr.length > 0,
+      ...(wrappedWorkerModel(input.workerResult) === undefined
+        ? {}
+        : { model: wrappedWorkerModel(input.workerResult) }),
+      ...(input.checkpoint === undefined ? {} : { checkpointId: input.checkpoint.id }),
+      ...(input.verifierResult === undefined
+        ? {}
+        : {
+            verifiers: input.verifierResult.commandResults,
+            verifierStatus: input.verifierResult.task.status
+          })
+    };
+  }
+
   return {
     summary: input.summary,
     worker: input.workerResult.worker,
@@ -1122,11 +1350,37 @@ function localAgentTaskOutput(input: {
 }
 
 function localAgentWorkerOutput(input: {
-  workerResult: CodexDirectWorkerResult;
+  workerResult: LocalAgentWorkerResult;
   summary?: string;
   checkpoint?: WorkspaceCheckpoint;
   verifierResult?: RunTaskVerifiersResult;
 }): JsonObject {
+  if (!isCodexDirectLocalAgentWorkerResult(input.workerResult)) {
+    return {
+      worker: input.workerResult.worker,
+      command: input.workerResult.command,
+      args: redactedLocalWrappedWorkerArgs(input.workerResult),
+      status: input.workerResult.exitCode === 0 ? "completed" : "failed",
+      exitCode: input.workerResult.exitCode,
+      outputValidation: input.workerResult.outputValidation,
+      stdoutBytes: Buffer.byteLength(input.workerResult.stdout, "utf8"),
+      stderrBytes: Buffer.byteLength(input.workerResult.stderr, "utf8"),
+      stdoutOmitted: input.workerResult.stdout.length > 0,
+      stderrOmitted: input.workerResult.stderr.length > 0,
+      ...(input.summary === undefined ? {} : { summary: input.summary }),
+      ...(wrappedWorkerModel(input.workerResult) === undefined
+        ? {}
+        : { model: wrappedWorkerModel(input.workerResult) }),
+      ...(input.checkpoint === undefined ? {} : { checkpointId: input.checkpoint.id }),
+      ...(input.verifierResult === undefined
+        ? {}
+        : {
+            verifiers: input.verifierResult.commandResults,
+            verifierStatus: input.verifierResult.task.status
+          })
+    };
+  }
+
   return {
     worker: input.workerResult.worker,
     model: input.workerResult.model,
@@ -1386,14 +1640,47 @@ function localAgentTaskStatus(
   }
 }
 
+function isCodexDirectLocalAgentWorkerResult(
+  workerResult: LocalAgentWorkerResult
+): workerResult is CodexDirectWorkerResult {
+  return workerResult.worker === CODEX_DIRECT_WORKER_KIND;
+}
+
+function localAgentWorkerCompleted(workerResult: LocalAgentWorkerResult): boolean {
+  return isCodexDirectLocalAgentWorkerResult(workerResult)
+    ? workerResult.status === "completed"
+    : workerResult.exitCode === 0;
+}
+
+function redactedLocalWrappedWorkerArgs(workerResult: WrappedWorkerRunResult): string[] {
+  const omitted = "[omitted from Runstead durable state]";
+
+  return workerResult.args.map((arg) => (arg === workerResult.prompt ? omitted : arg));
+}
+
+function wrappedWorkerModel(workerResult: WrappedWorkerRunResult): string | undefined {
+  const modelFlagIndex = workerResult.args.indexOf("--model");
+  const model =
+    modelFlagIndex === -1 ? undefined : workerResult.args[modelFlagIndex + 1];
+
+  return typeof model === "string" && model.trim().length > 0
+    ? model.trim()
+    : undefined;
+}
+
 function workerStartAction(input: {
   task: Task;
   cwd: string;
   worker: LocalAgentWorkerKind;
 }): ActionEnvelope {
+  const nativeWorker = input.worker === CODEX_DIRECT_WORKER_KIND;
+
   return {
-    actionId: stableActionId("worker_native_start", [input.task.id, input.worker]),
-    actionType: "worker.native.start",
+    actionId: stableActionId(
+      nativeWorker ? "worker_native_start" : "worker_external_start",
+      [input.task.id, input.worker]
+    ),
+    actionType: nativeWorker ? "worker.native.start" : "worker.external.start",
     resource: {
       type: "process",
       id: input.worker
