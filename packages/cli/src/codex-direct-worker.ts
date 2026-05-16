@@ -474,7 +474,8 @@ async function executeCodexDirectTool(
       return JSON.stringify(await runGovernedGitRead(options, "git status --short"));
     case "git_diff": {
       const path = optionalString(options.toolCall.arguments.path);
-      const staged = options.toolCall.arguments.staged === true;
+      const requestedStaged = options.toolCall.arguments.staged === true;
+      const staged = taskGitDiffStaged(options.task) ?? requestedStaged;
       const command = gitDiffCommand({ path, staged });
 
       return JSON.stringify(await runGovernedGitRead(options, command));
@@ -878,6 +879,12 @@ function optionalTimeoutMs(value: unknown): { timeoutMs?: number } {
   const timeoutMs = optionalPositiveInteger(value);
 
   return timeoutMs === undefined ? {} : { timeoutMs };
+}
+
+function taskGitDiffStaged(task: Task): boolean | undefined {
+  const value = task.input.gitDiffStaged;
+
+  return typeof value === "boolean" ? value : undefined;
 }
 
 function gitDiffCommand(input: { path: string | undefined; staged: boolean }): string {

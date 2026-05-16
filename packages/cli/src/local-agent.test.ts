@@ -40,6 +40,7 @@ describe("local agent task primitives", () => {
         maxToolCalls: 8,
         maxFailedToolCalls: 3,
         finalizeOnBudget: true,
+        gitDiffStaged: true,
         verifierCommands: [
           {
             name: "test",
@@ -64,6 +65,7 @@ describe("local agent task primitives", () => {
           maxToolCalls: 8,
           maxFailedToolCalls: 3,
           finalizeOnBudget: true,
+          gitDiffStaged: true,
           commands: [
             {
               name: "test",

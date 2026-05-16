@@ -211,7 +211,7 @@ describe("runCodexDirectWorker", () => {
     }
   });
 
-  it("supports staged git diff tool calls", async () => {
+  it("enforces task-scoped staged git diff tool calls", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "runstead-codex-staged-diff-"));
 
     try {
@@ -228,6 +228,13 @@ describe("runCodexDirectWorker", () => {
           throw new Error("Expected generated task");
         }
 
+        const scopedTask = {
+          ...task,
+          input: {
+            ...task.input,
+            gitDiffStaged: true
+          }
+        };
         const goal = showGoal({ cwd: workspace, id: task.goalId }).goal;
         const result = await runCodexDirectWorker({
           cwd: workspace,
@@ -235,7 +242,7 @@ describe("runCodexDirectWorker", () => {
           database,
           policy: allowDirectToolsPolicy,
           goal,
-          task,
+          task: scopedTask,
           model: "fake-codex",
           evidenceDir: join(initialized.root, "evidence"),
           transport: scriptedTransport([
@@ -246,7 +253,7 @@ describe("runCodexDirectWorker", () => {
                   id: "call_staged_diff",
                   name: "git_diff",
                   arguments: JSON.stringify({
-                    staged: true,
+                    staged: false,
                     path: "src/index.ts"
                   })
                 }

@@ -2930,6 +2930,7 @@ function addAgentCommand(command: Command): void {
         ...(options.model === undefined ? {} : { model: options.model }),
         mode: resolvedPreset.preset.mode,
         checkpoint: resolvedPreset.preset.checkpoint,
+        gitDiffStaged: options.staged === true,
         ...(options.maxTurns === undefined
           ? { maxTurns: resolvedPreset.preset.maxTurns }
           : { maxTurns: parseRequiredInteger(options.maxTurns, "--max-turns") }),
