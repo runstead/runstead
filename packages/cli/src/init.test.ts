@@ -24,10 +24,7 @@ describe("initRunstead", () => {
       await rm(workspace, { force: true, recursive: true });
       const result = await initRunstead({ cwd: workspace });
       const config = await readFile(join(result.root, "config.yaml"), "utf8");
-      const runsteadGitignore = await readFile(
-        join(result.root, ".gitignore"),
-        "utf8"
-      );
+      const runsteadGitignore = await readFile(join(result.root, ".gitignore"), "utf8");
       const goalTemplate = await readFile(
         join(
           result.root,

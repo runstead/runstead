@@ -35,9 +35,7 @@ export interface DoctorRunsteadOptions {
   codexAuthStatus?: () => Promise<
     Pick<CodexAuthStatus, "loggedIn" | "accessTokenExpired" | "authPath">
   >;
-  codexModelResolver?: (options: {
-    cwd?: string;
-  }) => Promise<ResolveCodexModelResult>;
+  codexModelResolver?: (options: { cwd?: string }) => Promise<ResolveCodexModelResult>;
 }
 
 export async function doctorRunstead(
@@ -162,7 +160,11 @@ async function checkTrustedLocalCodexPolicy(root: string): Promise<DoctorCheck> 
       `worker rule ${workerDecision.ruleId ?? "default"}, model rule ${modelDecision.ruleId ?? "default"}`
     );
   } catch (error) {
-    return fail("trusted-local-policy", "trusted-local Codex policy", errorMessage(error));
+    return fail(
+      "trusted-local-policy",
+      "trusted-local Codex policy",
+      errorMessage(error)
+    );
   }
 }
 
@@ -262,7 +264,11 @@ async function checkRuntimeArtifactsIgnored(root: string): Promise<DoctorCheck> 
           `missing entries: ${missing.join(", ")}`
         );
   } catch (error) {
-    return fail("runtime-artifacts-ignore", "runtime artifacts ignore", errorMessage(error));
+    return fail(
+      "runtime-artifacts-ignore",
+      "runtime artifacts ignore",
+      errorMessage(error)
+    );
   }
 }
 

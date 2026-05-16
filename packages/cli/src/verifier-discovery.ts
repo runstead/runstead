@@ -55,7 +55,7 @@ async function detectPackageManager(
     return "pnpm";
   }
 
-  if ((await exists(join(cwd, "yarn.lock")))) {
+  if (await exists(join(cwd, "yarn.lock"))) {
     return "yarn";
   }
 
@@ -100,7 +100,9 @@ function turboCommand(
 
 async function readPackageJson(cwd: string): Promise<PackageJson | undefined> {
   try {
-    const raw = JSON.parse(await readFile(join(cwd, "package.json"), "utf8")) as unknown;
+    const raw = JSON.parse(
+      await readFile(join(cwd, "package.json"), "utf8")
+    ) as unknown;
 
     if (!isRecord(raw)) {
       return undefined;

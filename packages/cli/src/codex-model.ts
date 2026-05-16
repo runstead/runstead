@@ -128,11 +128,7 @@ function modelScore(model: Pick<CodexModel, "id">): number {
 function versionScore(value: string): number {
   const parts = value.match(/\d+/g)?.map((item) => Number(item)) ?? [];
 
-  return (
-    (parts[0] ?? 0) * 10_000 +
-    (parts[1] ?? 0) * 100 +
-    (parts[2] ?? 0)
-  );
+  return (parts[0] ?? 0) * 10_000 + (parts[1] ?? 0) * 100 + (parts[2] ?? 0);
 }
 
 function uniqueModels(
@@ -168,7 +164,9 @@ function normalizeModelId(value: string | undefined): string | undefined {
 
 function defaultModelResolutionError(cause?: unknown): string {
   const causeMessage =
-    cause instanceof Error && cause.message.length > 0 ? ` Last error: ${cause.message}` : "";
+    cause instanceof Error && cause.message.length > 0
+      ? ` Last error: ${cause.message}`
+      : "";
 
   return [
     "No Codex model selected.",

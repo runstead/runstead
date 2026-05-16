@@ -19,9 +19,11 @@ export interface RunsteadConfigSetResult {
 
 const SUPPORTED_CONFIG_KEYS = new Set(["codex.model"]);
 
-export async function loadRunsteadConfig(options: {
-  cwd?: string;
-} = {}): Promise<RunsteadConfigFile> {
+export async function loadRunsteadConfig(
+  options: {
+    cwd?: string;
+  } = {}
+): Promise<RunsteadConfigFile> {
   const resolved = await requireRunsteadRoot(options.cwd);
   const path = join(resolved.root, "config.yaml");
   const parsed = parseYaml(await readFile(path, "utf8")) as unknown;
@@ -74,13 +76,8 @@ export async function setRunsteadConfigValue(options: {
   };
 }
 
-export function formatRunsteadConfigSetResult(
-  result: RunsteadConfigSetResult
-): string {
-  return [
-    `Set ${result.key}: ${result.value}`,
-    `Config: ${result.path}`
-  ].join("\n");
+export function formatRunsteadConfigSetResult(result: RunsteadConfigSetResult): string {
+  return [`Set ${result.key}: ${result.value}`, `Config: ${result.path}`].join("\n");
 }
 
 function readConfigValue(config: Record<string, unknown>, key: string): unknown {

@@ -332,9 +332,7 @@ describe("local agent task primitives", () => {
           }
         ]
       });
-      expect(formatLocalAgentTaskReportMarkdown(report)).toContain(
-        "## Model Summary"
-      );
+      expect(formatLocalAgentTaskReportMarkdown(report)).toContain("## Model Summary");
       expect(formatLocalAgentTaskReportMarkdown(report)).toContain(
         "## Policy And Approval"
       );
@@ -529,7 +527,11 @@ describe("local agent task primitives", () => {
       };
 
       await mkdir(checkpoint.untrackedDir, { recursive: true });
-      await writeFile(checkpoint.metadataPath, `${JSON.stringify(checkpoint)}\n`, "utf8");
+      await writeFile(
+        checkpoint.metadataPath,
+        `${JSON.stringify(checkpoint)}\n`,
+        "utf8"
+      );
       await writeFile(checkpoint.statusPath, "", "utf8");
       await writeFile(checkpoint.patchPath, "", "utf8");
       const database = openRunsteadDatabase(initialized.stateDb);

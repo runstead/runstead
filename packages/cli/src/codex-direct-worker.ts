@@ -480,7 +480,9 @@ async function executeCodexDirectTool(
       const path = optionalString(options.toolCall.arguments.path);
       const requestedStaged = options.toolCall.arguments.staged === true;
       const staged = taskGitDiffStaged(options.task) ?? requestedStaged;
-      const base = taskGitDiffBase(options.task) ?? optionalString(options.toolCall.arguments.base);
+      const base =
+        taskGitDiffBase(options.task) ??
+        optionalString(options.toolCall.arguments.base);
       const command = gitDiffCommand({ path, staged, base });
 
       return JSON.stringify(await runGovernedGitRead(options, command));

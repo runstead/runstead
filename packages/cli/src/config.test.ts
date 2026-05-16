@@ -31,12 +31,11 @@ describe("runstead config", () => {
       expect(formatRunsteadConfigSetResult(result)).toContain(
         "Set codex.model: gpt-5.3-codex"
       );
-      expect(await readRunsteadConfigValue({ cwd: workspace, key: "codex.model" }))
-        .toBe("gpt-5.3-codex");
+      expect(
+        await readRunsteadConfigValue({ cwd: workspace, key: "codex.model" })
+      ).toBe("gpt-5.3-codex");
       expect(await readFile(result.path, "utf8")).toContain("codex:");
-      expect(await readFile(result.path, "utf8")).toContain(
-        "model: gpt-5.3-codex"
-      );
+      expect(await readFile(result.path, "utf8")).toContain("model: gpt-5.3-codex");
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }

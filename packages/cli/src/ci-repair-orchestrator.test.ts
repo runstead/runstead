@@ -543,9 +543,7 @@ describe("runCiRepairOrchestrator", () => {
         expect(firstCodexInput.content).toContain("Task preset: repair:ci");
         expect(firstCodexInput.content).toContain("Keep the CI repair patch tiny.");
         expect(firstCodexInput.content).toContain("Configured verifiers: test");
-        expect(firstCodexInput.content).toContain(
-          "Repair GitHub Actions run 123."
-        );
+        expect(firstCodexInput.content).toContain("Repair GitHub Actions run 123.");
         expect(await readFile(join(workspace, "src/fix.ts"), "utf8")).toBe(
           "export const fixed = true;\n"
         );

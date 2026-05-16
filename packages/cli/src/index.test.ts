@@ -636,9 +636,9 @@ describe("cli entrypoint", () => {
     expect(parseRequiredPositiveInteger("42", "--max-tool-calls")).toBe(42);
 
     for (const value of ["0", "-1", "1abc", "abc", "1.5"]) {
-      expect(() =>
-        parseRequiredPositiveInteger(value, "--max-tool-calls")
-      ).toThrow("--max-tool-calls must be a positive integer");
+      expect(() => parseRequiredPositiveInteger(value, "--max-tool-calls")).toThrow(
+        "--max-tool-calls must be a positive integer"
+      );
     }
   });
 

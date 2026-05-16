@@ -31,8 +31,7 @@ export interface ResolvedLocalAgentPreset {
   prompt: string;
 }
 
-export interface ResolvedConfiguredLocalAgentPreset
-  extends ResolvedLocalAgentPreset {
+export interface ResolvedConfiguredLocalAgentPreset extends ResolvedLocalAgentPreset {
   model?: string;
   verifierCommands?: CommandVerifierInput[];
 }
@@ -570,10 +569,7 @@ async function loadLocalAgentPresetOverrides(options: {
   );
 }
 
-function parsePresetOverride(
-  id: string,
-  value: unknown
-): LocalAgentPresetOverride {
+function parsePresetOverride(id: string, value: unknown): LocalAgentPresetOverride {
   if (!isRecord(value)) {
     throw new Error(`Agent preset override ${id} must be an object`);
   }
@@ -582,11 +578,7 @@ function parsePresetOverride(
     ...optionalString(value, "model"),
     ...optionalPositiveInteger(value, "maxTurns", "max_turns"),
     ...optionalPositiveInteger(value, "maxToolCalls", "max_tool_calls"),
-    ...optionalPositiveInteger(
-      value,
-      "maxFailedToolCalls",
-      "max_failed_tool_calls"
-    ),
+    ...optionalPositiveInteger(value, "maxFailedToolCalls", "max_failed_tool_calls"),
     ...optionalString(value, "promptFocus", "prompt_focus"),
     ...optionalVerifierCommands(value.verifier)
   };
@@ -622,9 +614,7 @@ function optionalPositiveInteger(
   return { [field]: value };
 }
 
-function optionalVerifierCommands(
-  value: unknown
-): Partial<LocalAgentPresetOverride> {
+function optionalVerifierCommands(value: unknown): Partial<LocalAgentPresetOverride> {
   if (value === undefined) {
     return {};
   }

@@ -308,26 +308,24 @@ function codexSessionHeaders(sessionId: string | undefined): Record<string, stri
 }
 
 function parseServerSentEvents(stream: string): unknown[] {
-  return stream
-    .split(/\r?\n\r?\n/)
-    .flatMap((block) => {
-      const data = block
-        .split(/\r?\n/)
-        .filter((line) => line.startsWith("data:"))
-        .map((line) => line.slice("data:".length).trimStart())
-        .join("\n")
-        .trim();
+  return stream.split(/\r?\n\r?\n/).flatMap((block) => {
+    const data = block
+      .split(/\r?\n/)
+      .filter((line) => line.startsWith("data:"))
+      .map((line) => line.slice("data:".length).trimStart())
+      .join("\n")
+      .trim();
 
-      if (data.length === 0 || data === "[DONE]") {
-        return [];
-      }
+    if (data.length === 0 || data === "[DONE]") {
+      return [];
+    }
 
-      try {
-        return [JSON.parse(data) as unknown];
-      } catch {
-        return [];
-      }
-    });
+    try {
+      return [JSON.parse(data) as unknown];
+    } catch {
+      return [];
+    }
+  });
 }
 
 function extractOutputText(content: unknown): string {

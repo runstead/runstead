@@ -32,10 +32,9 @@ export function formatCliError(
   const message = error instanceof Error ? error.message : String(error);
   const hint = error instanceof RunsteadCliError ? error.hint : undefined;
 
-  return [
-    `Error: ${message}`,
-    ...(hint === undefined ? [] : [`Hint: ${hint}`])
-  ].join("\n");
+  return [`Error: ${message}`, ...(hint === undefined ? [] : [`Hint: ${hint}`])].join(
+    "\n"
+  );
 }
 
 export async function runCli(argv = process.argv): Promise<void> {
@@ -2817,9 +2816,8 @@ function addAgentCommand(command: Command): void {
         localAgentRunExitCode,
         runLocalAgentTask
       } = await import("./local-agent.js");
-      const { resolveConfiguredLocalAgentPreset } = await import(
-        "./local-agent-presets.js"
-      );
+      const { resolveConfiguredLocalAgentPreset } =
+        await import("./local-agent-presets.js");
       const prompt = promptParts.join(" ").trim();
       let resolvedPreset =
         options.preset === undefined
@@ -2882,10 +2880,7 @@ function addAgentCommand(command: Command): void {
             ? {}
             : { maxTurns: resolvedPreset.preset.maxTurns }
           : {
-              maxTurns: parseRequiredPositiveInteger(
-                options.maxTurns,
-                "--max-turns"
-              )
+              maxTurns: parseRequiredPositiveInteger(options.maxTurns, "--max-turns")
             }),
         ...(options.maxToolCalls === undefined
           ? resolvedPreset === undefined
@@ -2896,7 +2891,7 @@ function addAgentCommand(command: Command): void {
                 options.maxToolCalls,
                 "--max-tool-calls"
               )
-        }),
+            }),
         ...(options.maxFailedToolCalls === undefined
           ? resolvedPreset === undefined
             ? {}
@@ -2966,9 +2961,8 @@ function addAgentCommand(command: Command): void {
         localAgentRunExitCode,
         runLocalAgentTask
       } = await import("./local-agent.js");
-      const { resolveConfiguredLocalAgentPreset } = await import(
-        "./local-agent-presets.js"
-      );
+      const { resolveConfiguredLocalAgentPreset } =
+        await import("./local-agent-presets.js");
       const focus = focusParts.join(" ").trim();
       const resolvedPreset = await resolveConfiguredLocalAgentPreset(
         localAgentInspectPresetId(options.depth),
@@ -2990,10 +2984,7 @@ function addAgentCommand(command: Command): void {
         ...(options.maxTurns === undefined
           ? { maxTurns: resolvedPreset.preset.maxTurns }
           : {
-              maxTurns: parseRequiredPositiveInteger(
-                options.maxTurns,
-                "--max-turns"
-              )
+              maxTurns: parseRequiredPositiveInteger(options.maxTurns, "--max-turns")
             }),
         ...(options.maxToolCalls === undefined
           ? { maxToolCalls: resolvedPreset.preset.maxToolCalls }
@@ -3063,9 +3054,8 @@ function addAgentCommand(command: Command): void {
         localAgentRunExitCode,
         runLocalAgentTask
       } = await import("./local-agent.js");
-      const { resolveConfiguredLocalAgentPreset } = await import(
-        "./local-agent-presets.js"
-      );
+      const { resolveConfiguredLocalAgentPreset } =
+        await import("./local-agent-presets.js");
       const focus = focusParts.join(" ").trim();
       const scope = localAgentReviewScope(options);
       const gitDiffBase =
@@ -3106,10 +3096,7 @@ function addAgentCommand(command: Command): void {
         ...(options.maxTurns === undefined
           ? { maxTurns: resolvedPreset.preset.maxTurns }
           : {
-              maxTurns: parseRequiredPositiveInteger(
-                options.maxTurns,
-                "--max-turns"
-              )
+              maxTurns: parseRequiredPositiveInteger(options.maxTurns, "--max-turns")
             }),
         ...(options.maxToolCalls === undefined
           ? { maxToolCalls: resolvedPreset.preset.maxToolCalls }
@@ -3190,9 +3177,8 @@ function addAgentCommand(command: Command): void {
         localAgentRunExitCode,
         runLocalAgentTask
       } = await import("./local-agent.js");
-      const { resolveConfiguredLocalAgentPreset } = await import(
-        "./local-agent-presets.js"
-      );
+      const { resolveConfiguredLocalAgentPreset } =
+        await import("./local-agent-presets.js");
       const focus = focusParts.join(" ").trim();
       let resolvedPreset = await resolveConfiguredLocalAgentPreset(
         "test:triage",
@@ -3241,10 +3227,7 @@ function addAgentCommand(command: Command): void {
         ...(options.maxTurns === undefined
           ? { maxTurns: resolvedPreset.preset.maxTurns }
           : {
-              maxTurns: parseRequiredPositiveInteger(
-                options.maxTurns,
-                "--max-turns"
-              )
+              maxTurns: parseRequiredPositiveInteger(options.maxTurns, "--max-turns")
             }),
         ...(options.maxToolCalls === undefined
           ? { maxToolCalls: resolvedPreset.preset.maxToolCalls }
@@ -3433,9 +3416,8 @@ function addAgentCommand(command: Command): void {
         action: "undo local agent tasks"
       });
 
-      const { formatLocalAgentUndoReport, undoLocalAgentTask } = await import(
-        "./local-agent.js"
-      );
+      const { formatLocalAgentUndoReport, undoLocalAgentTask } =
+        await import("./local-agent.js");
       const result = await undoLocalAgentTask({
         ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
         taskId,
@@ -3488,9 +3470,8 @@ async function runAgentFixLikeCommand(input: {
     localAgentRunExitCode,
     runLocalAgentTask
   } = await import("./local-agent.js");
-  const { resolveConfiguredLocalAgentPreset } = await import(
-    "./local-agent-presets.js"
-  );
+  const { resolveConfiguredLocalAgentPreset } =
+    await import("./local-agent-presets.js");
   let resolvedPreset = await resolveConfiguredLocalAgentPreset(
     input.presetId,
     {
@@ -3502,10 +3483,7 @@ async function runAgentFixLikeCommand(input: {
     }
   );
 
-  if (
-    verifierCommands.length === 0 &&
-    resolvedPreset.verifierCommands !== undefined
-  ) {
+  if (verifierCommands.length === 0 && resolvedPreset.verifierCommands !== undefined) {
     verifierCommands = resolvedPreset.verifierCommands;
     resolvedPreset = await resolveConfiguredLocalAgentPreset(
       input.presetId,
@@ -3540,10 +3518,7 @@ async function runAgentFixLikeCommand(input: {
     ...(input.options.maxTurns === undefined
       ? { maxTurns: resolvedPreset.preset.maxTurns }
       : {
-          maxTurns: parseRequiredPositiveInteger(
-            input.options.maxTurns,
-            "--max-turns"
-          )
+          maxTurns: parseRequiredPositiveInteger(input.options.maxTurns, "--max-turns")
         }),
     ...(input.options.maxToolCalls === undefined
       ? { maxToolCalls: resolvedPreset.preset.maxToolCalls }
@@ -3614,10 +3589,7 @@ async function runCiRepairOrchestrationFromCli(
   runId: string,
   options: CiRepairOrchestrationCliOptions
 ): Promise<void> {
-  const verifierCommands = requireVerifierCommandOptions(
-    options.verifier,
-    "repair-ci"
-  );
+  const verifierCommands = requireVerifierCommandOptions(options.verifier, "repair-ci");
 
   await requireRbacPermission({
     ...(options.cwd === undefined ? {} : { cwd: options.cwd }),

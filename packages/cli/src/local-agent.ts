@@ -659,7 +659,9 @@ export function formatLocalAgentTaskReport(report: LocalAgentTaskReport): string
     `Worker: ${localAgentTaskWorker(report.task)}`,
     `Mode: ${localAgentTaskMode(report.task)}`,
     ...(sections.model.model === undefined ? [] : [`Model: ${sections.model.model}`]),
-    ...(sections.checkpoint === undefined ? [] : [`Checkpoint: ${sections.checkpoint}`]),
+    ...(sections.checkpoint === undefined
+      ? []
+      : [`Checkpoint: ${sections.checkpoint}`]),
     ...formatOutputWarnings(report.task),
     ...formatLocalAgentDiagnostics(diagnoseLocalAgentTask(report.task)),
     ...(sections.model.summary === undefined
@@ -675,9 +677,7 @@ export function formatLocalAgentTaskReport(report: LocalAgentTaskReport): string
   ].join("\n");
 }
 
-export function formatLocalAgentTaskReportJson(
-  report: LocalAgentTaskReport
-): string {
+export function formatLocalAgentTaskReportJson(report: LocalAgentTaskReport): string {
   return `${JSON.stringify(localAgentReportSections(report), null, 2)}\n`;
 }
 
@@ -693,9 +693,7 @@ export function formatLocalAgentTaskReportMarkdown(
     `- Goal: ${report.goal.id} ${report.goal.title}`,
     `- Worker: ${localAgentTaskWorker(report.task)}`,
     `- Mode: ${localAgentTaskMode(report.task)}`,
-    ...(sections.model.model === undefined
-      ? []
-      : [`- Model: ${sections.model.model}`]),
+    ...(sections.model.model === undefined ? [] : [`- Model: ${sections.model.model}`]),
     ...(sections.checkpoint === undefined
       ? []
       : [`- Checkpoint: ${sections.checkpoint}`]),
@@ -1582,7 +1580,9 @@ function parseJsonObject(value: unknown): JsonObject {
   }
 }
 
-function toolCallResource(input: JsonObject): Pick<LocalAgentReportToolCall, "resource"> {
+function toolCallResource(
+  input: JsonObject
+): Pick<LocalAgentReportToolCall, "resource"> {
   const action = input.action;
 
   if (!isRecord(action) || !isRecord(action.resource)) {
