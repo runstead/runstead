@@ -200,6 +200,19 @@ describe("workerCommand", () => {
         "prompt"
       ]
     });
+    expect(workerCommand("claude_code", "prompt", { model: "sonnet" })).toEqual({
+      command: "claude",
+      args: [
+        "-p",
+        "--model",
+        "sonnet",
+        "--permission-mode",
+        "default",
+        "--disallowedTools",
+        expect.stringContaining("Bash(git push *)"),
+        "prompt"
+      ]
+    });
     expect(workerCommand("codex_cli", "prompt", { workspace: "/repo" })).toEqual({
       command: "codex",
       args: ["exec", "--sandbox", "workspace-write", "--cd", "/repo", "prompt"]

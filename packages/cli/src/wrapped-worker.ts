@@ -353,11 +353,14 @@ export function workerCommand(
   options: { workspace?: string; model?: string } = {}
 ): { command: string; args: string[] } {
   switch (worker) {
-    case "claude_code":
+    case "claude_code": {
+      const model = options.model?.trim();
+
       return {
         command: "claude",
         args: [
           "-p",
+          ...(model === undefined || model.length === 0 ? [] : ["--model", model]),
           "--permission-mode",
           "default",
           "--disallowedTools",
@@ -365,6 +368,7 @@ export function workerCommand(
           prompt
         ]
       };
+    }
     case "codex_cli": {
       const model = options.model?.trim();
 
