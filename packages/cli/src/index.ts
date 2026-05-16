@@ -27,6 +27,9 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
       .command("codex")
       .description("Manage experimental Codex Direct provider credentials.")
   );
+  addAgentCommand(
+    program.command("agent").description("Run local repo agent tasks.")
+  );
 
   program
     .command("init")
@@ -2486,6 +2489,18 @@ interface CodexModelsCliOptions extends CodexCliOptions {
   refresh?: boolean;
 }
 
+interface AgentRunCliOptions {
+  cwd?: string;
+  worker: string;
+  model?: string;
+  mode: string;
+  allowed: string[];
+  denied: string[];
+  verifier: string[];
+  maxTurns?: string;
+  actor: string;
+}
+
 function addCodexCommand(command: Command): void {
   command
     .command("login")
@@ -2609,6 +2624,66 @@ function addCodexCommand(command: Command): void {
     });
 }
 
+function addAgentCommand(command: Command): void {
+  command
+    .command("run")
+    .description("Run a governed local agent task against the current workspace.")
+    .argument("<prompt...>", "Task prompt for the local agent")
+    .option("--cwd <path>", "Workspace directory")
+    .option("--worker <worker>", "Worker to run: codex_direct", "codex_direct")
+    .option("--model <model>", "Model to use with codex_direct")
+    .option("--mode <mode>", "Agent mode: read-only, edit, or repair", "read-only")
+    .option("--allowed <pattern>", "Allowed workspace path pattern", collectValues, [])
+    .option("--denied <pattern>", "Denied workspace path pattern", collectValues, [])
+    .option("--verifier <name=command>", "Verifier command for edit/repair tasks", collectValues, [])
+    .option("--max-turns <number>", "Maximum Codex Direct tool turns")
+    .option("--actor <id>", "RBAC subject for local agent execution", "local-admin")
+    .action(async (promptParts: string[], options: AgentRunCliOptions) => {
+      await requireRbacPermission({
+        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+        actor: options.actor,
+        permission: "task.run",
+        action: "run local agent tasks"
+      });
+
+      const worker = parseCiRepairWorkerKind(options.worker);
+
+      if (worker !== "codex_direct") {
+        throw new Error("agent run currently supports --worker codex_direct only");
+      }
+
+      const {
+        createLocalAgentTask,
+        formatLocalAgentRunReport,
+        localAgentRunExitCode,
+        runLocalAgentTask
+      } = await import("./local-agent.js");
+      const created = await createLocalAgentTask({
+        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+        prompt: promptParts.join(" "),
+        worker,
+        ...(options.model === undefined ? {} : { model: options.model }),
+        mode: parseLocalAgentMode(options.mode),
+        allowedPaths: options.allowed,
+        deniedPaths: options.denied,
+        verifierCommands: options.verifier.map(parseVerifierCommandOption),
+        ...(options.maxTurns === undefined
+          ? {}
+          : { maxTurns: parseRequiredInteger(options.maxTurns, "--max-turns") })
+      });
+      const result = await runLocalAgentTask({
+        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+        taskId: created.task.id
+      });
+      const exitCode = localAgentRunExitCode(result);
+
+      console.log(formatLocalAgentRunReport(result));
+      if (exitCode !== 0) {
+        process.exitCode = exitCode;
+      }
+    });
+}
+
 function addCiRepairOrchestrationCommand(command: Command): void {
   command
     .argument("<run-id>", "GitHub Actions workflow run id")
@@ -2693,6 +2768,14 @@ function parseCiRepairWorkerKind(
   }
 
   throw new Error("--worker must be codex_cli, claude_code, or codex_direct");
+}
+
+function parseLocalAgentMode(value: string): "read-only" | "edit" | "repair" {
+  if (value === "read-only" || value === "edit" || value === "repair") {
+    return value;
+  }
+
+  throw new Error("--mode must be read-only, edit, or repair");
 }
 
 function parseVerifierCommandOption(value: string): { name: string; command: string } {

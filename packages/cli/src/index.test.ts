@@ -85,6 +85,27 @@ describe("cli entrypoint", () => {
     ).toContain("--refresh");
   });
 
+  it("exposes local agent run command", () => {
+    const agent = createProgram().commands.find(
+      (command) => command.name() === "agent"
+    );
+    const run = agent?.commands.find((command) => command.name() === "run");
+
+    expect(agent?.commands.map((command) => command.name())).toContain("run");
+    expect(run?.options.map((option) => option.long)).toEqual(
+      expect.arrayContaining([
+        "--worker",
+        "--model",
+        "--mode",
+        "--allowed",
+        "--denied",
+        "--verifier",
+        "--max-turns",
+        "--actor"
+      ])
+    );
+  });
+
   it("exposes RBAC actor selection on domain registry commands", () => {
     const domain = createProgram().commands.find(
       (command) => command.name() === "domain"
