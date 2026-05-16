@@ -245,7 +245,8 @@ export async function runLocalAgentTask(
   const runningTask: Task = {
     ...claimedTask,
     status: "running",
-    attempt: claimedTask.attempt + 1,
+    attempt:
+      claimedTask.attempt + (localAgentShouldIncrementAttempt(claimedTask) ? 1 : 0),
     updatedAt: startedAt
   };
   const goal = showGoal({ cwd, id: runningTask.goalId }).goal;
@@ -1062,6 +1063,12 @@ function localAgentTaskMode(task: Task): LocalAgentMode {
 
 function localAgentTaskNeedsCheckpoint(task: Task): boolean {
   return localAgentTaskMode(task) !== "read-only" && task.input.checkpoint !== false;
+}
+
+function localAgentShouldIncrementAttempt(task: Task): boolean {
+  const approval = task.output?.approval;
+
+  return !isRecord(approval) || approval.status !== "approved";
 }
 
 function localAgentTaskModel(task: Task): string | undefined {

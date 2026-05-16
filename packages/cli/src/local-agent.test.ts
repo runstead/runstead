@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { openRunsteadDatabase } from "@runstead/state-sqlite";
 import { describe, expect, it } from "vitest";
 
+import { decideApproval } from "./approvals.js";
 import type { CodexDirectTransport } from "./codex-direct-worker.js";
 import type { CodexResponsesRequest } from "./codex-responses-transport.js";
 import { initRunstead } from "./init.js";
@@ -363,6 +364,72 @@ describe("local agent task primitives", () => {
       await rm(workspace, { force: true, recursive: true });
     }
   });
+
+  it("resumes approved edit-mode tool calls without consuming another task attempt", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-local-agent-resume-"));
+    const verifierCommand = nodeCommand("process.exit(0)");
+
+    try {
+      await initRunstead({ cwd: workspace, profile: "trusted-local" });
+      await allowLocalAgentVerifierForTest(workspace, verifierCommand);
+      const created = await createLocalAgentTask({
+        cwd: workspace,
+        prompt: "Update the README.",
+        worker: "codex_direct",
+        model: "gpt-5.3-codex",
+        mode: "edit",
+        verifierCommands: [
+          {
+            name: "test",
+            command: verifierCommand
+          }
+        ]
+      });
+      const waiting = await runLocalAgentTask({
+        cwd: workspace,
+        taskId: created.task.id,
+        transport: editReadmeTransport()
+      });
+
+      expect(waiting.status).toBe("waiting_approval");
+      expect(waiting.approval?.id).toMatch(/^appr_/);
+      expect(waiting.task.attempt).toBe(1);
+
+      if (waiting.approval === undefined) {
+        throw new Error("Expected local agent edit task to request approval");
+      }
+
+      await decideApproval({
+        cwd: workspace,
+        id: waiting.approval.id,
+        decision: "approved",
+        decidedBy: "local-admin"
+      });
+
+      const resumed = await runLocalAgentTask({
+        cwd: workspace,
+        taskId: created.task.id,
+        transport: editReadmeTransport()
+      });
+
+      expect(resumed.status).toBe("completed");
+      expect(resumed.task.attempt).toBe(1);
+      expect(await readFile(join(workspace, "README.md"), "utf8")).toBe(
+        "# Edited by Runstead\n"
+      );
+      expect(resumed.audit.toolCalls).toEqual(
+        expect.arrayContaining([
+          {
+            name: "filesystem.write",
+            status: "completed",
+            count: 1
+          }
+        ])
+      );
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
 });
 
 function nodeCommand(script: string): string {
@@ -379,6 +446,25 @@ async function allowLocalAgentEditPolicyForTest(
     "          - checkpoint.restore\n",
     "          - checkpoint.restore\n          - filesystem.write\n"
   );
+
+  await writeFile(
+    policyPath,
+    addVerifierPolicyRule(writeAllowed, verifierCommand),
+    "utf8"
+  );
+}
+
+async function allowLocalAgentVerifierForTest(
+  workspace: string,
+  verifierCommand: string
+): Promise<void> {
+  const policyPath = join(workspace, ".runstead", "policies", "repo-maintenance.yaml");
+  const raw = await readFile(policyPath, "utf8");
+
+  await writeFile(policyPath, addVerifierPolicyRule(raw, verifierCommand), "utf8");
+}
+
+function addVerifierPolicyRule(policyYaml: string, verifierCommand: string): string {
   const verifierPattern = JSON.stringify(`^${escapeRegex(verifierCommand)}$`);
   const verifierRule = `  - id: allow_local_agent_edit_test_verifier
     when:
@@ -391,11 +477,47 @@ async function allowLocalAgentEditPolicyForTest(
 
 `;
 
-  await writeFile(
-    policyPath,
-    writeAllowed.replace("rules:\n", `rules:\n\n${verifierRule}`),
-    "utf8"
-  );
+  return policyYaml.replace("rules:\n", `rules:\n\n${verifierRule}`);
+}
+
+function editReadmeTransport(): CodexDirectTransport {
+  let requests = 0;
+
+  return {
+    createResponse() {
+      requests += 1;
+
+      if (requests === 1) {
+        return Promise.resolve({
+          id: "resp_local_agent_resume_1",
+          status: "completed",
+          outputText: "",
+          toolCalls: [
+            {
+              id: "call_write_readme",
+              name: "write_file",
+              arguments: JSON.stringify({
+                path: "README.md",
+                content: "# Edited by Runstead\n",
+                createDirs: false
+              })
+            }
+          ],
+          finishReason: "tool_calls",
+          outputItems: []
+        });
+      }
+
+      return Promise.resolve({
+        id: "resp_local_agent_resume_2",
+        status: "completed",
+        outputText: "Updated README.",
+        toolCalls: [],
+        finishReason: "stop",
+        outputItems: []
+      });
+    }
+  };
 }
 
 function escapeRegex(value: string): string {

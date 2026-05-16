@@ -91,9 +91,10 @@ describe("cli entrypoint", () => {
     );
     const run = agent?.commands.find((command) => command.name() === "run");
     const report = agent?.commands.find((command) => command.name() === "report");
+    const resume = agent?.commands.find((command) => command.name() === "resume");
 
     expect(agent?.commands.map((command) => command.name())).toEqual(
-      expect.arrayContaining(["run", "report"])
+      expect.arrayContaining(["run", "report", "resume"])
     );
     expect(run?.options.map((option) => option.long)).toEqual(
       expect.arrayContaining([
@@ -108,6 +109,9 @@ describe("cli entrypoint", () => {
       ])
     );
     expect(report?.options.map((option) => option.long)).toEqual(
+      expect.arrayContaining(["--cwd", "--actor"])
+    );
+    expect(resume?.options.map((option) => option.long)).toEqual(
       expect.arrayContaining(["--cwd", "--actor"])
     );
   });

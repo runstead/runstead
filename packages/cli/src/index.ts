@@ -2711,6 +2711,34 @@ function addAgentCommand(command: Command): void {
 
       console.log(formatLocalAgentTaskReport(report));
     });
+
+  command
+    .command("resume")
+    .description("Resume a queued local agent task after an approval decision.")
+    .argument("<task-id>", "Local agent task id")
+    .option("--cwd <path>", "Workspace directory")
+    .option("--actor <id>", "RBAC subject for local agent execution", "local-admin")
+    .action(async (taskId: string, options: AgentReportCliOptions) => {
+      await requireRbacPermission({
+        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+        actor: options.actor,
+        permission: "task.run",
+        action: "resume local agent tasks"
+      });
+
+      const { formatLocalAgentRunReport, localAgentRunExitCode, runLocalAgentTask } =
+        await import("./local-agent.js");
+      const result = await runLocalAgentTask({
+        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+        taskId
+      });
+      const exitCode = localAgentRunExitCode(result);
+
+      console.log(formatLocalAgentRunReport(result));
+      if (exitCode !== 0) {
+        process.exitCode = exitCode;
+      }
+    });
 }
 
 function addCiRepairOrchestrationCommand(command: Command): void {
