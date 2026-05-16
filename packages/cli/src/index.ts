@@ -155,7 +155,8 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     .command("doctor")
     .description("Check local Runstead state and scaffold health.")
     .option("--cwd <path>", "Workspace directory")
-    .action(async (options: { cwd?: string }) => {
+    .option("--codex", "Check Codex Direct local-agent readiness")
+    .action(async (options: { cwd?: string; codex?: boolean }) => {
       const { doctorRunstead } = await import("./doctor.js");
       const result = await doctorRunstead(options);
 

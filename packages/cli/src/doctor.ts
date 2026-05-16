@@ -7,7 +7,10 @@ import {
   verifyDomainPackManifest
 } from "@runstead/domain-packs";
 
+import { getCodexAuthStatus, type CodexAuthStatus } from "./codex-auth.js";
+import { resolveCodexModel, type ResolveCodexModelResult } from "./codex-model.js";
 import { loadPolicyProfileFromFile } from "./policy-loader.js";
+import { evaluatePolicy } from "./policy.js";
 import { resolveRunsteadRoot } from "./runstead-root.js";
 import { missingRequiredStateTables } from "./state-schema.js";
 
@@ -28,6 +31,13 @@ export interface DoctorResult {
 
 export interface DoctorRunsteadOptions {
   cwd?: string;
+  codex?: boolean;
+  codexAuthStatus?: () => Promise<
+    Pick<CodexAuthStatus, "loggedIn" | "accessTokenExpired" | "authPath">
+  >;
+  codexModelResolver?: (options: {
+    cwd?: string;
+  }) => Promise<ResolveCodexModelResult>;
 }
 
 export async function doctorRunstead(
@@ -85,10 +95,199 @@ export async function doctorRunstead(
   );
   checks.push(await checkStateDatabase(join(root, "state.db")));
 
+  if (options.codex === true) {
+    checks.push(checkRunsteadInitialized(resolvedRoot));
+    checks.push(await checkTrustedLocalCodexPolicy(root));
+    checks.push(await checkCodexDirectPolicy(root));
+    checks.push(await checkCodexDirectAuth(options.codexAuthStatus));
+    checks.push(await checkCodexDefaultModel(cwd, options.codexModelResolver));
+    checks.push(await checkRuntimeArtifactsIgnored(root));
+  }
+
   return {
     ok: checks.every((check) => check.status === "pass"),
     root,
     checks
+  };
+}
+
+function checkRunsteadInitialized(resolvedRoot: {
+  root: string;
+  source: "runstead" | "team" | "missing";
+}): DoctorCheck {
+  if (resolvedRoot.source === "runstead") {
+    return pass("runstead-initialized", ".runstead initialization", resolvedRoot.root);
+  }
+
+  if (resolvedRoot.source === "team") {
+    return fail(
+      "runstead-initialized",
+      ".runstead initialization",
+      "legacy .team state found; migrate to .runstead before using Codex Direct"
+    );
+  }
+
+  return fail(
+    "runstead-initialized",
+    ".runstead initialization",
+    `Runstead is not initialized at ${resolvedRoot.root}`
+  );
+}
+
+async function checkTrustedLocalCodexPolicy(root: string): Promise<DoctorCheck> {
+  try {
+    const policy = await loadPolicyProfileFromFile(
+      join(root, "policies", "repo-maintenance.yaml")
+    );
+    const workerDecision = evaluatePolicy({
+      policy,
+      action: codexDirectWorkerAction()
+    });
+    const modelDecision = evaluatePolicy({
+      policy,
+      action: codexModelInferenceAction()
+    });
+
+    if (workerDecision.decision !== "allow" || modelDecision.decision !== "allow") {
+      return fail(
+        "trusted-local-policy",
+        "trusted-local Codex policy",
+        `worker=${workerDecision.decision} model=${modelDecision.decision}; use init --profile trusted-local or update policy`
+      );
+    }
+
+    return pass(
+      "trusted-local-policy",
+      "trusted-local Codex policy",
+      `worker rule ${workerDecision.ruleId ?? "default"}, model rule ${modelDecision.ruleId ?? "default"}`
+    );
+  } catch (error) {
+    return fail("trusted-local-policy", "trusted-local Codex policy", errorMessage(error));
+  }
+}
+
+async function checkCodexDirectPolicy(root: string): Promise<DoctorCheck> {
+  try {
+    const policy = await loadPolicyProfileFromFile(
+      join(root, "policies", "repo-maintenance.yaml")
+    );
+    const decision = evaluatePolicy({
+      policy,
+      action: codexDirectWorkerAction()
+    });
+
+    return decision.decision === "allow"
+      ? pass(
+          "codex-direct-policy",
+          "codex_direct policy",
+          decision.ruleId ?? "default allow"
+        )
+      : fail(
+          "codex-direct-policy",
+          "codex_direct policy",
+          `decision=${decision.decision}; Codex Direct requires allow`
+        );
+  } catch (error) {
+    return fail("codex-direct-policy", "codex_direct policy", errorMessage(error));
+  }
+}
+
+async function checkCodexDirectAuth(
+  authStatus?: DoctorRunsteadOptions["codexAuthStatus"]
+): Promise<DoctorCheck> {
+  try {
+    const status = await (authStatus ?? (() => getCodexAuthStatus()))();
+
+    if (!status.loggedIn) {
+      return fail(
+        "codex-auth",
+        "Codex Direct login",
+        `not logged in; run runstead codex login (auth store: ${status.authPath})`
+      );
+    }
+
+    if (status.accessTokenExpired === true) {
+      return fail(
+        "codex-auth",
+        "Codex Direct login",
+        "access token expired; run runstead codex login"
+      );
+    }
+
+    return pass("codex-auth", "Codex Direct login", "logged in");
+  } catch (error) {
+    return fail("codex-auth", "Codex Direct login", errorMessage(error));
+  }
+}
+
+async function checkCodexDefaultModel(
+  cwd: string,
+  resolver?: DoctorRunsteadOptions["codexModelResolver"]
+): Promise<DoctorCheck> {
+  try {
+    const result = await (resolver ?? resolveCodexModel)({ cwd });
+
+    return pass(
+      "codex-default-model",
+      "Codex default model",
+      `${result.model} (${result.source})`
+    );
+  } catch (error) {
+    return fail("codex-default-model", "Codex default model", errorMessage(error));
+  }
+}
+
+async function checkRuntimeArtifactsIgnored(root: string): Promise<DoctorCheck> {
+  const path = join(root, ".gitignore");
+  const required = [
+    "state.db",
+    "state.db-*",
+    "evidence/",
+    "logs/",
+    "checkpoints/",
+    "daemon/",
+    "reports/",
+    "manager.lock"
+  ];
+
+  try {
+    const lines = new Set((await readFile(path, "utf8")).split(/\r?\n/));
+    const missing = required.filter((entry) => !lines.has(entry));
+
+    return missing.length === 0
+      ? pass("runtime-artifacts-ignore", "runtime artifacts ignore", path)
+      : fail(
+          "runtime-artifacts-ignore",
+          "runtime artifacts ignore",
+          `missing entries: ${missing.join(", ")}`
+        );
+  } catch (error) {
+    return fail("runtime-artifacts-ignore", "runtime artifacts ignore", errorMessage(error));
+  }
+}
+
+function codexDirectWorkerAction() {
+  return {
+    actionId: "doctor_codex_direct_worker",
+    actionType: "worker.native.start",
+    resource: {
+      type: "native_worker",
+      id: "codex_direct"
+    }
+  };
+}
+
+function codexModelInferenceAction() {
+  return {
+    actionId: "doctor_codex_model_inference",
+    actionType: "model.inference.request",
+    resource: {
+      type: "model_provider",
+      id: "chatgpt_codex"
+    },
+    context: {
+      sideEffects: ["network_write_external", "llm_data_egress"]
+    }
   };
 }
 

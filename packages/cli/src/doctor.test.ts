@@ -272,4 +272,84 @@ describe("doctorRunstead", () => {
       await rm(workspace, { force: true, recursive: true });
     }
   });
+
+  it("adds Codex Direct readiness checks for trusted local workspaces", async () => {
+    const workspace = join(tmpdir(), `runstead-doctor-codex-${process.pid}`);
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await mkdir(workspace, { recursive: true });
+      await initRunstead({ cwd: workspace, profile: "trusted-local" });
+
+      const result = await doctorRunstead({
+        cwd: workspace,
+        codex: true,
+        codexAuthStatus: () =>
+          Promise.resolve({
+            loggedIn: true,
+            accessTokenExpired: false,
+            authPath: "/tmp/runstead-auth.json"
+          }),
+        codexModelResolver: () =>
+          Promise.resolve({
+            model: "configured-codex",
+            source: "config"
+          })
+      });
+
+      expect(result.ok).toBe(true);
+      expect(result.checks.map((check) => check.id)).toEqual(
+        expect.arrayContaining([
+          "runstead-initialized",
+          "trusted-local-policy",
+          "codex-direct-policy",
+          "codex-auth",
+          "codex-default-model",
+          "runtime-artifacts-ignore"
+        ])
+      );
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("fails Codex readiness when the policy is not trusted local", async () => {
+    const workspace = join(tmpdir(), `runstead-doctor-codex-policy-${process.pid}`);
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await mkdir(workspace, { recursive: true });
+      await initRunstead({ cwd: workspace });
+
+      const result = await doctorRunstead({
+        cwd: workspace,
+        codex: true,
+        codexAuthStatus: () =>
+          Promise.resolve({
+            loggedIn: true,
+            accessTokenExpired: false,
+            authPath: "/tmp/runstead-auth.json"
+          }),
+        codexModelResolver: () =>
+          Promise.resolve({
+            model: "configured-codex",
+            source: "config"
+          })
+      });
+
+      expect(result.ok).toBe(false);
+      expect(
+        result.checks.find((check) => check.id === "trusted-local-policy")
+      ).toMatchObject({
+        status: "fail"
+      });
+      expect(
+        result.checks.find((check) => check.id === "codex-direct-policy")
+      ).toMatchObject({
+        status: "fail"
+      });
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
 });

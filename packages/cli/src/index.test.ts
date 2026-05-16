@@ -37,6 +37,14 @@ describe("cli entrypoint", () => {
     expect(init?.options.map((option) => option.long)).toContain("--profile");
   });
 
+  it("exposes Codex readiness doctor", () => {
+    const doctor = createProgram().commands.find(
+      (command) => command.name() === "doctor"
+    );
+
+    expect(doctor?.options.map((option) => option.long)).toContain("--codex");
+  });
+
   it("exposes domain pack manifest generation", () => {
     const domain = createProgram().commands.find(
       (command) => command.name() === "domain"
