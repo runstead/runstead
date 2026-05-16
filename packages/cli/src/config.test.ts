@@ -41,6 +41,43 @@ describe("runstead config", () => {
     }
   });
 
+  it("sets and reads generic model provider keys", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-config-"));
+
+    try {
+      await initRunstead({ cwd: workspace });
+
+      await setRunsteadConfigValue({
+        cwd: workspace,
+        key: "model.provider",
+        value: " openrouter "
+      });
+      await setRunsteadConfigValue({
+        cwd: workspace,
+        key: "model.name",
+        value: " anthropic/claude-opus-4.6 "
+      });
+      const baseUrl = await setRunsteadConfigValue({
+        cwd: workspace,
+        key: "model.baseUrl",
+        value: " https://openrouter.ai/api/v1 "
+      });
+
+      expect(
+        await readRunsteadConfigValue({ cwd: workspace, key: "model.provider" })
+      ).toBe("openrouter");
+      expect(await readRunsteadConfigValue({ cwd: workspace, key: "model.name" })).toBe(
+        "anthropic/claude-opus-4.6"
+      );
+      expect(await readFile(baseUrl.path, "utf8")).toContain("model:");
+      expect(await readFile(baseUrl.path, "utf8")).toContain(
+        "baseUrl: https://openrouter.ai/api/v1"
+      );
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
   it("rejects unsupported config keys", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "runstead-config-"));
 

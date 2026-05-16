@@ -17,7 +17,15 @@ export interface RunsteadConfigSetResult {
   value: string;
 }
 
-const SUPPORTED_CONFIG_KEYS = new Set(["codex.model"]);
+export const SUPPORTED_CONFIG_KEYS = [
+  "codex.model",
+  "model.provider",
+  "model.name",
+  "model.baseUrl",
+  "model.apiKeyEnv"
+] as const;
+
+const SUPPORTED_CONFIG_KEY_SET = new Set<string>(SUPPORTED_CONFIG_KEYS);
 
 export async function loadRunsteadConfig(
   options: {
@@ -124,9 +132,9 @@ function setConfigValue(
 }
 
 function assertSupportedConfigKey(key: string): void {
-  if (!SUPPORTED_CONFIG_KEYS.has(key)) {
+  if (!SUPPORTED_CONFIG_KEY_SET.has(key)) {
     throw new Error(
-      `Unsupported config key: ${key}. Supported keys: ${[...SUPPORTED_CONFIG_KEYS].join(", ")}`
+      `Unsupported config key: ${key}. Supported keys: ${SUPPORTED_CONFIG_KEYS.join(", ")}`
     );
   }
 }
