@@ -116,6 +116,31 @@ describe("upgradeRunsteadState", () => {
               "          - verifier.run"
             ].join("\n"),
             "      action_type: shell.exec"
+          )
+          .replace(
+            [
+              "          - chatgpt_codex",
+              "          - openai",
+              "          - openrouter",
+              "          - anthropic",
+              "          - gemini",
+              "          - nous-api",
+              "          - deepseek",
+              "          - zai",
+              "          - kimi-coding",
+              "          - minimax",
+              "          - minimax-cn",
+              "          - huggingface",
+              "          - nvidia",
+              "          - xiaomi",
+              "          - arcee",
+              "          - ollama-cloud",
+              "          - kilocode",
+              "          - ai-gateway",
+              "          - lmstudio",
+              "          - custom"
+            ].join("\n"),
+            "          - chatgpt_codex"
           ),
         "utf8"
       );
@@ -128,6 +153,10 @@ describe("upgradeRunsteadState", () => {
       expect(repairedPolicy).toContain("repo.metadata.read");
       expect(repairedPolicy).toContain("workspace.facts.read");
       expect(repairedPolicy).toContain("verifier.run");
+      expect(repairedPolicy).toContain("openrouter");
+      expect(repairedPolicy).toContain("anthropic");
+      expect(repairedPolicy).toContain("gemini");
+      expect(repairedPolicy).toContain("custom");
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }

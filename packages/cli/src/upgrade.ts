@@ -6,6 +6,7 @@ import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import type { DoctorCheck } from "./doctor.js";
 import { doctorRunstead } from "./doctor.js";
 import { initRunstead } from "./init.js";
+import { TRUSTED_LOCAL_MODEL_INFERENCE_RESOURCE_IDS } from "./policy.js";
 import { resolveRunsteadRoot } from "./runstead-root.js";
 
 const READ_WORKSPACE_ACTION_TYPES = [
@@ -98,6 +99,12 @@ async function repairRepoMaintenancePolicy(policyPath: string): Promise<void> {
       "allow_verifier_commands",
       VERIFIER_COMMAND_ACTION_TYPES
     ) || changed;
+  changed =
+    ensureRuleResourceIds(
+      policy.rules,
+      "allow_trusted_local_model_inference_request",
+      TRUSTED_LOCAL_MODEL_INFERENCE_RESOURCE_IDS
+    ) || changed;
 
   if (changed) {
     await writeFile(policyPath, stringifyYaml(policy), "utf8");
@@ -129,7 +136,36 @@ function ensureRuleActionTypes(
   return true;
 }
 
+function ensureRuleResourceIds(
+  rules: unknown[],
+  ruleId: string,
+  requiredResourceIds: string[]
+): boolean {
+  const rule = rules.find(
+    (candidate) => isRecord(candidate) && candidate.id === ruleId
+  );
+
+  if (!isRecord(rule) || !isRecord(rule.when)) {
+    return false;
+  }
+
+  const existing = readStringMatcher(rule.when.resource_id);
+  const updated = uniqueStrings([...existing, ...requiredResourceIds]);
+
+  if (arraysEqual(existing, updated)) {
+    return false;
+  }
+
+  rule.when.resource_id = { in: updated };
+
+  return true;
+}
+
 function readActionTypes(value: unknown): string[] {
+  return readStringMatcher(value);
+}
+
+function readStringMatcher(value: unknown): string[] {
   if (typeof value === "string") {
     return [value];
   }
