@@ -1,0 +1,18 @@
+id: verify_gtm_artifacts
+domain: ai-native-startup
+description: Verify GTM artifacts against customer evidence, product state, metric claims, and launch promises before publishing.
+
+default_priority: medium
+max_attempts: 1
+
+verifiers:
+  required:
+    - gtm:claims_have_evidence
+    - gtm:product_state_matches_claims
+    - gtm:publish_requires_approval
+
+worker_routing:
+  preferred: codex_cli
+  fallback:
+    - claude_code
+    - codex_direct

@@ -14,3 +14,18 @@ fixtures:
       - measurement_framework_defined
       - repo_readiness_inspected
       - verifier_report_recorded
+  - id: ops-handoff-smoke
+    description: Minimal scale-stage fixture for founder bottleneck, workflow registry, SOP, support, and GTM verification artifacts.
+    path: ops-handoff-smoke
+    task_type: map_founder_bottlenecks
+    goal_template: scale-ops
+    tags:
+      - smoke
+      - scale
+      - ops
+    acceptance_contracts:
+      - founder_bottlenecks_mapped
+      - workflow_registry_recorded
+      - sops_generated
+      - support_triage_ready
+      - gtm_artifacts_verified

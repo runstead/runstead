@@ -1,0 +1,17 @@
+id: map_founder_bottlenecks
+domain: ai-native-startup
+description: Identify decisions, customer context, credentials, and operating knowledge that only the founder can currently unblock.
+
+default_priority: high
+max_attempts: 1
+
+verifiers:
+  required:
+    - ops:bottleneck_map_recorded
+    - ops:owner_or_system_of_record_assigned
+
+worker_routing:
+  preferred: codex_cli
+  fallback:
+    - claude_code
+    - codex_direct

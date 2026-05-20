@@ -1,0 +1,17 @@
+id: triage_support_evidence
+domain: ai-native-startup
+description: Convert support requests into evidence-backed triage records, recurring issue categories, and next remediation tasks.
+
+default_priority: medium
+max_attempts: 1
+
+verifiers:
+  required:
+    - support:customer_evidence_attached
+    - support:triage_outcome_recorded
+
+worker_routing:
+  preferred: codex_cli
+  fallback:
+    - claude_code
+    - codex_direct

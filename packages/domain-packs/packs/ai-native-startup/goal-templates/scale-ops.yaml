@@ -1,0 +1,22 @@
+id: scale-ops
+domain: ai-native-startup
+title: Scale AI-native operations
+description: >
+  Move recurring startup execution out of founder-only memory and into governed
+  workflow, delegation, SOP, support, and GTM verification artifacts.
+
+generated:
+  recurring_tasks:
+    - map_founder_bottlenecks
+    - register_workflow_automation
+    - generate_ops_sops
+    - triage_support_evidence
+    - verify_gtm_artifacts
+  policy_profile: startup-mvp
+  acceptance_contracts:
+    - founder_bottlenecks_mapped
+    - recurring_ops_registered
+    - workflow_registry_recorded
+    - sops_generated
+    - support_triage_ready
+    - gtm_artifacts_verified

@@ -68,7 +68,9 @@ Core artifacts:
 - integration depth map
 
 This stage should follow MVP and Launch readiness so the product does not drift
-into a generic operations tool too early.
+into a generic operations tool too early. The `ai-native-startup` pack exposes
+this as the `scale-ops` template so the artifacts are defined without making ops
+the first product surface.
 
 ## Recommended CLI Shape
 

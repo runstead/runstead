@@ -48,18 +48,28 @@ describe("validateDomainPackDir", () => {
     expect(result.valid).toBe(true);
     expect(result.issues).toEqual([]);
     expect(result.domain?.id).toBe("ai-native-startup");
-    expect(result.goalTemplates.map((template) => template.id)).toEqual(["build-mvp"]);
+    expect(result.goalTemplates.map((template) => template.id)).toEqual([
+      "build-mvp",
+      "scale-ops"
+    ]);
     expect(result.taskTypes.map((taskType) => taskType.id)).toEqual([
       "generate_agent_context",
       "define_measurement_framework",
       "inspect_repo_readiness",
-      "run_mvp_verifiers"
+      "run_mvp_verifiers",
+      "map_founder_bottlenecks",
+      "register_workflow_automation",
+      "generate_ops_sops",
+      "triage_support_evidence",
+      "verify_gtm_artifacts"
     ]);
     expect(result.fixtures.map((fixture) => fixture.id)).toEqual([
-      "ai-coded-mvp-smoke"
+      "ai-coded-mvp-smoke",
+      "ops-handoff-smoke"
     ]);
     expect(result.evals.map((evaluation) => evaluation.id)).toEqual([
-      "ai-coded-mvp-smoke"
+      "ai-coded-mvp-smoke",
+      "ops-handoff-smoke"
     ]);
     expect(result.goalTemplates[0]?.generated.acceptanceContracts).toContain(
       "measurement_framework_defined"

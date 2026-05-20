@@ -16,12 +16,18 @@ scope:
 
 goal_templates:
   - build-mvp
+  - scale-ops
 
 task_types:
   - generate_agent_context
   - define_measurement_framework
   - inspect_repo_readiness
   - run_mvp_verifiers
+  - map_founder_bottlenecks
+  - register_workflow_automation
+  - generate_ops_sops
+  - triage_support_evidence
+  - verify_gtm_artifacts
 
 default_policy: policies/startup-mvp.yaml
 

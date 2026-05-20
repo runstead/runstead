@@ -1,0 +1,17 @@
+id: register_workflow_automation
+domain: ai-native-startup
+description: Record recurring workflows, automation coverage, delegation policy, and approval boundaries in a workflow registry.
+
+default_priority: medium
+max_attempts: 1
+
+verifiers:
+  required:
+    - ops:workflow_registry_recorded
+    - ops:delegation_policy_recorded
+
+worker_routing:
+  preferred: codex_cli
+  fallback:
+    - claude_code
+    - codex_direct

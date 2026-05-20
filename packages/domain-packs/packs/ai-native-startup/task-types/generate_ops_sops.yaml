@@ -1,0 +1,17 @@
+id: generate_ops_sops
+domain: ai-native-startup
+description: Generate SOP artifacts for recurring operations that are ready for handoff and audit.
+
+default_priority: medium
+max_attempts: 1
+
+verifiers:
+  required:
+    - ops:sop_artifacts_generated
+    - ops:handoff_owner_recorded
+
+worker_routing:
+  preferred: codex_cli
+  fallback:
+    - claude_code
+    - codex_direct

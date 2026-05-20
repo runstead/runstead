@@ -11,12 +11,17 @@ export const aiNativeStartupPack = {
   compatibility: {
     runsteadMinVersion: "0.0.0"
   },
-  goalTemplates: ["build-mvp"],
+  goalTemplates: ["build-mvp", "scale-ops"],
   taskTypes: [
     "generate_agent_context",
     "define_measurement_framework",
     "inspect_repo_readiness",
-    "run_mvp_verifiers"
+    "run_mvp_verifiers",
+    "map_founder_bottlenecks",
+    "register_workflow_automation",
+    "generate_ops_sops",
+    "triage_support_evidence",
+    "verify_gtm_artifacts"
   ],
   defaultPolicy: "policies/startup-mvp.yaml",
   defaultVerifiers: [
