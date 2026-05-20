@@ -132,6 +132,23 @@ export interface GenerateFounderBottleneckMapResult {
   bottlenecks: string[];
 }
 
+export interface GenerateWorkflowRegistryOptions {
+  cwd?: string;
+  workflows?: string[];
+  delegationRules?: string[];
+  approvalBoundaries?: string[];
+  now?: Date;
+}
+
+export interface GenerateWorkflowRegistryResult {
+  root: string;
+  stateDb: string;
+  files: string[];
+  evidenceIds: string[];
+  workflows: string[];
+  delegationRules: string[];
+}
+
 const STARTUP_DOMAIN = "ai-native-startup";
 const STARTUP_CONTEXT_FILES = ["AGENTS.md", "CLAUDE.md", "CODEX.md"];
 const PROTECTED_PATH_PATTERNS = [
@@ -494,6 +511,75 @@ export async function generateFounderBottleneckMap(
   };
 }
 
+export async function generateWorkflowRegistry(
+  options: GenerateWorkflowRegistryOptions = {}
+): Promise<GenerateWorkflowRegistryResult> {
+  const cwd = resolve(options.cwd ?? process.cwd());
+  const state = await requireRunsteadStateDb(cwd);
+  const generatedAt = (options.now ?? new Date()).toISOString();
+  const workflows =
+    options.workflows === undefined || options.workflows.length === 0
+      ? [
+          "No recurring workflow input recorded; inventory recurring ops before delegation."
+        ]
+      : options.workflows;
+  const delegationRules =
+    options.delegationRules === undefined || options.delegationRules.length === 0
+      ? [
+          "Read-only inspection and report drafting may run without approval.",
+          "External writes, publishing, billing, compliance, and production changes require approval."
+        ]
+      : options.delegationRules;
+  const approvalBoundaries =
+    options.approvalBoundaries === undefined || options.approvalBoundaries.length === 0
+      ? ["publish", "external_write", "protected_path", "dependency_change"]
+      : options.approvalBoundaries;
+  const workflowMarkdown = formatWorkflowRegistry({
+    generatedAt,
+    workflows,
+    approvalBoundaries
+  });
+  const delegationMarkdown = formatDelegationPolicy({
+    generatedAt,
+    delegationRules,
+    approvalBoundaries
+  });
+
+  await mkdir(join(state.root, "startup"), { recursive: true });
+
+  const workflowPath = join(state.root, "startup", "workflow-registry.md");
+  const delegationPath = join(state.root, "startup", "delegation-policy.md");
+
+  await writeFile(workflowPath, workflowMarkdown, "utf8");
+  await writeFile(delegationPath, delegationMarkdown, "utf8");
+
+  const workflowEvidence = await addStartupEvidence({
+    cwd,
+    type: "workflow_registry",
+    summary: `Workflow registry recorded (${workflows.length} workflow${workflows.length === 1 ? "" : "s"})`,
+    sourceRefs: [workflowPath, delegationPath],
+    content: workflowMarkdown,
+    ...(options.now === undefined ? {} : { now: options.now })
+  });
+  const delegationEvidence = await addStartupEvidence({
+    cwd,
+    type: "delegation_policy",
+    summary: `Delegation policy recorded (${delegationRules.length} rule${delegationRules.length === 1 ? "" : "s"})`,
+    sourceRefs: [delegationPath, workflowPath],
+    content: delegationMarkdown,
+    ...(options.now === undefined ? {} : { now: options.now })
+  });
+
+  return {
+    root: state.root,
+    stateDb: state.stateDb,
+    files: [workflowPath, delegationPath],
+    evidenceIds: [workflowEvidence.evidence.id, delegationEvidence.evidence.id],
+    workflows,
+    delegationRules
+  };
+}
+
 function templateForStage(stage: StartupInitStage): string {
   switch (stage) {
     case "mvp":
@@ -847,6 +933,64 @@ function formatFounderBottleneckMap(input: {
       "Each bottleneck needs an owner or durable system of record.",
       "Credential, customer, release, and architecture knowledge must be moved into governed artifacts.",
       "Repeat this audit before scale-stage workflow delegation."
+    ]),
+    ""
+  ].join("\n");
+}
+
+function formatWorkflowRegistry(input: {
+  generatedAt: string;
+  workflows: string[];
+  approvalBoundaries: string[];
+}): string {
+  return [
+    "# Startup Workflow Registry",
+    "",
+    `Generated: ${input.generatedAt}`,
+    "",
+    "## Recurring Workflows",
+    "",
+    listItems(input.workflows),
+    "",
+    "## Automation Coverage Contract",
+    "",
+    listItems([
+      "Each recurring workflow needs a trigger, owner, evidence output, and verifier.",
+      "Agent-run workflows must write evidence before claiming completion.",
+      "Workflow changes crossing an approval boundary must create an approval request."
+    ]),
+    "",
+    "## Approval Boundaries",
+    "",
+    listItems(input.approvalBoundaries),
+    ""
+  ].join("\n");
+}
+
+function formatDelegationPolicy(input: {
+  generatedAt: string;
+  delegationRules: string[];
+  approvalBoundaries: string[];
+}): string {
+  return [
+    "# Startup Delegation Policy",
+    "",
+    `Generated: ${input.generatedAt}`,
+    "",
+    "## Delegation Rules",
+    "",
+    listItems(input.delegationRules),
+    "",
+    "## Approval Boundaries",
+    "",
+    listItems(input.approvalBoundaries),
+    "",
+    "## Audit Contract",
+    "",
+    listItems([
+      "Agents are workers; Runstead remains the control plane.",
+      "Delegated work must be linked to goals, tasks, evidence, or approvals.",
+      "Founder-only decisions must move into decision records or memory artifacts before scale."
     ]),
     ""
   ].join("\n");

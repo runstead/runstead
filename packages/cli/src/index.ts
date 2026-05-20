@@ -1305,6 +1305,64 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
       }
     );
 
+  const startupScale = startup
+    .command("scale")
+    .description("Generate startup ops handoff artifacts.");
+
+  startupScale
+    .command("workflow-registry")
+    .description("Generate workflow registry and delegation policy evidence.")
+    .option("--cwd <path>", "Workspace directory")
+    .option("--workflow <text>", "Recurring workflow to register", collectValues, [])
+    .option(
+      "--delegation-rule <text>",
+      "Agent delegation rule to record",
+      collectValues,
+      []
+    )
+    .option(
+      "--approval-boundary <text>",
+      "Boundary that requires approval",
+      collectValues,
+      []
+    )
+    .option(
+      "--actor <id>",
+      "RBAC subject for workflow registry generation",
+      "local-admin"
+    )
+    .action(
+      async (options: {
+        cwd?: string;
+        workflow: string[];
+        delegationRule: string[];
+        approvalBoundary: string[];
+        actor: string;
+      }) => {
+        await requireRbacPermission({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          actor: options.actor,
+          permission: "evidence.write",
+          action: "generate startup workflow registry"
+        });
+
+        const { generateWorkflowRegistry } = await import("./startup-automation.js");
+        const result = await generateWorkflowRegistry({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          workflows: options.workflow,
+          delegationRules: options.delegationRule,
+          approvalBoundaries: options.approvalBoundary
+        });
+
+        console.log(`Generated workflow evidence: ${result.evidenceIds.join(", ")}`);
+        console.log(`Workflows: ${result.workflows.length}`);
+        console.log(`Delegation rules: ${result.delegationRules.length}`);
+        for (const file of result.files) {
+          console.log(`Wrote scale artifact: ${file}`);
+        }
+      }
+    );
+
   const startupHypothesis = startup
     .command("hypothesis")
     .description("Manage startup hypothesis ledger records.");

@@ -378,6 +378,10 @@ describe("cli entrypoint", () => {
     const launchBottleneckMap = launch?.commands.find(
       (command) => command.name() === "bottleneck-map"
     );
+    const scale = startup?.commands.find((command) => command.name() === "scale");
+    const scaleWorkflowRegistry = scale?.commands.find(
+      (command) => command.name() === "workflow-registry"
+    );
     const hypothesis = startup?.commands.find(
       (command) => command.name() === "hypothesis"
     );
@@ -397,7 +401,8 @@ describe("cli entrypoint", () => {
         "hypothesis",
         "init",
         "launch",
-        "measurement"
+        "measurement",
+        "scale"
       ])
     );
     expect(init?.options.map((option) => option.long)).toEqual(
@@ -459,6 +464,15 @@ describe("cli entrypoint", () => {
         "--cwd",
         "--owner",
         "--system-of-record"
+      ])
+    );
+    expect(scaleWorkflowRegistry?.options.map((option) => option.long)).toEqual(
+      expect.arrayContaining([
+        "--actor",
+        "--approval-boundary",
+        "--cwd",
+        "--delegation-rule",
+        "--workflow"
       ])
     );
     expect(evidenceAdd?.options.map((option) => option.long)).toEqual(

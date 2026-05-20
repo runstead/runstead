@@ -11,6 +11,7 @@ import {
   generateFounderBottleneckMap,
   generateSecurityBaseline,
   generateStartupContext,
+  generateWorkflowRegistry,
   initStartup,
   recordSupportTriage
 } from "./startup-automation.js";
@@ -340,6 +341,69 @@ describe("startup automation", () => {
         expect(evidence.map((item) => item.type)).toEqual([
           "startup_founder_bottleneck",
           "startup_support_triage"
+        ]);
+      } finally {
+        database.close();
+      }
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("generates workflow registry and delegation policy evidence", async () => {
+    const workspace = join(tmpdir(), `runstead-startup-workflow-${process.pid}`);
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await initStartup({
+        cwd: workspace,
+        stage: "scale",
+        now: new Date("2026-05-14T02:00:00.000Z")
+      });
+
+      const result = await generateWorkflowRegistry({
+        cwd: workspace,
+        workflows: [
+          "Weekly launch readiness report",
+          "Support triage to remediation task"
+        ],
+        delegationRules: [
+          "Codex may draft reports from evidence",
+          "Publishing requires founder approval"
+        ],
+        approvalBoundaries: ["publish", "protected_path"],
+        now: new Date("2026-05-14T08:00:00.000Z")
+      });
+      const workflowMarkdown = await readFile(result.files[0] ?? "", "utf8");
+      const delegationMarkdown = await readFile(result.files[1] ?? "", "utf8");
+
+      expect(workflowMarkdown).toContain("Startup Workflow Registry");
+      expect(workflowMarkdown).toContain("Weekly launch readiness report");
+      expect(delegationMarkdown).toContain("Startup Delegation Policy");
+      expect(delegationMarkdown).toContain("Publishing requires founder approval");
+
+      const database = openRunsteadDatabase(result.stateDb);
+      const [workflowEvidenceId, delegationEvidenceId] = result.evidenceIds;
+
+      if (workflowEvidenceId === undefined || delegationEvidenceId === undefined) {
+        throw new Error("Expected workflow and delegation evidence ids");
+      }
+
+      try {
+        const evidence = database
+          .prepare(
+            `
+            SELECT type
+            FROM evidence
+            WHERE id IN (?, ?)
+            ORDER BY type ASC
+          `
+          )
+          .all(workflowEvidenceId, delegationEvidenceId) as { type: string }[];
+
+        expect(evidence.map((item) => item.type)).toEqual([
+          "startup_delegation_policy",
+          "startup_workflow_registry"
         ]);
       } finally {
         database.close();
