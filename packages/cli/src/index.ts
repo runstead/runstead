@@ -1004,6 +1004,98 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     .command("startup")
     .description("Manage AI-native startup evidence and stage gates.");
 
+  startup
+    .command("init")
+    .description("Initialize AI-native startup execution for a workspace.")
+    .option("--cwd <path>", "Workspace directory")
+    .option("--stage <stage>", "Startup stage: mvp, launch, or scale", "mvp")
+    .option(
+      "--profile <profile>",
+      "Policy profile to generate when Runstead is not initialized: default or trusted-local",
+      "default"
+    )
+    .option("--force", "Upgrade installed startup pack and create a fresh startup goal")
+    .action(
+      async (options: {
+        cwd?: string;
+        stage: string;
+        profile: "default" | "trusted-local";
+        force?: boolean;
+      }) => {
+        const { initStartup } = await import("./startup-automation.js");
+        const result = await initStartup({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          stage: parseStartupInitStage(options.stage),
+          profile: options.profile,
+          force: options.force === true
+        });
+
+        console.log(`Initialized startup execution: ${result.root}`);
+        console.log(`Stage: ${result.stage}`);
+        console.log(`Installed startup domain: ${result.domainInstalled}`);
+        console.log(`Upgraded startup domain: ${result.domainUpgraded}`);
+        console.log(
+          `${result.goalCreated ? "Created" : "Reused"} goal: ${result.goal.id} ${result.goal.title}`
+        );
+        for (const task of result.generatedTasks) {
+          console.log(`Created task: ${task.id} ${task.type}`);
+        }
+      }
+    );
+
+  const startupContext = startup
+    .command("context")
+    .description("Generate startup agent context artifacts.");
+
+  startupContext
+    .command("generate")
+    .description("Generate AGENTS.md, CLAUDE.md, CODEX.md, and evidence.")
+    .option("--cwd <path>", "Workspace directory")
+    .option("--force", "Overwrite existing context files")
+    .option(
+      "--architecture <text>",
+      "Architecture principle to include",
+      collectValues,
+      []
+    )
+    .option("--constraint <text>", "Technical constraint to include", collectValues, [])
+    .option("--accepted-debt <text>", "Accepted technical debt", collectValues, [])
+    .option("--actor <id>", "RBAC subject for context generation", "local-admin")
+    .action(
+      async (options: {
+        cwd?: string;
+        force?: boolean;
+        architecture: string[];
+        constraint: string[];
+        acceptedDebt: string[];
+        actor: string;
+      }) => {
+        await requireRbacPermission({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          actor: options.actor,
+          permission: "evidence.write",
+          action: "generate startup context"
+        });
+
+        const { generateStartupContext } = await import("./startup-automation.js");
+        const architecturePrinciples = emptyAsUndefined(options.architecture);
+        const technicalConstraints = emptyAsUndefined(options.constraint);
+        const acceptedDebt = emptyAsUndefined(options.acceptedDebt);
+        const result = await generateStartupContext({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          force: options.force === true,
+          ...(architecturePrinciples === undefined ? {} : { architecturePrinciples }),
+          ...(technicalConstraints === undefined ? {} : { technicalConstraints }),
+          ...(acceptedDebt === undefined ? {} : { acceptedDebt })
+        });
+
+        console.log(`Generated startup context evidence: ${result.evidenceId}`);
+        for (const file of result.files) {
+          console.log(`Wrote context file: ${file}`);
+        }
+      }
+    );
+
   const startupEvidence = startup
     .command("evidence")
     .description("Manage founder evidence ledger records.");
@@ -1014,7 +1106,7 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     .option("--cwd <path>", "Workspace directory")
     .requiredOption(
       "--type <type>",
-      "Evidence type: customer_interview, competitor, metric, measurement_framework, hypothesis, decision, acceptable_debt, or observability"
+      "Evidence type: customer_interview, competitor, metric, measurement_framework, agent_context, repo_readiness, hypothesis, decision, acceptable_debt, or observability"
     )
     .requiredOption("--summary <text>", "Evidence summary")
     .option("--source <ref>", "Evidence source reference", collectValues, [])
@@ -4246,6 +4338,18 @@ function parseStartupGateStage(value: string): "idea" | "mvp" | "launch" | "scal
   }
 
   throw new Error("--stage must be one of: idea, mvp, launch, scale");
+}
+
+function parseStartupInitStage(value: string): "mvp" | "launch" | "scale" {
+  if (value === "mvp" || value === "launch" || value === "scale") {
+    return value;
+  }
+
+  throw new Error("--stage must be one of: mvp, launch, scale");
+}
+
+function emptyAsUndefined(values: string[]): string[] | undefined {
+  return values.length === 0 ? undefined : values;
 }
 
 async function requireRbacPermission(options: {

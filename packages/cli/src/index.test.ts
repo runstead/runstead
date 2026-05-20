@@ -356,13 +356,31 @@ describe("cli entrypoint", () => {
     const startup = createProgram().commands.find(
       (command) => command.name() === "startup"
     );
+    const init = startup?.commands.find((command) => command.name() === "init");
+    const context = startup?.commands.find((command) => command.name() === "context");
+    const contextGenerate = context?.commands.find(
+      (command) => command.name() === "generate"
+    );
     const evidence = startup?.commands.find((command) => command.name() === "evidence");
     const evidenceAdd = evidence?.commands.find((command) => command.name() === "add");
     const gate = startup?.commands.find((command) => command.name() === "gate");
     const gateCheck = gate?.commands.find((command) => command.name() === "check");
 
     expect(startup?.commands.map((command) => command.name())).toEqual(
-      expect.arrayContaining(["evidence", "gate"])
+      expect.arrayContaining(["context", "evidence", "gate", "init"])
+    );
+    expect(init?.options.map((option) => option.long)).toEqual(
+      expect.arrayContaining(["--cwd", "--force", "--profile", "--stage"])
+    );
+    expect(contextGenerate?.options.map((option) => option.long)).toEqual(
+      expect.arrayContaining([
+        "--accepted-debt",
+        "--actor",
+        "--architecture",
+        "--constraint",
+        "--cwd",
+        "--force"
+      ])
     );
     expect(evidenceAdd?.options.map((option) => option.long)).toEqual(
       expect.arrayContaining([

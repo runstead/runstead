@@ -1,0 +1,133 @@
+import { readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import { openRunsteadDatabase } from "@runstead/state-sqlite";
+import { describe, expect, it } from "vitest";
+
+import { generateStartupContext, initStartup } from "./startup-automation.js";
+
+describe("startup automation", () => {
+  it("initializes startup execution and reuses an existing startup goal", async () => {
+    const workspace = join(tmpdir(), `runstead-startup-init-${process.pid}`);
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      const first = await initStartup({
+        cwd: workspace,
+        stage: "mvp",
+        now: new Date("2026-05-14T02:00:00.000Z")
+      });
+      const second = await initStartup({
+        cwd: workspace,
+        stage: "mvp",
+        now: new Date("2026-05-14T03:00:00.000Z")
+      });
+
+      expect(first.domainInstalled).toBe(true);
+      expect(first.goalCreated).toBe(true);
+      expect(first.goal).toMatchObject({
+        domain: "ai-native-startup",
+        title: "Build an AI-coded MVP"
+      });
+      expect(first.generatedTasks.map((task) => task.type)).toEqual([
+        "generate_agent_context",
+        "define_measurement_framework",
+        "inspect_repo_readiness",
+        "run_mvp_verifiers"
+      ]);
+      expect(second.goalCreated).toBe(false);
+      expect(second.goal.id).toBe(first.goal.id);
+
+      const database = openRunsteadDatabase(first.stateDb);
+
+      try {
+        const goalCount = database
+          .prepare("SELECT COUNT(*) AS count FROM goals WHERE domain = ?")
+          .get("ai-native-startup") as { count: number };
+
+        expect(goalCount.count).toBe(1);
+      } finally {
+        database.close();
+      }
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("generates agent context files and evidence from repo inspection", async () => {
+    const workspace = join(tmpdir(), `runstead-startup-context-${process.pid}`);
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await initStartup({
+        cwd: workspace,
+        stage: "mvp",
+        now: new Date("2026-05-14T02:00:00.000Z")
+      });
+      await writeFile(
+        join(workspace, "package.json"),
+        `${JSON.stringify(
+          {
+            name: "startup-context-fixture",
+            private: true,
+            packageManager: "pnpm@11.1.1",
+            scripts: {
+              test: "vitest run",
+              lint: "eslint ."
+            }
+          },
+          null,
+          2
+        )}\n`,
+        "utf8"
+      );
+
+      const result = await generateStartupContext({
+        cwd: workspace,
+        architecturePrinciples: ["Use repo-local module boundaries."],
+        technicalConstraints: ["Do not edit billing code without approval."],
+        acceptedDebt: ["Manual onboarding is acceptable before beta."],
+        now: new Date("2026-05-14T04:00:00.000Z")
+      });
+      const agents = await readFile(join(workspace, "AGENTS.md"), "utf8");
+      const claude = await readFile(join(workspace, "CLAUDE.md"), "utf8");
+      const codex = await readFile(join(workspace, "CODEX.md"), "utf8");
+
+      expect(result.files.map((file) => file.split("/").at(-1))).toEqual([
+        "AGENTS.md",
+        "CLAUDE.md",
+        "CODEX.md"
+      ]);
+      expect(agents).toContain("test: pnpm test");
+      expect(agents).toContain("lint: pnpm run lint");
+      expect(agents).toContain("Use repo-local module boundaries.");
+      expect(agents).toContain("Manual onboarding is acceptable before beta.");
+      expect(claude).toContain("Startup Agent Context");
+      expect(codex).toContain("Runstead is the control plane");
+
+      const database = openRunsteadDatabase(result.stateDb);
+
+      try {
+        const evidence = database
+          .prepare(
+            `
+            SELECT type, summary
+            FROM evidence
+            WHERE id = ?
+          `
+          )
+          .get(result.evidenceId) as { type: string; summary: string } | undefined;
+
+        expect(evidence).toEqual({
+          type: "startup_agent_context",
+          summary: "Generated startup agent context files"
+        });
+      } finally {
+        database.close();
+      }
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+});

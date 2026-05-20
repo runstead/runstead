@@ -18,6 +18,8 @@ export const STARTUP_EVIDENCE_TYPES = [
   "competitor",
   "metric",
   "measurement_framework",
+  "agent_context",
+  "repo_readiness",
   "hypothesis",
   "decision",
   "acceptable_debt",
