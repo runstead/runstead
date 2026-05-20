@@ -49,10 +49,14 @@ describe("validateDomainPackDir", () => {
     expect(result.issues).toEqual([]);
     expect(result.domain?.id).toBe("ai-native-startup");
     expect(result.goalTemplates.map((template) => template.id)).toEqual([
+      "validate-problem",
       "build-mvp",
       "scale-ops"
     ]);
     expect(result.taskTypes.map((taskType) => taskType.id)).toEqual([
+      "collect_customer_evidence",
+      "check_disconfirming_evidence",
+      "run_build_gate",
       "generate_agent_context",
       "define_measurement_framework",
       "inspect_repo_readiness",
@@ -64,16 +68,19 @@ describe("validateDomainPackDir", () => {
       "verify_gtm_artifacts"
     ]);
     expect(result.fixtures.map((fixture) => fixture.id)).toEqual([
+      "validation-ledger-smoke",
       "ai-coded-mvp-smoke",
       "ops-handoff-smoke"
     ]);
     expect(result.evals.map((evaluation) => evaluation.id)).toEqual([
+      "validation-ledger-smoke",
       "ai-coded-mvp-smoke",
       "ops-handoff-smoke"
     ]);
-    expect(result.goalTemplates[0]?.generated.acceptanceContracts).toContain(
-      "measurement_framework_defined"
-    );
+    expect(
+      result.goalTemplates.find((template) => template.id === "build-mvp")?.generated
+        .acceptanceContracts
+    ).toContain("measurement_framework_defined");
   });
 
   it("validates the experimental research-monitor pack", async () => {

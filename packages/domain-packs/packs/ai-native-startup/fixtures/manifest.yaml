@@ -1,5 +1,21 @@
 version: 1
 fixtures:
+  - id: validation-ledger-smoke
+    description: Minimal idea-stage validation fixture for hypothesis ledger, customer evidence, disconfirming evidence, and MVP build gate.
+    path: validation-ledger-smoke
+    task_type: run_build_gate
+    goal_template: validate-problem
+    tags:
+      - smoke
+      - idea
+      - validation
+    acceptance_contracts:
+      - problem_hypothesis_recorded
+      - user_hypothesis_recorded
+      - solution_hypothesis_recorded
+      - validation_evidence_attached
+      - disconfirming_evidence_checked
+      - build_gate_passed
   - id: ai-coded-mvp-smoke
     description: Minimal AI-coded MVP fixture for startup context, measurement, readiness, and verifier evidence.
     path: ai-coded-mvp-smoke

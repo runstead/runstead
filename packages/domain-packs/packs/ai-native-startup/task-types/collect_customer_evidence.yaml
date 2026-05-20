@@ -1,0 +1,19 @@
+id: collect_customer_evidence
+domain: ai-native-startup
+description: Record customer, competitor, metric, and failure evidence against explicit problem, user, and solution hypotheses.
+
+default_priority: high
+max_attempts: 1
+
+verifiers:
+  required:
+    - validation:problem_hypothesis_recorded
+    - validation:user_hypothesis_recorded
+    - validation:solution_hypothesis_recorded
+    - validation:customer_or_market_evidence_attached
+
+worker_routing:
+  preferred: codex_cli
+  fallback:
+    - claude_code
+    - codex_direct

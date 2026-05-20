@@ -1,0 +1,17 @@
+id: check_disconfirming_evidence
+domain: ai-native-startup
+description: Force a search for evidence that contradicts the current startup hypotheses before MVP build work starts.
+
+default_priority: high
+max_attempts: 1
+
+verifiers:
+  required:
+    - validation:disconfirming_evidence_recorded
+    - validation:build_risk_named
+
+worker_routing:
+  preferred: codex_cli
+  fallback:
+    - claude_code
+    - codex_direct

@@ -1,5 +1,14 @@
 version: 1
 benchmarks:
+  - id: validation-ledger-smoke
+    fixture: validation-ledger-smoke
+    acceptance_contracts:
+      - problem_hypothesis_recorded
+      - user_hypothesis_recorded
+      - solution_hypothesis_recorded
+      - validation_evidence_attached
+      - disconfirming_evidence_checked
+      - build_gate_passed
   - id: ai-coded-mvp-smoke
     fixture: ai-coded-mvp-smoke
     acceptance_contracts:

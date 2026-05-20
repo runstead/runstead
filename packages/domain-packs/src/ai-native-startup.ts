@@ -11,8 +11,11 @@ export const aiNativeStartupPack = {
   compatibility: {
     runsteadMinVersion: "0.0.0"
   },
-  goalTemplates: ["build-mvp", "scale-ops"],
+  goalTemplates: ["validate-problem", "build-mvp", "scale-ops"],
   taskTypes: [
+    "collect_customer_evidence",
+    "check_disconfirming_evidence",
+    "run_build_gate",
     "generate_agent_context",
     "define_measurement_framework",
     "inspect_repo_readiness",

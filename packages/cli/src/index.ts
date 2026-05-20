@@ -1154,6 +1154,50 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
       }
     );
 
+  const startupHypothesis = startup
+    .command("hypothesis")
+    .description("Manage startup hypothesis ledger records.");
+
+  startupHypothesis
+    .command("add")
+    .description("Add a problem, user, or solution hypothesis.")
+    .option("--cwd <path>", "Workspace directory")
+    .requiredOption("--kind <kind>", "Hypothesis kind: problem, user, or solution")
+    .requiredOption("--statement <text>", "Hypothesis statement")
+    .option("--source <ref>", "Evidence source reference", collectValues, [])
+    .option("--goal <id>", "Associated goal id")
+    .option("--actor <id>", "RBAC subject for hypothesis writes", "local-admin")
+    .action(
+      async (options: {
+        cwd?: string;
+        kind: string;
+        statement: string;
+        source: string[];
+        goal?: string;
+        actor: string;
+      }) => {
+        await requireRbacPermission({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          actor: options.actor,
+          permission: "evidence.write",
+          action: "write startup hypotheses"
+        });
+
+        const { addStartupHypothesis } = await import("./startup-evidence.js");
+        const result = await addStartupHypothesis({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          kind: parseStartupHypothesisKind(options.kind),
+          statement: options.statement,
+          sourceRefs: options.source,
+          ...(options.goal === undefined ? {} : { goalId: options.goal })
+        });
+
+        console.log(`Recorded startup hypothesis: ${result.evidence.id}`);
+        console.log(`Type: ${result.evidence.type}`);
+        console.log(`Artifact: ${result.artifactPath}`);
+      }
+    );
+
   const startupEvidence = startup
     .command("evidence")
     .description("Manage founder evidence ledger records.");
@@ -1164,7 +1208,7 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     .option("--cwd <path>", "Workspace directory")
     .requiredOption(
       "--type <type>",
-      "Evidence type: customer_interview, competitor, metric, measurement_framework, agent_context, repo_readiness, hypothesis, decision, acceptable_debt, or observability"
+      "Evidence type: customer_interview, competitor, metric, measurement_framework, agent_context, repo_readiness, hypothesis, problem_hypothesis, user_hypothesis, solution_hypothesis, disconfirming, decision, acceptable_debt, or observability"
     )
     .requiredOption("--summary <text>", "Evidence summary")
     .option("--source <ref>", "Evidence source reference", collectValues, [])
@@ -4404,6 +4448,14 @@ function parseStartupInitStage(value: string): "mvp" | "launch" | "scale" {
   }
 
   throw new Error("--stage must be one of: mvp, launch, scale");
+}
+
+function parseStartupHypothesisKind(value: string): "problem" | "user" | "solution" {
+  if (value === "problem" || value === "user" || value === "solution") {
+    return value;
+  }
+
+  throw new Error("--kind must be one of: problem, user, solution");
 }
 
 function emptyAsUndefined(values: string[]): string[] | undefined {

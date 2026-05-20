@@ -21,12 +21,17 @@ export const STARTUP_EVIDENCE_TYPES = [
   "agent_context",
   "repo_readiness",
   "hypothesis",
+  "problem_hypothesis",
+  "user_hypothesis",
+  "solution_hypothesis",
+  "disconfirming",
   "decision",
   "acceptable_debt",
   "observability"
 ] as const;
 
 export type StartupEvidenceType = (typeof STARTUP_EVIDENCE_TYPES)[number];
+export type StartupHypothesisKind = "problem" | "user" | "solution";
 export type StartupGateStage = "idea" | "mvp" | "launch" | "scale";
 
 export interface AddStartupEvidenceOptions {
@@ -48,6 +53,15 @@ export interface AddStartupEvidenceResult {
   event: RunsteadEvent;
   artifact: StartupEvidenceArtifact;
   artifactPath: string;
+}
+
+export interface AddStartupHypothesisOptions {
+  cwd?: string;
+  kind: StartupHypothesisKind;
+  statement: string;
+  sourceRefs?: string[];
+  goalId?: string;
+  now?: Date;
 }
 
 export interface StartupEvidenceArtifact {
@@ -169,6 +183,27 @@ export async function addStartupEvidence(
   };
 }
 
+export async function addStartupHypothesis(
+  options: AddStartupHypothesisOptions
+): Promise<AddStartupEvidenceResult> {
+  return addStartupEvidence({
+    ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+    type: `${options.kind}_hypothesis`,
+    summary: `${options.kind} hypothesis: ${options.statement}`,
+    sourceRefs: options.sourceRefs ?? [],
+    content: JSON.stringify(
+      {
+        kind: options.kind,
+        statement: options.statement
+      },
+      null,
+      2
+    ),
+    ...(options.goalId === undefined ? {} : { goalId: options.goalId }),
+    ...(options.now === undefined ? {} : { now: options.now })
+  });
+}
+
 export async function checkStartupGate(
   options: CheckStartupGateOptions = {}
 ): Promise<StartupGateCheckResult> {
@@ -269,6 +304,10 @@ function gateBlockers(input: {
   tasks: StartupGateTaskRow[];
   evidence: StartupGateEvidenceRow[];
 }): string[] {
+  if (input.stage === "mvp") {
+    return validationBlockers(input.evidence);
+  }
+
   if (input.stage !== "launch") {
     return [];
   }
@@ -283,6 +322,17 @@ function gateWarnings(input: {
   tasks: StartupGateTaskRow[];
   evidence: StartupGateEvidenceRow[];
 }): string[] {
+  if (input.stage === "mvp") {
+    return [
+      ...(hasEvidenceType(input.evidence, "startup_competitor")
+        ? []
+        : ["competitor evidence is not recorded"]),
+      ...(hasEvidenceType(input.evidence, "startup_metric")
+        ? []
+        : ["metric evidence is not recorded"])
+    ];
+  }
+
   if (input.stage !== "launch") {
     return [];
   }
@@ -296,6 +346,32 @@ function gateWarnings(input: {
       ? []
       : ["no verifier or metric evidence is recorded"])
   ];
+}
+
+function validationBlockers(evidence: StartupGateEvidenceRow[]): string[] {
+  return [
+    ...(hasEvidenceType(evidence, "startup_problem_hypothesis")
+      ? []
+      : ["problem hypothesis is missing"]),
+    ...(hasEvidenceType(evidence, "startup_user_hypothesis")
+      ? []
+      : ["user hypothesis is missing"]),
+    ...(hasEvidenceType(evidence, "startup_solution_hypothesis")
+      ? []
+      : ["solution hypothesis is missing"]),
+    ...(hasValidationEvidence(evidence)
+      ? []
+      : ["customer, competitor, or metric validation evidence is missing"]),
+    ...(hasEvidenceType(evidence, "startup_disconfirming")
+      ? []
+      : ["disconfirming evidence is missing"])
+  ];
+}
+
+function hasValidationEvidence(evidence: StartupGateEvidenceRow[]): boolean {
+  return ["startup_customer_interview", "startup_competitor", "startup_metric"].some(
+    (type) => hasEvidenceType(evidence, type)
+  );
 }
 
 function hasMeasurementFramework(input: {

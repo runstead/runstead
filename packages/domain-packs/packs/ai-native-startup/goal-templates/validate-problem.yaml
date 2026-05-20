@@ -1,0 +1,20 @@
+id: validate-problem
+domain: ai-native-startup
+title: Validate startup problem
+description: >
+  Build a hypothesis ledger, attach validation evidence, force a disconfirming
+  evidence check, and run the build gate before starting MVP implementation.
+
+generated:
+  recurring_tasks:
+    - collect_customer_evidence
+    - check_disconfirming_evidence
+    - run_build_gate
+  policy_profile: startup-mvp
+  acceptance_contracts:
+    - problem_hypothesis_recorded
+    - user_hypothesis_recorded
+    - solution_hypothesis_recorded
+    - validation_evidence_attached
+    - disconfirming_evidence_checked
+    - build_gate_passed

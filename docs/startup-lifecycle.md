@@ -98,6 +98,11 @@ The first implemented startup commands are narrower and artifact-first:
 
 ```sh
 runstead startup init --stage mvp
+runstead startup hypothesis add --kind problem --statement "..."
+runstead startup hypothesis add --kind user --statement "..."
+runstead startup hypothesis add --kind solution --statement "..."
+runstead startup evidence add --type disconfirming --summary "..."
+runstead startup gate check --stage mvp
 runstead startup context generate --force
 runstead startup measurement generate --force
 runstead startup evidence add --type customer_interview --summary "..."

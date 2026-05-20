@@ -367,13 +367,26 @@ describe("cli entrypoint", () => {
     const measurementGenerate = measurement?.commands.find(
       (command) => command.name() === "generate"
     );
+    const hypothesis = startup?.commands.find(
+      (command) => command.name() === "hypothesis"
+    );
+    const hypothesisAdd = hypothesis?.commands.find(
+      (command) => command.name() === "add"
+    );
     const evidence = startup?.commands.find((command) => command.name() === "evidence");
     const evidenceAdd = evidence?.commands.find((command) => command.name() === "add");
     const gate = startup?.commands.find((command) => command.name() === "gate");
     const gateCheck = gate?.commands.find((command) => command.name() === "check");
 
     expect(startup?.commands.map((command) => command.name())).toEqual(
-      expect.arrayContaining(["context", "evidence", "gate", "init", "measurement"])
+      expect.arrayContaining([
+        "context",
+        "evidence",
+        "gate",
+        "hypothesis",
+        "init",
+        "measurement"
+      ])
     );
     expect(init?.options.map((option) => option.long)).toEqual(
       expect.arrayContaining(["--cwd", "--force", "--profile", "--stage"])
@@ -398,6 +411,16 @@ describe("cli entrypoint", () => {
         "--false-positive",
         "--force",
         "--retention"
+      ])
+    );
+    expect(hypothesisAdd?.options.map((option) => option.long)).toEqual(
+      expect.arrayContaining([
+        "--actor",
+        "--cwd",
+        "--goal",
+        "--kind",
+        "--source",
+        "--statement"
       ])
     );
     expect(evidenceAdd?.options.map((option) => option.long)).toEqual(

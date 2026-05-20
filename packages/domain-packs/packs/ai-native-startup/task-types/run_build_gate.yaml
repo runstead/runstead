@@ -1,0 +1,14 @@
+id: run_build_gate
+domain: ai-native-startup
+description: Check the validation ledger and block MVP build until hypotheses, validation evidence, and disconfirming evidence exist.
+
+default_priority: critical
+max_attempts: 1
+
+verifiers:
+  required:
+    - gate:mvp_build_allowed
+    - gate:blockers_recorded
+
+worker_routing:
+  preferred: shell

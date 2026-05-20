@@ -15,10 +15,14 @@ scope:
     - evidence
 
 goal_templates:
+  - validate-problem
   - build-mvp
   - scale-ops
 
 task_types:
+  - collect_customer_evidence
+  - check_disconfirming_evidence
+  - run_build_gate
   - generate_agent_context
   - define_measurement_framework
   - inspect_repo_readiness
