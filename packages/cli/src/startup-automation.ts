@@ -1,6 +1,8 @@
+import { execFile } from "node:child_process";
 import { constants } from "node:fs";
-import { access, mkdir, writeFile } from "node:fs/promises";
+import { access, mkdir, readdir, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
+import { promisify } from "node:util";
 
 import type { Goal, Task } from "@runstead/core";
 
@@ -8,8 +10,11 @@ import { installDomainPack, upgradeDomainPack } from "./domain-pack-install.js";
 import { createGoal, listGoals } from "./goals.js";
 import { initRunstead, type InitPolicyProfile } from "./init.js";
 import { collectRepoInspection } from "./inspection-evidence.js";
+import { matchesPolicyPathPattern } from "./policy.js";
 import { resolveRunsteadRoot, requireRunsteadStateDb } from "./runstead-root.js";
 import { addStartupEvidence } from "./startup-evidence.js";
+
+const execFileAsync = promisify(execFile);
 
 export type StartupInitStage = "mvp" | "launch" | "scale";
 
@@ -66,8 +71,53 @@ export interface GenerateMeasurementFrameworkResult {
   evidenceId: string;
 }
 
+export interface GenerateRepoReadinessAuditOptions {
+  cwd?: string;
+  now?: Date;
+}
+
+export interface GenerateRepoReadinessAuditResult {
+  root: string;
+  stateDb: string;
+  files: string[];
+  evidenceId: string;
+  blockers: string[];
+  warnings: string[];
+}
+
+export interface GenerateSecurityBaselineOptions {
+  cwd?: string;
+  now?: Date;
+}
+
+export interface GenerateSecurityBaselineResult {
+  root: string;
+  stateDb: string;
+  files: string[];
+  evidenceId: string;
+  blockers: string[];
+  warnings: string[];
+}
+
 const STARTUP_DOMAIN = "ai-native-startup";
 const STARTUP_CONTEXT_FILES = ["AGENTS.md", "CLAUDE.md", "CODEX.md"];
+const PROTECTED_PATH_PATTERNS = [
+  ".env",
+  ".env.*",
+  "**/secrets/**",
+  "infra/prod/**",
+  "billing/**",
+  "compliance/**"
+];
+const DEPENDENCY_FILES = [
+  "package.json",
+  "pnpm-lock.yaml",
+  "package-lock.json",
+  "npm-shrinkwrap.json",
+  "yarn.lock",
+  "bun.lock",
+  "bun.lockb"
+];
 
 export async function initStartup(
   options: StartupInitOptions = {}
@@ -239,6 +289,94 @@ export async function generateMeasurementFramework(
   };
 }
 
+export async function generateRepoReadinessAudit(
+  options: GenerateRepoReadinessAuditOptions = {}
+): Promise<GenerateRepoReadinessAuditResult> {
+  const cwd = resolve(options.cwd ?? process.cwd());
+  const state = await requireRunsteadStateDb(cwd);
+  const generatedAt = (options.now ?? new Date()).toISOString();
+  const inspection = await collectRepoInspection(cwd, generatedAt);
+  const changedProtected = await changedProtectedPaths(cwd);
+  const blockers = repoReadinessBlockers(inspection, changedProtected);
+  const warnings = repoReadinessWarnings(inspection);
+  const markdown = formatRepoReadinessAudit({
+    generatedAt,
+    inspection,
+    changedProtected,
+    blockers,
+    warnings
+  });
+
+  await mkdir(join(state.root, "startup"), { recursive: true });
+
+  const runtimePath = join(state.root, "startup", "repo-readiness.md");
+
+  await writeFile(runtimePath, markdown, "utf8");
+
+  const evidence = await addStartupEvidence({
+    cwd,
+    type: "repo_readiness",
+    summary: `Repository readiness audit recorded (${blockers.length} blocker${blockers.length === 1 ? "" : "s"})`,
+    sourceRefs: [runtimePath],
+    content: markdown,
+    ...(options.now === undefined ? {} : { now: options.now })
+  });
+
+  return {
+    root: state.root,
+    stateDb: state.stateDb,
+    files: [runtimePath],
+    evidenceId: evidence.evidence.id,
+    blockers,
+    warnings
+  };
+}
+
+export async function generateSecurityBaseline(
+  options: GenerateSecurityBaselineOptions = {}
+): Promise<GenerateSecurityBaselineResult> {
+  const cwd = resolve(options.cwd ?? process.cwd());
+  const state = await requireRunsteadStateDb(cwd);
+  const generatedAt = (options.now ?? new Date()).toISOString();
+  const changedProtected = await changedProtectedPaths(cwd);
+  const envFiles = await findTopLevelEnvFiles(cwd);
+  const dependencyFiles = await existingDependencyFiles(cwd);
+  const blockers = securityBaselineBlockers(changedProtected);
+  const warnings = securityBaselineWarnings({ envFiles, dependencyFiles });
+  const markdown = formatSecurityBaseline({
+    generatedAt,
+    changedProtected,
+    envFiles,
+    dependencyFiles,
+    blockers,
+    warnings
+  });
+
+  await mkdir(join(state.root, "startup"), { recursive: true });
+
+  const runtimePath = join(state.root, "startup", "security-baseline.md");
+
+  await writeFile(runtimePath, markdown, "utf8");
+
+  const evidence = await addStartupEvidence({
+    cwd,
+    type: "security_baseline",
+    summary: `Security baseline recorded (${blockers.length} blocker${blockers.length === 1 ? "" : "s"})`,
+    sourceRefs: [runtimePath],
+    content: markdown,
+    ...(options.now === undefined ? {} : { now: options.now })
+  });
+
+  return {
+    root: state.root,
+    stateDb: state.stateDb,
+    files: [runtimePath],
+    evidenceId: evidence.evidence.id,
+    blockers,
+    warnings
+  };
+}
+
 function templateForStage(stage: StartupInitStage): string {
   switch (stage) {
     case "mvp":
@@ -299,6 +437,12 @@ function formatStartupAgentContext(input: {
   const lintCommand = input.inspection.commands.lint.detected
     ? input.inspection.commands.lint.command
     : "missing";
+  const typecheckCommand = input.inspection.commands.typecheck.detected
+    ? input.inspection.commands.typecheck.command
+    : "missing";
+  const buildCommand = input.inspection.commands.build.detected
+    ? input.inspection.commands.build.command
+    : "missing";
   const ci = input.inspection.ci.detected
     ? input.inspection.ci.providers.map((provider) => provider.provider).join(", ")
     : "missing";
@@ -324,6 +468,8 @@ function formatStartupAgentContext(input: {
     `- Package manager: ${packageManager}`,
     `- Test command: ${testCommand}`,
     `- Lint command: ${lintCommand}`,
+    `- Typecheck command: ${typecheckCommand}`,
+    `- Build command: ${buildCommand}`,
     `- CI: ${ci}`,
     "",
     "## Architecture Principles",
@@ -354,7 +500,12 @@ function formatStartupAgentContext(input: {
     "",
     "## Verifier Commands",
     "",
-    listItems([`test: ${testCommand}`, `lint: ${lintCommand}`]),
+    listItems([
+      `test: ${testCommand}`,
+      `lint: ${lintCommand}`,
+      `typecheck: ${typecheckCommand}`,
+      `build: ${buildCommand}`
+    ]),
     "",
     "## Startup Stage Gates",
     "",
@@ -415,6 +566,229 @@ function formatMeasurementFramework(input: {
 
 function listItems(items: string[]): string {
   return items.map((item) => `- ${item}`).join("\n");
+}
+
+function formatRepoReadinessAudit(input: {
+  generatedAt: string;
+  inspection: Awaited<ReturnType<typeof collectRepoInspection>>;
+  changedProtected: string[];
+  blockers: string[];
+  warnings: string[];
+}): string {
+  const packageManager = input.inspection.packageManager.detected
+    ? `${input.inspection.packageManager.packageManager} (${input.inspection.packageManager.source})`
+    : "missing";
+  const ci = input.inspection.ci.detected
+    ? input.inspection.ci.providers.map((provider) => provider.provider).join(", ")
+    : "missing";
+
+  return [
+    "# Startup Repository Readiness Audit",
+    "",
+    `Generated: ${input.generatedAt}`,
+    "",
+    "## Repository Signals",
+    "",
+    `- Git repo: ${input.inspection.git.isGitRepo ? "yes" : "no"}`,
+    `- Branch: ${input.inspection.git.branch ?? "unknown"}`,
+    `- Package manager: ${packageManager}`,
+    `- Test command: ${formatDetectedCommand(input.inspection.commands.test)}`,
+    `- Lint command: ${formatDetectedCommand(input.inspection.commands.lint)}`,
+    `- Typecheck command: ${formatDetectedCommand(input.inspection.commands.typecheck)}`,
+    `- Build command: ${formatDetectedCommand(input.inspection.commands.build)}`,
+    `- CI: ${ci}`,
+    "",
+    "## Protected Path Changes",
+    "",
+    listItemsOrNone(input.changedProtected),
+    "",
+    "## Release Blockers",
+    "",
+    listItemsOrNone(input.blockers),
+    "",
+    "## Warnings",
+    "",
+    listItemsOrNone(input.warnings),
+    "",
+    "## Evidence Required Before Launch",
+    "",
+    listItems([
+      "startup_repo_readiness from this audit",
+      "startup_security_baseline from security baseline generation",
+      "command_output from test, lint, typecheck, and build verifier runs",
+      "startup_migration_plan if persistence or schema changes exist",
+      "startup_rollback_plan for the release path",
+      "startup_observability for launch monitoring"
+    ]),
+    ""
+  ].join("\n");
+}
+
+function formatSecurityBaseline(input: {
+  generatedAt: string;
+  changedProtected: string[];
+  envFiles: string[];
+  dependencyFiles: string[];
+  blockers: string[];
+  warnings: string[];
+}): string {
+  return [
+    "# Startup Security Baseline",
+    "",
+    `Generated: ${input.generatedAt}`,
+    "",
+    "## Protected Path Changes",
+    "",
+    listItemsOrNone(input.changedProtected),
+    "",
+    "## Local Secret And Env Files",
+    "",
+    listItemsOrNone(input.envFiles),
+    "",
+    "## Dependency Manifests",
+    "",
+    listItemsOrNone(input.dependencyFiles),
+    "",
+    "## Launch Security Blockers",
+    "",
+    listItemsOrNone(input.blockers),
+    "",
+    "## Warnings",
+    "",
+    listItemsOrNone(input.warnings),
+    "",
+    "## Release Evidence Contract",
+    "",
+    listItems([
+      "No changed protected path may launch without explicit review evidence.",
+      "Secrets must stay out of committed evidence and reports.",
+      "Dependency changes require verifier evidence and rollback notes.",
+      "Run startup gate check --stage launch after recording migration, rollback, and observability evidence."
+    ]),
+    ""
+  ].join("\n");
+}
+
+function repoReadinessBlockers(
+  inspection: Awaited<ReturnType<typeof collectRepoInspection>>,
+  changedProtected: string[]
+): string[] {
+  return [
+    ...(inspection.commands.test.detected ? [] : ["test command is missing"]),
+    ...(inspection.commands.lint.detected ? [] : ["lint command is missing"]),
+    ...(inspection.commands.typecheck.detected ? [] : ["typecheck command is missing"]),
+    ...(inspection.commands.build.detected ? [] : ["build command is missing"]),
+    ...(inspection.ci.detected ? [] : ["CI configuration is missing"]),
+    ...(changedProtected.length === 0
+      ? []
+      : [`protected path changes require review: ${changedProtected.join(", ")}`])
+  ];
+}
+
+function repoReadinessWarnings(
+  inspection: Awaited<ReturnType<typeof collectRepoInspection>>
+): string[] {
+  return [
+    ...(inspection.git.isGitRepo ? [] : ["workspace is not a Git repository"]),
+    ...(inspection.packageManager.detected
+      ? []
+      : ["package manager could not be detected"])
+  ];
+}
+
+function securityBaselineBlockers(changedProtected: string[]): string[] {
+  return changedProtected.length === 0
+    ? []
+    : [`protected path changes require review: ${changedProtected.join(", ")}`];
+}
+
+function securityBaselineWarnings(input: {
+  envFiles: string[];
+  dependencyFiles: string[];
+}): string[] {
+  return [
+    ...(input.envFiles.length === 0
+      ? []
+      : [`local env files present: ${input.envFiles.join(", ")}`]),
+    ...(input.dependencyFiles.length === 0
+      ? ["no dependency manifest or lockfile detected"]
+      : [])
+  ];
+}
+
+function formatDetectedCommand(command: {
+  detected: boolean;
+  command?: string;
+}): string {
+  return command.detected ? (command.command ?? "detected") : "missing";
+}
+
+function listItemsOrNone(items: string[]): string {
+  return items.length === 0 ? "- none" : listItems(items);
+}
+
+async function changedProtectedPaths(cwd: string): Promise<string[]> {
+  const changedPaths = await changedGitPaths(cwd);
+
+  return changedPaths
+    .filter((path) =>
+      PROTECTED_PATH_PATTERNS.some((pattern) => matchesPolicyPathPattern(path, pattern))
+    )
+    .sort((left, right) => left.localeCompare(right));
+}
+
+async function changedGitPaths(cwd: string): Promise<string[]> {
+  try {
+    const result = await execFileAsync("git", ["status", "--porcelain"], {
+      cwd,
+      timeout: 30_000,
+      maxBuffer: 1024 * 1024,
+      windowsHide: true
+    });
+
+    return result.stdout
+      .split("\n")
+      .map((line) => line.trimEnd())
+      .filter((line) => line.length > 3)
+      .map((line) => normalizeStatusPath(line.slice(3)))
+      .filter((path) => path.length > 0);
+  } catch {
+    return [];
+  }
+}
+
+function normalizeStatusPath(value: string): string {
+  const renameSeparator = " -> ";
+  const renamedPath = value.includes(renameSeparator)
+    ? value.slice(value.lastIndexOf(renameSeparator) + renameSeparator.length)
+    : value;
+
+  return renamedPath.replace(/^"|"$/g, "");
+}
+
+async function findTopLevelEnvFiles(cwd: string): Promise<string[]> {
+  try {
+    const entries = await readdir(cwd, { withFileTypes: true });
+
+    return entries
+      .filter((entry) => entry.isFile() && /^\.env($|\.)/.test(entry.name))
+      .map((entry) => entry.name)
+      .sort((left, right) => left.localeCompare(right));
+  } catch {
+    return [];
+  }
+}
+
+async function existingDependencyFiles(cwd: string): Promise<string[]> {
+  const files: string[] = [];
+
+  for (const filename of DEPENDENCY_FILES) {
+    if (await exists(join(cwd, filename))) {
+      files.push(filename);
+    }
+  }
+
+  return files;
 }
 
 async function exists(path: string): Promise<boolean> {

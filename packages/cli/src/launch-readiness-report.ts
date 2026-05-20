@@ -287,6 +287,10 @@ function formatLaunchReadinessReport(input: {
     "",
     listOrNone(input.blockers, (blocker) => `- ${blocker}`),
     "",
+    "## Risk Register",
+    "",
+    riskRegister(input.data, input.blockers),
+    "",
     "## Acceptable Debt",
     "",
     acceptableDebt(input.data),
@@ -308,6 +312,12 @@ function repoHealth(repo: RepoInspectionSnapshot): string {
   const lintCommand = repo.commands.lint.detected
     ? repo.commands.lint.command
     : "missing";
+  const typecheckCommand = repo.commands.typecheck.detected
+    ? repo.commands.typecheck.command
+    : "missing";
+  const buildCommand = repo.commands.build.detected
+    ? repo.commands.build.command
+    : "missing";
   const ci = repo.ci.detected
     ? repo.ci.providers.map((provider) => provider.provider).join(", ")
     : "missing";
@@ -318,6 +328,8 @@ function repoHealth(repo: RepoInspectionSnapshot): string {
     `- Package manager: ${packageManager}`,
     `- Test command: ${testCommand}`,
     `- Lint command: ${lintCommand}`,
+    `- Typecheck command: ${typecheckCommand}`,
+    `- Build command: ${buildCommand}`,
     `- CI: ${ci}`
   ].join("\n");
 }
@@ -343,6 +355,8 @@ function testCoverageGaps(data: LaunchReadinessReportData): string {
   const gaps = [
     ...(data.repo.commands.test.detected ? [] : ["test command is missing"]),
     ...(data.repo.commands.lint.detected ? [] : ["lint command is missing"]),
+    ...(data.repo.commands.typecheck.detected ? [] : ["typecheck command is missing"]),
+    ...(data.repo.commands.build.detected ? [] : ["build command is missing"]),
     ...(hasCompletedTask(data.tasks, "run_mvp_verifiers")
       ? []
       : ["run_mvp_verifiers has not completed"]),
@@ -435,11 +449,121 @@ function nextSprintPlan(blockers: string[]): string {
     .join("\n");
 }
 
+function riskRegister(data: LaunchReadinessReportData, blockers: string[]): string {
+  const rows = [
+    ...blockers.map((blocker) => ({
+      risk: blocker,
+      source: riskSource(data, blocker),
+      recommendedTask: recommendedTaskForRisk(blocker)
+    })),
+    ...missingEvidenceRows(data)
+  ];
+
+  if (rows.length === 0) {
+    return "- no launch risks detected";
+  }
+
+  return rows
+    .map(
+      (row) =>
+        `- Risk: ${row.risk}\n  Source: ${row.source}\n  Recommended task: ${row.recommendedTask}`
+    )
+    .join("\n");
+}
+
+function missingEvidenceRows(data: LaunchReadinessReportData): {
+  risk: string;
+  source: string;
+  recommendedTask: string;
+}[] {
+  return [
+    ...(hasEvidenceType(data.evidence, "startup_repo_readiness")
+      ? []
+      : [
+          {
+            risk: "repo readiness evidence is not recorded",
+            source: "evidence ledger",
+            recommendedTask: "run startup launch audit"
+          }
+        ]),
+    ...(hasEvidenceType(data.evidence, "startup_security_baseline")
+      ? []
+      : [
+          {
+            risk: "security baseline evidence is not recorded",
+            source: "evidence ledger",
+            recommendedTask: "run startup launch security-baseline"
+          }
+        ])
+  ];
+}
+
+function riskSource(data: LaunchReadinessReportData, risk: string): string {
+  if (risk.includes("test command")) return "package.json scripts";
+  if (risk.includes("lint command")) return "package.json scripts";
+  if (risk.includes("typecheck command")) return "package.json scripts";
+  if (risk.includes("build command")) return "package.json scripts";
+  if (risk.includes("CI configuration")) return "repo inspection";
+  if (risk.includes("verifier")) return evidenceSource(data, "command_output");
+  if (risk.includes("measurement")) {
+    return evidenceSource(data, "startup_measurement_framework");
+  }
+  if (risk.includes("repo readiness")) {
+    return evidenceSource(data, "startup_repo_readiness");
+  }
+  if (risk.includes("security baseline")) {
+    return evidenceSource(data, "startup_security_baseline");
+  }
+  if (risk.includes("migration")) return evidenceSource(data, "startup_migration_plan");
+  if (risk.includes("rollback")) return evidenceSource(data, "startup_rollback_plan");
+  if (risk.includes("observability")) {
+    return evidenceSource(data, "startup_observability");
+  }
+  if (risk.includes("protected path")) return "git status protected path scan";
+  if (risk.includes("approval")) return "approval ledger";
+
+  return "launch readiness analysis";
+}
+
+function evidenceSource(data: LaunchReadinessReportData, type: string): string {
+  const evidence = data.evidence.find((item) => item.type === type);
+
+  return evidence === undefined ? "missing evidence" : `${evidence.id} ${evidence.uri}`;
+}
+
+function recommendedTaskForRisk(risk: string): string {
+  if (risk.includes("test command")) return "add or configure a test script";
+  if (risk.includes("lint command")) return "add or configure a lint script";
+  if (risk.includes("typecheck command")) return "add or configure a typecheck script";
+  if (risk.includes("build command")) return "add or configure a build script";
+  if (risk.includes("CI configuration")) return "add CI for launch verifier commands";
+  if (risk.includes("MVP verifier") || risk.includes("verifier command")) {
+    return "run and record MVP verifier evidence";
+  }
+  if (risk.includes("measurement")) {
+    return "run startup measurement generate and attach metric evidence";
+  }
+  if (risk.includes("repo readiness")) return "run startup launch audit";
+  if (risk.includes("security baseline")) {
+    return "run startup launch security-baseline";
+  }
+  if (risk.includes("migration")) return "record startup_migration_plan evidence";
+  if (risk.includes("rollback")) return "record startup_rollback_plan evidence";
+  if (risk.includes("observability")) return "record startup_observability evidence";
+  if (risk.includes("protected path"))
+    return "create review evidence for protected paths";
+  if (risk.includes("approval")) return "resolve pending approval before launch";
+
+  return "create a remediation task and attach evidence";
+}
+
 function releaseBlockers(data: LaunchReadinessReportData): string[] {
   return [
     ...(data.goals.length === 0 ? ["no startup goal exists"] : []),
     ...(data.repo.commands.test.detected ? [] : ["test command is missing"]),
     ...(data.repo.commands.lint.detected ? [] : ["lint command is missing"]),
+    ...(data.repo.commands.typecheck.detected ? [] : ["typecheck command is missing"]),
+    ...(data.repo.commands.build.detected ? [] : ["build command is missing"]),
     ...(data.repo.ci.detected ? [] : ["CI configuration is missing"]),
     ...(hasCompletedTask(data.tasks, "run_mvp_verifiers")
       ? []
@@ -451,6 +575,21 @@ function releaseBlockers(data: LaunchReadinessReportData): string[] {
     hasCompletedTask(data.tasks, "define_measurement_framework")
       ? []
       : ["measurement framework is missing"]),
+    ...(hasEvidenceType(data.evidence, "startup_repo_readiness")
+      ? []
+      : ["repo readiness audit is missing"]),
+    ...(hasEvidenceType(data.evidence, "startup_security_baseline")
+      ? []
+      : ["security baseline is missing"]),
+    ...(hasEvidenceType(data.evidence, "startup_migration_plan")
+      ? []
+      : ["migration plan evidence is missing"]),
+    ...(hasEvidenceType(data.evidence, "startup_rollback_plan")
+      ? []
+      : ["rollback plan evidence is missing"]),
+    ...(hasEvidenceType(data.evidence, "startup_observability")
+      ? []
+      : ["observability evidence is missing"]),
     ...(data.protectedPathChanges.length === 0
       ? []
       : [

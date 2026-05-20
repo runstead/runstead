@@ -20,11 +20,24 @@ export const STARTUP_EVIDENCE_TYPES = [
   "measurement_framework",
   "agent_context",
   "repo_readiness",
+  "security_baseline",
+  "migration_plan",
+  "rollback_plan",
+  "release_plan",
   "hypothesis",
   "problem_hypothesis",
   "user_hypothesis",
   "solution_hypothesis",
   "disconfirming",
+  "support_triage",
+  "founder_bottleneck",
+  "workflow_registry",
+  "delegation_policy",
+  "institutional_memory",
+  "ops_report",
+  "integration_map",
+  "ops_sop",
+  "gtm_artifact",
   "decision",
   "acceptable_debt",
   "observability"
@@ -312,9 +325,7 @@ function gateBlockers(input: {
     return [];
   }
 
-  return [
-    ...(hasMeasurementFramework(input) ? [] : ["measurement framework is missing"])
-  ];
+  return launchBlockers(input);
 }
 
 function gateWarnings(input: {
@@ -372,6 +383,35 @@ function hasValidationEvidence(evidence: StartupGateEvidenceRow[]): boolean {
   return ["startup_customer_interview", "startup_competitor", "startup_metric"].some(
     (type) => hasEvidenceType(evidence, type)
   );
+}
+
+function launchBlockers(input: {
+  tasks: StartupGateTaskRow[];
+  evidence: StartupGateEvidenceRow[];
+}): string[] {
+  return [
+    ...(hasMeasurementFramework(input) ? [] : ["measurement framework is missing"]),
+    ...(hasEvidenceType(input.evidence, "startup_repo_readiness") ||
+    hasCompletedTask(input.tasks, "inspect_repo_readiness")
+      ? []
+      : ["repo readiness audit is missing"]),
+    ...(hasEvidenceType(input.evidence, "startup_security_baseline")
+      ? []
+      : ["security baseline is missing"]),
+    ...(hasEvidenceType(input.evidence, "command_output") ||
+    hasCompletedTask(input.tasks, "run_mvp_verifiers")
+      ? []
+      : ["verifier evidence is missing"]),
+    ...(hasEvidenceType(input.evidence, "startup_migration_plan")
+      ? []
+      : ["migration plan evidence is missing"]),
+    ...(hasEvidenceType(input.evidence, "startup_rollback_plan")
+      ? []
+      : ["rollback plan evidence is missing"]),
+    ...(hasEvidenceType(input.evidence, "startup_observability")
+      ? []
+      : ["observability evidence is missing"])
+  ];
 }
 
 function hasMeasurementFramework(input: {

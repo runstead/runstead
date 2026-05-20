@@ -13,9 +13,11 @@ import { appendEventAndProject, type RunsteadDatabase } from "@runstead/state-sq
 
 import {
   inspectCiProvider,
+  inspectBuildCommand,
   inspectGitRepository,
   inspectLintCommand,
   inspectPackageManager,
+  inspectTypecheckCommand,
   inspectTestCommand,
   type CiProviderInspection,
   type GitInspection,
@@ -32,6 +34,8 @@ export interface RepoInspectionSnapshot {
   commands: {
     test: PackageScriptCommandInspection;
     lint: PackageScriptCommandInspection;
+    typecheck: PackageScriptCommandInspection;
+    build: PackageScriptCommandInspection;
   };
   ci: CiProviderInspection;
 }
@@ -55,11 +59,21 @@ export async function collectRepoInspection(
   inspectedAt = new Date().toISOString()
 ): Promise<RepoInspectionSnapshot> {
   const workspace = resolve(cwd);
-  const [git, packageManager, testCommand, lintCommand, ci] = await Promise.all([
+  const [
+    git,
+    packageManager,
+    testCommand,
+    lintCommand,
+    typecheckCommand,
+    buildCommand,
+    ci
+  ] = await Promise.all([
     inspectGitRepository(workspace),
     inspectPackageManager(workspace),
     inspectTestCommand(workspace),
     inspectLintCommand(workspace),
+    inspectTypecheckCommand(workspace),
+    inspectBuildCommand(workspace),
     inspectCiProvider(workspace)
   ]);
 
@@ -71,7 +85,9 @@ export async function collectRepoInspection(
     packageManager,
     commands: {
       test: testCommand,
-      lint: lintCommand
+      lint: lintCommand,
+      typecheck: typecheckCommand,
+      build: buildCommand
     },
     ci
   };
@@ -150,6 +166,12 @@ function summarizeInspection(snapshot: RepoInspectionSnapshot): string {
   const lintCommand = snapshot.commands.lint.detected
     ? snapshot.commands.lint.command
     : "none";
+  const typecheckCommand = snapshot.commands.typecheck.detected
+    ? snapshot.commands.typecheck.command
+    : "none";
+  const buildCommand = snapshot.commands.build.detected
+    ? snapshot.commands.build.command
+    : "none";
   const ciProviders =
     snapshot.ci.providers.length > 0
       ? snapshot.ci.providers.map((provider) => provider.provider).join("+")
@@ -161,6 +183,8 @@ function summarizeInspection(snapshot: RepoInspectionSnapshot): string {
     `package_manager:${packageManager}`,
     `test:${testCommand}`,
     `lint:${lintCommand}`,
+    `typecheck:${typecheckCommand}`,
+    `build:${buildCommand}`,
     `ci:${ciProviders}`
   ].join(", ");
 }

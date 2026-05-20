@@ -1154,6 +1154,66 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
       }
     );
 
+  const startupLaunch = startup
+    .command("launch")
+    .description("Generate startup launch readiness artifacts.");
+
+  startupLaunch
+    .command("audit")
+    .description("Inspect repo readiness and record launch audit evidence.")
+    .option("--cwd <path>", "Workspace directory")
+    .option("--actor <id>", "RBAC subject for launch audit generation", "local-admin")
+    .action(async (options: { cwd?: string; actor: string }) => {
+      await requireRbacPermission({
+        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+        actor: options.actor,
+        permission: "evidence.write",
+        action: "generate startup launch audit"
+      });
+
+      const { generateRepoReadinessAudit } = await import("./startup-automation.js");
+      const result = await generateRepoReadinessAudit({
+        ...(options.cwd === undefined ? {} : { cwd: options.cwd })
+      });
+
+      console.log(`Generated repo readiness evidence: ${result.evidenceId}`);
+      console.log(`Blockers: ${result.blockers.length}`);
+      console.log(`Warnings: ${result.warnings.length}`);
+      for (const file of result.files) {
+        console.log(`Wrote launch audit file: ${file}`);
+      }
+    });
+
+  startupLaunch
+    .command("security-baseline")
+    .description("Record protected-path, env, and dependency baseline evidence.")
+    .option("--cwd <path>", "Workspace directory")
+    .option(
+      "--actor <id>",
+      "RBAC subject for security baseline generation",
+      "local-admin"
+    )
+    .action(async (options: { cwd?: string; actor: string }) => {
+      await requireRbacPermission({
+        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+        actor: options.actor,
+        permission: "evidence.write",
+        action: "generate startup security baseline"
+      });
+
+      const { generateSecurityBaseline } = await import("./startup-automation.js");
+      const result = await generateSecurityBaseline({
+        ...(options.cwd === undefined ? {} : { cwd: options.cwd })
+      });
+
+      console.log(`Generated security baseline evidence: ${result.evidenceId}`);
+      console.log(`Blockers: ${result.blockers.length}`);
+      console.log(`Warnings: ${result.warnings.length}`);
+      for (const file of result.files) {
+        console.log(`Wrote security baseline file: ${file}`);
+      }
+    });
+
   const startupHypothesis = startup
     .command("hypothesis")
     .description("Manage startup hypothesis ledger records.");
@@ -1208,7 +1268,7 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     .option("--cwd <path>", "Workspace directory")
     .requiredOption(
       "--type <type>",
-      "Evidence type: customer_interview, competitor, metric, measurement_framework, agent_context, repo_readiness, hypothesis, problem_hypothesis, user_hypothesis, solution_hypothesis, disconfirming, decision, acceptable_debt, or observability"
+      "Evidence type: customer_interview, competitor, metric, measurement_framework, agent_context, repo_readiness, security_baseline, migration_plan, rollback_plan, release_plan, hypothesis, problem_hypothesis, user_hypothesis, solution_hypothesis, disconfirming, support_triage, founder_bottleneck, workflow_registry, delegation_policy, institutional_memory, ops_report, integration_map, ops_sop, gtm_artifact, decision, acceptable_debt, or observability"
     )
     .requiredOption("--summary <text>", "Evidence summary")
     .option("--source <ref>", "Evidence source reference", collectValues, [])

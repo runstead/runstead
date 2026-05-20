@@ -2,7 +2,8 @@ import { readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { openRunsteadDatabase } from "@runstead/state-sqlite";
+import type { Task } from "@runstead/core";
+import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sqlite";
 import { describe, expect, it } from "vitest";
 
 import { installDomainPack } from "./domain-pack-install.js";
@@ -75,6 +76,42 @@ describe("startup evidence ledger", () => {
         goalId: created.goal.id,
         now: new Date("2026-05-14T04:20:00.000Z")
       });
+      for (const [type, summary] of [
+        ["repo_readiness", "Repository readiness audit is clean"],
+        ["security_baseline", "Security baseline is clean"],
+        ["migration_plan", "No migrations required for this release"],
+        ["rollback_plan", "Rollback uses the previous deployment artifact"],
+        ["observability", "Launch dashboard and alert owner are defined"]
+      ] as const) {
+        await addStartupEvidence({
+          cwd: workspace,
+          type,
+          summary,
+          goalId: created.goal.id,
+          now: new Date("2026-05-14T04:25:00.000Z")
+        });
+      }
+
+      const verifierTask = created.generatedTasks.find(
+        (task) => task.type === "run_mvp_verifiers"
+      );
+
+      if (verifierTask === undefined) {
+        throw new Error("Expected build-mvp goal to create run_mvp_verifiers");
+      }
+
+      const gateDatabase = openRunsteadDatabase(initialized.stateDb);
+
+      try {
+        projectTask(gateDatabase, {
+          ...verifierTask,
+          status: "completed",
+          updatedAt: "2026-05-14T04:28:00.000Z"
+        });
+      } finally {
+        gateDatabase.close();
+      }
+
       const passedGate = await checkStartupGate({
         cwd: workspace,
         stage: "launch",
@@ -84,7 +121,9 @@ describe("startup evidence ledger", () => {
 
       expect(passedGate.passed).toBe(true);
       expect(passedGate.blockers).toEqual([]);
-      expect(passedGate.warnings).toContain("run_mvp_verifiers has not completed");
+      expect(passedGate.warnings).toContain(
+        "no verifier or metric evidence is recorded"
+      );
 
       const database = openRunsteadDatabase(initialized.stateDb);
 
@@ -112,7 +151,12 @@ describe("startup evidence ledger", () => {
 
         expect(evidenceRows.map((row) => row.type)).toEqual([
           "startup_customer_interview",
-          "startup_measurement_framework"
+          "startup_measurement_framework",
+          "startup_migration_plan",
+          "startup_observability",
+          "startup_repo_readiness",
+          "startup_rollback_plan",
+          "startup_security_baseline"
         ]);
         expect(gateEvents).toEqual([
           {
@@ -229,3 +273,25 @@ describe("startup evidence ledger", () => {
     }
   });
 });
+
+function projectTask(
+  database: ReturnType<typeof openRunsteadDatabase>,
+  task: Task
+): void {
+  appendEventAndProject(database, {
+    event: {
+      eventId: `evt_${task.id}`,
+      type: "task.updated",
+      aggregateType: "task",
+      aggregateId: task.id,
+      payload: {
+        status: task.status
+      },
+      createdAt: task.updatedAt
+    },
+    projection: {
+      type: "task",
+      value: task
+    }
+  });
+}

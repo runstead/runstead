@@ -162,6 +162,18 @@ export async function inspectLintCommand(
   return inspectPackageScriptCommand(cwd, "lint");
 }
 
+export async function inspectTypecheckCommand(
+  cwd = process.cwd()
+): Promise<PackageScriptCommandInspection> {
+  return inspectPackageScriptCommand(cwd, "typecheck");
+}
+
+export async function inspectBuildCommand(
+  cwd = process.cwd()
+): Promise<PackageScriptCommandInspection> {
+  return inspectPackageScriptCommand(cwd, "build");
+}
+
 export async function inspectCiProvider(
   cwd = process.cwd()
 ): Promise<CiProviderInspection> {

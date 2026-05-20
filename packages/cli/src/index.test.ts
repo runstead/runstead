@@ -367,6 +367,11 @@ describe("cli entrypoint", () => {
     const measurementGenerate = measurement?.commands.find(
       (command) => command.name() === "generate"
     );
+    const launch = startup?.commands.find((command) => command.name() === "launch");
+    const launchAudit = launch?.commands.find((command) => command.name() === "audit");
+    const launchSecurityBaseline = launch?.commands.find(
+      (command) => command.name() === "security-baseline"
+    );
     const hypothesis = startup?.commands.find(
       (command) => command.name() === "hypothesis"
     );
@@ -385,6 +390,7 @@ describe("cli entrypoint", () => {
         "gate",
         "hypothesis",
         "init",
+        "launch",
         "measurement"
       ])
     );
@@ -422,6 +428,12 @@ describe("cli entrypoint", () => {
         "--source",
         "--statement"
       ])
+    );
+    expect(launchAudit?.options.map((option) => option.long)).toEqual(
+      expect.arrayContaining(["--actor", "--cwd"])
+    );
+    expect(launchSecurityBaseline?.options.map((option) => option.long)).toEqual(
+      expect.arrayContaining(["--actor", "--cwd"])
     );
     expect(evidenceAdd?.options.map((option) => option.long)).toEqual(
       expect.arrayContaining([

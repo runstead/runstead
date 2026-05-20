@@ -1,4 +1,4 @@
-import { readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -6,7 +6,9 @@ import { openRunsteadDatabase } from "@runstead/state-sqlite";
 import { describe, expect, it } from "vitest";
 
 import {
+  generateRepoReadinessAudit,
   generateMeasurementFramework,
+  generateSecurityBaseline,
   generateStartupContext,
   initStartup
 } from "./startup-automation.js";
@@ -78,7 +80,9 @@ describe("startup automation", () => {
             packageManager: "pnpm@11.1.1",
             scripts: {
               test: "vitest run",
-              lint: "eslint ."
+              lint: "eslint .",
+              typecheck: "tsc --noEmit",
+              build: "tsc -p tsconfig.build.json"
             }
           },
           null,
@@ -105,6 +109,8 @@ describe("startup automation", () => {
       ]);
       expect(agents).toContain("test: pnpm test");
       expect(agents).toContain("lint: pnpm run lint");
+      expect(agents).toContain("typecheck: pnpm run typecheck");
+      expect(agents).toContain("build: pnpm run build");
       expect(agents).toContain("Use repo-local module boundaries.");
       expect(agents).toContain("Manual onboarding is acceptable before beta.");
       expect(claude).toContain("Startup Agent Context");
@@ -182,6 +188,91 @@ describe("startup automation", () => {
           type: "startup_measurement_framework",
           summary: "Generated startup measurement framework"
         });
+      } finally {
+        database.close();
+      }
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("generates launch repo readiness and security baseline evidence", async () => {
+    const workspace = join(tmpdir(), `runstead-startup-launch-${process.pid}`);
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await initStartup({
+        cwd: workspace,
+        stage: "launch",
+        now: new Date("2026-05-14T02:00:00.000Z")
+      });
+      await writeFile(
+        join(workspace, "package.json"),
+        `${JSON.stringify(
+          {
+            name: "startup-launch-fixture",
+            private: true,
+            packageManager: "pnpm@11.1.1",
+            scripts: {
+              test: "vitest run",
+              lint: "eslint .",
+              typecheck: "tsc --noEmit",
+              build: "tsc -p tsconfig.build.json"
+            }
+          },
+          null,
+          2
+        )}\n`,
+        "utf8"
+      );
+      await writeFile(join(workspace, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n");
+      await mkdir(join(workspace, ".github", "workflows"), { recursive: true });
+      await writeFile(
+        join(workspace, ".github", "workflows", "ci.yml"),
+        "name: ci\non: [push]\njobs: {}\n",
+        "utf8"
+      );
+
+      const readiness = await generateRepoReadinessAudit({
+        cwd: workspace,
+        now: new Date("2026-05-14T06:00:00.000Z")
+      });
+      const security = await generateSecurityBaseline({
+        cwd: workspace,
+        now: new Date("2026-05-14T06:10:00.000Z")
+      });
+      const readinessMarkdown = await readFile(readiness.files[0] ?? "", "utf8");
+      const securityMarkdown = await readFile(security.files[0] ?? "", "utf8");
+
+      expect(readiness.blockers).toEqual([]);
+      expect(readinessMarkdown).toContain("Startup Repository Readiness Audit");
+      expect(readinessMarkdown).toContain("pnpm run typecheck");
+      expect(readinessMarkdown).toContain("startup_security_baseline");
+      expect(security.blockers).toEqual([]);
+      expect(securityMarkdown).toContain("Startup Security Baseline");
+      expect(securityMarkdown).toContain("pnpm-lock.yaml");
+
+      const database = openRunsteadDatabase(readiness.stateDb);
+
+      try {
+        const evidence = database
+          .prepare(
+            `
+            SELECT type, summary
+            FROM evidence
+            WHERE id IN (?, ?)
+            ORDER BY type ASC
+          `
+          )
+          .all(readiness.evidenceId, security.evidenceId) as {
+          type: string;
+          summary: string;
+        }[];
+
+        expect(evidence.map((item) => item.type)).toEqual([
+          "startup_repo_readiness",
+          "startup_security_baseline"
+        ]);
       } finally {
         database.close();
       }
