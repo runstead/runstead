@@ -9,10 +9,12 @@ import {
   generateRepoReadinessAudit,
   generateMeasurementFramework,
   generateFounderBottleneckMap,
+  generateIntegrationMap,
   generateSecurityBaseline,
   generateStartupContext,
   generateWorkflowRegistry,
   initStartup,
+  captureInstitutionalMemory,
   recordSupportTriage
 } from "./startup-automation.js";
 
@@ -404,6 +406,82 @@ describe("startup automation", () => {
         expect(evidence.map((item) => item.type)).toEqual([
           "startup_delegation_policy",
           "startup_workflow_registry"
+        ]);
+      } finally {
+        database.close();
+      }
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("captures institutional memory and integration depth evidence", async () => {
+    const workspace = join(tmpdir(), `runstead-startup-memory-${process.pid}`);
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await initStartup({
+        cwd: workspace,
+        stage: "scale",
+        now: new Date("2026-05-14T02:00:00.000Z")
+      });
+
+      const memory = await captureInstitutionalMemory({
+        cwd: workspace,
+        knowledge: [
+          "Enterprise beta onboarding depends on the founder's manual data review"
+        ],
+        sourceRefs: ["founder-notes:scale"],
+        now: new Date("2026-05-14T09:00:00.000Z")
+      });
+      const integration = await generateIntegrationMap({
+        cwd: workspace,
+        integrations: ["CRM account sync", "Support inbox triage"],
+        lockInSignals: ["Customer runs launch checks inside support workflow"],
+        automationCoverage: ["CRM sync is manual; support triage is agent-assisted"],
+        now: new Date("2026-05-14T09:10:00.000Z")
+      });
+      const memoryMarkdown = await readFile(memory.files[0] ?? "", "utf8");
+      const integrationMarkdown = await readFile(integration.files[0] ?? "", "utf8");
+
+      expect(memoryMarkdown).toContain("Startup Institutional Memory");
+      expect(memoryMarkdown).toContain("manual data review");
+      expect(integrationMarkdown).toContain("Startup Integration Depth Map");
+      expect(integrationMarkdown).toContain("CRM account sync");
+
+      const database = openRunsteadDatabase(memory.stateDb);
+
+      try {
+        const fact = database
+          .prepare(
+            `
+            SELECT type, status, content
+            FROM memory_records
+            WHERE id = ?
+          `
+          )
+          .get(memory.memoryId) as
+          | { type: string; status: string; content: string }
+          | undefined;
+        const evidence = database
+          .prepare(
+            `
+            SELECT type
+            FROM evidence
+            WHERE id IN (?, ?)
+            ORDER BY type ASC
+          `
+          )
+          .all(memory.evidenceId, integration.evidenceId) as { type: string }[];
+
+        expect(fact).toMatchObject({
+          type: "project_fact",
+          status: "verified"
+        });
+        expect(fact?.content).toContain("manual data review");
+        expect(evidence.map((item) => item.type)).toEqual([
+          "startup_institutional_memory",
+          "startup_integration_map"
         ]);
       } finally {
         database.close();

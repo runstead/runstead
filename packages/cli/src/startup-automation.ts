@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import { constants } from "node:fs";
 import { access, mkdir, readdir, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 
 import type { Goal, Task } from "@runstead/core";
@@ -10,6 +11,7 @@ import { installDomainPack, upgradeDomainPack } from "./domain-pack-install.js";
 import { createGoal, listGoals } from "./goals.js";
 import { initRunstead, type InitPolicyProfile } from "./init.js";
 import { collectRepoInspection } from "./inspection-evidence.js";
+import { recordProjectFact } from "./memory.js";
 import { matchesPolicyPathPattern } from "./policy.js";
 import { resolveRunsteadRoot, requireRunsteadStateDb } from "./runstead-root.js";
 import { addStartupEvidence } from "./startup-evidence.js";
@@ -147,6 +149,39 @@ export interface GenerateWorkflowRegistryResult {
   evidenceIds: string[];
   workflows: string[];
   delegationRules: string[];
+}
+
+export interface CaptureInstitutionalMemoryOptions {
+  cwd?: string;
+  knowledge?: string[];
+  scope?: string;
+  sourceRefs?: string[];
+  now?: Date;
+}
+
+export interface CaptureInstitutionalMemoryResult {
+  root: string;
+  stateDb: string;
+  files: string[];
+  evidenceId: string;
+  memoryId: string;
+  knowledge: string[];
+}
+
+export interface GenerateIntegrationMapOptions {
+  cwd?: string;
+  integrations?: string[];
+  lockInSignals?: string[];
+  automationCoverage?: string[];
+  now?: Date;
+}
+
+export interface GenerateIntegrationMapResult {
+  root: string;
+  stateDb: string;
+  files: string[];
+  evidenceId: string;
+  integrations: string[];
 }
 
 const STARTUP_DOMAIN = "ai-native-startup";
@@ -580,6 +615,102 @@ export async function generateWorkflowRegistry(
   };
 }
 
+export async function captureInstitutionalMemory(
+  options: CaptureInstitutionalMemoryOptions = {}
+): Promise<CaptureInstitutionalMemoryResult> {
+  const cwd = resolve(options.cwd ?? process.cwd());
+  const state = await requireRunsteadStateDb(cwd);
+  const generatedAt = (options.now ?? new Date()).toISOString();
+  const knowledge =
+    options.knowledge === undefined || options.knowledge.length === 0
+      ? [
+          "No institutional memory input recorded; capture founder-only context before scale."
+        ]
+      : options.knowledge;
+  const scope = options.scope ?? "startup/institutional-memory";
+  const markdown = formatInstitutionalMemory({
+    generatedAt,
+    scope,
+    knowledge,
+    sourceRefs: options.sourceRefs ?? []
+  });
+
+  await mkdir(join(state.root, "startup"), { recursive: true });
+
+  const runtimePath = join(state.root, "startup", "institutional-memory.md");
+
+  await writeFile(runtimePath, markdown, "utf8");
+
+  const memory = recordProjectFact({
+    cwd,
+    scope,
+    content: knowledge.join("\n"),
+    sourceRefs: [pathToFileURL(runtimePath).href],
+    createdBy: "startup scale memory capture",
+    ...(options.now === undefined ? {} : { now: options.now })
+  });
+  const evidence = await addStartupEvidence({
+    cwd,
+    type: "institutional_memory",
+    summary: `Institutional memory captured (${knowledge.length} item${knowledge.length === 1 ? "" : "s"})`,
+    sourceRefs: [runtimePath, ...(options.sourceRefs ?? [])],
+    content: markdown,
+    ...(options.now === undefined ? {} : { now: options.now })
+  });
+
+  return {
+    root: state.root,
+    stateDb: state.stateDb,
+    files: [runtimePath],
+    evidenceId: evidence.evidence.id,
+    memoryId: memory.memory.id,
+    knowledge
+  };
+}
+
+export async function generateIntegrationMap(
+  options: GenerateIntegrationMapOptions = {}
+): Promise<GenerateIntegrationMapResult> {
+  const cwd = resolve(options.cwd ?? process.cwd());
+  const state = await requireRunsteadStateDb(cwd);
+  const generatedAt = (options.now ?? new Date()).toISOString();
+  const integrations =
+    options.integrations === undefined || options.integrations.length === 0
+      ? [
+          "No integration input recorded; map customer workflow integrations before scale."
+        ]
+      : options.integrations;
+  const markdown = formatIntegrationMap({
+    generatedAt,
+    integrations,
+    lockInSignals: options.lockInSignals ?? [],
+    automationCoverage: options.automationCoverage ?? []
+  });
+
+  await mkdir(join(state.root, "startup"), { recursive: true });
+
+  const runtimePath = join(state.root, "startup", "integration-depth-map.md");
+
+  await writeFile(runtimePath, markdown, "utf8");
+
+  const evidence = await addStartupEvidence({
+    cwd,
+    type: "integration_map",
+    summary: `Integration depth map recorded (${integrations.length} integration${integrations.length === 1 ? "" : "s"})`,
+    sourceRefs: [runtimePath],
+    content: markdown,
+    ...(options.now === undefined ? {} : { now: options.now })
+  });
+
+  return {
+    root: state.root,
+    stateDb: state.stateDb,
+    files: [runtimePath],
+    evidenceId: evidence.evidence.id,
+    integrations
+  };
+}
+
 function templateForStage(stage: StartupInitStage): string {
   switch (stage) {
     case "mvp":
@@ -991,6 +1122,71 @@ function formatDelegationPolicy(input: {
       "Agents are workers; Runstead remains the control plane.",
       "Delegated work must be linked to goals, tasks, evidence, or approvals.",
       "Founder-only decisions must move into decision records or memory artifacts before scale."
+    ]),
+    ""
+  ].join("\n");
+}
+
+function formatInstitutionalMemory(input: {
+  generatedAt: string;
+  scope: string;
+  knowledge: string[];
+  sourceRefs: string[];
+}): string {
+  return [
+    "# Startup Institutional Memory",
+    "",
+    `Generated: ${input.generatedAt}`,
+    `Scope: ${input.scope}`,
+    "",
+    "## Captured Knowledge",
+    "",
+    listItems(input.knowledge),
+    "",
+    "## Source References",
+    "",
+    listItemsOrNone(input.sourceRefs),
+    "",
+    "## Verification Contract",
+    "",
+    listItems([
+      "Founder-only context must become a verified project fact or decision record.",
+      "Conflicting facts must be resolved before delegation.",
+      "Memory retrieval must remain auditable through Runstead events."
+    ]),
+    ""
+  ].join("\n");
+}
+
+function formatIntegrationMap(input: {
+  generatedAt: string;
+  integrations: string[];
+  lockInSignals: string[];
+  automationCoverage: string[];
+}): string {
+  return [
+    "# Startup Integration Depth Map",
+    "",
+    `Generated: ${input.generatedAt}`,
+    "",
+    "## Integrations",
+    "",
+    listItems(input.integrations),
+    "",
+    "## Workflow Lock-in Signals",
+    "",
+    listItemsOrNone(input.lockInSignals),
+    "",
+    "## Automation Coverage",
+    "",
+    listItemsOrNone(input.automationCoverage),
+    "",
+    "## Scale Contract",
+    "",
+    listItems([
+      "Each critical integration needs an owner, failure mode, and support path.",
+      "Workflow lock-in claims need customer evidence or usage metrics.",
+      "Automation coverage must map to recurring workflow registry entries."
     ]),
     ""
   ].join("\n");

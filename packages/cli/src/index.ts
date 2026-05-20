@@ -1363,6 +1363,104 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
       }
     );
 
+  startupScale
+    .command("memory-capture")
+    .description("Capture founder-only knowledge as memory and evidence.")
+    .option("--cwd <path>", "Workspace directory")
+    .option(
+      "--knowledge <text>",
+      "Founder-only knowledge to capture",
+      collectValues,
+      []
+    )
+    .option("--scope <scope>", "Memory scope", "startup/institutional-memory")
+    .option("--source <ref>", "Source reference", collectValues, [])
+    .option("--actor <id>", "RBAC subject for memory capture", "local-admin")
+    .action(
+      async (options: {
+        cwd?: string;
+        knowledge: string[];
+        scope: string;
+        source: string[];
+        actor: string;
+      }) => {
+        await requireRbacPermission({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          actor: options.actor,
+          permission: "memory.write",
+          action: "capture startup institutional memory"
+        });
+        await requireRbacPermission({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          actor: options.actor,
+          permission: "evidence.write",
+          action: "record startup institutional memory evidence"
+        });
+
+        const { captureInstitutionalMemory } = await import("./startup-automation.js");
+        const result = await captureInstitutionalMemory({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          knowledge: options.knowledge,
+          scope: options.scope,
+          sourceRefs: options.source
+        });
+
+        console.log(`Captured institutional memory: ${result.memoryId}`);
+        console.log(`Recorded memory evidence: ${result.evidenceId}`);
+        for (const file of result.files) {
+          console.log(`Wrote memory artifact: ${file}`);
+        }
+      }
+    );
+
+  startupScale
+    .command("integration-map")
+    .description("Generate integration depth and automation coverage evidence.")
+    .option("--cwd <path>", "Workspace directory")
+    .option("--integration <text>", "Customer workflow integration", collectValues, [])
+    .option("--lock-in-signal <text>", "Workflow lock-in signal", collectValues, [])
+    .option(
+      "--automation-coverage <text>",
+      "Automation coverage note",
+      collectValues,
+      []
+    )
+    .option(
+      "--actor <id>",
+      "RBAC subject for integration map generation",
+      "local-admin"
+    )
+    .action(
+      async (options: {
+        cwd?: string;
+        integration: string[];
+        lockInSignal: string[];
+        automationCoverage: string[];
+        actor: string;
+      }) => {
+        await requireRbacPermission({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          actor: options.actor,
+          permission: "evidence.write",
+          action: "generate startup integration depth map"
+        });
+
+        const { generateIntegrationMap } = await import("./startup-automation.js");
+        const result = await generateIntegrationMap({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          integrations: options.integration,
+          lockInSignals: options.lockInSignal,
+          automationCoverage: options.automationCoverage
+        });
+
+        console.log(`Generated integration map evidence: ${result.evidenceId}`);
+        console.log(`Integrations: ${result.integrations.length}`);
+        for (const file of result.files) {
+          console.log(`Wrote integration map file: ${file}`);
+        }
+      }
+    );
+
   const startupHypothesis = startup
     .command("hypothesis")
     .description("Manage startup hypothesis ledger records.");

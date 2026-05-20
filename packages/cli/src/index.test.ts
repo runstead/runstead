@@ -382,6 +382,12 @@ describe("cli entrypoint", () => {
     const scaleWorkflowRegistry = scale?.commands.find(
       (command) => command.name() === "workflow-registry"
     );
+    const scaleMemoryCapture = scale?.commands.find(
+      (command) => command.name() === "memory-capture"
+    );
+    const scaleIntegrationMap = scale?.commands.find(
+      (command) => command.name() === "integration-map"
+    );
     const hypothesis = startup?.commands.find(
       (command) => command.name() === "hypothesis"
     );
@@ -473,6 +479,18 @@ describe("cli entrypoint", () => {
         "--cwd",
         "--delegation-rule",
         "--workflow"
+      ])
+    );
+    expect(scaleMemoryCapture?.options.map((option) => option.long)).toEqual(
+      expect.arrayContaining(["--actor", "--cwd", "--knowledge", "--scope", "--source"])
+    );
+    expect(scaleIntegrationMap?.options.map((option) => option.long)).toEqual(
+      expect.arrayContaining([
+        "--actor",
+        "--automation-coverage",
+        "--cwd",
+        "--integration",
+        "--lock-in-signal"
       ])
     );
     expect(evidenceAdd?.options.map((option) => option.long)).toEqual(
