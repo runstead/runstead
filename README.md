@@ -1,6 +1,7 @@
 # Runstead
 
-Runstead is the control plane for AI agents that maintain software repos.
+Runstead is the control plane for governed AI-native execution, starting with
+repo maintenance and launch-ready software delivery.
 
 Give Runstead durable goals, budgets, policies, and acceptance criteria.
 Runstead turns them into tasks, dispatches worker agents, guards actions with
@@ -15,7 +16,9 @@ evidence actions.
 
 The first supported product path is **repo-maintenance**: create a long-running
 goal, run governed local verifiers, capture evidence, request approvals for
-unknown actions, and export an audit trail.
+unknown actions, and export an audit trail. That wedge keeps Runstead focused on
+real governed execution while the product surface expands toward AI-coded MVP and
+launch-readiness workflows.
 
 ```bash
 runstead init --create-default-goal
@@ -135,3 +138,17 @@ pnpm build
 Other domain packs, memory, skill packaging, dashboard, GitHub App mode, RBAC,
 webhooks, and team-policy overlays are available as experimental surfaces while
 the repo-maintenance control loop remains the primary MVP.
+
+## Startup Execution Direction
+
+Runstead does not replace Codex, Claude Code, or other coding agents. Those
+workers execute. Runstead owns the goal, policy, verifier, evidence, checkpoint,
+audit, and resume layer around that execution.
+
+The founder-facing product path is **AI-coded MVP readiness**: keep agent-built
+products verifiable, auditable, and launch-ready before they accumulate opaque
+technical debt or ship without a measurement framework.
+
+See [docs/product-positioning.md](docs/product-positioning.md) and
+[docs/startup-lifecycle.md](docs/startup-lifecycle.md) for the startup control
+plane roadmap.
