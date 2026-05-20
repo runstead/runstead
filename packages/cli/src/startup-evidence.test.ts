@@ -274,6 +274,78 @@ describe("startup evidence ledger", () => {
       await rm(workspace, { force: true, recursive: true });
     }
   });
+
+  it("enforces the scale ops gate with handoff evidence", async () => {
+    const workspace = join(tmpdir(), `runstead-startup-scale-gate-${process.pid}`);
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await initRunstead({ cwd: workspace });
+      await installDomainPack({
+        cwd: workspace,
+        ref: "ai-native-startup",
+        now: new Date("2026-05-14T02:00:00.000Z")
+      });
+      const created = await createGoal({
+        cwd: workspace,
+        domain: "ai-native-startup",
+        template: "scale-ops",
+        now: new Date("2026-05-14T03:00:00.000Z")
+      });
+      const emptyGate = await checkStartupGate({
+        cwd: workspace,
+        stage: "scale",
+        domain: "ai-native-startup",
+        now: new Date("2026-05-14T03:10:00.000Z")
+      });
+
+      expect(emptyGate.passed).toBe(false);
+      expect(emptyGate.blockers).toEqual(
+        expect.arrayContaining([
+          "workflow registry is missing",
+          "delegation policy is missing",
+          "institutional memory evidence is missing",
+          "recurring ops report is missing",
+          "integration depth map is missing",
+          "ops SOP evidence is missing",
+          "support triage evidence is missing",
+          "GTM artifact verification is missing"
+        ])
+      );
+
+      for (const [type, summary] of [
+        ["founder_bottleneck", "Founder-only decisions are mapped"],
+        ["workflow_registry", "Recurring workflows are registered"],
+        ["delegation_policy", "Agent delegation boundaries are recorded"],
+        ["institutional_memory", "Founder context is captured"],
+        ["ops_report", "Weekly ops report generated"],
+        ["integration_map", "Customer workflow integrations are mapped"],
+        ["ops_sop", "Support SOP is generated"],
+        ["support_triage", "Support request triaged"],
+        ["gtm_artifact", "GTM claims verified"]
+      ] as const) {
+        await addStartupEvidence({
+          cwd: workspace,
+          type,
+          summary,
+          goalId: created.goal.id,
+          now: new Date("2026-05-14T03:20:00.000Z")
+        });
+      }
+
+      const passedGate = await checkStartupGate({
+        cwd: workspace,
+        stage: "scale",
+        domain: "ai-native-startup",
+        now: new Date("2026-05-14T03:30:00.000Z")
+      });
+
+      expect(passedGate.passed).toBe(true);
+      expect(passedGate.blockers).toEqual([]);
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
 });
 
 function projectTask(

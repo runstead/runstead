@@ -115,6 +115,13 @@ runstead startup evidence add --type migration_plan --summary "..."
 runstead startup evidence add --type rollback_plan --summary "..."
 runstead startup evidence add --type observability --summary "..."
 runstead startup gate check --stage launch
+runstead startup scale workflow-registry --workflow "..."
+runstead startup scale memory-capture --knowledge "..."
+runstead startup scale integration-map --integration "..."
+runstead startup scale sop-generate --sop "..."
+runstead startup scale gtm-verify --claim "..."
+runstead startup scale report --period 2026-W20
+runstead startup gate check --stage scale
 ```
 
 ## Scope Discipline

@@ -10,12 +10,15 @@ import {
   generateMeasurementFramework,
   generateFounderBottleneckMap,
   generateIntegrationMap,
+  generateOpsSops,
   generateSecurityBaseline,
+  generateScaleOpsReport,
   generateStartupContext,
   generateWorkflowRegistry,
   initStartup,
   captureInstitutionalMemory,
-  recordSupportTriage
+  recordSupportTriage,
+  verifyGtmArtifacts
 } from "./startup-automation.js";
 
 describe("startup automation", () => {
@@ -482,6 +485,83 @@ describe("startup automation", () => {
         expect(evidence.map((item) => item.type)).toEqual([
           "startup_institutional_memory",
           "startup_integration_map"
+        ]);
+      } finally {
+        database.close();
+      }
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("generates recurring scale reports, SOPs, and GTM verification evidence", async () => {
+    const workspace = join(tmpdir(), `runstead-startup-scale-${process.pid}`);
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await initStartup({
+        cwd: workspace,
+        stage: "scale",
+        now: new Date("2026-05-14T02:00:00.000Z")
+      });
+      await recordSupportTriage({
+        cwd: workspace,
+        request: "Customer needs weekly readiness summary",
+        outcome: "Track in weekly scale report",
+        now: new Date("2026-05-14T09:30:00.000Z")
+      });
+
+      const sops = await generateOpsSops({
+        cwd: workspace,
+        sops: ["Every Monday, generate startup scale report from evidence"],
+        owner: "ops-lead",
+        workflow: "weekly ops review",
+        now: new Date("2026-05-14T10:00:00.000Z")
+      });
+      const gtm = await verifyGtmArtifacts({
+        cwd: workspace,
+        claims: ["Runstead produces evidence-backed launch readiness reports"],
+        evidenceRefs: ["startup:launch-readiness"],
+        productState: "report command available",
+        now: new Date("2026-05-14T10:10:00.000Z")
+      });
+      const report = await generateScaleOpsReport({
+        cwd: workspace,
+        period: "2026-W20",
+        now: new Date("2026-05-14T10:20:00.000Z")
+      });
+      const sopsMarkdown = await readFile(sops.files[0] ?? "", "utf8");
+      const gtmMarkdown = await readFile(gtm.files[0] ?? "", "utf8");
+      const reportMarkdown = await readFile(report.files[0] ?? "", "utf8");
+
+      expect(sopsMarkdown).toContain("Startup Ops SOPs");
+      expect(sopsMarkdown).toContain("weekly ops review");
+      expect(gtmMarkdown).toContain("Startup GTM Artifact Verification");
+      expect(gtmMarkdown).toContain("evidence-backed launch readiness");
+      expect(reportMarkdown).toContain("Startup Scale Ops Report");
+      expect(reportMarkdown).toContain("Weekly Engineering Evidence");
+      expect(report.period).toBe("2026-W20");
+
+      const database = openRunsteadDatabase(report.stateDb);
+
+      try {
+        const evidence = database
+          .prepare(
+            `
+            SELECT type
+            FROM evidence
+            WHERE id IN (?, ?, ?)
+            ORDER BY type ASC
+          `
+          )
+          .all(sops.evidenceId, gtm.evidenceId, report.evidenceId) as {
+          type: string;
+        }[];
+
+        expect(evidence.map((item) => item.type)).toEqual([
+          "startup_gtm_artifact",
+          "startup_ops_report",
+          "startup_ops_sop"
         ]);
       } finally {
         database.close();

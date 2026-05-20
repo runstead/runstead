@@ -388,6 +388,13 @@ describe("cli entrypoint", () => {
     const scaleIntegrationMap = scale?.commands.find(
       (command) => command.name() === "integration-map"
     );
+    const scaleReport = scale?.commands.find((command) => command.name() === "report");
+    const scaleSopGenerate = scale?.commands.find(
+      (command) => command.name() === "sop-generate"
+    );
+    const scaleGtmVerify = scale?.commands.find(
+      (command) => command.name() === "gtm-verify"
+    );
     const hypothesis = startup?.commands.find(
       (command) => command.name() === "hypothesis"
     );
@@ -491,6 +498,21 @@ describe("cli entrypoint", () => {
         "--cwd",
         "--integration",
         "--lock-in-signal"
+      ])
+    );
+    expect(scaleReport?.options.map((option) => option.long)).toEqual(
+      expect.arrayContaining(["--actor", "--cwd", "--period"])
+    );
+    expect(scaleSopGenerate?.options.map((option) => option.long)).toEqual(
+      expect.arrayContaining(["--actor", "--cwd", "--owner", "--sop", "--workflow"])
+    );
+    expect(scaleGtmVerify?.options.map((option) => option.long)).toEqual(
+      expect.arrayContaining([
+        "--actor",
+        "--claim",
+        "--cwd",
+        "--evidence",
+        "--product-state"
       ])
     );
     expect(evidenceAdd?.options.map((option) => option.long)).toEqual(

@@ -6,6 +6,7 @@ import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 
 import type { Goal, Task } from "@runstead/core";
+import { openRunsteadDatabase } from "@runstead/state-sqlite";
 
 import { installDomainPack, upgradeDomainPack } from "./domain-pack-install.js";
 import { createGoal, listGoals } from "./goals.js";
@@ -182,6 +183,59 @@ export interface GenerateIntegrationMapResult {
   files: string[];
   evidenceId: string;
   integrations: string[];
+}
+
+export interface GenerateScaleOpsReportOptions {
+  cwd?: string;
+  period?: string;
+  now?: Date;
+}
+
+export interface GenerateScaleOpsReportResult {
+  root: string;
+  stateDb: string;
+  files: string[];
+  evidenceId: string;
+  period: string;
+}
+
+export interface GenerateOpsSopsOptions {
+  cwd?: string;
+  sops?: string[];
+  owner?: string;
+  workflow?: string;
+  now?: Date;
+}
+
+export interface GenerateOpsSopsResult {
+  root: string;
+  stateDb: string;
+  files: string[];
+  evidenceId: string;
+  sops: string[];
+}
+
+export interface VerifyGtmArtifactsOptions {
+  cwd?: string;
+  claims?: string[];
+  evidenceRefs?: string[];
+  productState?: string;
+  now?: Date;
+}
+
+export interface VerifyGtmArtifactsResult {
+  root: string;
+  stateDb: string;
+  files: string[];
+  evidenceId: string;
+  claims: string[];
+}
+
+interface StartupEvidenceSummaryRow {
+  id: string;
+  type: string;
+  summary: string | null;
+  created_at: string;
 }
 
 const STARTUP_DOMAIN = "ai-native-startup";
@@ -711,6 +765,134 @@ export async function generateIntegrationMap(
   };
 }
 
+export async function generateScaleOpsReport(
+  options: GenerateScaleOpsReportOptions = {}
+): Promise<GenerateScaleOpsReportResult> {
+  const cwd = resolve(options.cwd ?? process.cwd());
+  const state = await requireRunsteadStateDb(cwd);
+  const generatedAt = (options.now ?? new Date()).toISOString();
+  const period = options.period ?? generatedAt.slice(0, 10);
+  const database = openRunsteadDatabase(state.stateDb);
+  let evidence: StartupEvidenceSummaryRow[];
+
+  try {
+    evidence = readStartupEvidenceSummaries(database);
+  } finally {
+    database.close();
+  }
+
+  const markdown = formatScaleOpsReport({
+    generatedAt,
+    period,
+    evidence
+  });
+
+  await mkdir(join(state.root, "reports"), { recursive: true });
+
+  const runtimePath = join(state.root, "reports", `startup-ops-${period}.md`);
+
+  await writeFile(runtimePath, markdown, "utf8");
+
+  const reportEvidence = await addStartupEvidence({
+    cwd,
+    type: "ops_report",
+    summary: `Startup scale ops report generated for ${period}`,
+    sourceRefs: [runtimePath],
+    content: markdown,
+    ...(options.now === undefined ? {} : { now: options.now })
+  });
+
+  return {
+    root: state.root,
+    stateDb: state.stateDb,
+    files: [runtimePath],
+    evidenceId: reportEvidence.evidence.id,
+    period
+  };
+}
+
+export async function generateOpsSops(
+  options: GenerateOpsSopsOptions = {}
+): Promise<GenerateOpsSopsResult> {
+  const cwd = resolve(options.cwd ?? process.cwd());
+  const state = await requireRunsteadStateDb(cwd);
+  const generatedAt = (options.now ?? new Date()).toISOString();
+  const sops =
+    options.sops === undefined || options.sops.length === 0
+      ? ["No SOP input recorded; define recurring operation steps before handoff."]
+      : options.sops;
+  const markdown = formatOpsSops({
+    generatedAt,
+    sops,
+    owner: options.owner ?? "unassigned",
+    workflow: options.workflow ?? "unassigned"
+  });
+
+  await mkdir(join(state.root, "startup"), { recursive: true });
+
+  const runtimePath = join(state.root, "startup", "ops-sops.md");
+
+  await writeFile(runtimePath, markdown, "utf8");
+
+  const evidence = await addStartupEvidence({
+    cwd,
+    type: "ops_sop",
+    summary: `Ops SOPs generated (${sops.length} SOP${sops.length === 1 ? "" : "s"})`,
+    sourceRefs: [runtimePath],
+    content: markdown,
+    ...(options.now === undefined ? {} : { now: options.now })
+  });
+
+  return {
+    root: state.root,
+    stateDb: state.stateDb,
+    files: [runtimePath],
+    evidenceId: evidence.evidence.id,
+    sops
+  };
+}
+
+export async function verifyGtmArtifacts(
+  options: VerifyGtmArtifactsOptions = {}
+): Promise<VerifyGtmArtifactsResult> {
+  const cwd = resolve(options.cwd ?? process.cwd());
+  const state = await requireRunsteadStateDb(cwd);
+  const generatedAt = (options.now ?? new Date()).toISOString();
+  const claims =
+    options.claims === undefined || options.claims.length === 0
+      ? ["No GTM claim input recorded; verify launch promises before publishing."]
+      : options.claims;
+  const markdown = formatGtmVerification({
+    generatedAt,
+    claims,
+    evidenceRefs: options.evidenceRefs ?? [],
+    productState: options.productState ?? "unrecorded"
+  });
+
+  await mkdir(join(state.root, "startup"), { recursive: true });
+
+  const runtimePath = join(state.root, "startup", "gtm-artifacts.md");
+
+  await writeFile(runtimePath, markdown, "utf8");
+
+  const evidence = await addStartupEvidence({
+    cwd,
+    type: "gtm_artifact",
+    summary: `GTM artifacts verified (${claims.length} claim${claims.length === 1 ? "" : "s"})`,
+    sourceRefs: [runtimePath, ...(options.evidenceRefs ?? [])],
+    content: markdown,
+    ...(options.now === undefined ? {} : { now: options.now })
+  });
+
+  return {
+    root: state.root,
+    stateDb: state.stateDb,
+    files: [runtimePath],
+    evidenceId: evidence.evidence.id,
+    claims
+  };
+}
+
 function templateForStage(stage: StartupInitStage): string {
   switch (stage) {
     case "mvp":
@@ -1190,6 +1372,145 @@ function formatIntegrationMap(input: {
     ]),
     ""
   ].join("\n");
+}
+
+function formatScaleOpsReport(input: {
+  generatedAt: string;
+  period: string;
+  evidence: StartupEvidenceSummaryRow[];
+}): string {
+  const supportEvidence = input.evidence.filter(
+    (item) => item.type === "startup_support_triage"
+  );
+  const engineeringEvidence = input.evidence.filter((item) =>
+    [
+      "startup_repo_readiness",
+      "startup_security_baseline",
+      "startup_workflow_registry",
+      "startup_delegation_policy",
+      "startup_ops_sop"
+    ].includes(item.type)
+  );
+  const gtmEvidence = input.evidence.filter((item) =>
+    ["startup_customer_interview", "startup_metric", "startup_gtm_artifact"].includes(
+      item.type
+    )
+  );
+
+  return [
+    "# Startup Scale Ops Report",
+    "",
+    `Generated: ${input.generatedAt}`,
+    `Period: ${input.period}`,
+    "",
+    "## Weekly Ops Evidence",
+    "",
+    formatEvidenceSummary(supportEvidence),
+    "",
+    "## Weekly Engineering Evidence",
+    "",
+    formatEvidenceSummary(engineeringEvidence),
+    "",
+    "## Weekly GTM Evidence",
+    "",
+    formatEvidenceSummary(gtmEvidence),
+    "",
+    "## Recent Startup Evidence",
+    "",
+    formatEvidenceSummary(input.evidence.slice(0, 10)),
+    "",
+    "## Recurring Report Contract",
+    "",
+    listItems([
+      "Ops, engineering, and GTM sections must cite Runstead evidence.",
+      "Missing evidence should become the next scale-stage task.",
+      "This report should be regenerated before weekly planning."
+    ]),
+    ""
+  ].join("\n");
+}
+
+function formatOpsSops(input: {
+  generatedAt: string;
+  sops: string[];
+  owner: string;
+  workflow: string;
+}): string {
+  return [
+    "# Startup Ops SOPs",
+    "",
+    `Generated: ${input.generatedAt}`,
+    `Owner: ${input.owner}`,
+    `Workflow: ${input.workflow}`,
+    "",
+    "## SOPs",
+    "",
+    listItems(input.sops),
+    "",
+    "## Handoff Checklist",
+    "",
+    listItems([
+      "Each SOP must define trigger, inputs, steps, evidence output, owner, and escalation path.",
+      "Agent-executed SOPs must write evidence before completion.",
+      "Publishing or external writes still follow delegation policy approval boundaries."
+    ]),
+    ""
+  ].join("\n");
+}
+
+function formatGtmVerification(input: {
+  generatedAt: string;
+  claims: string[];
+  evidenceRefs: string[];
+  productState: string;
+}): string {
+  return [
+    "# Startup GTM Artifact Verification",
+    "",
+    `Generated: ${input.generatedAt}`,
+    `Product state: ${input.productState}`,
+    "",
+    "## Claims",
+    "",
+    listItems(input.claims),
+    "",
+    "## Evidence References",
+    "",
+    listItemsOrNone(input.evidenceRefs),
+    "",
+    "## Publish Contract",
+    "",
+    listItems([
+      "Every external GTM claim needs customer, metric, or product-state evidence.",
+      "Claims that exceed current product state must be blocked before publish.",
+      "Publishing GTM artifacts requires approval under the startup delegation policy."
+    ]),
+    ""
+  ].join("\n");
+}
+
+function formatEvidenceSummary(evidence: StartupEvidenceSummaryRow[]): string {
+  return evidence.length === 0
+    ? "- none"
+    : evidence
+        .map((item) => `- ${item.id}: ${item.type}: ${item.summary ?? "no summary"}`)
+        .join("\n");
+}
+
+function readStartupEvidenceSummaries(
+  database: ReturnType<typeof openRunsteadDatabase>
+): StartupEvidenceSummaryRow[] {
+  return database
+    .prepare(
+      `
+      SELECT id, type, summary, created_at
+      FROM evidence
+      WHERE type LIKE 'startup_%'
+      ORDER BY created_at DESC, id ASC
+      LIMIT 50
+    `
+    )
+    .all() as unknown as StartupEvidenceSummaryRow[];
 }
 
 function repoReadinessBlockers(

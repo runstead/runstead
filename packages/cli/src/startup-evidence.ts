@@ -321,6 +321,10 @@ function gateBlockers(input: {
     return validationBlockers(input.evidence);
   }
 
+  if (input.stage === "scale") {
+    return scaleBlockers(input.evidence);
+  }
+
   if (input.stage !== "launch") {
     return [];
   }
@@ -414,6 +418,38 @@ function launchBlockers(input: {
     ...(hasEvidenceType(input.evidence, "startup_founder_bottleneck")
       ? []
       : ["founder bottleneck audit is missing"])
+  ];
+}
+
+function scaleBlockers(evidence: StartupGateEvidenceRow[]): string[] {
+  return [
+    ...(hasEvidenceType(evidence, "startup_founder_bottleneck")
+      ? []
+      : ["founder bottleneck map is missing"]),
+    ...(hasEvidenceType(evidence, "startup_workflow_registry")
+      ? []
+      : ["workflow registry is missing"]),
+    ...(hasEvidenceType(evidence, "startup_delegation_policy")
+      ? []
+      : ["delegation policy is missing"]),
+    ...(hasEvidenceType(evidence, "startup_institutional_memory")
+      ? []
+      : ["institutional memory evidence is missing"]),
+    ...(hasEvidenceType(evidence, "startup_ops_report")
+      ? []
+      : ["recurring ops report is missing"]),
+    ...(hasEvidenceType(evidence, "startup_integration_map")
+      ? []
+      : ["integration depth map is missing"]),
+    ...(hasEvidenceType(evidence, "startup_ops_sop")
+      ? []
+      : ["ops SOP evidence is missing"]),
+    ...(hasEvidenceType(evidence, "startup_support_triage")
+      ? []
+      : ["support triage evidence is missing"]),
+    ...(hasEvidenceType(evidence, "startup_gtm_artifact")
+      ? []
+      : ["GTM artifact verification is missing"])
   ];
 }
 
