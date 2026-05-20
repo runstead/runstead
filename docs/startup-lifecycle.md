@@ -99,6 +99,7 @@ The first implemented startup commands are narrower and artifact-first:
 ```sh
 runstead startup init --stage mvp
 runstead startup context generate --force
+runstead startup measurement generate --force
 runstead startup evidence add --type customer_interview --summary "..."
 runstead startup evidence add --type measurement_framework --summary "..."
 runstead startup gate check --stage launch

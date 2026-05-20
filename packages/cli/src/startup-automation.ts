@@ -48,6 +48,24 @@ export interface GenerateStartupContextResult {
   evidenceId: string;
 }
 
+export interface GenerateMeasurementFrameworkOptions {
+  cwd?: string;
+  force?: boolean;
+  activationMetric?: string;
+  retentionMetric?: string;
+  day7Metric?: string;
+  day30Metric?: string;
+  falsePositiveMetric?: string;
+  now?: Date;
+}
+
+export interface GenerateMeasurementFrameworkResult {
+  root: string;
+  stateDb: string;
+  files: string[];
+  evidenceId: string;
+}
+
 const STARTUP_DOMAIN = "ai-native-startup";
 const STARTUP_CONTEXT_FILES = ["AGENTS.md", "CLAUDE.md", "CODEX.md"];
 
@@ -167,6 +185,56 @@ export async function generateStartupContext(
     root: state.root,
     stateDb: state.stateDb,
     files,
+    evidenceId: evidence.evidence.id
+  };
+}
+
+export async function generateMeasurementFramework(
+  options: GenerateMeasurementFrameworkOptions = {}
+): Promise<GenerateMeasurementFrameworkResult> {
+  const cwd = resolve(options.cwd ?? process.cwd());
+  const state = await requireRunsteadStateDb(cwd);
+  const generatedAt = (options.now ?? new Date()).toISOString();
+  const framework = formatMeasurementFramework({
+    generatedAt,
+    ...(options.activationMetric === undefined
+      ? {}
+      : { activationMetric: options.activationMetric }),
+    ...(options.retentionMetric === undefined
+      ? {}
+      : { retentionMetric: options.retentionMetric }),
+    ...(options.day7Metric === undefined ? {} : { day7Metric: options.day7Metric }),
+    ...(options.day30Metric === undefined ? {} : { day30Metric: options.day30Metric }),
+    ...(options.falsePositiveMetric === undefined
+      ? {}
+      : { falsePositiveMetric: options.falsePositiveMetric })
+  });
+  const rootPath = join(cwd, "MEASUREMENT.md");
+
+  if (options.force !== true && (await exists(rootPath))) {
+    throw new Error("MEASUREMENT.md already exists. Use --force to overwrite it.");
+  }
+
+  await writeFile(rootPath, framework, "utf8");
+  await mkdir(join(state.root, "startup"), { recursive: true });
+
+  const runtimePath = join(state.root, "startup", "measurement-framework.md");
+
+  await writeFile(runtimePath, framework, "utf8");
+
+  const evidence = await addStartupEvidence({
+    cwd,
+    type: "measurement_framework",
+    summary: "Generated startup measurement framework",
+    sourceRefs: [rootPath, runtimePath],
+    content: framework,
+    ...(options.now === undefined ? {} : { now: options.now })
+  });
+
+  return {
+    root: state.root,
+    stateDb: state.stateDb,
+    files: [rootPath, runtimePath],
     evidenceId: evidence.evidence.id
   };
 }
@@ -299,6 +367,50 @@ function formatStartupAgentContext(input: {
 
 function contextForFile(filename: string, baseContext: string): string {
   return [`# ${filename}`, "", baseContext].join("\n");
+}
+
+function formatMeasurementFramework(input: {
+  generatedAt: string;
+  activationMetric?: string;
+  retentionMetric?: string;
+  day7Metric?: string;
+  day30Metric?: string;
+  falsePositiveMetric?: string;
+}): string {
+  const activation =
+    input.activationMetric ?? "User completes the first successful core workflow.";
+  const retention =
+    input.retentionMetric ?? "User returns and completes a core workflow again.";
+  const day7 = input.day7Metric ?? "Day 7 retained active users by signup cohort.";
+  const day30 = input.day30Metric ?? "Day 30 retained active users by signup cohort.";
+  const falsePositive =
+    input.falsePositiveMetric ??
+    "Runstead or product claim is counted as success without user-confirmed value.";
+
+  return [
+    "# Startup Measurement Framework",
+    "",
+    `Generated: ${input.generatedAt}`,
+    "",
+    "## Launch Rule",
+    "",
+    "Runstead must not mark the MVP launch-ready without this measurement framework and current verifier evidence.",
+    "",
+    "## Metrics",
+    "",
+    `- Activation: ${activation}`,
+    `- Retention: ${retention}`,
+    `- Day 7: ${day7}`,
+    `- Day 30: ${day30}`,
+    `- False-positive metric: ${falsePositive}`,
+    "",
+    "## Evidence Requirements",
+    "",
+    "- Attach customer, product, or analytics evidence before treating a metric as validated.",
+    "- Link metric evidence to the startup goal or decision it supports.",
+    "- Re-run the launch gate after metrics or verifier evidence changes.",
+    ""
+  ].join("\n");
 }
 
 function listItems(items: string[]): string {

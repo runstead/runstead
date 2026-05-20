@@ -5,7 +5,11 @@ import { join } from "node:path";
 import { openRunsteadDatabase } from "@runstead/state-sqlite";
 import { describe, expect, it } from "vitest";
 
-import { generateStartupContext, initStartup } from "./startup-automation.js";
+import {
+  generateMeasurementFramework,
+  generateStartupContext,
+  initStartup
+} from "./startup-automation.js";
 
 describe("startup automation", () => {
   it("initializes startup execution and reuses an existing startup goal", async () => {
@@ -122,6 +126,61 @@ describe("startup automation", () => {
         expect(evidence).toEqual({
           type: "startup_agent_context",
           summary: "Generated startup agent context files"
+        });
+      } finally {
+        database.close();
+      }
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("generates measurement framework files and evidence", async () => {
+    const workspace = join(tmpdir(), `runstead-startup-measurement-${process.pid}`);
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await initStartup({
+        cwd: workspace,
+        stage: "mvp",
+        now: new Date("2026-05-14T02:00:00.000Z")
+      });
+
+      const result = await generateMeasurementFramework({
+        cwd: workspace,
+        activationMetric: "User connects a source account",
+        retentionMetric: "User returns to run a second readiness check",
+        day7Metric: "D7 retained readiness users",
+        day30Metric: "D30 retained readiness users",
+        falsePositiveMetric: "Readiness pass without confirmed user value",
+        now: new Date("2026-05-14T05:00:00.000Z")
+      });
+      const measurement = await readFile(join(workspace, "MEASUREMENT.md"), "utf8");
+
+      expect(result.files.map((file) => file.split("/").at(-1))).toEqual([
+        "MEASUREMENT.md",
+        "measurement-framework.md"
+      ]);
+      expect(measurement).toContain("User connects a source account");
+      expect(measurement).toContain("D7 retained readiness users");
+      expect(measurement).toContain("False-positive metric");
+
+      const database = openRunsteadDatabase(result.stateDb);
+
+      try {
+        const evidence = database
+          .prepare(
+            `
+            SELECT type, summary
+            FROM evidence
+            WHERE id = ?
+          `
+          )
+          .get(result.evidenceId) as { type: string; summary: string } | undefined;
+
+        expect(evidence).toEqual({
+          type: "startup_measurement_framework",
+          summary: "Generated startup measurement framework"
         });
       } finally {
         database.close();

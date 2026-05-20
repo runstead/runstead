@@ -361,13 +361,19 @@ describe("cli entrypoint", () => {
     const contextGenerate = context?.commands.find(
       (command) => command.name() === "generate"
     );
+    const measurement = startup?.commands.find(
+      (command) => command.name() === "measurement"
+    );
+    const measurementGenerate = measurement?.commands.find(
+      (command) => command.name() === "generate"
+    );
     const evidence = startup?.commands.find((command) => command.name() === "evidence");
     const evidenceAdd = evidence?.commands.find((command) => command.name() === "add");
     const gate = startup?.commands.find((command) => command.name() === "gate");
     const gateCheck = gate?.commands.find((command) => command.name() === "check");
 
     expect(startup?.commands.map((command) => command.name())).toEqual(
-      expect.arrayContaining(["context", "evidence", "gate", "init"])
+      expect.arrayContaining(["context", "evidence", "gate", "init", "measurement"])
     );
     expect(init?.options.map((option) => option.long)).toEqual(
       expect.arrayContaining(["--cwd", "--force", "--profile", "--stage"])
@@ -380,6 +386,18 @@ describe("cli entrypoint", () => {
         "--constraint",
         "--cwd",
         "--force"
+      ])
+    );
+    expect(measurementGenerate?.options.map((option) => option.long)).toEqual(
+      expect.arrayContaining([
+        "--activation",
+        "--actor",
+        "--cwd",
+        "--day7",
+        "--day30",
+        "--false-positive",
+        "--force",
+        "--retention"
       ])
     );
     expect(evidenceAdd?.options.map((option) => option.long)).toEqual(
