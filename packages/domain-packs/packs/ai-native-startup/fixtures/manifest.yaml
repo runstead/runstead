@@ -1,0 +1,16 @@
+version: 1
+fixtures:
+  - id: ai-coded-mvp-smoke
+    description: Minimal AI-coded MVP fixture for startup context, measurement, readiness, and verifier evidence.
+    path: ai-coded-mvp-smoke
+    task_type: run_mvp_verifiers
+    goal_template: build-mvp
+    tags:
+      - smoke
+      - mvp
+      - startup
+    acceptance_contracts:
+      - agent_context_generated
+      - measurement_framework_defined
+      - repo_readiness_inspected
+      - verifier_report_recorded

@@ -1,0 +1,143 @@
+id: policy_startup_mvp_v1
+version: 1
+default_decision: require_approval
+default_risk: medium
+
+rules:
+  - id: allow_read_only_startup_inspection
+    when:
+      action_type:
+        in:
+          - filesystem.read
+          - filesystem.list
+          - filesystem.search
+          - filesystem.stat
+          - git.status
+          - git.diff
+          - git.log
+          - git.show
+          - git.diff.summary
+          - repo.metadata.read
+          - evidence.read
+          - workspace.facts.read
+    decision: allow
+    risk: low
+    obligations:
+      - treat_founder_inputs_as_untrusted
+
+  - id: allow_startup_evidence_records
+    when:
+      action_type:
+        in:
+          - evidence.record
+          - report.generate
+          - startup.gate.check
+    decision: allow
+    risk: low
+    obligations:
+      - attach_source_ref
+      - record_stage
+
+  - id: allow_mvp_verifier_commands
+    when:
+      action_type:
+        in:
+          - shell.exec
+          - verifier.run
+      command:
+        matches_any:
+          - "^pnpm test( .*)?$"
+          - "^pnpm run test( .*)?$"
+          - "^pnpm lint( .*)?$"
+          - "^pnpm run lint( .*)?$"
+          - "^pnpm typecheck( .*)?$"
+          - "^pnpm run typecheck( .*)?$"
+          - "^pnpm build( .*)?$"
+          - "^pnpm run build( .*)?$"
+          - "^npm test( .*)?$"
+          - "^npm run lint( .*)?$"
+          - "^npm run typecheck( .*)?$"
+          - "^npm run build( .*)?$"
+          - "^yarn test( .*)?$"
+          - "^yarn lint( .*)?$"
+          - "^yarn typecheck( .*)?$"
+          - "^yarn build( .*)?$"
+          - "^bun test( .*)?$"
+          - "^bun run lint( .*)?$"
+          - "^bun run typecheck( .*)?$"
+          - "^bun run build( .*)?$"
+    decision: allow
+    risk: low
+    obligations:
+      - capture_output
+      - attach_as_evidence
+      - redact_secrets
+
+  - id: deny_protected_startup_paths
+    when:
+      path:
+        matches_any:
+          - ".env"
+          - ".env.*"
+          - "**/secrets/**"
+          - "infra/prod/**"
+          - "billing/**"
+          - "compliance/**"
+    decision: deny
+    risk: critical
+
+  - id: deny_destructive_shell
+    when:
+      action_type: shell.exec
+      command:
+        matches_any:
+          - ".*rm -rf.*"
+          - ".*sudo .*"
+          - ".*mkfs.*"
+          - ".*dd if=.*"
+    decision: deny
+    risk: critical
+
+  - id: require_approval_for_code_and_context_edits
+    when:
+      action_type:
+        in:
+          - filesystem.write
+          - git.commit
+          - package.install
+          - package.update
+    decision: require_approval
+    risk: high
+    obligations:
+      - summarize_diff
+      - attach_verifier_evidence
+
+  - id: require_approval_for_worker_start
+    when:
+      action_type:
+        in:
+          - worker.external.start
+          - worker.native.start
+          - model.inference.request
+    decision: require_approval
+    risk: high
+
+  - id: require_approval_for_external_write
+    when:
+      action_type:
+        in:
+          - shell.exec
+          - git.push
+          - github.pr.create
+          - repo.publish_repair
+          - package.install
+          - package.update
+      side_effects:
+        contains_any:
+          - network_write_external
+          - send_message_external
+          - git_push
+          - github_pr_create
+          - publish_report
+    decision: require_approval
+    risk: high

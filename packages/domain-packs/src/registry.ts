@@ -3,6 +3,7 @@ import { access, readdir, stat } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
 import type { DomainPack } from "./domain-pack.js";
+import { getAiNativeStartupPackDir } from "./ai-native-startup.js";
 import { getEmailFollowupPackDir } from "./email-followup.js";
 import { getResearchMonitorPackDir } from "./research-monitor.js";
 import { getRepoMaintenancePackDir } from "./repo-maintenance.js";
@@ -37,6 +38,7 @@ export interface ListDomainPacksResult {
 export type ResolveDomainPackOptions = ListDomainPacksOptions;
 
 const BUILT_IN_DOMAIN_PACK_ROOTS = [
+  getAiNativeStartupPackDir(),
   getRepoMaintenancePackDir(),
   getResearchMonitorPackDir(),
   getEmailFollowupPackDir()

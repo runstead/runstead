@@ -1,0 +1,9 @@
+version: 1
+benchmarks:
+  - id: ai-coded-mvp-smoke
+    fixture: ai-coded-mvp-smoke
+    acceptance_contracts:
+      - agent_context_generated
+      - measurement_framework_defined
+      - repo_readiness_inspected
+      - verifier_report_recorded

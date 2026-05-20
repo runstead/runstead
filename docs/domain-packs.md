@@ -12,6 +12,14 @@ The first built-in domain pack is `repo-maintenance`. It starts with:
 - protected-path security defaults
 - a `js-test-failure` CI repair smoke fixture and benchmark
 
+The startup execution path adds the experimental built-in
+`ai-native-startup` pack. Its first goal template, `build-mvp`, creates tasks
+for agent context generation, measurement framework definition, repository
+readiness inspection, and MVP verifier evidence. The pack deliberately keeps
+code edits, publishing, external writes, and worker starts behind approval while
+allowing read-only inspection, evidence records, reports, gates, and local
+verifier commands.
+
 Runtime task and goal state belongs in SQLite under `.runstead/state.db`.
 Domain YAML remains configuration and template material only.
 

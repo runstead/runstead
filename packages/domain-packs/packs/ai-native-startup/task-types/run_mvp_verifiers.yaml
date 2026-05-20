@@ -1,0 +1,16 @@
+id: run_mvp_verifiers
+domain: ai-native-startup
+description: Run the MVP's local test, lint, typecheck, and build verifiers and attach evidence for launch readiness.
+
+default_priority: high
+max_attempts: 1
+
+verifiers:
+  required:
+    - command:test
+    - command:lint
+    - command:typecheck
+    - command:build
+
+worker_routing:
+  preferred: shell

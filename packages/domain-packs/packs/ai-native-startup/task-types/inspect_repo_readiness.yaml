@@ -1,0 +1,15 @@
+id: inspect_repo_readiness
+domain: ai-native-startup
+description: Inspect repository structure, package scripts, CI signals, protected paths, and launch risk areas.
+
+default_priority: medium
+max_attempts: 1
+
+verifiers:
+  required:
+    - evidence:repo_inspection
+    - readiness:protected_paths_checked
+    - readiness:release_risks_identified
+
+worker_routing:
+  preferred: shell

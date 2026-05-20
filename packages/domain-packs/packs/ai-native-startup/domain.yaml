@@ -1,0 +1,58 @@
+id: ai-native-startup
+version: 0.1.0
+name: AI-native Startup
+description: Govern AI-coded MVP work with startup-specific context, measurement, readiness, and verifier evidence.
+
+compatibility:
+  runstead_min_version: 0.0.0
+
+scope:
+  resource_types:
+    - startup_repository
+    - agent_context
+    - measurement_framework
+    - readiness_report
+    - evidence
+
+goal_templates:
+  - build-mvp
+
+task_types:
+  - generate_agent_context
+  - define_measurement_framework
+  - inspect_repo_readiness
+  - run_mvp_verifiers
+
+default_policy: policies/startup-mvp.yaml
+
+default_verifiers:
+  - startup_context
+  - measurement_framework
+  - repo_readiness
+  - command
+
+required_tools:
+  - filesystem
+  - shell
+  - git
+
+supported_workers:
+  - shell
+  - claude_code
+  - codex_cli
+  - codex_direct
+
+security:
+  untrusted_inputs:
+    - customer_interview
+    - competitor_note
+    - metric_snapshot
+    - issue_body
+    - support_request
+  protected_paths:
+    - ".env"
+    - ".env.*"
+    - "**/secrets/**"
+    - "infra/prod/**"
+    - "billing/**"
+    - "compliance/**"

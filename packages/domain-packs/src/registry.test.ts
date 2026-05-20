@@ -13,6 +13,7 @@ describe("domain pack registry", () => {
     const registry = await listDomainPacks();
 
     expect(registry.issues).toEqual([]);
+    expect(registry.entries.map((entry) => entry.id)).toContain("ai-native-startup");
     expect(registry.entries.map((entry) => entry.id)).toContain("repo-maintenance");
     expect(registry.entries.map((entry) => entry.id)).toContain("research-monitor");
     expect(registry.entries.map((entry) => entry.id)).toContain("email-followup");
@@ -32,6 +33,10 @@ describe("domain pack registry", () => {
     expect(registry.issues).toEqual([]);
     expect(registry.entries).toEqual(
       expect.arrayContaining([
+        expect.objectContaining({
+          id: "ai-native-startup",
+          source: "workspace"
+        }),
         expect.objectContaining({
           id: "repo-maintenance",
           source: "workspace"

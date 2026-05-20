@@ -38,6 +38,34 @@ describe("validateDomainPackDir", () => {
     expect(formatDomainPackValidationResult(result)).toContain("Fixtures: 1");
   });
 
+  it("validates the experimental ai-native-startup MVP pack", async () => {
+    const packRoot = fileURLToPath(
+      new URL("../packs/ai-native-startup", import.meta.url)
+    );
+
+    const result = await validateDomainPackDir(packRoot);
+
+    expect(result.valid).toBe(true);
+    expect(result.issues).toEqual([]);
+    expect(result.domain?.id).toBe("ai-native-startup");
+    expect(result.goalTemplates.map((template) => template.id)).toEqual(["build-mvp"]);
+    expect(result.taskTypes.map((taskType) => taskType.id)).toEqual([
+      "generate_agent_context",
+      "define_measurement_framework",
+      "inspect_repo_readiness",
+      "run_mvp_verifiers"
+    ]);
+    expect(result.fixtures.map((fixture) => fixture.id)).toEqual([
+      "ai-coded-mvp-smoke"
+    ]);
+    expect(result.evals.map((evaluation) => evaluation.id)).toEqual([
+      "ai-coded-mvp-smoke"
+    ]);
+    expect(result.goalTemplates[0]?.generated.acceptanceContracts).toContain(
+      "measurement_framework_defined"
+    );
+  });
+
   it("validates the experimental research-monitor pack", async () => {
     const packRoot = fileURLToPath(
       new URL("../packs/research-monitor", import.meta.url)

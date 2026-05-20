@@ -1,0 +1,18 @@
+id: generate_agent_context
+domain: ai-native-startup
+description: Generate or refresh agent context files that capture repo purpose, architecture, constraints, and verifier commands.
+
+default_priority: high
+max_attempts: 1
+
+verifiers:
+  required:
+    - startup_context:agent_context_generated
+    - startup_context:architecture_constraints_recorded
+    - startup_context:accepted_debt_recorded
+
+worker_routing:
+  preferred: codex_cli
+  fallback:
+    - claude_code
+    - codex_direct

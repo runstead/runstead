@@ -1,0 +1,18 @@
+id: define_measurement_framework
+domain: ai-native-startup
+description: Define activation, retention, cohort, and false-positive metrics before the MVP is treated as launch-ready.
+
+default_priority: high
+max_attempts: 1
+
+verifiers:
+  required:
+    - startup_metrics:activation_defined
+    - startup_metrics:retention_defined
+    - startup_metrics:false_positive_metric_defined
+
+worker_routing:
+  preferred: codex_cli
+  fallback:
+    - claude_code
+    - codex_direct

@@ -1,0 +1,19 @@
+id: build-mvp
+domain: ai-native-startup
+title: Build an AI-coded MVP
+description: >
+  Keep an AI-coded MVP understandable, measurable, verifiable, and ready for
+  launch review before founder-only knowledge and opaque technical debt build up.
+
+generated:
+  recurring_tasks:
+    - generate_agent_context
+    - define_measurement_framework
+    - inspect_repo_readiness
+    - run_mvp_verifiers
+  policy_profile: startup-mvp
+  acceptance_contracts:
+    - agent_context_generated
+    - measurement_framework_defined
+    - repo_readiness_inspected
+    - verifier_report_recorded
