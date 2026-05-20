@@ -410,7 +410,10 @@ function launchBlockers(input: {
       : ["rollback plan evidence is missing"]),
     ...(hasEvidenceType(input.evidence, "startup_observability")
       ? []
-      : ["observability evidence is missing"])
+      : ["observability evidence is missing"]),
+    ...(hasEvidenceType(input.evidence, "startup_founder_bottleneck")
+      ? []
+      : ["founder bottleneck audit is missing"])
   ];
 }
 

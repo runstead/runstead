@@ -8,9 +8,11 @@ import { describe, expect, it } from "vitest";
 import {
   generateRepoReadinessAudit,
   generateMeasurementFramework,
+  generateFounderBottleneckMap,
   generateSecurityBaseline,
   generateStartupContext,
-  initStartup
+  initStartup,
+  recordSupportTriage
 } from "./startup-automation.js";
 
 describe("startup automation", () => {
@@ -272,6 +274,72 @@ describe("startup automation", () => {
         expect(evidence.map((item) => item.type)).toEqual([
           "startup_repo_readiness",
           "startup_security_baseline"
+        ]);
+      } finally {
+        database.close();
+      }
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("records support triage and founder bottleneck launch evidence", async () => {
+    const workspace = join(tmpdir(), `runstead-startup-support-${process.pid}`);
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await initStartup({
+        cwd: workspace,
+        stage: "launch",
+        now: new Date("2026-05-14T02:00:00.000Z")
+      });
+
+      const support = await recordSupportTriage({
+        cwd: workspace,
+        request: "Beta customer cannot complete onboarding",
+        customer: "beta-co",
+        severity: "high",
+        outcome: "Create onboarding fix task before launch",
+        sourceRefs: ["support:beta-co:001"],
+        now: new Date("2026-05-14T07:00:00.000Z")
+      });
+      const bottleneck = await generateFounderBottleneckMap({
+        cwd: workspace,
+        bottlenecks: [
+          "Only founder knows beta customer escalation criteria",
+          "Only founder can approve launch rollback"
+        ],
+        owner: "ops-lead",
+        systemOfRecord: "Runstead startup artifacts",
+        now: new Date("2026-05-14T07:10:00.000Z")
+      });
+      const supportMarkdown = await readFile(support.files[0] ?? "", "utf8");
+      const bottleneckMarkdown = await readFile(bottleneck.files[0] ?? "", "utf8");
+
+      expect(supportMarkdown).toContain("Startup Support Triage");
+      expect(supportMarkdown).toContain("Beta customer cannot complete onboarding");
+      expect(bottleneckMarkdown).toContain("Founder Bottleneck Map");
+      expect(bottleneckMarkdown).toContain(
+        "Only founder knows beta customer escalation criteria"
+      );
+
+      const database = openRunsteadDatabase(support.stateDb);
+
+      try {
+        const evidence = database
+          .prepare(
+            `
+            SELECT type
+            FROM evidence
+            WHERE id IN (?, ?)
+            ORDER BY type ASC
+          `
+          )
+          .all(support.evidenceId, bottleneck.evidenceId) as { type: string }[];
+
+        expect(evidence.map((item) => item.type)).toEqual([
+          "startup_founder_bottleneck",
+          "startup_support_triage"
         ]);
       } finally {
         database.close();

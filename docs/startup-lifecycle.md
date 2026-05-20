@@ -105,8 +105,15 @@ runstead startup evidence add --type disconfirming --summary "..."
 runstead startup gate check --stage mvp
 runstead startup context generate --force
 runstead startup measurement generate --force
+runstead startup launch audit
+runstead startup launch security-baseline
+runstead startup launch support-triage --request "..." --outcome "..."
+runstead startup launch bottleneck-map --bottleneck "..."
 runstead startup evidence add --type customer_interview --summary "..."
 runstead startup evidence add --type measurement_framework --summary "..."
+runstead startup evidence add --type migration_plan --summary "..."
+runstead startup evidence add --type rollback_plan --summary "..."
+runstead startup evidence add --type observability --summary "..."
 runstead startup gate check --stage launch
 ```
 

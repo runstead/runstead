@@ -81,7 +81,8 @@ describe("startup evidence ledger", () => {
         ["security_baseline", "Security baseline is clean"],
         ["migration_plan", "No migrations required for this release"],
         ["rollback_plan", "Rollback uses the previous deployment artifact"],
-        ["observability", "Launch dashboard and alert owner are defined"]
+        ["observability", "Launch dashboard and alert owner are defined"],
+        ["founder_bottleneck", "Founder-only launch knowledge has an owner"]
       ] as const) {
         await addStartupEvidence({
           cwd: workspace,
@@ -151,6 +152,7 @@ describe("startup evidence ledger", () => {
 
         expect(evidenceRows.map((row) => row.type)).toEqual([
           "startup_customer_interview",
+          "startup_founder_bottleneck",
           "startup_measurement_framework",
           "startup_migration_plan",
           "startup_observability",

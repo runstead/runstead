@@ -99,6 +99,39 @@ export interface GenerateSecurityBaselineResult {
   warnings: string[];
 }
 
+export interface RecordSupportTriageOptions {
+  cwd?: string;
+  request: string;
+  outcome: string;
+  customer?: string;
+  severity?: string;
+  sourceRefs?: string[];
+  now?: Date;
+}
+
+export interface RecordSupportTriageResult {
+  root: string;
+  stateDb: string;
+  files: string[];
+  evidenceId: string;
+}
+
+export interface GenerateFounderBottleneckMapOptions {
+  cwd?: string;
+  bottlenecks?: string[];
+  owner?: string;
+  systemOfRecord?: string;
+  now?: Date;
+}
+
+export interface GenerateFounderBottleneckMapResult {
+  root: string;
+  stateDb: string;
+  files: string[];
+  evidenceId: string;
+  bottlenecks: string[];
+}
+
 const STARTUP_DOMAIN = "ai-native-startup";
 const STARTUP_CONTEXT_FILES = ["AGENTS.md", "CLAUDE.md", "CODEX.md"];
 const PROTECTED_PATH_PATTERNS = [
@@ -374,6 +407,90 @@ export async function generateSecurityBaseline(
     evidenceId: evidence.evidence.id,
     blockers,
     warnings
+  };
+}
+
+export async function recordSupportTriage(
+  options: RecordSupportTriageOptions
+): Promise<RecordSupportTriageResult> {
+  const cwd = resolve(options.cwd ?? process.cwd());
+  const state = await requireRunsteadStateDb(cwd);
+  const generatedAt = (options.now ?? new Date()).toISOString();
+  const markdown = formatSupportTriage({
+    generatedAt,
+    request: options.request,
+    outcome: options.outcome,
+    ...(options.customer === undefined ? {} : { customer: options.customer }),
+    severity: options.severity ?? "medium",
+    sourceRefs: options.sourceRefs ?? []
+  });
+
+  await mkdir(join(state.root, "startup", "support-triage"), { recursive: true });
+
+  const runtimePath = join(
+    state.root,
+    "startup",
+    "support-triage",
+    `${safeTimestamp(generatedAt)}.md`
+  );
+
+  await writeFile(runtimePath, markdown, "utf8");
+
+  const evidence = await addStartupEvidence({
+    cwd,
+    type: "support_triage",
+    summary: `Support triage recorded: ${options.outcome}`,
+    sourceRefs: [runtimePath, ...(options.sourceRefs ?? [])],
+    content: markdown,
+    ...(options.now === undefined ? {} : { now: options.now })
+  });
+
+  return {
+    root: state.root,
+    stateDb: state.stateDb,
+    files: [runtimePath],
+    evidenceId: evidence.evidence.id
+  };
+}
+
+export async function generateFounderBottleneckMap(
+  options: GenerateFounderBottleneckMapOptions = {}
+): Promise<GenerateFounderBottleneckMapResult> {
+  const cwd = resolve(options.cwd ?? process.cwd());
+  const state = await requireRunsteadStateDb(cwd);
+  const generatedAt = (options.now ?? new Date()).toISOString();
+  const bottlenecks =
+    options.bottlenecks === undefined || options.bottlenecks.length === 0
+      ? ["No founder-only bottleneck input recorded; complete the audit before scale."]
+      : options.bottlenecks;
+  const markdown = formatFounderBottleneckMap({
+    generatedAt,
+    bottlenecks,
+    owner: options.owner ?? "unassigned",
+    systemOfRecord: options.systemOfRecord ?? "Runstead evidence ledger"
+  });
+
+  await mkdir(join(state.root, "startup"), { recursive: true });
+
+  const runtimePath = join(state.root, "startup", "founder-bottlenecks.md");
+
+  await writeFile(runtimePath, markdown, "utf8");
+
+  const evidence = await addStartupEvidence({
+    cwd,
+    type: "founder_bottleneck",
+    summary: `Founder bottleneck map recorded (${bottlenecks.length} item${bottlenecks.length === 1 ? "" : "s"})`,
+    sourceRefs: [runtimePath],
+    content: markdown,
+    ...(options.now === undefined ? {} : { now: options.now })
+  });
+
+  return {
+    root: state.root,
+    stateDb: state.stateDb,
+    files: [runtimePath],
+    evidenceId: evidence.evidence.id,
+    bottlenecks
   };
 }
 
@@ -669,6 +786,72 @@ function formatSecurityBaseline(input: {
   ].join("\n");
 }
 
+function formatSupportTriage(input: {
+  generatedAt: string;
+  request: string;
+  outcome: string;
+  customer?: string;
+  severity: string;
+  sourceRefs: string[];
+}): string {
+  return [
+    "# Startup Support Triage",
+    "",
+    `Generated: ${input.generatedAt}`,
+    `Customer: ${input.customer ?? "unknown"}`,
+    `Severity: ${input.severity}`,
+    "",
+    "## Request",
+    "",
+    input.request,
+    "",
+    "## Outcome",
+    "",
+    input.outcome,
+    "",
+    "## Source Evidence",
+    "",
+    listItemsOrNone(input.sourceRefs),
+    "",
+    "## Follow-up Contract",
+    "",
+    listItems([
+      "Attach this triage evidence to the relevant goal, decision, or remediation task.",
+      "Convert repeated support categories into product or documentation work.",
+      "Re-run launch readiness after support evidence changes release risk."
+    ]),
+    ""
+  ].join("\n");
+}
+
+function formatFounderBottleneckMap(input: {
+  generatedAt: string;
+  bottlenecks: string[];
+  owner: string;
+  systemOfRecord: string;
+}): string {
+  return [
+    "# Founder Bottleneck Map",
+    "",
+    `Generated: ${input.generatedAt}`,
+    `Owner: ${input.owner}`,
+    `System of record: ${input.systemOfRecord}`,
+    "",
+    "## Founder-only Bottlenecks",
+    "",
+    listItems(input.bottlenecks),
+    "",
+    "## Handoff Requirements",
+    "",
+    listItems([
+      "Each bottleneck needs an owner or durable system of record.",
+      "Credential, customer, release, and architecture knowledge must be moved into governed artifacts.",
+      "Repeat this audit before scale-stage workflow delegation."
+    ]),
+    ""
+  ].join("\n");
+}
+
 function repoReadinessBlockers(
   inspection: Awaited<ReturnType<typeof collectRepoInspection>>,
   changedProtected: string[]
@@ -764,6 +947,10 @@ function normalizeStatusPath(value: string): string {
     : value;
 
   return renamedPath.replace(/^"|"$/g, "");
+}
+
+function safeTimestamp(value: string): string {
+  return value.replace(/[:.]/g, "-");
 }
 
 async function findTopLevelEnvFiles(cwd: string): Promise<string[]> {

@@ -519,6 +519,9 @@ function riskSource(data: LaunchReadinessReportData, risk: string): string {
   if (risk.includes("observability")) {
     return evidenceSource(data, "startup_observability");
   }
+  if (risk.includes("founder bottleneck")) {
+    return evidenceSource(data, "startup_founder_bottleneck");
+  }
   if (risk.includes("protected path")) return "git status protected path scan";
   if (risk.includes("approval")) return "approval ledger";
 
@@ -550,6 +553,9 @@ function recommendedTaskForRisk(risk: string): string {
   if (risk.includes("migration")) return "record startup_migration_plan evidence";
   if (risk.includes("rollback")) return "record startup_rollback_plan evidence";
   if (risk.includes("observability")) return "record startup_observability evidence";
+  if (risk.includes("founder bottleneck")) {
+    return "run startup launch bottleneck-map";
+  }
   if (risk.includes("protected path"))
     return "create review evidence for protected paths";
   if (risk.includes("approval")) return "resolve pending approval before launch";
@@ -590,6 +596,9 @@ function releaseBlockers(data: LaunchReadinessReportData): string[] {
     ...(hasEvidenceType(data.evidence, "startup_observability")
       ? []
       : ["observability evidence is missing"]),
+    ...(hasEvidenceType(data.evidence, "startup_founder_bottleneck")
+      ? []
+      : ["founder bottleneck audit is missing"]),
     ...(data.protectedPathChanges.length === 0
       ? []
       : [

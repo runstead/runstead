@@ -372,6 +372,12 @@ describe("cli entrypoint", () => {
     const launchSecurityBaseline = launch?.commands.find(
       (command) => command.name() === "security-baseline"
     );
+    const launchSupportTriage = launch?.commands.find(
+      (command) => command.name() === "support-triage"
+    );
+    const launchBottleneckMap = launch?.commands.find(
+      (command) => command.name() === "bottleneck-map"
+    );
     const hypothesis = startup?.commands.find(
       (command) => command.name() === "hypothesis"
     );
@@ -434,6 +440,26 @@ describe("cli entrypoint", () => {
     );
     expect(launchSecurityBaseline?.options.map((option) => option.long)).toEqual(
       expect.arrayContaining(["--actor", "--cwd"])
+    );
+    expect(launchSupportTriage?.options.map((option) => option.long)).toEqual(
+      expect.arrayContaining([
+        "--actor",
+        "--customer",
+        "--cwd",
+        "--outcome",
+        "--request",
+        "--severity",
+        "--source"
+      ])
+    );
+    expect(launchBottleneckMap?.options.map((option) => option.long)).toEqual(
+      expect.arrayContaining([
+        "--actor",
+        "--bottleneck",
+        "--cwd",
+        "--owner",
+        "--system-of-record"
+      ])
     );
     expect(evidenceAdd?.options.map((option) => option.long)).toEqual(
       expect.arrayContaining([
