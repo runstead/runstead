@@ -319,6 +319,9 @@ describe("cli entrypoint", () => {
     );
     const auditReplay = audit?.commands.find((command) => command.name() === "replay");
     const weekly = report?.commands.find((command) => command.name() === "weekly");
+    const launchReadiness = report?.commands.find(
+      (command) => command.name() === "launch-readiness"
+    );
 
     expect(auditExport?.options.map((option) => option.long)).toContain("--actor");
     expect(auditExport?.options.map((option) => option.long)).toContain("--type");
@@ -332,6 +335,9 @@ describe("cli entrypoint", () => {
     expect(auditTimeline?.options.map((option) => option.long)).toContain("--type");
     expect(auditReplay?.options.map((option) => option.long)).toContain("--actor");
     expect(weekly?.options.map((option) => option.long)).toContain("--actor");
+    expect(launchReadiness?.options.map((option) => option.long)).toEqual(
+      expect.arrayContaining(["--actor", "--cwd", "--domain", "--print"])
+    );
   });
 
   it("exposes RBAC actor selection on approval commands", () => {
