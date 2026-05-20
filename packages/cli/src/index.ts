@@ -1000,6 +1000,112 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
       }
     );
 
+  const startup = program
+    .command("startup")
+    .description("Manage AI-native startup evidence and stage gates.");
+
+  const startupEvidence = startup
+    .command("evidence")
+    .description("Manage founder evidence ledger records.");
+
+  startupEvidence
+    .command("add")
+    .description("Add customer, competitor, metric, hypothesis, or decision evidence.")
+    .option("--cwd <path>", "Workspace directory")
+    .requiredOption(
+      "--type <type>",
+      "Evidence type: customer_interview, competitor, metric, measurement_framework, hypothesis, decision, acceptable_debt, or observability"
+    )
+    .requiredOption("--summary <text>", "Evidence summary")
+    .option("--source <ref>", "Evidence source reference", collectValues, [])
+    .option("--content <text>", "Optional evidence body")
+    .option("--goal <id>", "Associated goal id")
+    .option("--hypothesis <id>", "Associated hypothesis id")
+    .option("--decision <id>", "Associated decision id")
+    .option("--actor <id>", "RBAC subject for evidence writes", "local-admin")
+    .action(
+      async (options: {
+        cwd?: string;
+        type: string;
+        summary: string;
+        source: string[];
+        content?: string;
+        goal?: string;
+        hypothesis?: string;
+        decision?: string;
+        actor: string;
+      }) => {
+        await requireRbacPermission({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          actor: options.actor,
+          permission: "evidence.write",
+          action: "write startup evidence"
+        });
+
+        const { addStartupEvidence } = await import("./startup-evidence.js");
+        const result = await addStartupEvidence({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          type: options.type,
+          summary: options.summary,
+          sourceRefs: options.source,
+          ...(options.content === undefined ? {} : { content: options.content }),
+          ...(options.goal === undefined ? {} : { goalId: options.goal }),
+          ...(options.hypothesis === undefined
+            ? {}
+            : { hypothesisId: options.hypothesis }),
+          ...(options.decision === undefined ? {} : { decisionId: options.decision })
+        });
+
+        console.log(`Recorded startup evidence: ${result.evidence.id}`);
+        console.log(`Type: ${result.evidence.type}`);
+        console.log(
+          `Subject: ${result.evidence.subjectType} ${result.evidence.subjectId}`
+        );
+        console.log(`Artifact: ${result.artifactPath}`);
+      }
+    );
+
+  const startupGate = startup
+    .command("gate")
+    .description("Check startup stage gates against Runstead evidence.");
+
+  startupGate
+    .command("check")
+    .description("Check whether a startup stage gate passes.")
+    .option("--cwd <path>", "Workspace directory")
+    .option("--stage <stage>", "Stage to check: idea, mvp, launch, or scale", "launch")
+    .option("--domain <id>", "Domain id to evaluate", "ai-native-startup")
+    .option("--actor <id>", "RBAC subject for gate checks", "local-admin")
+    .action(
+      async (options: {
+        cwd?: string;
+        stage: string;
+        domain: string;
+        actor: string;
+      }) => {
+        await requireRbacPermission({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          actor: options.actor,
+          permission: "evidence.read",
+          action: "check startup gates"
+        });
+
+        const { checkStartupGate, formatStartupGateCheckResult } =
+          await import("./startup-evidence.js");
+        const result = await checkStartupGate({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          domain: options.domain,
+          stage: parseStartupGateStage(options.stage)
+        });
+
+        console.log(formatStartupGateCheckResult(result));
+
+        if (!result.passed) {
+          process.exitCode = 1;
+        }
+      }
+    );
+
   const memory = program
     .command("memory")
     .description("Manage governed memory. Experimental.");
@@ -4132,6 +4238,14 @@ export function parseRequiredPositiveInteger(
   }
 
   return parsed;
+}
+
+function parseStartupGateStage(value: string): "idea" | "mvp" | "launch" | "scale" {
+  if (value === "idea" || value === "mvp" || value === "launch" || value === "scale") {
+    return value;
+  }
+
+  throw new Error("--stage must be one of: idea, mvp, launch, scale");
 }
 
 async function requireRbacPermission(options: {

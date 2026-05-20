@@ -66,6 +66,7 @@ roles:
     - repo.read
     - goal.read
     - task.read
+    - evidence.read
     - memory.read
     - audit.read
   operator:
@@ -79,6 +80,8 @@ roles:
     - goal.manage
     - task.read
     - task.run
+    - evidence.read
+    - evidence.write
     - memory.read
     - memory.write
     - daemon.manage
@@ -93,6 +96,7 @@ roles:
     - repo.read
     - goal.read
     - task.read
+    - evidence.read
     - memory.read
     - approval.read
     - approval.decide

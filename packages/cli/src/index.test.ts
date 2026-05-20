@@ -352,6 +352,36 @@ describe("cli entrypoint", () => {
     }
   });
 
+  it("exposes startup evidence and gate commands", () => {
+    const startup = createProgram().commands.find(
+      (command) => command.name() === "startup"
+    );
+    const evidence = startup?.commands.find((command) => command.name() === "evidence");
+    const evidenceAdd = evidence?.commands.find((command) => command.name() === "add");
+    const gate = startup?.commands.find((command) => command.name() === "gate");
+    const gateCheck = gate?.commands.find((command) => command.name() === "check");
+
+    expect(startup?.commands.map((command) => command.name())).toEqual(
+      expect.arrayContaining(["evidence", "gate"])
+    );
+    expect(evidenceAdd?.options.map((option) => option.long)).toEqual(
+      expect.arrayContaining([
+        "--actor",
+        "--content",
+        "--cwd",
+        "--decision",
+        "--goal",
+        "--hypothesis",
+        "--source",
+        "--summary",
+        "--type"
+      ])
+    );
+    expect(gateCheck?.options.map((option) => option.long)).toEqual(
+      expect.arrayContaining(["--actor", "--cwd", "--domain", "--stage"])
+    );
+  });
+
   it("exposes RBAC actor selection on goal and task commands", () => {
     const goal = createProgram().commands.find((command) => command.name() === "goal");
     const task = createProgram().commands.find((command) => command.name() === "task");

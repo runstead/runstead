@@ -92,6 +92,14 @@ runstead startup gate check --stage launch
 runstead startup report launch-readiness
 ```
 
+The first implemented startup commands are narrower and artifact-first:
+
+```sh
+runstead startup evidence add --type customer_interview --summary "..."
+runstead startup evidence add --type measurement_framework --summary "..."
+runstead startup gate check --stage launch
+```
+
 ## Scope Discipline
 
 Runstead should not become:
