@@ -91,6 +91,89 @@ export function registerStartupCommands(program: Command): void {
       }
     );
 
+  startup
+    .command("onboard")
+    .description("Run the short founder onboarding path for an AI-coded MVP repo.")
+    .option("--cwd <path>", "Workspace directory")
+    .option(
+      "--profile <profile>",
+      "Policy profile to generate when Runstead is not initialized: default or trusted-local",
+      "trusted-local"
+    )
+    .option("--force", "Overwrite generated context and measurement artifacts")
+    .action(
+      async (options: {
+        cwd?: string;
+        profile: "default" | "trusted-local";
+        force?: boolean;
+      }) => {
+        const { formatStartupOnboard, startupOnboard } =
+          await import("./startup-founder-flow.js");
+        const result = await startupOnboard({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          profile: options.profile,
+          force: options.force === true
+        });
+
+        console.log(formatStartupOnboard(result));
+      }
+    );
+
+  startup
+    .command("build-mvp")
+    .description("Run the short founder MVP build path with a local agent worker.")
+    .option("--cwd <path>", "Workspace directory")
+    .option("--worker <worker>", "Worker: codex_direct, codex_cli, or claude_code", "codex_cli")
+    .option("--model <model>", "Model override for worker execution")
+    .option("--prompt <text>", "Override the default MVP build prompt")
+    .action(
+      async (options: {
+        cwd?: string;
+        worker: string;
+        model?: string;
+        prompt?: string;
+      }) => {
+        const { formatStartupBuildMvp, startupBuildMvp } =
+          await import("./startup-founder-flow.js");
+        const result = await startupBuildMvp({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          worker: parseLocalAgentWorker(options.worker),
+          ...(options.model === undefined ? {} : { model: options.model }),
+          ...(options.prompt === undefined ? {} : { prompt: options.prompt })
+        });
+
+        console.log(formatStartupBuildMvp(result));
+      }
+    );
+
+  startup
+    .command("launch-check")
+    .description("Run the short founder launch readiness check path.")
+    .option("--cwd <path>", "Workspace directory")
+    .action(async (options: { cwd?: string }) => {
+      const { formatStartupLaunchCheck, startupLaunchCheck } =
+        await import("./startup-founder-flow.js");
+      const result = await startupLaunchCheck({
+        ...(options.cwd === undefined ? {} : { cwd: options.cwd })
+      });
+
+      console.log(formatStartupLaunchCheck(result));
+    });
+
+  startup
+    .command("scale-check")
+    .description("Run the short founder scale readiness check path.")
+    .option("--cwd <path>", "Workspace directory")
+    .action(async (options: { cwd?: string }) => {
+      const { formatStartupScaleCheck, startupScaleCheck } =
+        await import("./startup-founder-flow.js");
+      const result = await startupScaleCheck({
+        ...(options.cwd === undefined ? {} : { cwd: options.cwd })
+      });
+
+      console.log(formatStartupScaleCheck(result));
+    });
+
   const startupContext = startup
     .command("context")
     .description("Generate startup agent context artifacts.");

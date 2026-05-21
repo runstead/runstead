@@ -421,15 +421,19 @@ describe("cli entrypoint", () => {
       expect.arrayContaining([
         "artifact",
         "assess",
+        "build-mvp",
         "context",
         "evidence",
         "gate",
         "hypothesis",
         "init",
         "launch",
+        "launch-check",
         "measurement",
+        "onboard",
         "remediate",
-        "scale"
+        "scale",
+        "scale-check"
       ])
     );
     expect(assess?.options.map((option) => option.long)).toEqual(
