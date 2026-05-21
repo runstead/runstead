@@ -2,6 +2,10 @@ import type { Command } from "commander";
 
 import { checkPermission } from "./rbac.js";
 import type { StartupEvidenceSourceInput } from "./startup-evidence.js";
+import {
+  formatWorkerProcessProgress,
+  type WorkerProcessProgress
+} from "./wrapped-worker.js";
 
 export function registerStartupCommands(program: Command): void {
   const startup = program
@@ -126,7 +130,11 @@ export function registerStartupCommands(program: Command): void {
     .command("build-mvp")
     .description("Run the short founder MVP build path with a local agent worker.")
     .option("--cwd <path>", "Workspace directory")
-    .option("--worker <worker>", "Worker: codex_direct, codex_cli, or claude_code", "codex_cli")
+    .option(
+      "--worker <worker>",
+      "Worker: codex_direct, codex_cli, or claude_code",
+      "codex_cli"
+    )
     .option("--model <model>", "Model override for worker execution")
     .option("--prompt <text>", "Override the default MVP build prompt")
     .action(
@@ -142,7 +150,8 @@ export function registerStartupCommands(program: Command): void {
           ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
           worker: parseLocalAgentWorker(options.worker),
           ...(options.model === undefined ? {} : { model: options.model }),
-          ...(options.prompt === undefined ? {} : { prompt: options.prompt })
+          ...(options.prompt === undefined ? {} : { prompt: options.prompt }),
+          onWorkerProgress: logWrappedWorkerProgress
         });
 
         console.log(formatStartupBuildMvp(result));
@@ -569,7 +578,9 @@ export function registerStartupCommands(program: Command): void {
 
   startupLaunch
     .command("ui-validate")
-    .description("Record screenshot, DOM, accessibility, responsive, and flow UI validation evidence.")
+    .description(
+      "Record screenshot, DOM, accessibility, responsive, and flow UI validation evidence."
+    )
     .option("--cwd <path>", "Workspace directory")
     .requiredOption("--url <url>", "Validated local or deployed URL")
     .requiredOption("--viewport <viewport>", "Viewport label or dimensions")
@@ -586,7 +597,11 @@ export function registerStartupCommands(program: Command): void {
       "not_run"
     )
     .option("--flow <name>", "Critical user flow name")
-    .option("--flow-status <status>", "Critical flow status: pass, fail, or not_run", "not_run")
+    .option(
+      "--flow-status <status>",
+      "Critical flow status: pass, fail, or not_run",
+      "not_run"
+    )
     .option("--source <ref>", "Evidence source reference", collectValues, [])
     .option("--source-uri <uri>", "Canonical browser/UI source URI")
     .option("--source-kind <kind>", "Source kind, usually browser_ui")
@@ -628,7 +643,9 @@ export function registerStartupCommands(program: Command): void {
           ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
           url: options.url,
           viewport: options.viewport,
-          ...(options.screenshot === undefined ? {} : { screenshot: options.screenshot }),
+          ...(options.screenshot === undefined
+            ? {}
+            : { screenshot: options.screenshot }),
           domStatus: parseStartupUiValidationStatus(options.dom),
           accessibilityStatus: parseStartupUiValidationStatus(options.accessibility),
           responsiveStatus: parseStartupUiValidationStatus(options.responsive),
@@ -639,9 +656,7 @@ export function registerStartupCommands(program: Command): void {
           ...(options.goal === undefined ? {} : { goalId: options.goal })
         });
 
-        console.log(
-          `Recorded UI validation evidence: ${result.evidence.evidence.id}`
-        );
+        console.log(`Recorded UI validation evidence: ${result.evidence.evidence.id}`);
         console.log(`Failed: ${result.failed ? "yes" : "no"}`);
         console.log(`Artifact: ${result.evidence.artifactPath}`);
       }
@@ -1262,7 +1277,10 @@ export function registerStartupCommands(program: Command): void {
     .requiredOption("--summary <text>", "Evidence summary")
     .option("--source <ref>", "Evidence source reference", collectValues, [])
     .option("--source-uri <uri>", "Canonical external source URI")
-    .option("--source-kind <kind>", "Source kind, such as github, posthog, jira, csv, browser_ui, deployment, or manual")
+    .option(
+      "--source-kind <kind>",
+      "Source kind, such as github, posthog, jira, csv, browser_ui, deployment, or manual"
+    )
     .option("--captured-at <iso>", "Timestamp when the source was captured")
     .option("--freshness-days <days>", "Maximum acceptable source age in days")
     .option("--source-hash <hash>", "Optional hash of the captured source payload")
@@ -1392,7 +1410,9 @@ export function registerStartupCommands(program: Command): void {
 
   startup
     .command("remediate")
-    .description("Generate or execute worker-ready remediation tasks for startup gate blockers.")
+    .description(
+      "Generate or execute worker-ready remediation tasks for startup gate blockers."
+    )
     .option("--cwd <path>", "Workspace directory")
     .option(
       "--stage <stage>",
@@ -1446,7 +1466,8 @@ export function registerStartupCommands(program: Command): void {
             ...(options.model === undefined ? {} : { model: options.model }),
             ...(options.maxTasks === undefined
               ? {}
-              : { maxTasks: parsePositiveInteger(options.maxTasks, "--max-tasks") })
+              : { maxTasks: parsePositiveInteger(options.maxTasks, "--max-tasks") }),
+            onWorkerProgress: logWrappedWorkerProgress
           });
 
           console.log(formatStartupRemediationExecution(result));
@@ -1647,4 +1668,8 @@ async function requireRbacPermission(options: {
       `Subject ${options.actor} cannot ${options.action}: ${result.reason}`
     );
   }
+}
+
+function logWrappedWorkerProgress(progress: WorkerProcessProgress): void {
+  console.error(formatWorkerProcessProgress(progress));
 }

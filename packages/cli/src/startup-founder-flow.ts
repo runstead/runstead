@@ -4,6 +4,7 @@ import {
   createLocalAgentTask,
   runLocalAgentTask,
   type LocalAgentWorkerKind,
+  type RunLocalAgentTaskOptions,
   type RunLocalAgentTaskResult
 } from "./local-agent.js";
 import { collectRepoInspection } from "./inspection-evidence.js";
@@ -23,10 +24,7 @@ import {
   type GenerateStartupContextResult,
   type StartupInitResult
 } from "./startup-automation.js";
-import {
-  checkStartupGate,
-  type StartupGateCheckResult
-} from "./startup-evidence.js";
+import { checkStartupGate, type StartupGateCheckResult } from "./startup-evidence.js";
 import {
   formatStartupRepoOnboarding,
   prepareStartupRepoOnboarding,
@@ -56,6 +54,8 @@ export interface StartupBuildMvpOptions extends StartupFounderFlowOptions {
   model?: string;
   prompt?: string;
   workerRunner?: WorkerProcessRunner;
+  onWorkerProgress?: RunLocalAgentTaskOptions["onWorkerProgress"];
+  workerProgressIntervalMs?: number;
 }
 
 export interface StartupBuildMvpResult {
@@ -165,7 +165,15 @@ export async function startupBuildMvp(
   const run = await runLocalAgentTask({
     cwd,
     taskId: created.task.id,
-    ...(options.workerRunner === undefined ? {} : { workerRunner: options.workerRunner }),
+    ...(options.workerRunner === undefined
+      ? {}
+      : { workerRunner: options.workerRunner }),
+    ...(options.workerProgressIntervalMs === undefined
+      ? {}
+      : { workerProgressIntervalMs: options.workerProgressIntervalMs }),
+    ...(options.onWorkerProgress === undefined
+      ? {}
+      : { onWorkerProgress: options.onWorkerProgress }),
     ...(options.now === undefined ? {} : { now: options.now })
   });
   const gate = await checkStartupGate({

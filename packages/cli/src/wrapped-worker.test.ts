@@ -10,10 +10,12 @@ import {
   buildWrappedWorkerGovernanceManifest,
   buildWrappedWorkerInternalToolProxyStatus,
   buildWrappedWorkerPrompt,
+  formatWorkerProcessProgress,
   runWorkerProcess,
   startWrappedWorker,
   WrappedWorkerHardProxyUnavailableError,
   workerCommand,
+  type WorkerProcessProgress,
   type WorkerProcessRunner
 } from "./wrapped-worker.js";
 
@@ -365,7 +367,7 @@ describe("startWrappedWorker", () => {
 
     try {
       await mkdir(sourceCodexHome, { recursive: true });
-      await writeFile(join(sourceCodexHome, "auth.json"), "{\"token\":\"redacted\"}\n");
+      await writeFile(join(sourceCodexHome, "auth.json"), '{"token":"redacted"}\n');
       await writeFile(
         join(sourceCodexHome, "config.toml"),
         "mcp_servers = { inherited = true }\n"
@@ -389,9 +391,11 @@ describe("startWrappedWorker", () => {
         RUNSTEAD_WRAPPED_WORKER_PROFILE: "isolated-codex-cli"
       });
       await expect(readFile(join(isolatedHome, "auth.json"), "utf8")).resolves.toBe(
-        "{\"token\":\"redacted\"}\n"
+        '{"token":"redacted"}\n'
       );
-      await expect(readFile(join(isolatedHome, "config.toml"), "utf8")).rejects.toThrow();
+      await expect(
+        readFile(join(isolatedHome, "config.toml"), "utf8")
+      ).rejects.toThrow();
     } finally {
       if (previousCodexHome === undefined) {
         delete process.env.CODEX_HOME;
@@ -400,6 +404,50 @@ describe("startWrappedWorker", () => {
       }
       await rm(workspace, { force: true, recursive: true });
     }
+  });
+
+  it("passes progress reporting options to the process runner", async () => {
+    const observedProgress: WorkerProcessProgress[] = [];
+    const onProgress = (progress: WorkerProcessProgress): void => {
+      observedProgress.push(progress);
+    };
+    const calls: {
+      progressIntervalMs?: number;
+      onProgress?: (progress: WorkerProcessProgress) => void;
+    }[] = [];
+    const runner: WorkerProcessRunner = (_command, _args, options) => {
+      calls.push({
+        ...(options.progressIntervalMs === undefined
+          ? {}
+          : { progressIntervalMs: options.progressIntervalMs }),
+        ...(options.onProgress === undefined ? {} : { onProgress: options.onProgress })
+      });
+
+      return Promise.resolve({
+        stdout: wrappedWorkerOutput,
+        stderr: "",
+        exitCode: 0
+      });
+    };
+
+    await startWrappedWorker({
+      worker: "codex_cli",
+      goal,
+      task,
+      workspace: "/repo",
+      evidenceDir: "/repo/.runstead/evidence",
+      env: { CODEX_HOME: "/codex-home" },
+      progressIntervalMs: 123,
+      onProgress,
+      runner
+    });
+
+    expect(calls).toEqual([
+      {
+        progressIntervalMs: 123,
+        onProgress
+      }
+    ]);
   });
 
   it("respects an explicitly supplied Codex CLI home", async () => {
@@ -601,6 +649,49 @@ describe("runWorkerProcess", () => {
       stderr: "",
       exitCode: 0
     });
+  });
+
+  it("emits progress while a worker process is still running", async () => {
+    const progress: WorkerProcessProgress[] = [];
+
+    const result = await runWorkerProcess(
+      process.execPath,
+      ["-e", "setTimeout(() => console.log('done'), 60);"],
+      {
+        cwd: process.cwd(),
+        timeoutMs: 5_000,
+        maxOutputBytes: 10_000,
+        progressIntervalMs: 10,
+        onProgress: (item) => {
+          progress.push(item);
+        }
+      }
+    );
+
+    expect(result).toEqual({
+      stdout: "done\n",
+      stderr: "",
+      exitCode: 0
+    });
+    expect(progress.length).toBeGreaterThan(0);
+    expect(progress[0]).toMatchObject({
+      command: process.execPath
+    });
+    expect(progress[0]?.elapsedMs).toBeGreaterThanOrEqual(0);
+  });
+
+  it("formats worker progress as a concise CLI heartbeat", () => {
+    expect(
+      formatWorkerProcessProgress({
+        command: "codex",
+        elapsedMs: 65_000,
+        stdoutBytes: 5,
+        stderrBytes: 7,
+        capturedBytes: 12
+      })
+    ).toBe(
+      "[runstead] wrapped worker still running: codex elapsed=1m5s stdout=5B stderr=7B"
+    );
   });
 });
 

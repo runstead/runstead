@@ -15,6 +15,7 @@ import {
   createLocalAgentTask,
   runLocalAgentTask,
   type LocalAgentWorkerKind,
+  type RunLocalAgentTaskOptions,
   type RunLocalAgentTaskResult
 } from "./local-agent.js";
 import { requireRunsteadStateDb } from "./runstead-root.js";
@@ -47,11 +48,12 @@ export interface GenerateStartupRemediationPlanResult {
   nextCommands: string[];
 }
 
-export interface ExecuteStartupRemediationPlanOptions
-  extends GenerateStartupRemediationPlanOptions {
+export interface ExecuteStartupRemediationPlanOptions extends GenerateStartupRemediationPlanOptions {
   worker?: LocalAgentWorkerKind;
   model?: string;
   workerRunner?: WorkerProcessRunner;
+  onWorkerProgress?: RunLocalAgentTaskOptions["onWorkerProgress"];
+  workerProgressIntervalMs?: number;
   maxTasks?: number;
 }
 
@@ -66,8 +68,7 @@ export interface StartupRemediationExecutionSummary {
   gateEventId: string;
 }
 
-export interface ExecuteStartupRemediationPlanResult
-  extends GenerateStartupRemediationPlanResult {
+export interface ExecuteStartupRemediationPlanResult extends GenerateStartupRemediationPlanResult {
   worker: LocalAgentWorkerKind;
   executed: StartupRemediationExecutionSummary[];
   finalGate: {
@@ -177,6 +178,12 @@ export async function executeStartupRemediationPlan(
       ...(options.workerRunner === undefined
         ? {}
         : { workerRunner: options.workerRunner }),
+      ...(options.workerProgressIntervalMs === undefined
+        ? {}
+        : { workerProgressIntervalMs: options.workerProgressIntervalMs }),
+      ...(options.onWorkerProgress === undefined
+        ? {}
+        : { onWorkerProgress: options.onWorkerProgress }),
       ...(options.now === undefined ? {} : { now: options.now })
     });
 
@@ -272,6 +279,8 @@ async function executeRemediationTask(input: {
   item: StartupRemediationTaskSummary;
   model?: string;
   workerRunner?: WorkerProcessRunner;
+  onWorkerProgress?: RunLocalAgentTaskOptions["onWorkerProgress"];
+  workerProgressIntervalMs?: number;
   now?: Date;
 }): Promise<StartupRemediationExecutionSummary> {
   const created = await createLocalAgentTask({
@@ -288,6 +297,12 @@ async function executeRemediationTask(input: {
     cwd: input.cwd,
     taskId: created.task.id,
     ...(input.workerRunner === undefined ? {} : { workerRunner: input.workerRunner }),
+    ...(input.workerProgressIntervalMs === undefined
+      ? {}
+      : { workerProgressIntervalMs: input.workerProgressIntervalMs }),
+    ...(input.onWorkerProgress === undefined
+      ? {}
+      : { onWorkerProgress: input.onWorkerProgress }),
     ...(input.now === undefined ? {} : { now: input.now })
   });
   const gate = await checkStartupGate({

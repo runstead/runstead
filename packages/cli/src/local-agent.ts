@@ -61,6 +61,7 @@ import {
 import {
   startWrappedWorker,
   type WorkerProcessRunner,
+  type WorkerProcessProgress,
   type WrappedWorkerRunResult
 } from "./wrapped-worker.js";
 
@@ -105,6 +106,8 @@ export interface RunLocalAgentTaskOptions {
   taskId: string;
   transport?: CodexDirectTransport;
   workerRunner?: WorkerProcessRunner;
+  workerProgressIntervalMs?: number;
+  onWorkerProgress?: (progress: WorkerProcessProgress) => void;
   now?: Date;
 }
 
@@ -429,6 +432,12 @@ export async function runLocalAgentTask(
       ...(options.workerRunner === undefined
         ? {}
         : { workerRunner: options.workerRunner }),
+      ...(options.workerProgressIntervalMs === undefined
+        ? {}
+        : { workerProgressIntervalMs: options.workerProgressIntervalMs }),
+      ...(options.onWorkerProgress === undefined
+        ? {}
+        : { onWorkerProgress: options.onWorkerProgress }),
       ...(options.now === undefined ? {} : { now: options.now })
     });
   } finally {
@@ -450,6 +459,8 @@ async function runLocalAgentTaskWithDatabase(options: {
   modelProviderNetworkDomains?: string[];
   transport?: CodexDirectTransport;
   workerRunner?: WorkerProcessRunner;
+  workerProgressIntervalMs?: number;
+  onWorkerProgress?: (progress: WorkerProcessProgress) => void;
   now?: Date;
 }): Promise<RunLocalAgentTaskResult> {
   const orchestratorRun = startWorkerRun({
@@ -587,6 +598,8 @@ async function runLocalAgentWorker(options: {
   modelProviderNetworkDomains?: string[];
   transport?: CodexDirectTransport;
   workerRunner?: WorkerProcessRunner;
+  workerProgressIntervalMs?: number;
+  onWorkerProgress?: (progress: WorkerProcessProgress) => void;
   checkpoint?: WorkspaceCheckpoint;
   now?: Date;
 }): Promise<LocalAgentWorkerResult> {
@@ -641,7 +654,13 @@ async function runLocalAgentWorker(options: {
       ...(options.checkpoint === undefined
         ? {}
         : { checkpointBefore: options.checkpoint }),
-      ...(options.workerRunner === undefined ? {} : { runner: options.workerRunner })
+      ...(options.workerRunner === undefined ? {} : { runner: options.workerRunner }),
+      ...(options.workerProgressIntervalMs === undefined
+        ? {}
+        : { progressIntervalMs: options.workerProgressIntervalMs }),
+      ...(options.onWorkerProgress === undefined
+        ? {}
+        : { onProgress: options.onWorkerProgress })
     });
   }
 

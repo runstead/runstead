@@ -81,12 +81,22 @@ export interface WrappedWorkerRunOptions extends WrappedWorkerPromptInput {
   env?: Record<string, string>;
   timeoutMs?: number;
   maxOutputBytes?: number;
+  progressIntervalMs?: number;
+  onProgress?: (progress: WorkerProcessProgress) => void;
 }
 
 export interface WorkerProcessResult {
   stdout: string;
   stderr: string;
   exitCode: number;
+}
+
+export interface WorkerProcessProgress {
+  command: string;
+  elapsedMs: number;
+  stdoutBytes: number;
+  stderrBytes: number;
+  capturedBytes: number;
 }
 
 export interface WrappedWorkerStructuredOutput {
@@ -111,6 +121,8 @@ export type WorkerProcessRunner = (
     env?: Record<string, string>;
     timeoutMs?: number;
     maxOutputBytes?: number;
+    progressIntervalMs?: number;
+    onProgress?: (progress: WorkerProcessProgress) => void;
   }
 ) => Promise<WorkerProcessResult>;
 
@@ -337,7 +349,11 @@ export async function startWrappedWorker(
       cwd: resolve(options.workspace),
       ...(workerEnv === undefined ? {} : { env: workerEnv }),
       timeoutMs: options.timeoutMs ?? DEFAULT_WORKER_TIMEOUT_MS,
-      maxOutputBytes: options.maxOutputBytes ?? DEFAULT_WORKER_MAX_OUTPUT_BYTES
+      maxOutputBytes: options.maxOutputBytes ?? DEFAULT_WORKER_MAX_OUTPUT_BYTES,
+      ...(options.progressIntervalMs === undefined
+        ? {}
+        : { progressIntervalMs: options.progressIntervalMs }),
+      ...(options.onProgress === undefined ? {} : { onProgress: options.onProgress })
     }
   );
   const validation = validateWrappedWorkerStructuredOutput(result.stdout);
@@ -384,7 +400,10 @@ async function buildWrappedWorkerEnv(
   }
 
   const profileDir = join(
-    resolve(options.workerRuntimeDir ?? join(options.workspace, ".runstead", "worker-profiles")),
+    resolve(
+      options.workerRuntimeDir ??
+        join(options.workspace, ".runstead", "worker-profiles")
+    ),
     "codex-cli"
   );
   await mkdir(profileDir, { recursive: true });
@@ -401,7 +420,9 @@ async function copyCodexAuth(
   profileDir: string,
   env: Record<string, string> | undefined
 ): Promise<void> {
-  const sourceHome = resolve(env?.CODEX_HOME ?? process.env.CODEX_HOME ?? join(homedir(), ".codex"));
+  const sourceHome = resolve(
+    env?.CODEX_HOME ?? process.env.CODEX_HOME ?? join(homedir(), ".codex")
+  );
 
   try {
     await copyFile(join(sourceHome, "auth.json"), join(profileDir, "auth.json"));
@@ -461,6 +482,24 @@ export function workerCommand(
   }
 }
 
+export function formatWorkerProcessProgress(progress: WorkerProcessProgress): string {
+  return [
+    "[runstead]",
+    `wrapped worker still running: ${progress.command}`,
+    `elapsed=${formatElapsed(progress.elapsedMs)}`,
+    `stdout=${progress.stdoutBytes}B`,
+    `stderr=${progress.stderrBytes}B`
+  ].join(" ");
+}
+
+function formatElapsed(elapsedMs: number): string {
+  const totalSeconds = Math.max(0, Math.floor(elapsedMs / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+
+  return minutes === 0 ? `${seconds}s` : `${minutes}m${seconds}s`;
+}
+
 function bulletList(values: string[]): string {
   return values.map((value) => `- ${value}`).join("\n");
 }
@@ -473,18 +512,24 @@ export async function runWorkerProcess(
     env?: Record<string, string>;
     timeoutMs?: number;
     maxOutputBytes?: number;
+    progressIntervalMs?: number;
+    onProgress?: (progress: WorkerProcessProgress) => void;
   }
 ): Promise<WorkerProcessResult> {
   const maxOutputBytes = options.maxOutputBytes ?? DEFAULT_WORKER_MAX_OUTPUT_BYTES;
   const timeoutMs = options.timeoutMs ?? DEFAULT_WORKER_TIMEOUT_MS;
+  const progressIntervalMs = options.progressIntervalMs ?? 30_000;
 
   return await new Promise<WorkerProcessResult>((resolveResult) => {
     let stdout = "";
     let stderr = "";
+    let stdoutBytes = 0;
+    let stderrBytes = 0;
     let capturedBytes = 0;
     let outputTruncated = false;
     let timedOut = false;
     let settled = false;
+    const startedAt = Date.now();
 
     const child = spawn(command, args, {
       cwd: options.cwd,
@@ -497,6 +542,18 @@ export async function runWorkerProcess(
       timedOut = true;
       child.kill("SIGTERM");
     }, timeoutMs);
+    const progress =
+      options.onProgress === undefined
+        ? undefined
+        : setInterval(() => {
+            options.onProgress?.({
+              command,
+              elapsedMs: Date.now() - startedAt,
+              stdoutBytes,
+              stderrBytes,
+              capturedBytes
+            });
+          }, progressIntervalMs);
 
     const resolveOnce = (result: WorkerProcessResult): void => {
       if (settled) {
@@ -505,6 +562,9 @@ export async function runWorkerProcess(
 
       settled = true;
       clearTimeout(timeout);
+      if (progress !== undefined) {
+        clearInterval(progress);
+      }
       resolveResult(result);
     };
 
@@ -525,8 +585,10 @@ export async function runWorkerProcess(
       capturedBytes += captured.byteLength;
 
       if (key === "stdout") {
+        stdoutBytes += captured.byteLength;
         stdout += captured.toString("utf8");
       } else {
+        stderrBytes += captured.byteLength;
         stderr += captured.toString("utf8");
       }
     };
