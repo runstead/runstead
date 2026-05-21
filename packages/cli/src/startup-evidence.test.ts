@@ -346,6 +346,7 @@ describe("startup evidence ledger", () => {
           cwd: workspace,
           kind,
           statement,
+          status: "validated",
           goalId: created.goal.id,
           now: new Date("2026-05-14T03:20:00.000Z")
         });
@@ -480,6 +481,98 @@ describe("startup evidence ledger", () => {
 
       expect(passedGate.passed).toBe(true);
       expect(passedGate.blockers).toEqual([]);
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("explains unresolved hypothesis status and disconfirming blockers", async () => {
+    const workspace = join(tmpdir(), `runstead-startup-hypothesis-${process.pid}`);
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await initRunstead({ cwd: workspace });
+      await installDomainPack({
+        cwd: workspace,
+        ref: "ai-native-startup",
+        now: new Date("2026-05-14T02:00:00.000Z")
+      });
+      const created = await createGoal({
+        cwd: workspace,
+        domain: "ai-native-startup",
+        template: "validate-problem",
+        now: new Date("2026-05-14T03:00:00.000Z")
+      });
+      const problemHypothesis = await addStartupHypothesis({
+        cwd: workspace,
+        kind: "problem",
+        statement: "Founders cannot trust agent-produced MVP readiness",
+        status: "validated",
+        goalId: created.goal.id,
+        now: new Date("2026-05-14T03:10:00.000Z")
+      });
+
+      await addStartupHypothesis({
+        cwd: workspace,
+        kind: "user",
+        statement: "Technical founders will use a launch gate",
+        status: "needs-more-evidence",
+        goalId: created.goal.id,
+        now: new Date("2026-05-14T03:11:00.000Z")
+      });
+      await addStartupHypothesis({
+        cwd: workspace,
+        kind: "solution",
+        statement: "Runstead launch gate is the right MVP",
+        status: "validated",
+        goalId: created.goal.id,
+        now: new Date("2026-05-14T03:12:00.000Z")
+      });
+      await addStartupEvidence({
+        cwd: workspace,
+        type: "customer_interview",
+        summary: "Founder wants evidence before launch",
+        sourceRefs: ["interview:founder-a"],
+        hypothesisId: problemHypothesis.evidence.id,
+        goalId: created.goal.id,
+        content: JSON.stringify({
+          persona: "technical founder",
+          problem: "agent-coded launch readiness is hard to trust",
+          summary: "Founder wants evidence before launch",
+          signalStrength: "strong"
+        }),
+        now: new Date("2026-05-14T03:13:00.000Z")
+      });
+      await addStartupEvidence({
+        cwd: workspace,
+        type: "disconfirming",
+        summary: "A founder would ignore the readiness report",
+        sourceRefs: ["interview:founder-b"],
+        goalId: created.goal.id,
+        content: JSON.stringify({
+          impact: "blocker",
+          reason: "The target persona may not trust generated reports"
+        }),
+        now: new Date("2026-05-14T03:14:00.000Z")
+      });
+
+      const gate = await checkStartupGate({
+        cwd: workspace,
+        stage: "mvp",
+        domain: "ai-native-startup",
+        now: new Date("2026-05-14T03:20:00.000Z")
+      });
+
+      expect(gate.passed).toBe(false);
+      expect(gate.blockers).toEqual(
+        expect.arrayContaining([
+          "user hypothesis needs more evidence",
+          "disconfirming evidence blocks MVP build: A founder would ignore the readiness report"
+        ])
+      );
+      expect(formatStartupGateCheckResult(gate)).toContain(
+        "MVP build cannot start until each blocker has evidence"
+      );
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }

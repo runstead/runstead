@@ -55,7 +55,9 @@ describe("startup CLI lifecycle", () => {
           "--kind",
           kind,
           "--statement",
-          statement
+          statement,
+          "--status",
+          "validated"
         );
 
         if (kind === "problem") {
@@ -70,24 +72,21 @@ describe("startup CLI lifecycle", () => {
       await runCli(
         "startup",
         "evidence",
-        "add",
+        "customer-interview",
         "--cwd",
         workspace,
-        "--type",
-        "customer_interview",
+        "--persona",
+        "technical founder",
+        "--problem",
+        "AI-coded launches lack evidence-backed readiness",
         "--summary",
         "Three founders asked for governed launch evidence",
         "--source",
         "interview-notes:2026-05-14",
         "--hypothesis",
         problemHypothesisId,
-        "--content",
-        JSON.stringify({
-          persona: "technical founder",
-          problem: "AI-coded launches lack evidence-backed readiness",
-          summary: "Three founders asked for governed launch evidence",
-          signalStrength: "strong"
-        })
+        "--signal-strength",
+        "strong"
       );
       await runCli(
         "startup",
@@ -105,6 +104,23 @@ describe("startup CLI lifecycle", () => {
         "0.51",
         "--source-ref",
         "analytics:activation:2026-05-14"
+      );
+      await runCli(
+        "startup",
+        "evidence",
+        "competitor",
+        "--cwd",
+        workspace,
+        "--competitor",
+        "CI-only launch checklist",
+        "--finding",
+        "CI proves commands pass but not founder launch readiness",
+        "--signal-strength",
+        "medium",
+        "--hypothesis",
+        problemHypothesisId,
+        "--source",
+        "competitor-notes:2026-05-14"
       );
       await runCli(
         "startup",

@@ -48,6 +48,11 @@ export const STARTUP_EVIDENCE_TYPES = [
 
 export type StartupEvidenceType = (typeof STARTUP_EVIDENCE_TYPES)[number];
 export type StartupHypothesisKind = "problem" | "user" | "solution";
+export type StartupHypothesisStatus =
+  | "open"
+  | "validated"
+  | "invalidated"
+  | "needs-more-evidence";
 export type StartupGateStage = "idea" | "mvp" | "launch" | "scale";
 
 export interface AddStartupEvidenceOptions {
@@ -75,6 +80,7 @@ export interface AddStartupHypothesisOptions {
   cwd?: string;
   kind: StartupHypothesisKind;
   statement: string;
+  status?: StartupHypothesisStatus;
   sourceRefs?: string[];
   goalId?: string;
   now?: Date;
@@ -219,7 +225,8 @@ export async function addStartupHypothesis(
     content: JSON.stringify(
       {
         kind: options.kind,
-        statement: options.statement
+        statement: options.statement,
+        status: options.status ?? "open"
       },
       null,
       2
@@ -285,6 +292,13 @@ export function formatStartupGateCheckResult(result: StartupGateCheckResult): st
     "",
     "Blockers:",
     listOrNone(result.blockers, (blocker) => `- ${blocker}`),
+    ...(result.stage === "mvp" && !result.passed
+      ? [
+          "",
+          "MVP build gate explanation:",
+          "MVP build cannot start until each blocker has evidence, hypothesis status, and disconfirming-signal resolution."
+        ]
+      : []),
     "",
     "Warnings:",
     listOrNone(result.warnings, (warning) => `- ${warning}`)
@@ -385,22 +399,83 @@ function validationBlockers(
   artifacts: Map<string, StartupGateEvidenceArtifact>
 ): string[] {
   return [
-    ...(hasEvidenceType(evidence, "startup_problem_hypothesis")
-      ? []
-      : ["problem hypothesis is missing"]),
-    ...(hasEvidenceType(evidence, "startup_user_hypothesis")
-      ? []
-      : ["user hypothesis is missing"]),
-    ...(hasEvidenceType(evidence, "startup_solution_hypothesis")
-      ? []
-      : ["solution hypothesis is missing"]),
+    ...hypothesisGateBlockers("problem", evidence, artifacts),
+    ...hypothesisGateBlockers("user", evidence, artifacts),
+    ...hypothesisGateBlockers("solution", evidence, artifacts),
     ...(hasValidationEvidence(evidence, artifacts)
       ? []
       : ["customer, competitor, or metric validation evidence is missing"]),
     ...(hasEvidenceType(evidence, "startup_disconfirming")
       ? []
-      : ["disconfirming evidence is missing"])
+      : ["disconfirming evidence is missing"]),
+    ...disconfirmingEvidenceBlockers(evidence, artifacts)
   ];
+}
+
+function hypothesisGateBlockers(
+  kind: StartupHypothesisKind,
+  evidence: StartupGateEvidenceRow[],
+  artifacts: Map<string, StartupGateEvidenceArtifact>
+): string[] {
+  const rows = evidence.filter((item) => item.type === `startup_${kind}_hypothesis`);
+
+  if (rows.length === 0) {
+    return [`${kind} hypothesis is missing`];
+  }
+
+  const latestStatus = hypothesisStatus(artifacts.get(rows[0]?.id ?? ""));
+
+  if (latestStatus === "validated") {
+    return [];
+  }
+
+  if (latestStatus === "invalidated") {
+    return [`${kind} hypothesis is invalidated`];
+  }
+
+  if (latestStatus === "needs-more-evidence") {
+    return [`${kind} hypothesis needs more evidence`];
+  }
+
+  return [`${kind} hypothesis is open and not validated`];
+}
+
+function hypothesisStatus(
+  artifact: StartupGateEvidenceArtifact | undefined
+): StartupHypothesisStatus {
+  const content = parsedArtifactContent(artifact);
+
+  if (!isRecord(content)) {
+    return "open";
+  }
+
+  return parseStartupHypothesisStatusValue(content.status);
+}
+
+function disconfirmingEvidenceBlockers(
+  evidence: StartupGateEvidenceRow[],
+  artifacts: Map<string, StartupGateEvidenceArtifact>
+): string[] {
+  return evidence
+    .filter((item) => item.type === "startup_disconfirming")
+    .filter((item) => disconfirmingEvidenceBlocksMvp(artifacts.get(item.id)))
+    .map((item) => {
+      const summary = item.summary ?? "disconfirming evidence";
+
+      return `disconfirming evidence blocks MVP build: ${summary}`;
+    });
+}
+
+function disconfirmingEvidenceBlocksMvp(
+  artifact: StartupGateEvidenceArtifact | undefined
+): boolean {
+  const content = parsedArtifactContent(artifact);
+
+  if (!isRecord(content)) {
+    return false;
+  }
+
+  return content.impact === "blocker" || content.impact === "invalidates";
 }
 
 function hasValidationEvidence(
@@ -761,6 +836,21 @@ function parseStartupEvidenceType(value: string): StartupEvidenceType {
   throw new Error(
     `Unsupported startup evidence type ${value}. Expected one of: ${STARTUP_EVIDENCE_TYPES.join(", ")}`
   );
+}
+
+export function parseStartupHypothesisStatusValue(
+  value: unknown
+): StartupHypothesisStatus {
+  if (
+    value === "open" ||
+    value === "validated" ||
+    value === "invalidated" ||
+    value === "needs-more-evidence"
+  ) {
+    return value;
+  }
+
+  return "open";
 }
 
 function evidenceEventPayload(
