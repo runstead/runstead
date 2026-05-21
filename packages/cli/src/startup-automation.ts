@@ -53,6 +53,7 @@ export interface GenerateStartupContextResult {
   root: string;
   stateDb: string;
   files: string[];
+  structuredFiles: string[];
   evidenceId: string;
 }
 
@@ -71,6 +72,7 @@ export interface GenerateMeasurementFrameworkResult {
   root: string;
   stateDb: string;
   files: string[];
+  structuredFiles: string[];
   evidenceId: string;
 }
 
@@ -83,6 +85,7 @@ export interface GenerateRepoReadinessAuditResult {
   root: string;
   stateDb: string;
   files: string[];
+  structuredFiles: string[];
   evidenceId: string;
   blockers: string[];
   warnings: string[];
@@ -97,6 +100,7 @@ export interface GenerateSecurityBaselineResult {
   root: string;
   stateDb: string;
   files: string[];
+  structuredFiles: string[];
   evidenceId: string;
   blockers: string[];
   warnings: string[];
@@ -116,6 +120,7 @@ export interface RecordSupportTriageResult {
   root: string;
   stateDb: string;
   files: string[];
+  structuredFiles: string[];
   evidenceId: string;
 }
 
@@ -131,6 +136,7 @@ export interface GenerateFounderBottleneckMapResult {
   root: string;
   stateDb: string;
   files: string[];
+  structuredFiles: string[];
   evidenceId: string;
   bottlenecks: string[];
 }
@@ -147,6 +153,7 @@ export interface GenerateWorkflowRegistryResult {
   root: string;
   stateDb: string;
   files: string[];
+  structuredFiles: string[];
   evidenceIds: string[];
   workflows: string[];
   delegationRules: string[];
@@ -164,6 +171,7 @@ export interface CaptureInstitutionalMemoryResult {
   root: string;
   stateDb: string;
   files: string[];
+  structuredFiles: string[];
   evidenceId: string;
   memoryId: string;
   knowledge: string[];
@@ -181,6 +189,7 @@ export interface GenerateIntegrationMapResult {
   root: string;
   stateDb: string;
   files: string[];
+  structuredFiles: string[];
   evidenceId: string;
   integrations: string[];
 }
@@ -195,6 +204,7 @@ export interface GenerateScaleOpsReportResult {
   root: string;
   stateDb: string;
   files: string[];
+  structuredFiles: string[];
   evidenceId: string;
   period: string;
 }
@@ -211,6 +221,7 @@ export interface GenerateOpsSopsResult {
   root: string;
   stateDb: string;
   files: string[];
+  structuredFiles: string[];
   evidenceId: string;
   sops: string[];
 }
@@ -227,8 +238,18 @@ export interface VerifyGtmArtifactsResult {
   root: string;
   stateDb: string;
   files: string[];
+  structuredFiles: string[];
   evidenceId: string;
   claims: string[];
+}
+
+interface StartupStructuredArtifact {
+  schemaVersion: 1;
+  schema: "runstead.startupArtifact";
+  kind: string;
+  generatedAt: string;
+  markdownPath: string;
+  data: Record<string, unknown>;
 }
 
 interface StartupEvidenceSummaryRow {
@@ -344,6 +365,14 @@ export async function generateStartupContext(
       : { acceptedDebt: options.acceptedDebt })
   });
   const files: string[] = [];
+  const structuredFiles: string[] = [];
+  const contextData = {
+    contextFiles: STARTUP_CONTEXT_FILES,
+    inspection,
+    architecturePrinciples: options.architecturePrinciples ?? [],
+    technicalConstraints: options.technicalConstraints ?? [],
+    acceptedDebt: options.acceptedDebt ?? []
+  };
 
   for (const filename of STARTUP_CONTEXT_FILES) {
     const path = join(cwd, filename);
@@ -354,18 +383,40 @@ export async function generateStartupContext(
 
     await writeFile(path, contextForFile(filename, context), "utf8");
     files.push(path);
+    structuredFiles.push(
+      await writeStartupStructuredArtifact({
+        kind: "startup_agent_context",
+        generatedAt,
+        markdownPath: path,
+        data: {
+          ...contextData,
+          contextFile: filename
+        }
+      })
+    );
   }
 
   await mkdir(join(state.root, "startup"), { recursive: true });
   const summaryPath = join(state.root, "startup", "agent-context.md");
 
   await writeFile(summaryPath, context, "utf8");
+  structuredFiles.push(
+    await writeStartupStructuredArtifact({
+      kind: "startup_agent_context",
+      generatedAt,
+      markdownPath: summaryPath,
+      data: {
+        ...contextData,
+        contextFile: "agent-context.md"
+      }
+    })
+  );
 
   const evidence = await addStartupEvidence({
     cwd,
     type: "agent_context",
     summary: "Generated startup agent context files",
-    sourceRefs: [...files, summaryPath],
+    sourceRefs: [...files, summaryPath, ...structuredFiles],
     content: context,
     ...(options.now === undefined ? {} : { now: options.now })
   });
@@ -374,6 +425,7 @@ export async function generateStartupContext(
     root: state.root,
     stateDb: state.stateDb,
     files,
+    structuredFiles,
     evidenceId: evidence.evidence.id
   };
 }
@@ -408,14 +460,36 @@ export async function generateMeasurementFramework(
   await mkdir(join(state.root, "startup"), { recursive: true });
 
   const runtimePath = join(state.root, "startup", "measurement-framework.md");
+  const measurementData = {
+    activationMetric:
+      options.activationMetric ?? "User completes the first successful core workflow.",
+    retentionMetric:
+      options.retentionMetric ?? "User returns and completes a core workflow again.",
+    day7Metric: options.day7Metric ?? "Day 7 retained active users by signup cohort.",
+    day30Metric:
+      options.day30Metric ?? "Day 30 retained active users by signup cohort.",
+    falsePositiveMetric:
+      options.falsePositiveMetric ??
+      "Runstead or product claim is counted as success without user-confirmed value."
+  };
 
   await writeFile(runtimePath, framework, "utf8");
+  const structuredFiles = await Promise.all(
+    [rootPath, runtimePath].map((path) =>
+      writeStartupStructuredArtifact({
+        kind: "startup_measurement_framework",
+        generatedAt,
+        markdownPath: path,
+        data: measurementData
+      })
+    )
+  );
 
   const evidence = await addStartupEvidence({
     cwd,
     type: "measurement_framework",
     summary: "Generated startup measurement framework",
-    sourceRefs: [rootPath, runtimePath],
+    sourceRefs: [rootPath, runtimePath, ...structuredFiles],
     content: framework,
     ...(options.now === undefined ? {} : { now: options.now })
   });
@@ -424,6 +498,7 @@ export async function generateMeasurementFramework(
     root: state.root,
     stateDb: state.stateDb,
     files: [rootPath, runtimePath],
+    structuredFiles,
     evidenceId: evidence.evidence.id
   };
 }
@@ -451,12 +526,25 @@ export async function generateRepoReadinessAudit(
   const runtimePath = join(state.root, "startup", "repo-readiness.md");
 
   await writeFile(runtimePath, markdown, "utf8");
+  const structuredFiles = [
+    await writeStartupStructuredArtifact({
+      kind: "startup_repo_readiness",
+      generatedAt,
+      markdownPath: runtimePath,
+      data: {
+        inspection,
+        changedProtected,
+        blockers,
+        warnings
+      }
+    })
+  ];
 
   const evidence = await addStartupEvidence({
     cwd,
     type: "repo_readiness",
     summary: `Repository readiness audit recorded (${blockers.length} blocker${blockers.length === 1 ? "" : "s"})`,
-    sourceRefs: [runtimePath],
+    sourceRefs: [runtimePath, ...structuredFiles],
     content: markdown,
     ...(options.now === undefined ? {} : { now: options.now })
   });
@@ -465,6 +553,7 @@ export async function generateRepoReadinessAudit(
     root: state.root,
     stateDb: state.stateDb,
     files: [runtimePath],
+    structuredFiles,
     evidenceId: evidence.evidence.id,
     blockers,
     warnings
@@ -496,12 +585,26 @@ export async function generateSecurityBaseline(
   const runtimePath = join(state.root, "startup", "security-baseline.md");
 
   await writeFile(runtimePath, markdown, "utf8");
+  const structuredFiles = [
+    await writeStartupStructuredArtifact({
+      kind: "startup_security_baseline",
+      generatedAt,
+      markdownPath: runtimePath,
+      data: {
+        changedProtected,
+        envFiles,
+        dependencyFiles,
+        blockers,
+        warnings
+      }
+    })
+  ];
 
   const evidence = await addStartupEvidence({
     cwd,
     type: "security_baseline",
     summary: `Security baseline recorded (${blockers.length} blocker${blockers.length === 1 ? "" : "s"})`,
-    sourceRefs: [runtimePath],
+    sourceRefs: [runtimePath, ...structuredFiles],
     content: markdown,
     ...(options.now === undefined ? {} : { now: options.now })
   });
@@ -510,6 +613,7 @@ export async function generateSecurityBaseline(
     root: state.root,
     stateDb: state.stateDb,
     files: [runtimePath],
+    structuredFiles,
     evidenceId: evidence.evidence.id,
     blockers,
     warnings
@@ -541,12 +645,26 @@ export async function recordSupportTriage(
   );
 
   await writeFile(runtimePath, markdown, "utf8");
+  const structuredFiles = [
+    await writeStartupStructuredArtifact({
+      kind: "startup_support_triage",
+      generatedAt,
+      markdownPath: runtimePath,
+      data: {
+        request: options.request,
+        outcome: options.outcome,
+        customer: options.customer ?? null,
+        severity: options.severity ?? "medium",
+        sourceRefs: options.sourceRefs ?? []
+      }
+    })
+  ];
 
   const evidence = await addStartupEvidence({
     cwd,
     type: "support_triage",
     summary: `Support triage recorded: ${options.outcome}`,
-    sourceRefs: [runtimePath, ...(options.sourceRefs ?? [])],
+    sourceRefs: [runtimePath, ...structuredFiles, ...(options.sourceRefs ?? [])],
     content: markdown,
     ...(options.now === undefined ? {} : { now: options.now })
   });
@@ -555,6 +673,7 @@ export async function recordSupportTriage(
     root: state.root,
     stateDb: state.stateDb,
     files: [runtimePath],
+    structuredFiles,
     evidenceId: evidence.evidence.id
   };
 }
@@ -581,12 +700,24 @@ export async function generateFounderBottleneckMap(
   const runtimePath = join(state.root, "startup", "founder-bottlenecks.md");
 
   await writeFile(runtimePath, markdown, "utf8");
+  const structuredFiles = [
+    await writeStartupStructuredArtifact({
+      kind: "startup_founder_bottleneck",
+      generatedAt,
+      markdownPath: runtimePath,
+      data: {
+        bottlenecks,
+        owner: options.owner ?? "unassigned",
+        systemOfRecord: options.systemOfRecord ?? "Runstead evidence ledger"
+      }
+    })
+  ];
 
   const evidence = await addStartupEvidence({
     cwd,
     type: "founder_bottleneck",
     summary: `Founder bottleneck map recorded (${bottlenecks.length} item${bottlenecks.length === 1 ? "" : "s"})`,
-    sourceRefs: [runtimePath],
+    sourceRefs: [runtimePath, ...structuredFiles],
     content: markdown,
     ...(options.now === undefined ? {} : { now: options.now })
   });
@@ -595,6 +726,7 @@ export async function generateFounderBottleneckMap(
     root: state.root,
     stateDb: state.stateDb,
     files: [runtimePath],
+    structuredFiles,
     evidenceId: evidence.evidence.id,
     bottlenecks
   };
@@ -641,12 +773,31 @@ export async function generateWorkflowRegistry(
 
   await writeFile(workflowPath, workflowMarkdown, "utf8");
   await writeFile(delegationPath, delegationMarkdown, "utf8");
+  const workflowStructuredPath = await writeStartupStructuredArtifact({
+    kind: "startup_workflow_registry",
+    generatedAt,
+    markdownPath: workflowPath,
+    data: {
+      workflows,
+      approvalBoundaries
+    }
+  });
+  const delegationStructuredPath = await writeStartupStructuredArtifact({
+    kind: "startup_delegation_policy",
+    generatedAt,
+    markdownPath: delegationPath,
+    data: {
+      delegationRules,
+      approvalBoundaries
+    }
+  });
+  const structuredFiles = [workflowStructuredPath, delegationStructuredPath];
 
   const workflowEvidence = await addStartupEvidence({
     cwd,
     type: "workflow_registry",
     summary: `Workflow registry recorded (${workflows.length} workflow${workflows.length === 1 ? "" : "s"})`,
-    sourceRefs: [workflowPath, delegationPath],
+    sourceRefs: [workflowPath, workflowStructuredPath, delegationPath],
     content: workflowMarkdown,
     ...(options.now === undefined ? {} : { now: options.now })
   });
@@ -654,7 +805,7 @@ export async function generateWorkflowRegistry(
     cwd,
     type: "delegation_policy",
     summary: `Delegation policy recorded (${delegationRules.length} rule${delegationRules.length === 1 ? "" : "s"})`,
-    sourceRefs: [delegationPath, workflowPath],
+    sourceRefs: [delegationPath, delegationStructuredPath, workflowPath],
     content: delegationMarkdown,
     ...(options.now === undefined ? {} : { now: options.now })
   });
@@ -663,6 +814,7 @@ export async function generateWorkflowRegistry(
     root: state.root,
     stateDb: state.stateDb,
     files: [workflowPath, delegationPath],
+    structuredFiles,
     evidenceIds: [workflowEvidence.evidence.id, delegationEvidence.evidence.id],
     workflows,
     delegationRules
@@ -694,12 +846,27 @@ export async function captureInstitutionalMemory(
   const runtimePath = join(state.root, "startup", "institutional-memory.md");
 
   await writeFile(runtimePath, markdown, "utf8");
+  const structuredFiles = [
+    await writeStartupStructuredArtifact({
+      kind: "startup_institutional_memory",
+      generatedAt,
+      markdownPath: runtimePath,
+      data: {
+        scope,
+        knowledge,
+        sourceRefs: options.sourceRefs ?? []
+      }
+    })
+  ];
 
   const memory = recordProjectFact({
     cwd,
     scope,
     content: knowledge.join("\n"),
-    sourceRefs: [pathToFileURL(runtimePath).href],
+    sourceRefs: [
+      pathToFileURL(runtimePath).href,
+      ...structuredFiles.map((path) => pathToFileURL(path).href)
+    ],
     createdBy: "startup scale memory capture",
     ...(options.now === undefined ? {} : { now: options.now })
   });
@@ -707,7 +874,7 @@ export async function captureInstitutionalMemory(
     cwd,
     type: "institutional_memory",
     summary: `Institutional memory captured (${knowledge.length} item${knowledge.length === 1 ? "" : "s"})`,
-    sourceRefs: [runtimePath, ...(options.sourceRefs ?? [])],
+    sourceRefs: [runtimePath, ...structuredFiles, ...(options.sourceRefs ?? [])],
     content: markdown,
     ...(options.now === undefined ? {} : { now: options.now })
   });
@@ -716,6 +883,7 @@ export async function captureInstitutionalMemory(
     root: state.root,
     stateDb: state.stateDb,
     files: [runtimePath],
+    structuredFiles,
     evidenceId: evidence.evidence.id,
     memoryId: memory.memory.id,
     knowledge
@@ -746,12 +914,24 @@ export async function generateIntegrationMap(
   const runtimePath = join(state.root, "startup", "integration-depth-map.md");
 
   await writeFile(runtimePath, markdown, "utf8");
+  const structuredFiles = [
+    await writeStartupStructuredArtifact({
+      kind: "startup_integration_map",
+      generatedAt,
+      markdownPath: runtimePath,
+      data: {
+        integrations,
+        lockInSignals: options.lockInSignals ?? [],
+        automationCoverage: options.automationCoverage ?? []
+      }
+    })
+  ];
 
   const evidence = await addStartupEvidence({
     cwd,
     type: "integration_map",
     summary: `Integration depth map recorded (${integrations.length} integration${integrations.length === 1 ? "" : "s"})`,
-    sourceRefs: [runtimePath],
+    sourceRefs: [runtimePath, ...structuredFiles],
     content: markdown,
     ...(options.now === undefined ? {} : { now: options.now })
   });
@@ -760,6 +940,7 @@ export async function generateIntegrationMap(
     root: state.root,
     stateDb: state.stateDb,
     files: [runtimePath],
+    structuredFiles,
     evidenceId: evidence.evidence.id,
     integrations
   };
@@ -792,12 +973,23 @@ export async function generateScaleOpsReport(
   const runtimePath = join(state.root, "reports", `startup-ops-${period}.md`);
 
   await writeFile(runtimePath, markdown, "utf8");
+  const structuredFiles = [
+    await writeStartupStructuredArtifact({
+      kind: "startup_ops_report",
+      generatedAt,
+      markdownPath: runtimePath,
+      data: {
+        period,
+        evidence
+      }
+    })
+  ];
 
   const reportEvidence = await addStartupEvidence({
     cwd,
     type: "ops_report",
     summary: `Startup scale ops report generated for ${period}`,
-    sourceRefs: [runtimePath],
+    sourceRefs: [runtimePath, ...structuredFiles],
     content: markdown,
     ...(options.now === undefined ? {} : { now: options.now })
   });
@@ -806,6 +998,7 @@ export async function generateScaleOpsReport(
     root: state.root,
     stateDb: state.stateDb,
     files: [runtimePath],
+    structuredFiles,
     evidenceId: reportEvidence.evidence.id,
     period
   };
@@ -833,12 +1026,24 @@ export async function generateOpsSops(
   const runtimePath = join(state.root, "startup", "ops-sops.md");
 
   await writeFile(runtimePath, markdown, "utf8");
+  const structuredFiles = [
+    await writeStartupStructuredArtifact({
+      kind: "startup_ops_sop",
+      generatedAt,
+      markdownPath: runtimePath,
+      data: {
+        sops,
+        owner: options.owner ?? "unassigned",
+        workflow: options.workflow ?? "unassigned"
+      }
+    })
+  ];
 
   const evidence = await addStartupEvidence({
     cwd,
     type: "ops_sop",
     summary: `Ops SOPs generated (${sops.length} SOP${sops.length === 1 ? "" : "s"})`,
-    sourceRefs: [runtimePath],
+    sourceRefs: [runtimePath, ...structuredFiles],
     content: markdown,
     ...(options.now === undefined ? {} : { now: options.now })
   });
@@ -847,6 +1052,7 @@ export async function generateOpsSops(
     root: state.root,
     stateDb: state.stateDb,
     files: [runtimePath],
+    structuredFiles,
     evidenceId: evidence.evidence.id,
     sops
   };
@@ -874,12 +1080,24 @@ export async function verifyGtmArtifacts(
   const runtimePath = join(state.root, "startup", "gtm-artifacts.md");
 
   await writeFile(runtimePath, markdown, "utf8");
+  const structuredFiles = [
+    await writeStartupStructuredArtifact({
+      kind: "startup_gtm_artifact",
+      generatedAt,
+      markdownPath: runtimePath,
+      data: {
+        claims,
+        evidenceRefs: options.evidenceRefs ?? [],
+        productState: options.productState ?? "unrecorded"
+      }
+    })
+  ];
 
   const evidence = await addStartupEvidence({
     cwd,
     type: "gtm_artifact",
     summary: `GTM artifacts verified (${claims.length} claim${claims.length === 1 ? "" : "s"})`,
-    sourceRefs: [runtimePath, ...(options.evidenceRefs ?? [])],
+    sourceRefs: [runtimePath, ...structuredFiles, ...(options.evidenceRefs ?? [])],
     content: markdown,
     ...(options.now === undefined ? {} : { now: options.now })
   });
@@ -888,6 +1106,7 @@ export async function verifyGtmArtifacts(
     root: state.root,
     stateDb: state.stateDb,
     files: [runtimePath],
+    structuredFiles,
     evidenceId: evidence.evidence.id,
     claims
   };
@@ -1034,6 +1253,33 @@ function formatStartupAgentContext(input: {
 
 function contextForFile(filename: string, baseContext: string): string {
   return [`# ${filename}`, "", baseContext].join("\n");
+}
+
+async function writeStartupStructuredArtifact(input: {
+  kind: string;
+  generatedAt: string;
+  markdownPath: string;
+  data: Record<string, unknown>;
+}): Promise<string> {
+  const structuredPath = structuredArtifactPath(input.markdownPath);
+  const artifact: StartupStructuredArtifact = {
+    schemaVersion: 1,
+    schema: "runstead.startupArtifact",
+    kind: input.kind,
+    generatedAt: input.generatedAt,
+    markdownPath: input.markdownPath,
+    data: input.data
+  };
+
+  await writeFile(structuredPath, `${JSON.stringify(artifact, null, 2)}\n`, "utf8");
+
+  return structuredPath;
+}
+
+function structuredArtifactPath(markdownPath: string): string {
+  return markdownPath.endsWith(".md")
+    ? `${markdownPath.slice(0, -3)}.json`
+    : `${markdownPath}.json`;
 }
 
 function formatMeasurementFramework(input: {

@@ -115,6 +115,17 @@ describe("startup automation", () => {
         "CLAUDE.md",
         "CODEX.md"
       ]);
+      expect(fileNames(result.structuredFiles)).toEqual([
+        "AGENTS.json",
+        "CLAUDE.json",
+        "CODEX.json",
+        "agent-context.json"
+      ]);
+      await expectStructuredArtifact(
+        result.structuredFiles,
+        "agent-context.json",
+        "startup_agent_context"
+      );
       expect(agents).toContain("test: pnpm test");
       expect(agents).toContain("lint: pnpm run lint");
       expect(agents).toContain("typecheck: pnpm run typecheck");
@@ -175,6 +186,19 @@ describe("startup automation", () => {
         "MEASUREMENT.md",
         "measurement-framework.md"
       ]);
+      expect(fileNames(result.structuredFiles)).toEqual([
+        "MEASUREMENT.json",
+        "measurement-framework.json"
+      ]);
+      const measurementStructured = await expectStructuredArtifact(
+        result.structuredFiles,
+        "measurement-framework.json",
+        "startup_measurement_framework"
+      );
+      expect(measurementStructured.data).toMatchObject({
+        activationMetric: "User connects a source account",
+        retentionMetric: "User returns to run a second readiness check"
+      });
       expect(measurement).toContain("User connects a source account");
       expect(measurement).toContain("D7 retained readiness users");
       expect(measurement).toContain("False-positive metric");
@@ -253,6 +277,18 @@ describe("startup automation", () => {
       const securityMarkdown = await readFile(security.files[0] ?? "", "utf8");
 
       expect(readiness.blockers).toEqual([]);
+      expect(fileNames(readiness.structuredFiles)).toEqual(["repo-readiness.json"]);
+      expect(fileNames(security.structuredFiles)).toEqual(["security-baseline.json"]);
+      await expectStructuredArtifact(
+        readiness.structuredFiles,
+        "repo-readiness.json",
+        "startup_repo_readiness"
+      );
+      await expectStructuredArtifact(
+        security.structuredFiles,
+        "security-baseline.json",
+        "startup_security_baseline"
+      );
       expect(readinessMarkdown).toContain("Startup Repository Readiness Audit");
       expect(readinessMarkdown).toContain("pnpm run typecheck");
       expect(readinessMarkdown).toContain("startup_security_baseline");
@@ -322,6 +358,22 @@ describe("startup automation", () => {
       const supportMarkdown = await readFile(support.files[0] ?? "", "utf8");
       const bottleneckMarkdown = await readFile(bottleneck.files[0] ?? "", "utf8");
 
+      expect(fileNames(support.structuredFiles)).toEqual([
+        "2026-05-14T07-00-00-000Z.json"
+      ]);
+      expect(fileNames(bottleneck.structuredFiles)).toEqual([
+        "founder-bottlenecks.json"
+      ]);
+      await expectStructuredArtifact(
+        support.structuredFiles,
+        "2026-05-14T07-00-00-000Z.json",
+        "startup_support_triage"
+      );
+      await expectStructuredArtifact(
+        bottleneck.structuredFiles,
+        "founder-bottlenecks.json",
+        "startup_founder_bottleneck"
+      );
       expect(supportMarkdown).toContain("Startup Support Triage");
       expect(supportMarkdown).toContain("Beta customer cannot complete onboarding");
       expect(bottleneckMarkdown).toContain("Founder Bottleneck Map");
@@ -382,6 +434,20 @@ describe("startup automation", () => {
       const workflowMarkdown = await readFile(result.files[0] ?? "", "utf8");
       const delegationMarkdown = await readFile(result.files[1] ?? "", "utf8");
 
+      expect(fileNames(result.structuredFiles)).toEqual([
+        "workflow-registry.json",
+        "delegation-policy.json"
+      ]);
+      await expectStructuredArtifact(
+        result.structuredFiles,
+        "workflow-registry.json",
+        "startup_workflow_registry"
+      );
+      await expectStructuredArtifact(
+        result.structuredFiles,
+        "delegation-policy.json",
+        "startup_delegation_policy"
+      );
       expect(workflowMarkdown).toContain("Startup Workflow Registry");
       expect(workflowMarkdown).toContain("Weekly launch readiness report");
       expect(delegationMarkdown).toContain("Startup Delegation Policy");
@@ -447,6 +513,20 @@ describe("startup automation", () => {
       const memoryMarkdown = await readFile(memory.files[0] ?? "", "utf8");
       const integrationMarkdown = await readFile(integration.files[0] ?? "", "utf8");
 
+      expect(fileNames(memory.structuredFiles)).toEqual(["institutional-memory.json"]);
+      expect(fileNames(integration.structuredFiles)).toEqual([
+        "integration-depth-map.json"
+      ]);
+      await expectStructuredArtifact(
+        memory.structuredFiles,
+        "institutional-memory.json",
+        "startup_institutional_memory"
+      );
+      await expectStructuredArtifact(
+        integration.structuredFiles,
+        "integration-depth-map.json",
+        "startup_integration_map"
+      );
       expect(memoryMarkdown).toContain("Startup Institutional Memory");
       expect(memoryMarkdown).toContain("manual data review");
       expect(integrationMarkdown).toContain("Startup Integration Depth Map");
@@ -534,6 +614,24 @@ describe("startup automation", () => {
       const gtmMarkdown = await readFile(gtm.files[0] ?? "", "utf8");
       const reportMarkdown = await readFile(report.files[0] ?? "", "utf8");
 
+      expect(fileNames(sops.structuredFiles)).toEqual(["ops-sops.json"]);
+      expect(fileNames(gtm.structuredFiles)).toEqual(["gtm-artifacts.json"]);
+      expect(fileNames(report.structuredFiles)).toEqual(["startup-ops-2026-W20.json"]);
+      await expectStructuredArtifact(
+        sops.structuredFiles,
+        "ops-sops.json",
+        "startup_ops_sop"
+      );
+      await expectStructuredArtifact(
+        gtm.structuredFiles,
+        "gtm-artifacts.json",
+        "startup_gtm_artifact"
+      );
+      await expectStructuredArtifact(
+        report.structuredFiles,
+        "startup-ops-2026-W20.json",
+        "startup_ops_report"
+      );
       expect(sopsMarkdown).toContain("Startup Ops SOPs");
       expect(sopsMarkdown).toContain("weekly ops review");
       expect(gtmMarkdown).toContain("Startup GTM Artifact Verification");
@@ -571,3 +669,40 @@ describe("startup automation", () => {
     }
   });
 });
+
+interface StructuredArtifactFixture {
+  schemaVersion: number;
+  schema: string;
+  kind: string;
+  markdownPath: string;
+  data: Record<string, unknown>;
+}
+
+function fileNames(files: string[]): string[] {
+  return files.map((file) => file.split("/").at(-1) ?? file);
+}
+
+async function expectStructuredArtifact(
+  files: string[],
+  filename: string,
+  kind: string
+): Promise<StructuredArtifactFixture> {
+  const path = files.find((file) => file.endsWith(`/${filename}`));
+
+  if (path === undefined) {
+    throw new Error(`Expected structured artifact ${filename}`);
+  }
+
+  const artifact = JSON.parse(
+    await readFile(path, "utf8")
+  ) as StructuredArtifactFixture;
+
+  expect(artifact).toMatchObject({
+    schemaVersion: 1,
+    schema: "runstead.startupArtifact",
+    kind
+  });
+  expect(artifact.markdownPath.endsWith(".md")).toBe(true);
+
+  return artifact;
+}

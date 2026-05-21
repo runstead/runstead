@@ -96,6 +96,7 @@ export function registerStartupCommands(program: Command): void {
         for (const file of result.files) {
           console.log(`Wrote context file: ${file}`);
         }
+        logStructuredFiles(result.structuredFiles);
       }
     );
 
@@ -154,6 +155,7 @@ export function registerStartupCommands(program: Command): void {
         for (const file of result.files) {
           console.log(`Wrote measurement file: ${file}`);
         }
+        logStructuredFiles(result.structuredFiles);
       }
     );
 
@@ -185,6 +187,7 @@ export function registerStartupCommands(program: Command): void {
       for (const file of result.files) {
         console.log(`Wrote launch audit file: ${file}`);
       }
+      logStructuredFiles(result.structuredFiles);
     });
 
   startupLaunch
@@ -215,6 +218,7 @@ export function registerStartupCommands(program: Command): void {
       for (const file of result.files) {
         console.log(`Wrote security baseline file: ${file}`);
       }
+      logStructuredFiles(result.structuredFiles);
     });
 
   startupLaunch
@@ -258,6 +262,7 @@ export function registerStartupCommands(program: Command): void {
         for (const file of result.files) {
           console.log(`Wrote support triage file: ${file}`);
         }
+        logStructuredFiles(result.structuredFiles);
       }
     );
 
@@ -305,6 +310,7 @@ export function registerStartupCommands(program: Command): void {
         for (const file of result.files) {
           console.log(`Wrote bottleneck map file: ${file}`);
         }
+        logStructuredFiles(result.structuredFiles);
       }
     );
 
@@ -363,6 +369,7 @@ export function registerStartupCommands(program: Command): void {
         for (const file of result.files) {
           console.log(`Wrote scale artifact: ${file}`);
         }
+        logStructuredFiles(result.structuredFiles);
       }
     );
 
@@ -413,6 +420,7 @@ export function registerStartupCommands(program: Command): void {
         for (const file of result.files) {
           console.log(`Wrote memory artifact: ${file}`);
         }
+        logStructuredFiles(result.structuredFiles);
       }
     );
 
@@ -461,6 +469,7 @@ export function registerStartupCommands(program: Command): void {
         for (const file of result.files) {
           console.log(`Wrote integration map file: ${file}`);
         }
+        logStructuredFiles(result.structuredFiles);
       }
     );
 
@@ -489,6 +498,7 @@ export function registerStartupCommands(program: Command): void {
       for (const file of result.files) {
         console.log(`Wrote scale report file: ${file}`);
       }
+      logStructuredFiles(result.structuredFiles);
     });
 
   startupScale
@@ -527,6 +537,7 @@ export function registerStartupCommands(program: Command): void {
         for (const file of result.files) {
           console.log(`Wrote SOP file: ${file}`);
         }
+        logStructuredFiles(result.structuredFiles);
       }
     );
 
@@ -568,6 +579,7 @@ export function registerStartupCommands(program: Command): void {
         for (const file of result.files) {
           console.log(`Wrote GTM verification file: ${file}`);
         }
+        logStructuredFiles(result.structuredFiles);
       }
     );
 
@@ -724,6 +736,12 @@ function collectValues(value: string, previous: string[]): string[] {
 
 function emptyAsUndefined(values: string[]): string[] | undefined {
   return values.length === 0 ? undefined : values;
+}
+
+function logStructuredFiles(files: string[]): void {
+  for (const file of files) {
+    console.log(`Wrote structured artifact: ${file}`);
+  }
 }
 
 function parseStartupGateStage(value: string): "idea" | "mvp" | "launch" | "scale" {
