@@ -197,6 +197,22 @@ describe("evaluatePolicy verifier command rules", () => {
     expect(result.ruleId).toBe("allow_verifier_commands");
   });
 
+  it("allows generated build verifier commands", () => {
+    const result = evaluatePolicy({
+      policy: verifierCommandPolicy,
+      action: {
+        actionId: "act_verifier_build",
+        actionType: "shell.exec",
+        context: {
+          command: "npm run build"
+        }
+      }
+    });
+
+    expect(result.decision).toBe("allow");
+    expect(result.ruleId).toBe("allow_verifier_commands");
+  });
+
   it("allows generated turbo verifier commands", () => {
     const result = evaluatePolicy({
       policy: verifierCommandPolicy,

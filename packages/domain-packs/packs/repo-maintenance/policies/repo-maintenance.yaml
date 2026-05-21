@@ -68,11 +68,15 @@ rules:
         matches_any:
           - "^pnpm test( .*)?$"
           - "^pnpm run lint( .*)?$"
+          - "^pnpm run build( .*)?$"
           - "^npm test( .*)?$"
           - "^npm run lint( .*)?$"
+          - "^npm run build( .*)?$"
           - "^yarn test( .*)?$"
           - "^yarn lint( .*)?$"
+          - "^yarn build( .*)?$"
           - "^bun test( .*)?$"
+          - "^bun run build( .*)?$"
           - "^bun run lint( .*)?$"
     decision: allow
     risk: low
