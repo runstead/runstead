@@ -171,9 +171,11 @@ describe("buildDashboard", () => {
 
       expect(result.outputDir).toBe(join(root, "dashboard"));
       expect(html).toContain("Runstead Dashboard");
+      expect(html).toContain("Startup Readiness");
       expect(html).toContain("service-api");
       expect(html).toContain("task_001 waiting_approval");
       expect(html).toContain("healthy age=60000ms");
+      expect(html).toContain("runstead startup onboard");
       expect(html).toContain(
         "waiting_approval branch=runstead/task_001/ci-456 approval=appr_dashboard_ci"
       );
@@ -198,6 +200,15 @@ describe("buildDashboard", () => {
         branchName: "runstead/task_001/ci-456",
         approvalId: "appr_dashboard_ci",
         eventId: "evt_daemon_tick"
+      });
+      expect(snapshot.startup).toMatchObject({
+        available: true,
+        status: {
+          currentStage: "mvp",
+          nextAction: {
+            command: "runstead startup onboard"
+          }
+        }
       });
 
       const auditDatabase = openRunsteadDatabase(stateDb);
@@ -233,6 +244,10 @@ describe("buildDashboard", () => {
             updatedAt: "2026-05-14T05:59:00.000Z",
             ageMs: 60000,
             stale: false
+          },
+          startup: {
+            available: true,
+            currentStage: "mvp"
           }
         });
       } finally {

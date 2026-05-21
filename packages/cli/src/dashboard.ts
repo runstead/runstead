@@ -9,6 +9,7 @@ import {
 } from "@runstead/state-sqlite";
 
 import { requireRunsteadStateDb } from "./runstead-root.js";
+import { getStartupStatus, type StartupStatusResult } from "./startup-status.js";
 
 export interface BuildDashboardOptions {
   cwd?: string;
@@ -35,6 +36,7 @@ export interface DashboardSnapshot {
   approvals: DashboardApproval[];
   events: DashboardEvent[];
   daemon: DashboardDaemonStatus;
+  startup: DashboardStartupSnapshot;
 }
 
 export interface DashboardSummary {
@@ -111,6 +113,13 @@ export interface DashboardDaemonStatus {
   error?: string;
 }
 
+export interface DashboardStartupSnapshot {
+  available: boolean;
+  status?: StartupStatusResult;
+  latestReportPath?: string;
+  error?: string;
+}
+
 export async function buildDashboard(
   options: BuildDashboardOptions = {}
 ): Promise<BuildDashboardResult> {
@@ -130,7 +139,12 @@ export async function buildDashboard(
   try {
     const snapshot = {
       ...readDashboardSnapshot(database, generatedAt),
-      daemon: await readDashboardDaemonStatus(root, generatedAt)
+      daemon: await readDashboardDaemonStatus(root, generatedAt),
+      startup: await readDashboardStartupStatus({
+        cwd,
+        root,
+        generatedAt
+      })
     };
     const html = formatDashboardHtml(snapshot);
     const event: RunsteadEvent = {
@@ -235,8 +249,39 @@ function readDashboardSnapshot(
     events,
     daemon: {
       available: false
+    },
+    startup: {
+      available: false
     }
   };
+}
+
+async function readDashboardStartupStatus(input: {
+  cwd: string;
+  root: string;
+  generatedAt: string;
+}): Promise<DashboardStartupSnapshot> {
+  try {
+    return {
+      available: true,
+      status: await getStartupStatus({
+        cwd: input.cwd,
+        now: new Date(input.generatedAt)
+      }),
+      ...latestStartupReport(input.root)
+    };
+  } catch (error) {
+    return {
+      available: false,
+      error: error instanceof Error ? error.message : String(error)
+    };
+  }
+}
+
+function latestStartupReport(root: string): { latestReportPath?: string } {
+  const reportPath = join(root, "reports", "launch-readiness-ai-native-startup.md");
+
+  return { latestReportPath: reportPath };
 }
 
 async function readDashboardDaemonStatus(
@@ -420,6 +465,8 @@ function formatDashboardHtml(snapshot: DashboardSnapshot): string {
       overflow-wrap: anywhere;
     }
     .status-failed, .risk-critical, .risk-high { color: var(--risk); font-weight: 650; }
+    .status-blocked { color: var(--risk); font-weight: 650; }
+    .status-passed { color: var(--accent); font-weight: 650; }
     .empty { padding: 16px; color: var(--muted); }
   </style>
 </head>
@@ -437,6 +484,7 @@ function formatDashboardHtml(snapshot: DashboardSnapshot): string {
       ${metric("Failed Tasks", summary.failedTasks)}
       ${metric("Pending Approvals", summary.pendingApprovals)}
     </div>
+    ${startupSection(snapshot.startup)}
     ${daemonSection(snapshot.daemon)}
     ${tableSection(
       "Repositories",
@@ -499,6 +547,45 @@ function formatDashboardHtml(snapshot: DashboardSnapshot): string {
 
 function metric(label: string, value: number): string {
   return `<div class="metric"><strong>${value}</strong><span>${escapeHtml(label)}</span></div>`;
+}
+
+function startupSection(startup: DashboardStartupSnapshot): string {
+  if (!startup.available || startup.status === undefined) {
+    return `<section><header><h2>Startup Readiness</h2><span class="muted">unavailable</span></header><div class="empty">${escapeHtml(startup.error ?? "Startup status is not available.")}</div></section>`;
+  }
+
+  const status = startup.status;
+  const gateRows = status.gates
+    .map(
+      (gate) =>
+        `<tr><td>${escapeHtml(gate.stage)}</td><td>${statusCell(gate.status)}</td><td>${gate.blockers.length}</td><td>${escapeHtml(gate.blockers[0] ?? "none")}</td></tr>`
+    )
+    .join("");
+  const blockerRows = status.gates.flatMap((gate) =>
+    gate.blockers.map(
+      (blocker) =>
+        `<tr><td>${escapeHtml(gate.stage)}</td><td>${escapeHtml(blocker)}</td></tr>`
+    )
+  );
+  const sources = status.evidence.sourceKinds.join(", ") || "none";
+
+  return `<section>
+    <header><h2>Startup Readiness</h2><span class="muted">${escapeHtml(status.currentStage)}</span></header>
+    <table><tbody>
+      <tr><th>Next action</th><td><code>${escapeHtml(status.nextAction.command)}</code><br>${escapeHtml(status.nextAction.reason)}</td></tr>
+      <tr><th>Evidence</th><td>${status.evidence.total} records; sources: ${escapeHtml(sources)}; stale: ${status.evidence.staleSources.length}</td></tr>
+      <tr><th>Latest report</th><td><code>${escapeHtml(startup.latestReportPath ?? "none")}</code></td></tr>
+    </tbody></table>
+    <table>
+      <thead><tr><th>Gate</th><th>Status</th><th>Blockers</th><th>Top blocker</th></tr></thead>
+      <tbody>${gateRows}</tbody>
+    </table>
+    ${
+      blockerRows.length === 0
+        ? '<div class="empty">No startup blockers.</div>'
+        : `<table><thead><tr><th>Gate</th><th>Blocker board</th></tr></thead><tbody>${blockerRows.join("")}</tbody></table>`
+    }
+  </section>`;
 }
 
 function daemonSection(status: DashboardDaemonStatus): string {
@@ -633,6 +720,25 @@ function dashboardEventPayload(
       ...(snapshot.daemon.pullRequest === undefined
         ? {}
         : { pullRequest: snapshot.daemon.pullRequest })
+    },
+    startup: {
+      available: snapshot.startup.available,
+      ...(snapshot.startup.status === undefined
+        ? {}
+        : {
+            currentStage: snapshot.startup.status.currentStage,
+            nextAction: snapshot.startup.status.nextAction,
+            gates: snapshot.startup.status.gates.map((gate) => ({
+              stage: gate.stage,
+              status: gate.status,
+              blockers: gate.blockers.length
+            })),
+            evidence: {
+              total: snapshot.startup.status.evidence.total,
+              staleSources: snapshot.startup.status.evidence.staleSources.length,
+              sourceKinds: snapshot.startup.status.evidence.sourceKinds
+            }
+          })
     }
   };
 }
