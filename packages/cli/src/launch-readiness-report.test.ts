@@ -107,6 +107,7 @@ describe("generateLaunchReadinessReport", () => {
       expect(markdown).toContain("# Runstead Launch Readiness Report");
       expect(markdown).toContain("## Repo Health");
       expect(markdown).toContain("## Verifier Status");
+      expect(markdown).toContain("## Governance Boundary");
       expect(markdown).toContain("## Release Blockers");
       expect(markdown).toContain("ev_launch_report_command_001");
       expect(markdown).toContain("measurement framework");
@@ -275,6 +276,8 @@ describe("generateLaunchReadinessReport", () => {
       expect(result.blockers).toEqual([]);
       expect(result.markdown).toContain("Command evidence records: 1");
       expect(result.markdown).toContain("ev_wrapped_worker_command_001");
+      expect(result.markdown).toContain("wrapped worker post-run verifier evidence");
+      expect(result.markdown).toContain("`codex_direct` is the hard-proxy path");
       expect(result.markdown).not.toContain("run_mvp_verifiers is failed");
     } finally {
       await rm(workspace, { force: true, recursive: true });

@@ -66,6 +66,8 @@ interface EvidenceReportRow {
   type: string;
   subject_type: string;
   subject_id: string;
+  task_domain: string | null;
+  task_type: string | null;
   uri: string;
   summary: string | null;
   created_at: string;
@@ -209,8 +211,9 @@ function readLaunchReadinessData(
   const evidence = database
     .prepare(
       `
-      SELECT DISTINCT e.id, e.type, e.subject_type, e.subject_id, e.uri,
-             e.summary, e.created_at
+      SELECT DISTINCT e.id, e.type, e.subject_type, e.subject_id,
+             t.domain AS task_domain, t.type AS task_type,
+             e.uri, e.summary, e.created_at
       FROM evidence e
       LEFT JOIN tasks t ON e.subject_type = 'task' AND e.subject_id = t.id
       WHERE t.domain = ?
@@ -272,6 +275,10 @@ function formatLaunchReadinessReport(input: {
     "## Verifier Status",
     "",
     verifierStatus(input.data),
+    "",
+    "## Governance Boundary",
+    "",
+    governanceBoundary(input.data),
     "",
     "## Test Coverage Gaps",
     "",
@@ -360,9 +367,48 @@ function verifierStatus(data: LaunchReadinessReportData): string {
     `- Verifier tasks: ${formatTaskCounts(verifierTasks)}`,
     `- Command evidence records: ${commandEvidence.length}`,
     ...commandEvidence.map(
-      (item) => `- ${item.id}: ${item.summary ?? item.uri} (${item.created_at})`
+      (item) =>
+        `- ${item.id}: ${item.summary ?? item.uri} (${item.created_at}; ${commandEvidenceGovernance(item)})`
     )
   ].join("\n");
+}
+
+function governanceBoundary(data: LaunchReadinessReportData): string {
+  const commandEvidence = data.evidence.filter(
+    (item) => item.type === "command_output"
+  );
+
+  return [
+    "- Governance level: Level 1 wrapped execution for external workers; `codex_direct` is the hard-proxy path.",
+    "- `codex_cli` and `claude_code` runs are policy-gated before launch, checkpointed, scope-verified after exit, and validated through verifier evidence.",
+    "- Worker-internal tool calls from wrapped workers are not fully hard-proxied by Runstead.",
+    "- Recommendation: use `codex_cli` for ecosystem compatibility; use `codex_direct` when every model tool call must pass through Runstead policy and audit.",
+    ...(commandEvidence.length === 0
+      ? ["- Command evidence governance: none recorded."]
+      : [
+          "- Command evidence governance:",
+          ...commandEvidence.map(
+            (item) => `  - ${item.id}: ${commandEvidenceGovernance(item)}`
+          )
+        ])
+  ].join("\n");
+}
+
+function commandEvidenceGovernance(item: EvidenceReportRow): string {
+  if (item.task_type === "local_agent_task") {
+    return item.task_domain === "repo-maintenance"
+      ? "wrapped worker post-run verifier evidence"
+      : "local agent post-run verifier evidence";
+  }
+
+  if (
+    item.task_type === "run_mvp_verifiers" ||
+    item.task_type === "run_local_verifiers"
+  ) {
+    return "Runstead verifier task evidence";
+  }
+
+  return "command verifier evidence";
 }
 
 function testCoverageGaps(data: LaunchReadinessReportData): string {
