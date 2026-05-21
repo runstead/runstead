@@ -170,9 +170,9 @@ describe("startup remediation", () => {
       expect(result.executed).toHaveLength(1);
       expect(result.executed[0]).toMatchObject({
         status: "completed",
-        resolved: false,
-        failureEvidenceId: expect.stringMatching(/^ev_/)
+        resolved: false
       });
+      expect(result.executed[0]?.failureEvidenceId).toMatch(/^ev_/);
       expect(result.finalGate.passed).toBe(false);
       expect(result.executionOutcome).toBe("blocked");
       expect(result.budget).toMatchObject({

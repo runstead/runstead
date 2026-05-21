@@ -84,12 +84,12 @@ export async function generateOpsDiagnosticsBundle(
       ? undefined
       : join(diagnosticsDir, `state-${safeTimestamp}.db`);
   const doctor = await doctorRunstead({ cwd });
-  const [daemon, managerLock, artifacts, stateTables] = await Promise.all([
+  const [daemon, managerLock, artifacts] = await Promise.all([
     readOptionalDaemon(cwd, options.now),
     readManagerLock(state.root),
-    readArtifactSnapshots(state.root),
-    readStateTableCounts(state.stateDb)
+    readArtifactSnapshots(state.root)
   ]);
+  const stateTables = readStateTableCounts(state.stateDb);
   const summary: OpsDiagnosticsSummary = {
     generatedAt,
     doctorOk: doctor.ok,
@@ -148,7 +148,7 @@ async function readManagerLock(root: string): Promise<ManagerLockSnapshot> {
   const path = join(root, "manager.lock");
 
   try {
-    const parsed = JSON.parse(await readFile(path, "utf8"));
+    const parsed = JSON.parse(await readFile(path, "utf8")) as unknown;
 
     if (!isRecord(parsed)) {
       return { path, status: "unreadable" };
@@ -176,13 +176,20 @@ async function readArtifactSnapshots(
   root: string
 ): Promise<Record<string, ArtifactDirectorySnapshot>> {
   const entries = await Promise.all(
-    ARTIFACT_DIRECTORIES.map(async (directory) => [
-      directory,
-      await readArtifactDirectory(join(root, directory))
-    ])
+    ARTIFACT_DIRECTORIES.map(
+      async (directory): Promise<[string, ArtifactDirectorySnapshot]> => [
+        directory,
+        await readArtifactDirectory(join(root, directory))
+      ]
+    )
   );
+  const snapshots: Record<string, ArtifactDirectorySnapshot> = {};
 
-  return Object.fromEntries(entries);
+  for (const [directory, snapshot] of entries) {
+    snapshots[directory] = snapshot;
+  }
+
+  return snapshots;
 }
 
 async function readArtifactDirectory(path: string): Promise<ArtifactDirectorySnapshot> {
@@ -222,19 +229,21 @@ async function readArtifactDirectory(path: string): Promise<ArtifactDirectorySna
   };
 }
 
-async function readStateTableCounts(stateDb: string): Promise<Record<string, number>> {
+function readStateTableCounts(stateDb: string): Record<string, number> {
   const database = openRunsteadDatabase(stateDb);
 
   try {
-    return Object.fromEntries(
-      REQUIRED_STATE_TABLES.map((table) => {
-        const row = database
-          .prepare(`SELECT COUNT(*) AS count FROM ${table}`)
-          .get() as { count: number };
+    const counts: Record<string, number> = {};
 
-        return [table, row.count];
-      })
-    );
+    for (const table of REQUIRED_STATE_TABLES) {
+      const row = database
+        .prepare(`SELECT COUNT(*) AS count FROM ${table}`)
+        .get() as unknown as { count: number };
+
+      counts[table] = row.count;
+    }
+
+    return counts;
   } finally {
     database.close();
   }

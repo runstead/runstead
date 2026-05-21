@@ -75,12 +75,11 @@ export async function assessDomainPackMaturity(
       id: "eval-quality",
       label: "Eval quality threshold is tied to benchmark acceptance contracts",
       passed:
-        domain?.evalQuality !== undefined &&
-        domain.evalQuality.requiredContracts.every((contract) =>
+        domain?.evalQuality?.requiredContracts.every((contract) =>
           validation.evals.some((evaluation) =>
             evaluation.acceptanceContracts.includes(contract)
           )
-        ),
+        ) === true,
       score: 15,
       evidence: [
         `minimum_score=${domain?.evalQuality?.minimumScore ?? "missing"}`,

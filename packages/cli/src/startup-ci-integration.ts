@@ -1,7 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
-import { createRunsteadId, type JsonObject, type RunsteadEvent } from "@runstead/core";
+import { createRunsteadId, type RunsteadEvent } from "@runstead/core";
 import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sqlite";
 
 import { requireRunsteadStateDb } from "./runstead-root.js";
@@ -101,7 +101,7 @@ export async function generateStartupCiSummary(
     type: "startup_ci.summary_generated",
     aggregateType: "startup_ci",
     aggregateId: `${domain}_${stage}`,
-    payload: payload as JsonObject,
+    payload,
     createdAt: checkedAt
   };
   const database = openRunsteadDatabase(resolvedState.stateDb);

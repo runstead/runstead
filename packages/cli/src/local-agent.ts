@@ -810,7 +810,7 @@ function formatLocalAgentWorkerResultLines(
       `Provider: ${workerResult.modelProvider}`,
       `Model: ${workerResult.model}`,
       `Governance: ${String(governance.level)}`,
-      `Tool proxy: ${String(governance.internalToolProxy)} (${governance.policyEnforcement})`,
+      `Tool proxy: ${String(governance.internalToolProxy)} (${String(governance.policyEnforcement)})`,
       `Tool calls: ${workerResult.toolCalls}`,
       `Failed tool calls: ${workerResult.failedToolCalls}`
     ];

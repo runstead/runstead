@@ -2356,7 +2356,7 @@ function secretFindingKind(line: string): string | null {
   }
 
   if (
-    /\b(?:OPENAI|ANTHROPIC|GITHUB|SLACK|SENTRY|STRIPE)_[A-Z0-9_]*KEY\s*=\s*["']?[A-Za-z0-9_\-]{20,}/i.test(
+    /\b(?:OPENAI|ANTHROPIC|GITHUB|SLACK|SENTRY|STRIPE)_[A-Z0-9_]*KEY\s*=\s*["']?[A-Za-z0-9_-]{20,}/i.test(
       line
     )
   ) {
@@ -2392,7 +2392,10 @@ async function readPackageManifest(
   cwd: string
 ): Promise<Record<string, unknown> | null> {
   try {
-    const parsed = JSON.parse(await readFile(join(cwd, "package.json"), "utf8"));
+    const parsed = JSON.parse(
+      await readFile(join(cwd, "package.json"), "utf8")
+    ) as unknown;
+
     return isObjectRecord(parsed) ? parsed : null;
   } catch {
     return null;

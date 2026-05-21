@@ -215,13 +215,15 @@ async function readRiskAcceptances(
 
 async function readStartupEvidenceContent(row: EvidenceRow): Promise<unknown> {
   try {
-    const artifact = JSON.parse(await readFile(fileURLToPath(row.uri), "utf8"));
+    const artifact = JSON.parse(
+      await readFile(fileURLToPath(row.uri), "utf8")
+    ) as unknown;
 
     if (!isRecord(artifact) || typeof artifact.content !== "string") {
       return undefined;
     }
 
-    return JSON.parse(artifact.content);
+    return JSON.parse(artifact.content) as unknown;
   } catch {
     return undefined;
   }

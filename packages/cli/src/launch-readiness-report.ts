@@ -1142,7 +1142,7 @@ function reportEventPayload(input: {
     uri: pathToFileURL(input.reportPath).href,
     jsonUri: pathToFileURL(input.jsonPath).href,
     hash: sha256(input.markdown),
-    trustSummary: input.trustSummary as unknown as JsonObject,
+    trustSummary: input.trustSummary,
     summary: {
       blockers: input.blockers.length,
       goals: input.data.goals.length,

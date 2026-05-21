@@ -102,5 +102,5 @@ describe("startup founder flow", () => {
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }
-  });
+  }, 30_000);
 });

@@ -701,7 +701,7 @@ function startupCompleteProductJson(input: {
         retention: input.diagnostics.summary.retention
       }
     }
-  } as JsonObject;
+  };
 }
 
 function startupCompleteProductEvent(input: {

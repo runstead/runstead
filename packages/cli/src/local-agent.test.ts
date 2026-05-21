@@ -297,14 +297,20 @@ describe("local agent task primitives", () => {
           boundary: "native_tool_proxy",
           hardProxyToolCalls: true,
           internalToolProxy: "runstead_governed_actions",
-          policyEnforcement: "per_tool_call",
-          auditedActions: expect.arrayContaining([
-            "filesystem.read",
-            "shell.exec",
-            "verifier.run"
-          ])
+          policyEnforcement: "per_tool_call"
         }
       });
+      expect(
+        (
+          storedTask.output as {
+            governance?: {
+              auditedActions?: string[];
+            };
+          }
+        ).governance?.auditedActions
+      ).toEqual(
+        expect.arrayContaining(["filesystem.read", "shell.exec", "verifier.run"])
+      );
       expect(requests).toHaveLength(1);
       expect(requests[0]?.model).toBe("gpt-5.3-codex");
       const firstInput = requests[0]?.input[0];

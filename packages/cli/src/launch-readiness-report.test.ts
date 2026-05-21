@@ -142,19 +142,31 @@ describe("generateLaunchReadinessReport", () => {
           aggregate_type: "report",
           aggregate_id: "launch_readiness_ai_native_startup"
         });
-        expect(JSON.parse(event?.payload_json ?? "{}")).toMatchObject({
+        const payload = JSON.parse(event?.payload_json ?? "{}") as {
+          reportType?: string;
+          domain?: string;
+          status?: string;
+          blockers?: string[];
+          trustSummary?: {
+            conclusion?: string;
+          };
+          summary?: {
+            blockers?: number;
+            tasks?: number;
+          };
+        };
+
+        expect(payload).toMatchObject({
           reportType: "launch_readiness",
           domain: "ai-native-startup",
           status: "blocked",
           blockers: result.blockers,
-          trustSummary: {
-            conclusion: expect.stringContaining("Not launch-ready")
-          },
           summary: {
             blockers: result.blockers.length,
             tasks: 4
           }
         });
+        expect(payload.trustSummary?.conclusion).toContain("Not launch-ready");
       } finally {
         auditDatabase.close();
       }
