@@ -49,6 +49,17 @@ describe("cli entrypoint", () => {
     );
   });
 
+  it("exposes ops diagnostics", () => {
+    const ops = createProgram().commands.find((command) => command.name() === "ops");
+    const diagnostics = ops?.commands.find(
+      (command) => command.name() === "diagnostics"
+    );
+
+    expect(diagnostics?.options.map((option) => option.long)).toEqual(
+      expect.arrayContaining(["--cwd", "--retention-days", "--no-state-backup"])
+    );
+  });
+
   it("exposes domain pack manifest generation", () => {
     const domain = createProgram().commands.find(
       (command) => command.name() === "domain"
