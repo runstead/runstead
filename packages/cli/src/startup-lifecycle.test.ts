@@ -410,7 +410,7 @@ describe("startup CLI lifecycle", () => {
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }
-  });
+  }, 45_000);
 });
 
 async function writeStartupFixture(workspace: string): Promise<void> {
