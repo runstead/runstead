@@ -2,7 +2,7 @@ import { readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import type { Task } from "@runstead/core";
+import type { Evidence, Task } from "@runstead/core";
 import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sqlite";
 import { describe, expect, it } from "vitest";
 
@@ -113,18 +113,47 @@ describe("startup evidence ledger", () => {
         gateDatabase.close();
       }
 
-      const passedGate = await checkStartupGate({
+      const missingVerifierEvidenceGate = await checkStartupGate({
         cwd: workspace,
         stage: "launch",
         domain: "ai-native-startup",
         now: new Date("2026-05-14T04:30:00.000Z")
       });
 
-      expect(passedGate.passed).toBe(true);
-      expect(passedGate.blockers).toEqual([]);
-      expect(passedGate.warnings).toContain(
+      expect(missingVerifierEvidenceGate.passed).toBe(false);
+      expect(missingVerifierEvidenceGate.blockers).toEqual([
+        "verifier command evidence is missing"
+      ]);
+      expect(missingVerifierEvidenceGate.warnings).toContain(
         "no verifier or metric evidence is recorded"
       );
+
+      const commandEvidenceDatabase = openRunsteadDatabase(initialized.stateDb);
+
+      try {
+        projectEvidence(commandEvidenceDatabase, {
+          id: "ev_startup_launch_command_001",
+          type: "command_output",
+          subjectType: "task",
+          subjectId: verifierTask.id,
+          uri: "file:///repo/.runstead/evidence/verifier.json",
+          summary: "MVP verifier commands passed",
+          createdAt: "2026-05-14T04:31:00.000Z"
+        });
+      } finally {
+        commandEvidenceDatabase.close();
+      }
+
+      const passedGate = await checkStartupGate({
+        cwd: workspace,
+        stage: "launch",
+        domain: "ai-native-startup",
+        now: new Date("2026-05-14T04:32:00.000Z")
+      });
+
+      expect(passedGate.passed).toBe(true);
+      expect(passedGate.blockers).toEqual([]);
+      expect(passedGate.warnings).toEqual([]);
 
       const database = openRunsteadDatabase(initialized.stateDb);
 
@@ -161,6 +190,11 @@ describe("startup evidence ledger", () => {
           "startup_security_baseline"
         ]);
         expect(gateEvents).toEqual([
+          {
+            type: "startup_gate.checked",
+            aggregate_type: "startup_gate",
+            aggregate_id: "ai-native-startup_launch"
+          },
           {
             type: "startup_gate.checked",
             aggregate_type: "startup_gate",
@@ -366,6 +400,28 @@ function projectTask(
     projection: {
       type: "task",
       value: task
+    }
+  });
+}
+
+function projectEvidence(
+  database: ReturnType<typeof openRunsteadDatabase>,
+  evidence: Evidence
+): void {
+  appendEventAndProject(database, {
+    event: {
+      eventId: `evt_${evidence.id}`,
+      type: "evidence.recorded",
+      aggregateType: "evidence",
+      aggregateId: evidence.id,
+      payload: {
+        evidenceId: evidence.id
+      },
+      createdAt: evidence.createdAt
+    },
+    projection: {
+      type: "evidence",
+      value: evidence
     }
   });
 }

@@ -402,10 +402,9 @@ function launchBlockers(input: {
     ...(hasEvidenceType(input.evidence, "startup_security_baseline")
       ? []
       : ["security baseline is missing"]),
-    ...(hasEvidenceType(input.evidence, "command_output") ||
-    hasCompletedTask(input.tasks, "run_mvp_verifiers")
+    ...(hasEvidenceType(input.evidence, "command_output")
       ? []
-      : ["verifier evidence is missing"]),
+      : ["verifier command evidence is missing"]),
     ...(hasEvidenceType(input.evidence, "startup_migration_plan")
       ? []
       : ["migration plan evidence is missing"]),
