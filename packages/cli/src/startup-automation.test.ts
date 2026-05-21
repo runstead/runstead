@@ -325,6 +325,72 @@ describe("startup automation", () => {
     }
   });
 
+  it("records launch security risk scan without leaking secret values", async () => {
+    const workspace = join(tmpdir(), `runstead-startup-security-${process.pid}`);
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await initStartup({
+        cwd: workspace,
+        stage: "launch",
+        now: new Date("2026-05-14T02:00:00.000Z")
+      });
+      await writeFile(
+        join(workspace, "package.json"),
+        `${JSON.stringify(
+          {
+            name: "startup-security-fixture",
+            packageManager: "pnpm@11.1.1",
+            dependencies: {
+              stripe: "^18.0.0"
+            }
+          },
+          null,
+          2
+        )}\n`,
+        "utf8"
+      );
+      await writeFile(join(workspace, ".env.example"), "STRIPE_SECRET_KEY=\n", "utf8");
+      await mkdir(join(workspace, "src"), { recursive: true });
+      await writeFile(
+        join(workspace, "src", "config.ts"),
+        `export const stripeKey = "sk_live_1234567890abcdef";\n`,
+        "utf8"
+      );
+
+      const security = await generateSecurityBaseline({
+        cwd: workspace,
+        now: new Date("2026-05-14T06:10:00.000Z")
+      });
+      const markdown = await readFile(security.files[0] ?? "", "utf8");
+      const structured = await readFile(security.structuredFiles[0] ?? "", "utf8");
+
+      expect(security.riskScan.secretFindings).toEqual([
+        "src/config.ts:1 stripe_live_secret_pattern"
+      ]);
+      expect(security.riskScan.licenseFindings).toEqual([
+        "package license is not declared for a launchable artifact"
+      ]);
+      expect(security.riskScan.dependencyFindings).toContain(
+        "dependency lockfile is missing for reproducible launch builds"
+      );
+      expect(security.riskScan.thirdPartyFindings).toEqual([
+        "third-party integration failure-mode evidence is missing: stripe"
+      ]);
+      expect(security.blockers.join("\n")).toContain(
+        "potential secret exposure requires review"
+      );
+      expect(markdown).toContain("Launch Risk Scan");
+      expect(markdown).toContain("Secret Findings");
+      expect(markdown).toContain("Dependency Findings");
+      expect(markdown).toContain("Third-party Integration Findings");
+      expect(structured).toContain("src/config.ts:1 stripe_live_secret_pattern");
+      expect(structured).not.toContain("sk_live_1234567890abcdef");
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
   it("records support triage and founder bottleneck launch evidence", async () => {
     const workspace = join(tmpdir(), `runstead-startup-support-${process.pid}`);
 
