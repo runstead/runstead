@@ -14,6 +14,10 @@ import {
 } from "./inspection-evidence.js";
 import { matchesPolicyPathPattern } from "./policy.js";
 import { requireRunsteadStateDb } from "./runstead-root.js";
+import {
+  listStartupArtifacts,
+  type StartupArtifactListItem
+} from "./startup-artifacts.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -94,6 +98,7 @@ interface LaunchReadinessReportData {
   evidence: EvidenceReportRow[];
   policyDecisions: PolicyDecisionReportRow[];
   approvals: ApprovalReportRow[];
+  structuredArtifacts: StartupArtifactListItem[];
 }
 
 const STARTUP_DOMAIN = "ai-native-startup";
@@ -120,6 +125,7 @@ export async function generateLaunchReadinessReport(
     const data: LaunchReadinessReportData = {
       repo: await collectRepoInspection(cwd, generatedAt),
       protectedPathChanges: await changedProtectedPaths(cwd),
+      structuredArtifacts: (await listStartupArtifacts({ cwd })).artifacts,
       ...readLaunchReadinessData(database, domain)
     };
     const blockers = releaseBlockers(data);
@@ -175,7 +181,10 @@ export async function generateLaunchReadinessReport(
 function readLaunchReadinessData(
   database: ReturnType<typeof openRunsteadDatabase>,
   domain: string
-): Omit<LaunchReadinessReportData, "repo" | "protectedPathChanges"> {
+): Omit<
+  LaunchReadinessReportData,
+  "repo" | "protectedPathChanges" | "structuredArtifacts"
+> {
   const goals = database
     .prepare(
       `
@@ -282,6 +291,10 @@ function formatLaunchReadinessReport(input: {
     "## Missing Observability",
     "",
     missingObservability(input.data),
+    "",
+    "## Structured Startup Artifacts",
+    "",
+    structuredStartupArtifacts(input.data),
     "",
     "## Release Blockers",
     "",
@@ -425,6 +438,14 @@ function missingObservability(data: LaunchReadinessReportData): string {
   ];
 
   return rows.map((row) => `- ${row}`).join("\n");
+}
+
+function structuredStartupArtifacts(data: LaunchReadinessReportData): string {
+  return listOrNone(
+    data.structuredArtifacts,
+    (item) =>
+      `- ${item.kind}: ${item.id} (schemaVersion=${item.schemaVersion}, evidenceRefs=${item.sourceEvidenceIds.length})`
+  );
 }
 
 function acceptableDebt(data: LaunchReadinessReportData): string {
@@ -704,6 +725,7 @@ function reportEventPayload(input: {
       goals: input.data.goals.length,
       tasks: input.data.tasks.length,
       evidence: input.data.evidence.length,
+      structuredArtifacts: input.data.structuredArtifacts.length,
       protectedPathChanges: input.data.protectedPathChanges.length
     }
   };

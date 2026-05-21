@@ -886,6 +886,56 @@ export function registerStartupCommands(program: Command): void {
       }
     );
 
+  const startupArtifact = startup
+    .command("artifact")
+    .description("Query structured startup artifacts.");
+
+  startupArtifact
+    .command("list")
+    .description("List structured startup artifacts and their evidence references.")
+    .option("--cwd <path>", "Workspace directory")
+    .option("--actor <id>", "RBAC subject for artifact reads", "local-admin")
+    .action(async (options: { cwd?: string; actor: string }) => {
+      await requireRbacPermission({
+        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+        actor: options.actor,
+        permission: "evidence.read",
+        action: "list startup artifacts"
+      });
+
+      const { listStartupArtifacts, formatStartupArtifactList } =
+        await import("./startup-artifacts.js");
+      const result = await listStartupArtifacts({
+        ...(options.cwd === undefined ? {} : { cwd: options.cwd })
+      });
+
+      console.log(formatStartupArtifactList(result));
+    });
+
+  startupArtifact
+    .command("show")
+    .description("Show a structured startup artifact as JSON.")
+    .argument("<ref>", "Artifact id, kind, path, or filename")
+    .option("--cwd <path>", "Workspace directory")
+    .option("--actor <id>", "RBAC subject for artifact reads", "local-admin")
+    .action(async (ref: string, options: { cwd?: string; actor: string }) => {
+      await requireRbacPermission({
+        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+        actor: options.actor,
+        permission: "evidence.read",
+        action: "show startup artifact"
+      });
+
+      const { showStartupArtifact, formatStartupArtifactShow } =
+        await import("./startup-artifacts.js");
+      const result = await showStartupArtifact({
+        ref,
+        ...(options.cwd === undefined ? {} : { cwd: options.cwd })
+      });
+
+      console.log(formatStartupArtifactShow(result));
+    });
+
   startup
     .command("remediate")
     .description("Generate worker-ready remediation tasks for startup gate blockers.")

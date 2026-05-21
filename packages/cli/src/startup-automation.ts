@@ -15,6 +15,10 @@ import { collectRepoInspection } from "./inspection-evidence.js";
 import { recordProjectFact } from "./memory.js";
 import { matchesPolicyPathPattern } from "./policy.js";
 import { resolveRunsteadRoot, requireRunsteadStateDb } from "./runstead-root.js";
+import {
+  STARTUP_STRUCTURED_ARTIFACT_SCHEMA,
+  STARTUP_STRUCTURED_ARTIFACT_SCHEMA_VERSION
+} from "./startup-artifacts.js";
 import { addStartupEvidence } from "./startup-evidence.js";
 
 const execFileAsync = promisify(execFile);
@@ -244,8 +248,8 @@ export interface VerifyGtmArtifactsResult {
 }
 
 interface StartupStructuredArtifact {
-  schemaVersion: 1;
-  schema: "runstead.startupArtifact";
+  schemaVersion: typeof STARTUP_STRUCTURED_ARTIFACT_SCHEMA_VERSION;
+  schema: typeof STARTUP_STRUCTURED_ARTIFACT_SCHEMA;
   kind: string;
   generatedAt: string;
   markdownPath: string;
@@ -1278,8 +1282,8 @@ async function writeStartupStructuredArtifact(input: {
 }): Promise<string> {
   const structuredPath = structuredArtifactPath(input.markdownPath);
   const artifact: StartupStructuredArtifact = {
-    schemaVersion: 1,
-    schema: "runstead.startupArtifact",
+    schemaVersion: STARTUP_STRUCTURED_ARTIFACT_SCHEMA_VERSION,
+    schema: STARTUP_STRUCTURED_ARTIFACT_SCHEMA,
     kind: input.kind,
     generatedAt: input.generatedAt,
     markdownPath: input.markdownPath,
