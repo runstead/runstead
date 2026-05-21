@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -282,6 +282,7 @@ describe("startWrappedWorker", () => {
       workspace: "/repo",
       evidenceDir: "/repo/.runstead/evidence",
       model: "gpt-5.5",
+      env: { CODEX_HOME: "/codex-home" },
       runner
     });
 
@@ -340,6 +341,92 @@ describe("startWrappedWorker", () => {
         maxOutputBytes: 10485760
       }
     ]);
+  });
+
+  it("runs Codex CLI with an isolated runtime profile by default", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-worker-runtime-"));
+    const sourceCodexHome = join(workspace, "source-codex-home");
+    const workerRuntimeDir = join(workspace, ".runstead", "worker-profiles");
+    const previousCodexHome = process.env.CODEX_HOME;
+    const calls: {
+      env?: Record<string, string>;
+    }[] = [];
+    const runner: WorkerProcessRunner = (_command, _args, options) => {
+      calls.push({
+        ...(options.env === undefined ? {} : { env: options.env })
+      });
+
+      return Promise.resolve({
+        stdout: wrappedWorkerOutput,
+        stderr: "",
+        exitCode: 0
+      });
+    };
+
+    try {
+      await mkdir(sourceCodexHome, { recursive: true });
+      await writeFile(join(sourceCodexHome, "auth.json"), "{\"token\":\"redacted\"}\n");
+      await writeFile(
+        join(sourceCodexHome, "config.toml"),
+        "mcp_servers = { inherited = true }\n"
+      );
+      process.env.CODEX_HOME = sourceCodexHome;
+
+      await startWrappedWorker({
+        worker: "codex_cli",
+        goal,
+        task,
+        workspace,
+        evidenceDir: join(workspace, ".runstead", "evidence"),
+        workerRuntimeDir,
+        runner
+      });
+
+      const isolatedHome = join(workerRuntimeDir, "codex-cli");
+
+      expect(calls[0]?.env).toMatchObject({
+        CODEX_HOME: isolatedHome,
+        RUNSTEAD_WRAPPED_WORKER_PROFILE: "isolated-codex-cli"
+      });
+      await expect(readFile(join(isolatedHome, "auth.json"), "utf8")).resolves.toBe(
+        "{\"token\":\"redacted\"}\n"
+      );
+      await expect(readFile(join(isolatedHome, "config.toml"), "utf8")).rejects.toThrow();
+    } finally {
+      if (previousCodexHome === undefined) {
+        delete process.env.CODEX_HOME;
+      } else {
+        process.env.CODEX_HOME = previousCodexHome;
+      }
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("respects an explicitly supplied Codex CLI home", async () => {
+    const calls: { env?: Record<string, string> }[] = [];
+    const runner: WorkerProcessRunner = (_command, _args, options) => {
+      calls.push({
+        ...(options.env === undefined ? {} : { env: options.env })
+      });
+
+      return Promise.resolve({
+        stdout: wrappedWorkerOutput,
+        stderr: "",
+        exitCode: 0
+      });
+    };
+
+    await startWrappedWorker({
+      worker: "codex_cli",
+      goal,
+      task,
+      workspace: "/repo",
+      evidenceDir: "/repo/.runstead/evidence",
+      env: { CODEX_HOME: "/explicit-codex-home" },
+      runner
+    });
+
+    expect(calls[0]?.env).toEqual({ CODEX_HOME: "/explicit-codex-home" });
   });
 
   it("validates Claude Code JSON envelope structured output", async () => {
@@ -525,6 +612,7 @@ describe("wrapped worker output validation", () => {
       task,
       workspace: "/repo",
       evidenceDir: "/repo/.runstead/evidence",
+      env: { CODEX_HOME: "/codex-home" },
       runner: () =>
         Promise.resolve({
           stdout: "",
@@ -548,6 +636,7 @@ describe("wrapped worker output validation", () => {
       task,
       workspace: "/repo",
       evidenceDir: "/repo/.runstead/evidence",
+      env: { CODEX_HOME: "/codex-home" },
       runner: () =>
         Promise.resolve({
           stdout: '{"summary":"done"}',

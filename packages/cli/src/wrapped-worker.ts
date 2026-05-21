@@ -1,5 +1,7 @@
 import { spawn } from "node:child_process";
-import { resolve } from "node:path";
+import { copyFile, mkdir } from "node:fs/promises";
+import { homedir } from "node:os";
+import { join, resolve } from "node:path";
 
 import type { Goal, Task } from "@runstead/core";
 
@@ -72,6 +74,7 @@ export interface WrappedWorkerLaunchGuardrails {
 export interface WrappedWorkerRunOptions extends WrappedWorkerPromptInput {
   runner?: WorkerProcessRunner;
   checkpointDir?: string;
+  workerRuntimeDir?: string;
   checkpointBefore?: WorkspaceCheckpoint;
   checkpointRunner?: GitCheckpointRunner;
   model?: string;
@@ -315,6 +318,7 @@ export async function startWrappedWorker(
     workspace: options.workspace,
     ...(options.model === undefined ? {} : { model: options.model })
   });
+  const workerEnv = await buildWrappedWorkerEnv(options);
   const checkpointBefore =
     options.checkpointBefore ??
     (options.checkpointDir === undefined
@@ -331,7 +335,7 @@ export async function startWrappedWorker(
     command.args,
     {
       cwd: resolve(options.workspace),
-      ...(options.env === undefined ? {} : { env: options.env }),
+      ...(workerEnv === undefined ? {} : { env: workerEnv }),
       timeoutMs: options.timeoutMs ?? DEFAULT_WORKER_TIMEOUT_MS,
       maxOutputBytes: options.maxOutputBytes ?? DEFAULT_WORKER_MAX_OUTPUT_BYTES
     }
@@ -366,6 +370,48 @@ export async function startWrappedWorker(
     stderr: finalResult.stderr,
     exitCode: finalResult.exitCode
   };
+}
+
+async function buildWrappedWorkerEnv(
+  options: WrappedWorkerRunOptions
+): Promise<Record<string, string> | undefined> {
+  if (options.worker !== "codex_cli") {
+    return options.env;
+  }
+
+  if (options.env?.CODEX_HOME !== undefined) {
+    return options.env;
+  }
+
+  const profileDir = join(
+    resolve(options.workerRuntimeDir ?? join(options.workspace, ".runstead", "worker-profiles")),
+    "codex-cli"
+  );
+  await mkdir(profileDir, { recursive: true });
+  await copyCodexAuth(profileDir, options.env);
+
+  return {
+    ...(options.env ?? {}),
+    CODEX_HOME: profileDir,
+    RUNSTEAD_WRAPPED_WORKER_PROFILE: "isolated-codex-cli"
+  };
+}
+
+async function copyCodexAuth(
+  profileDir: string,
+  env: Record<string, string> | undefined
+): Promise<void> {
+  const sourceHome = resolve(env?.CODEX_HOME ?? process.env.CODEX_HOME ?? join(homedir(), ".codex"));
+
+  try {
+    await copyFile(join(sourceHome, "auth.json"), join(profileDir, "auth.json"));
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+
+    if (code !== "ENOENT") {
+      throw error;
+    }
+  }
 }
 
 export function workerCommand(

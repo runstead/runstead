@@ -629,6 +629,7 @@ async function runLocalAgentWorker(options: {
       task: options.task,
       workspace: options.cwd,
       evidenceDir: join(options.root, "evidence"),
+      workerRuntimeDir: join(options.root, "worker-profiles"),
       allowedScope: localAgentAllowedScope(options.task),
       deniedActions: localAgentDeniedActions(options.task),
       verifierContract: verifierCommandsFromLocalAgentTask(options.task).map(
