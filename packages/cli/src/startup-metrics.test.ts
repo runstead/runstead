@@ -33,10 +33,21 @@ describe("startup metric snapshots", () => {
       });
       const artifact = JSON.parse(
         await readFile(recorded.metricEvidence.artifactPath, "utf8")
-      ) as { evidenceType: string; content: string };
+      ) as {
+        evidenceType: string;
+        content: string;
+        sources: { kind: string; uri: string; capturedAt: string }[];
+      };
       const content = JSON.parse(artifact.content) as Record<string, unknown>;
 
       expect(artifact.evidenceType).toBe("metric_snapshot");
+      expect(artifact.sources).toMatchObject([
+        {
+          kind: "posthog",
+          uri: "posthog:funnel:activation:2026-05-14",
+          capturedAt: "2026-05-14T05:00:00.000Z"
+        }
+      ]);
       expect(content).toMatchObject({
         metric: "activation",
         source: "PostHog activation funnel",
@@ -76,6 +87,16 @@ describe("startup metric snapshots", () => {
         "d7_retention",
         "--source",
         "manual cohort CSV",
+        "--source-uri",
+        "file:cohorts/d7.csv",
+        "--source-kind",
+        "csv",
+        "--captured-at",
+        "2026-05-14T04:00:00.000Z",
+        "--freshness-days",
+        "7",
+        "--source-hash",
+        "sha256:d7",
         "--threshold",
         "0.20",
         "--current",

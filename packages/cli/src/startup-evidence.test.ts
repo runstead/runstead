@@ -13,7 +13,8 @@ import {
   addStartupEvidence,
   addStartupHypothesis,
   checkStartupGate,
-  formatStartupGateCheckResult
+  formatStartupGateCheckResult,
+  type StartupEvidenceArtifact
 } from "./startup-evidence.js";
 
 describe("startup evidence ledger", () => {
@@ -39,6 +40,20 @@ describe("startup evidence ledger", () => {
         type: "customer_interview",
         summary: "Founder interviewed three target users",
         sourceRefs: ["interview-notes:2026-05-14"],
+        sources: [
+          {
+            kind: "support_ticket",
+            uri: "https://support.example/tickets/123",
+            capturedAt: "2026-05-14T03:59:00.000Z",
+            freshnessDays: 14,
+            hash: "sha256:ticket-123"
+          }
+        ],
+        gate: "mvp",
+        blocker: "customer validation evidence is missing",
+        owner: "founder",
+        remediationTask: "Attach customer interview source",
+        acceptanceCriteria: "Interview source is linked and fresh",
         goalId: created.goal.id,
         now: new Date("2026-05-14T04:00:00.000Z")
       });
@@ -55,13 +70,41 @@ describe("startup evidence ledger", () => {
         subjectId: created.goal.id,
         summary: "Founder interviewed three target users"
       });
-      expect(
-        JSON.parse(await readFile(customerEvidence.artifactPath, "utf8"))
-      ).toMatchObject({
+      const customerArtifact = JSON.parse(
+        await readFile(customerEvidence.artifactPath, "utf8")
+      ) as StartupEvidenceArtifact;
+
+      expect(customerArtifact).toMatchObject({
         evidenceType: "customer_interview",
         sourceRefs: ["interview-notes:2026-05-14"],
+        sources: [
+          {
+            kind: "support_ticket",
+            uri: "https://support.example/tickets/123",
+            capturedAt: "2026-05-14T03:59:00.000Z",
+            freshnessDays: 14,
+            hash: "sha256:ticket-123"
+          },
+          {
+            kind: "manual",
+            uri: "interview-notes:2026-05-14",
+            capturedAt: "2026-05-14T04:00:00.000Z"
+          }
+        ],
+        provenance: {
+          recordedBy: "runstead",
+          captureMode: "source_attached",
+          sourceCount: 2
+        },
         associations: {
-          goalId: created.goal.id
+          goalId: created.goal.id,
+          gate: "mvp",
+          blocker: "customer validation evidence is missing"
+        },
+        remediation: {
+          owner: "founder",
+          task: "Attach customer interview source",
+          acceptanceCriteria: "Interview source is linked and fresh"
         }
       });
       expect(blockedGate.passed).toBe(false);

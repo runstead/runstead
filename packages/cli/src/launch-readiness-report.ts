@@ -1,8 +1,9 @@
 import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 
 import { createRunsteadId, type JsonObject, type RunsteadEvent } from "@runstead/core";
@@ -91,6 +92,11 @@ interface ApprovalReportRow {
   risk: string;
   reason: string;
   updated_at: string;
+}
+
+interface EvidenceProvenanceArtifact {
+  sources?: unknown;
+  provenance?: unknown;
 }
 
 interface LaunchReadinessReportData {
@@ -333,6 +339,10 @@ function formatLaunchReadinessReport(input: {
     "",
     structuredStartupArtifacts(input.data),
     "",
+    "## Evidence Provenance",
+    "",
+    evidenceProvenance(input.data),
+    "",
     "## Release Blockers",
     "",
     listOrNone(input.blockers, (blocker) => `- ${blocker}`),
@@ -517,6 +527,58 @@ function structuredStartupArtifacts(data: LaunchReadinessReportData): string {
     (item) =>
       `- ${item.kind}: ${item.id} (schemaVersion=${item.schemaVersion}, evidenceRefs=${item.sourceEvidenceIds.length})`
   );
+}
+
+function evidenceProvenance(data: LaunchReadinessReportData): string {
+  const rows = data.evidence.filter(
+    (item) => item.type === "command_output" || item.type.startsWith("startup_")
+  );
+
+  return listOrNone(rows, (item) => `- ${item.id}: ${evidenceSourceSummary(item)}`);
+}
+
+function evidenceSourceSummary(item: EvidenceReportRow): string {
+  const artifact = readEvidenceProvenanceArtifact(item.uri);
+  const sources = artifactSources(artifact);
+
+  if (sources.length === 0) {
+    return `${item.type} artifact=${item.uri}`;
+  }
+
+  return `${item.type} ${sources.map(formatArtifactSource).join("; ")}`;
+}
+
+function readEvidenceProvenanceArtifact(
+  uri: string
+): EvidenceProvenanceArtifact | undefined {
+  try {
+    const parsed = JSON.parse(readFileSync(fileURLToPath(uri), "utf8")) as unknown;
+
+    return isRecord(parsed) ? parsed : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function artifactSources(artifact: EvidenceProvenanceArtifact | undefined): JsonObject[] {
+  if (artifact === undefined || !Array.isArray(artifact.sources)) {
+    return [];
+  }
+
+  return artifact.sources.filter((source): source is JsonObject => isRecord(source));
+}
+
+function formatArtifactSource(source: JsonObject): string {
+  const kind = stringValue(source.kind) ?? "unknown";
+  const uri = stringValue(source.uri) ?? "missing";
+  const capturedAt = stringValue(source.capturedAt) ?? "unknown";
+  const freshness =
+    typeof source.freshnessDays === "number"
+      ? ` freshness=${source.freshnessDays}d`
+      : "";
+  const hash = stringValue(source.hash);
+
+  return `source=${kind} uri=${uri} captured=${capturedAt}${freshness}${hash === undefined ? "" : ` hash=${hash}`}`;
 }
 
 function acceptableDebt(data: LaunchReadinessReportData): string {
@@ -751,6 +813,14 @@ function normalizeStatusPath(value: string): string {
     : value;
 
   return renamedPath.replace(/^"|"$/g, "");
+}
+
+function isRecord(value: unknown): value is JsonObject {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim().length > 0 ? value : undefined;
 }
 
 function reportEventPayload(input: {

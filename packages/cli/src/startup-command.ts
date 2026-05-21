@@ -1,6 +1,7 @@
 import type { Command } from "commander";
 
 import { checkPermission } from "./rbac.js";
+import type { StartupEvidenceSourceInput } from "./startup-evidence.js";
 
 export function registerStartupCommands(program: Command): void {
   const startup = program
@@ -218,6 +219,11 @@ export function registerStartupCommands(program: Command): void {
     .requiredOption("--threshold <value>", "Launch threshold for the metric")
     .requiredOption("--current <value>", "Current metric value")
     .option("--source-ref <ref>", "Evidence source reference", collectValues, [])
+    .option("--source-uri <uri>", "Canonical analytics, query, CSV, or BI source URI")
+    .option("--source-kind <kind>", "Source kind, such as posthog, sql, csv, or manual")
+    .option("--captured-at <iso>", "Timestamp when the source was captured")
+    .option("--freshness-days <days>", "Maximum acceptable source age in days")
+    .option("--source-hash <hash>", "Optional hash of the captured source payload")
     .option("--unit <unit>", "Metric unit")
     .option("--window <window>", "Measurement window")
     .option("--date <date>", "Snapshot date or timestamp")
@@ -235,6 +241,11 @@ export function registerStartupCommands(program: Command): void {
         threshold: string;
         current: string;
         sourceRef: string[];
+        sourceUri?: string;
+        sourceKind?: string;
+        capturedAt?: string;
+        freshnessDays?: string;
+        sourceHash?: string;
         unit?: string;
         window?: string;
         date?: string;
@@ -257,6 +268,7 @@ export function registerStartupCommands(program: Command): void {
           threshold: options.threshold,
           current: options.current,
           sourceRefs: options.sourceRef,
+          ...evidenceSourceDetails(options),
           ...(options.unit === undefined ? {} : { unit: options.unit }),
           ...(options.window === undefined ? {} : { window: options.window }),
           ...(options.date === undefined ? {} : { snapshotDate: options.date }),
@@ -1083,10 +1095,20 @@ export function registerStartupCommands(program: Command): void {
     )
     .requiredOption("--summary <text>", "Evidence summary")
     .option("--source <ref>", "Evidence source reference", collectValues, [])
+    .option("--source-uri <uri>", "Canonical external source URI")
+    .option("--source-kind <kind>", "Source kind, such as github, posthog, jira, csv, browser_ui, deployment, or manual")
+    .option("--captured-at <iso>", "Timestamp when the source was captured")
+    .option("--freshness-days <days>", "Maximum acceptable source age in days")
+    .option("--source-hash <hash>", "Optional hash of the captured source payload")
     .option("--content <text>", "Optional evidence body")
     .option("--goal <id>", "Associated goal id")
     .option("--hypothesis <id>", "Associated hypothesis id")
     .option("--decision <id>", "Associated decision id")
+    .option("--gate <stage>", "Associated gate: idea, mvp, launch, or scale")
+    .option("--blocker <text>", "Associated blocker or risk this evidence resolves")
+    .option("--owner <id>", "Evidence or remediation owner")
+    .option("--remediation-task <text>", "Remediation task tied to this evidence")
+    .option("--acceptance-criteria <text>", "Acceptance criteria tied to this evidence")
     .option("--actor <id>", "RBAC subject for evidence writes", "local-admin")
     .action(
       async (options: {
@@ -1094,10 +1116,20 @@ export function registerStartupCommands(program: Command): void {
         type: string;
         summary: string;
         source: string[];
+        sourceUri?: string;
+        sourceKind?: string;
+        capturedAt?: string;
+        freshnessDays?: string;
+        sourceHash?: string;
         content?: string;
         goal?: string;
         hypothesis?: string;
         decision?: string;
+        gate?: string;
+        blocker?: string;
+        owner?: string;
+        remediationTask?: string;
+        acceptanceCriteria?: string;
         actor: string;
       }) => {
         await requireRbacPermission({
@@ -1113,12 +1145,24 @@ export function registerStartupCommands(program: Command): void {
           type: options.type,
           summary: options.summary,
           sourceRefs: options.source,
+          ...evidenceSourceDetails(options),
           ...(options.content === undefined ? {} : { content: options.content }),
           ...(options.goal === undefined ? {} : { goalId: options.goal }),
           ...(options.hypothesis === undefined
             ? {}
             : { hypothesisId: options.hypothesis }),
-          ...(options.decision === undefined ? {} : { decisionId: options.decision })
+          ...(options.decision === undefined ? {} : { decisionId: options.decision }),
+          ...(options.gate === undefined
+            ? {}
+            : { gate: parseStartupGateStage(options.gate) }),
+          ...(options.blocker === undefined ? {} : { blocker: options.blocker }),
+          ...(options.owner === undefined ? {} : { owner: options.owner }),
+          ...(options.remediationTask === undefined
+            ? {}
+            : { remediationTask: options.remediationTask }),
+          ...(options.acceptanceCriteria === undefined
+            ? {}
+            : { acceptanceCriteria: options.acceptanceCriteria })
         });
 
         console.log(`Recorded startup evidence: ${result.evidence.id}`);
@@ -1271,6 +1315,48 @@ function logStructuredFiles(files: string[]): void {
   for (const file of files) {
     console.log(`Wrote structured artifact: ${file}`);
   }
+}
+
+function evidenceSourceDetails(options: {
+  sourceUri?: string;
+  sourceKind?: string;
+  capturedAt?: string;
+  freshnessDays?: string;
+  sourceHash?: string;
+}): { sources?: StartupEvidenceSourceInput[] } {
+  const hasSourceDetail =
+    options.sourceUri !== undefined ||
+    options.sourceKind !== undefined ||
+    options.capturedAt !== undefined ||
+    options.freshnessDays !== undefined ||
+    options.sourceHash !== undefined;
+
+  if (!hasSourceDetail) {
+    return {};
+  }
+
+  if (options.sourceUri === undefined) {
+    throw new Error("--source-uri is required when source detail options are used");
+  }
+
+  return {
+    sources: [
+      {
+        uri: options.sourceUri,
+        ...(options.sourceKind === undefined ? {} : { kind: options.sourceKind }),
+        ...(options.capturedAt === undefined ? {} : { capturedAt: options.capturedAt }),
+        ...(options.freshnessDays === undefined
+          ? {}
+          : {
+              freshnessDays: parsePositiveInteger(
+                options.freshnessDays,
+                "--freshness-days"
+              )
+            }),
+        ...(options.sourceHash === undefined ? {} : { hash: options.sourceHash })
+      }
+    ]
+  };
 }
 
 function parseStartupGateStage(value: string): "idea" | "mvp" | "launch" | "scale" {

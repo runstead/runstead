@@ -1,6 +1,7 @@
 import {
   addStartupEvidence,
-  type AddStartupEvidenceResult
+  type AddStartupEvidenceResult,
+  type StartupEvidenceSourceInput
 } from "./startup-evidence.js";
 
 export interface RecordStartupMetricSnapshotOptions {
@@ -10,6 +11,7 @@ export interface RecordStartupMetricSnapshotOptions {
   threshold: string;
   current: string;
   sourceRefs?: string[];
+  sources?: StartupEvidenceSourceInput[];
   unit?: string;
   window?: string;
   snapshotDate?: string;
@@ -49,6 +51,7 @@ export async function recordStartupMetricSnapshot(
     type: "metric_snapshot",
     summary: `${options.metric} metric snapshot: current=${options.current}, threshold=${options.threshold}`,
     sourceRefs,
+    ...(options.sources === undefined ? {} : { sources: options.sources }),
     content: JSON.stringify(content, null, 2),
     ...(options.goalId === undefined ? {} : { goalId: options.goalId }),
     ...(options.now === undefined ? {} : { now: options.now })
@@ -61,6 +64,7 @@ export async function recordStartupMetricSnapshot(
           type: "false_positive",
           summary: `False-positive control for ${options.metric}: ${options.falsePositive}`,
           sourceRefs,
+          ...(options.sources === undefined ? {} : { sources: options.sources }),
           content: JSON.stringify(
             {
               metric: options.metric,

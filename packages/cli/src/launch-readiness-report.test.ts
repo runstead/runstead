@@ -291,12 +291,25 @@ describe("generateLaunchReadinessReport", () => {
           ["startup_founder_bottleneck", "founder bottleneck handoff recorded", undefined]
         ] as const) {
           const artifactPath = join(evidenceDir, `${type}.json`);
+          const sources =
+            type === "startup_metric_snapshot"
+              ? [
+                  {
+                    kind: "posthog",
+                    uri: "https://posthog.example/project/1/insights/activation",
+                    capturedAt: "2026-05-14T03:22:00.000Z",
+                    freshnessDays: 2,
+                    hash: "sha256:activation-fixture"
+                  }
+                ]
+              : undefined;
 
           await writeFile(
             artifactPath,
             `${JSON.stringify(
               {
                 schemaVersion: 1,
+                ...(sources === undefined ? {} : { sources }),
                 ...(content === undefined
                   ? {}
                   : { content: JSON.stringify(content) })
@@ -332,6 +345,11 @@ describe("generateLaunchReadinessReport", () => {
       expect(result.markdown).toContain("ev_wrapped_worker_command_001");
       expect(result.markdown).toContain("wrapped worker post-run verifier evidence");
       expect(result.markdown).toContain("`codex_direct` is the hard-proxy path");
+      expect(result.markdown).toContain("## Evidence Provenance");
+      expect(result.markdown).toContain("source=posthog");
+      expect(result.markdown).toContain(
+        "https://posthog.example/project/1/insights/activation"
+      );
       expect(result.markdown).not.toContain("run_mvp_verifiers is failed");
     } finally {
       await rm(workspace, { force: true, recursive: true });
