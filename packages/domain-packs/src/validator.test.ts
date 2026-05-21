@@ -70,7 +70,8 @@ describe("validateDomainPackDir", () => {
     expect(result.fixtures.map((fixture) => fixture.id)).toEqual([
       "validation-ledger-smoke",
       "ai-coded-mvp-smoke",
-      "ops-handoff-smoke"
+      "ops-handoff-smoke",
+      "dogfood-saas"
     ]);
     expect(result.evals.map((evaluation) => evaluation.id)).toEqual([
       "validation-ledger-smoke",

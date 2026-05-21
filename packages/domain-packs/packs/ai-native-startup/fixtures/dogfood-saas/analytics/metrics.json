@@ -1,0 +1,18 @@
+{
+  "generatedAt": "2026-05-14T00:00:00.000Z",
+  "activation": {
+    "source": "manual cohort CSV",
+    "threshold": 0.4,
+    "current": 0.57,
+    "window": "7d"
+  },
+  "retentionD7": {
+    "source": "manual cohort CSV",
+    "threshold": 0.2,
+    "current": 0.29,
+    "window": "7d"
+  },
+  "falsePositive": {
+    "control": "Exclude founder smoke-test accounts from activation counts"
+  }
+}
