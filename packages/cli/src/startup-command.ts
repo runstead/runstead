@@ -1552,7 +1552,7 @@ export function registerStartupCommands(program: Command): void {
     .option("--cwd <path>", "Workspace directory")
     .requiredOption(
       "--type <type>",
-      "Evidence type: customer_interview, competitor, metric, metric_snapshot, measurement_framework, agent_context, repo_readiness, security_baseline, migration_plan, rollback_plan, release_plan, ui_validation, hypothesis, problem_hypothesis, user_hypothesis, solution_hypothesis, disconfirming, support_triage, founder_bottleneck, workflow_registry, delegation_policy, institutional_memory, memory_retrieval, ops_schedule, ops_report, integration_map, ops_sop, gtm_artifact, decision, acceptable_debt, false_positive, or observability"
+      "Evidence type: customer_interview, competitor, metric, metric_snapshot, measurement_framework, agent_context, repo_readiness, security_baseline, migration_plan, rollback_plan, release_plan, ui_validation, hypothesis, problem_hypothesis, user_hypothesis, solution_hypothesis, disconfirming, support_triage, founder_bottleneck, workflow_registry, delegation_policy, institutional_memory, memory_retrieval, ops_schedule, ops_report, integration_map, ops_sop, gtm_artifact, decision, acceptable_debt, false_positive, observability, remediation_failure, team_collaboration, or complete_product_check"
     )
     .requiredOption("--summary <text>", "Evidence summary")
     .option("--source <ref>", "Evidence source reference", collectValues, [])
@@ -1687,6 +1687,75 @@ export function registerStartupCommands(program: Command): void {
 
       console.log(formatStartupArtifactShow(result));
     });
+
+  startup
+    .command("complete-check")
+    .description(
+      "Run the minimal complete product audit across launch report, CI gate, dashboard, diagnostics, remediation, evidence, and events."
+    )
+    .option("--cwd <path>", "Workspace directory")
+    .option("--domain <id>", "Domain id to evaluate", "ai-native-startup")
+    .option("--print", "Print the generated markdown")
+    .option("--actor <id>", "RBAC subject for complete product audit", "local-admin")
+    .action(
+      async (options: {
+        cwd?: string;
+        domain: string;
+        print?: boolean;
+        actor: string;
+      }) => {
+        const common = {
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          actor: options.actor
+        };
+
+        await requireRbacPermission({
+          ...common,
+          permission: "evidence.write",
+          action: "write startup complete product audit evidence"
+        });
+        await requireRbacPermission({
+          ...common,
+          permission: "audit.read",
+          action: "read startup complete product audit inputs"
+        });
+        await requireRbacPermission({
+          ...common,
+          permission: "dashboard.manage",
+          action: "build startup complete product dashboard surface"
+        });
+        await requireRbacPermission({
+          ...common,
+          permission: "task.run",
+          action: "plan startup complete product remediation"
+        });
+
+        const {
+          formatStartupCompleteProductCheck,
+          generateStartupCompleteProductCheck
+        } = await import("./startup-complete-check.js");
+        const result = await generateStartupCompleteProductCheck({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          domain: options.domain
+        });
+
+        console.log(`Generated startup complete product check: ${result.markdownPath}`);
+        console.log(`JSON: ${result.jsonPath}`);
+        console.log(`Status: ${result.status}`);
+        console.log(`Score: ${Math.round(result.score * 100)}%`);
+        console.log(`Evidence: ${result.evidenceId}`);
+        console.log(`Event: ${result.event.eventId}`);
+
+        if (options.print === true) {
+          console.log("");
+          console.log(formatStartupCompleteProductCheck(result));
+        }
+
+        if (result.status !== "complete") {
+          process.exitCode = 1;
+        }
+      }
+    );
 
   startup
     .command("remediate")

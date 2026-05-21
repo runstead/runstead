@@ -426,6 +426,9 @@ describe("cli entrypoint", () => {
     );
     const evidence = startup?.commands.find((command) => command.name() === "evidence");
     const artifact = startup?.commands.find((command) => command.name() === "artifact");
+    const completeCheck = startup?.commands.find(
+      (command) => command.name() === "complete-check"
+    );
     const remediate = startup?.commands.find(
       (command) => command.name() === "remediate"
     );
@@ -439,6 +442,7 @@ describe("cli entrypoint", () => {
         "artifact",
         "assess",
         "build-mvp",
+        "complete-check",
         "context",
         "evidence",
         "gate",
@@ -591,6 +595,9 @@ describe("cli entrypoint", () => {
     );
     expect(artifact?.commands.map((command) => command.name())).toEqual(
       expect.arrayContaining(["list", "show"])
+    );
+    expect(completeCheck?.options.map((option) => option.long)).toEqual(
+      expect.arrayContaining(["--actor", "--cwd", "--domain", "--print"])
     );
     expect(remediate?.options.map((option) => option.long)).toEqual(
       expect.arrayContaining([

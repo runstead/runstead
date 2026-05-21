@@ -48,7 +48,8 @@ export const STARTUP_EVIDENCE_TYPES = [
   "false_positive",
   "observability",
   "remediation_failure",
-  "team_collaboration"
+  "team_collaboration",
+  "complete_product_check"
 ] as const;
 
 export type StartupEvidenceType = (typeof STARTUP_EVIDENCE_TYPES)[number];
