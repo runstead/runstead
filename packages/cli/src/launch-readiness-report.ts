@@ -18,6 +18,7 @@ import {
   listStartupArtifacts,
   type StartupArtifactListItem
 } from "./startup-artifacts.js";
+import { checkStartupGate } from "./startup-evidence.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -95,6 +96,10 @@ interface ApprovalReportRow {
 interface LaunchReadinessReportData {
   repo: RepoInspectionSnapshot;
   protectedPathChanges: string[];
+  gate: {
+    blockers: string[];
+    warnings: string[];
+  };
   goals: GoalReportRow[];
   tasks: TaskReportRow[];
   evidence: EvidenceReportRow[];
@@ -127,6 +132,11 @@ export async function generateLaunchReadinessReport(
     const data: LaunchReadinessReportData = {
       repo: await collectRepoInspection(cwd, generatedAt),
       protectedPathChanges: await changedProtectedPaths(cwd),
+      gate: await launchGateEvaluation({
+        cwd,
+        domain,
+        ...(options.now === undefined ? {} : { now: options.now })
+      }),
       structuredArtifacts: (await listStartupArtifacts({ cwd })).artifacts,
       ...readLaunchReadinessData(database, domain)
     };
@@ -180,12 +190,31 @@ export async function generateLaunchReadinessReport(
   }
 }
 
+async function launchGateEvaluation(input: {
+  cwd: string;
+  domain: string;
+  now?: Date;
+}): Promise<{ blockers: string[]; warnings: string[] }> {
+  const result = await checkStartupGate({
+    cwd: input.cwd,
+    domain: input.domain,
+    stage: "launch",
+    ...(input.now === undefined ? {} : { now: input.now }),
+    recordEvent: false
+  });
+
+  return {
+    blockers: result.blockers,
+    warnings: result.warnings
+  };
+}
+
 function readLaunchReadinessData(
   database: ReturnType<typeof openRunsteadDatabase>,
   domain: string
 ): Omit<
   LaunchReadinessReportData,
-  "repo" | "protectedPathChanges" | "structuredArtifacts"
+  "repo" | "protectedPathChanges" | "gate" | "structuredArtifacts"
 > {
   const goals = database
     .prepare(
@@ -412,16 +441,12 @@ function commandEvidenceGovernance(item: EvidenceReportRow): string {
 }
 
 function testCoverageGaps(data: LaunchReadinessReportData): string {
-  const hasVerifierEvidence = hasEvidenceType(data.evidence, "command_output");
   const gaps = [
     ...(data.repo.commands.test.detected ? [] : ["test command is missing"]),
     ...(data.repo.commands.lint.detected ? [] : ["lint command is missing"]),
     ...(data.repo.commands.typecheck.detected ? [] : ["typecheck command is missing"]),
     ...(data.repo.commands.build.detected ? [] : ["build command is missing"]),
-    ...(hasVerifierEvidence || hasCompletedTask(data.tasks, "run_mvp_verifiers")
-      ? []
-      : ["run_mvp_verifiers has not completed"]),
-    ...(hasVerifierEvidence ? [] : ["no command_output evidence is recorded"])
+    ...data.gate.warnings
   ];
 
   return listOrNone(gaps, (gap) => `- ${gap}`);
@@ -634,38 +659,13 @@ function releaseBlockers(data: LaunchReadinessReportData): string[] {
   const hasVerifierEvidence = hasEvidenceType(data.evidence, "command_output");
 
   return [
+    ...data.gate.blockers,
     ...(data.goals.length === 0 ? ["no startup goal exists"] : []),
     ...(data.repo.commands.test.detected ? [] : ["test command is missing"]),
     ...(data.repo.commands.lint.detected ? [] : ["lint command is missing"]),
     ...(data.repo.commands.typecheck.detected ? [] : ["typecheck command is missing"]),
     ...(data.repo.commands.build.detected ? [] : ["build command is missing"]),
     ...(data.repo.ci.detected ? [] : ["CI configuration is missing"]),
-    ...(hasVerifierEvidence || hasCompletedTask(data.tasks, "run_mvp_verifiers")
-      ? []
-      : ["MVP verifier task has not completed"]),
-    ...(hasVerifierEvidence ? [] : ["verifier command evidence is missing"]),
-    ...(hasEvidenceType(data.evidence, "startup_measurement_framework") ||
-    hasCompletedTask(data.tasks, "define_measurement_framework")
-      ? []
-      : ["measurement framework is missing"]),
-    ...(hasEvidenceType(data.evidence, "startup_repo_readiness")
-      ? []
-      : ["repo readiness audit is missing"]),
-    ...(hasEvidenceType(data.evidence, "startup_security_baseline")
-      ? []
-      : ["security baseline is missing"]),
-    ...(hasEvidenceType(data.evidence, "startup_migration_plan")
-      ? []
-      : ["migration plan evidence is missing"]),
-    ...(hasEvidenceType(data.evidence, "startup_rollback_plan")
-      ? []
-      : ["rollback plan evidence is missing"]),
-    ...(hasEvidenceType(data.evidence, "startup_observability")
-      ? []
-      : ["observability evidence is missing"]),
-    ...(hasEvidenceType(data.evidence, "startup_founder_bottleneck")
-      ? []
-      : ["founder bottleneck audit is missing"]),
     ...(data.protectedPathChanges.length === 0
       ? []
       : [

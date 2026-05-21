@@ -1,6 +1,7 @@
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 
 import type { Evidence, Task } from "@runstead/core";
 import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sqlite";
@@ -224,6 +225,26 @@ describe("generateLaunchReadinessReport", () => {
         createdAt: "2026-05-14T03:15:00.000Z",
         updatedAt: "2026-05-14T03:20:00.000Z"
       };
+      const evidenceDir = join(initialized.root, "evidence");
+      const commandArtifactPath = join(evidenceDir, "verifier-wrapped.json");
+
+      await mkdir(evidenceDir, { recursive: true });
+      await writeFile(
+        commandArtifactPath,
+        `${JSON.stringify(
+          {
+            schemaVersion: 1,
+            result: {
+              exitCode: 0,
+              timedOut: false,
+              forceKilled: false
+            }
+          },
+          null,
+          2
+        )}\n`,
+        "utf8"
+      );
       const database = openRunsteadDatabase(initialized.stateDb);
 
       try {
@@ -238,26 +259,59 @@ describe("generateLaunchReadinessReport", () => {
           type: "command_output",
           subjectType: "task",
           subjectId: wrappedWorkerTask.id,
-          uri: "file:///repo/.runstead/evidence/verifier-wrapped.json",
+          uri: pathToFileURL(commandArtifactPath).href,
           summary: "Codex CLI verifier commands passed",
           createdAt: "2026-05-14T03:21:00.000Z"
         });
 
-        for (const [type, summary] of [
-          ["startup_measurement_framework", "measurement framework recorded"],
-          ["startup_repo_readiness", "repo readiness clean"],
-          ["startup_security_baseline", "security baseline clean"],
-          ["startup_migration_plan", "migration plan recorded"],
-          ["startup_rollback_plan", "rollback plan recorded"],
-          ["startup_observability", "observability recorded"],
-          ["startup_founder_bottleneck", "founder bottleneck handoff recorded"]
+        for (const [type, summary, content] of [
+          ["startup_measurement_framework", "measurement framework recorded", undefined],
+          [
+            "startup_metric_snapshot",
+            "activation metric snapshot recorded",
+            { source: "manual", threshold: 0.5, current: 0.7 }
+          ],
+          ["startup_repo_readiness", "repo readiness clean", undefined],
+          ["startup_security_baseline", "security baseline clean", undefined],
+          [
+            "startup_migration_plan",
+            "migration plan recorded",
+            launchQualityContent("migration")
+          ],
+          [
+            "startup_rollback_plan",
+            "rollback plan recorded",
+            launchQualityContent("rollback")
+          ],
+          [
+            "startup_observability",
+            "observability recorded",
+            launchQualityContent("observability")
+          ],
+          ["startup_founder_bottleneck", "founder bottleneck handoff recorded", undefined]
         ] as const) {
+          const artifactPath = join(evidenceDir, `${type}.json`);
+
+          await writeFile(
+            artifactPath,
+            `${JSON.stringify(
+              {
+                schemaVersion: 1,
+                ...(content === undefined
+                  ? {}
+                  : { content: JSON.stringify(content) })
+              },
+              null,
+              2
+            )}\n`,
+            "utf8"
+          );
           projectEvidence(database, {
             id: `ev_${type}`,
             type,
             subjectType: "goal",
             subjectId: created.goal.id,
-            uri: `file:///repo/.runstead/evidence/${type}.json`,
+            uri: pathToFileURL(artifactPath).href,
             summary,
             createdAt: "2026-05-14T03:22:00.000Z"
           });
@@ -327,4 +381,16 @@ function projectEvidence(
       value: evidence
     }
   });
+}
+
+function launchQualityContent(type: string): {
+  owner: string;
+  remediationTask: string;
+  acceptanceCriteria: string;
+} {
+  return {
+    owner: "founder",
+    remediationTask: `Maintain ${type} evidence before launch`,
+    acceptanceCriteria: `${type} evidence is reviewed and current`
+  };
 }

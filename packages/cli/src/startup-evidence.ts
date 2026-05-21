@@ -107,6 +107,7 @@ export interface CheckStartupGateOptions {
   domain?: string;
   stage?: StartupGateStage;
   now?: Date;
+  recordEvent?: boolean;
 }
 
 export interface StartupGateCheckResult {
@@ -269,7 +270,9 @@ export async function checkStartupGate(
       createdAt: checkedAt
     };
 
-    appendEventAndProject(database, { event });
+    if (options.recordEvent !== false) {
+      appendEventAndProject(database, { event });
+    }
 
     return {
       root: resolvedState.root,
