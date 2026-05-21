@@ -1,5 +1,18 @@
 version: 1
 fixtures:
+  - id: tiny-todo
+    description: Minimal todo MVP fixture for a fast init, repo readiness, and verifier smoke path.
+    path: tiny-todo
+    task_type: run_mvp_verifiers
+    goal_template: build-mvp
+    tags:
+      - reference
+      - tiny
+      - mvp
+    acceptance_contracts:
+      - tiny_todo_verifiers_pass
+      - minimal_ci_detected
+      - repo_readiness_inspected
   - id: validation-ledger-smoke
     description: Minimal idea-stage validation fixture for hypothesis ledger, customer evidence, disconfirming evidence, and MVP build gate.
     path: validation-ledger-smoke
@@ -62,3 +75,32 @@ fixtures:
       - launch_readiness_report_ready
       - support_category_aggregated
       - scale_gate_passed
+  - id: broken-launch-repo
+    description: Reference repo with missing CI, scripts, measurement, rollback, and launch evidence for blocked launch dogfood.
+    path: broken-launch-repo
+    task_type: inspect_repo_readiness
+    goal_template: build-mvp
+    tags:
+      - reference
+      - broken
+      - launch
+    acceptance_contracts:
+      - launch_gate_blocked
+      - missing_ci_detected
+      - missing_verifier_scripts_detected
+      - remediation_needed
+  - id: existing-mature-repo
+    description: Existing repo fixture with CI, verifiers, operational docs, privacy, dependency review, and rollback readiness.
+    path: existing-mature-repo
+    task_type: inspect_repo_readiness
+    goal_template: build-mvp
+    tags:
+      - reference
+      - mature
+      - launch
+      - scale
+    acceptance_contracts:
+      - repo_readiness_inspected
+      - launch_security_baseline_clean
+      - ci_detected
+      - rollback_ready

@@ -1,0 +1,13 @@
+{
+  "name": "runstead-existing-mature-repo",
+  "version": "0.4.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "test": "node --test test/service.node.js",
+    "lint": "node scripts/lint.js",
+    "typecheck": "node scripts/typecheck.js",
+    "build": "node scripts/build.js"
+  }
+}

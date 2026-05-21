@@ -68,16 +68,22 @@ describe("validateDomainPackDir", () => {
       "verify_gtm_artifacts"
     ]);
     expect(result.fixtures.map((fixture) => fixture.id)).toEqual([
+      "tiny-todo",
       "validation-ledger-smoke",
       "ai-coded-mvp-smoke",
       "ops-handoff-smoke",
-      "dogfood-saas"
+      "dogfood-saas",
+      "broken-launch-repo",
+      "existing-mature-repo"
     ]);
     expect(result.evals.map((evaluation) => evaluation.id)).toEqual([
+      "tiny-todo",
       "validation-ledger-smoke",
       "ai-coded-mvp-smoke",
       "ops-handoff-smoke",
-      "dogfood-saas"
+      "dogfood-saas",
+      "broken-launch-repo",
+      "existing-mature-repo"
     ]);
     expect(result.domain?.schemaVersion).toBe(1);
     expect(result.domain?.repoTemplates?.map((template) => template.id)).toEqual([

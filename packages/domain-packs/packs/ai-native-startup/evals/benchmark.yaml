@@ -1,5 +1,11 @@
 version: 1
 benchmarks:
+  - id: tiny-todo
+    fixture: tiny-todo
+    acceptance_contracts:
+      - tiny_todo_verifiers_pass
+      - minimal_ci_detected
+      - repo_readiness_inspected
   - id: validation-ledger-smoke
     fixture: validation-ledger-smoke
     acceptance_contracts:
@@ -33,3 +39,17 @@ benchmarks:
       - launch_readiness_report_ready
       - support_category_aggregated
       - scale_gate_passed
+  - id: broken-launch-repo
+    fixture: broken-launch-repo
+    acceptance_contracts:
+      - launch_gate_blocked
+      - missing_ci_detected
+      - missing_verifier_scripts_detected
+      - remediation_needed
+  - id: existing-mature-repo
+    fixture: existing-mature-repo
+    acceptance_contracts:
+      - repo_readiness_inspected
+      - launch_security_baseline_clean
+      - ci_detected
+      - rollback_ready

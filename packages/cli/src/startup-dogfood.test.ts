@@ -8,10 +8,11 @@ import { describe, expect, it, vi } from "vitest";
 import { createProgram } from "./index.js";
 import { listTasks } from "./tasks.js";
 
-const fixtureRoot = resolve(
+const fixturesRoot = resolve(
   dirname(fileURLToPath(import.meta.url)),
-  "../../domain-packs/packs/ai-native-startup/fixtures/dogfood-saas"
+  "../../domain-packs/packs/ai-native-startup/fixtures"
 );
+const fixtureRoot = join(fixturesRoot, "dogfood-saas");
 
 describe("startup dogfood fixture", () => {
   it("runs idea to MVP, launch, and scale readiness on a realistic SaaS fixture", async () => {
@@ -166,7 +167,78 @@ describe("startup dogfood fixture", () => {
       await rm(workspace, { force: true, recursive: true });
     }
   }, 20_000);
+
+  it("classifies reference fixtures across tiny, broken, and mature launch states", async () => {
+    await withFixture("tiny-todo", async (workspace) => {
+      await runCli("startup", "init", "--cwd", workspace, "--stage", "mvp");
+      await runCli("startup", "launch", "audit", "--cwd", workspace);
+
+      const readiness = await readFile(
+        join(workspace, ".runstead", "startup", "repo-readiness.md"),
+        "utf8"
+      );
+
+      expect(readiness).toContain("## Release Blockers\n\n- none");
+      expect(readiness).toContain("Package manager: npm (package_json)");
+    });
+
+    await withFixture("broken-launch-repo", async (workspace) => {
+      await runCli("startup", "init", "--cwd", workspace, "--stage", "launch");
+      await runCli("startup", "launch", "audit", "--cwd", workspace);
+
+      const readiness = await readFile(
+        join(workspace, ".runstead", "startup", "repo-readiness.md"),
+        "utf8"
+      );
+      const gate = await runCli(
+        "startup",
+        "gate",
+        "check",
+        "--cwd",
+        workspace,
+        "--stage",
+        "launch"
+      );
+
+      expect(readiness).toContain("test command is missing");
+      expect(readiness).toContain("CI configuration is missing");
+      expect(gate).toContain("Status: blocked");
+    });
+
+    await withFixture("existing-mature-repo", async (workspace) => {
+      await runCli("startup", "init", "--cwd", workspace, "--stage", "launch");
+      await runCli("startup", "launch", "audit", "--cwd", workspace);
+      await runCli("startup", "launch", "security-baseline", "--cwd", workspace);
+
+      const readiness = await readFile(
+        join(workspace, ".runstead", "startup", "repo-readiness.md"),
+        "utf8"
+      );
+      const security = await readFile(
+        join(workspace, ".runstead", "startup", "security-baseline.md"),
+        "utf8"
+      );
+
+      expect(readiness).toContain("## Release Blockers\n\n- none");
+      expect(security).toContain("## Launch Security Blockers\n\n- none");
+      expect(security).toContain("Dependency Findings\n- none");
+    });
+  }, 20_000);
 });
+
+async function withFixture(
+  fixtureName: string,
+  callback: (workspace: string) => Promise<void>
+): Promise<void> {
+  const workspace = await mkdtemp(join(tmpdir(), `runstead-${fixtureName}-`));
+
+  try {
+    await cp(join(fixturesRoot, fixtureName), workspace, { recursive: true });
+    await callback(workspace);
+  } finally {
+    await rm(workspace, { force: true, recursive: true });
+  }
+}
 
 async function addHypotheses(workspace: string): Promise<string> {
   let problemHypothesisId: string | undefined;
@@ -393,15 +465,18 @@ async function runScalePath(workspace: string): Promise<void> {
 
 async function runCli(...args: string[]): Promise<string> {
   const output: string[] = [];
+  const previousExitCode = process.exitCode;
   const log = vi.spyOn(console, "log").mockImplementation((...items: unknown[]) => {
     output.push(items.map(String).join(" "));
   });
 
   try {
+    process.exitCode = undefined;
     await createProgram({ entrypoint: "/usr/local/bin/runstead" }).parseAsync(args, {
       from: "user"
     });
   } finally {
+    process.exitCode = previousExitCode;
     log.mockRestore();
   }
 
