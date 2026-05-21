@@ -1,4 +1,4 @@
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -77,6 +77,16 @@ describe("startup founder flow", () => {
       expect(onboard.nextCommands).toContain(
         "runstead startup build-mvp --worker codex_cli"
       );
+      expect(onboard.onboardingFiles.map((file) => file.split("/").at(-1))).toEqual([
+        "quickstart.md",
+        "upgrade-guide.md"
+      ]);
+      await expect(
+        readFile(onboard.onboardingFiles[0] ?? "", "utf8")
+      ).resolves.toContain("Runstead Startup Quickstart");
+      await expect(
+        readFile(onboard.onboardingFiles[1] ?? "", "utf8")
+      ).resolves.toContain("runstead upgrade --cwd .");
       expect(onboardAgain.context.status).toBe("skipped");
       expect(onboardAgain.measurement.status).toBe("skipped");
       expect(build.status).toBe("completed");
@@ -85,6 +95,7 @@ describe("startup founder flow", () => {
       expect(launch.reportPath).toContain("launch-readiness-ai-native-startup.md");
       expect(scale.gate.passed).toBe(false);
       expect(formatStartupOnboard(onboard)).toContain("Startup onboard");
+      expect(formatStartupOnboard(onboard)).toContain("Onboarding files:");
       expect(formatStartupBuildMvp(build)).toContain("Startup build MVP");
       expect(formatStartupLaunchCheck(launch)).toContain("Startup launch check");
       expect(formatStartupScaleCheck(scale)).toContain("Startup scale check");

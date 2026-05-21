@@ -24,6 +24,7 @@ describe("doctorRunstead", () => {
       expect(result.checks.map((check) => check.id)).toEqual(
         expect.arrayContaining([
           "config",
+          "node-runtime",
           "domain-pack",
           "domain-pack-validation",
           "domain-pack-manifests",
@@ -38,6 +39,9 @@ describe("doctorRunstead", () => {
         ])
       );
       expect(result.checks.every((check) => check.status === "pass")).toBe(true);
+      expect(
+        result.checks.find((check) => check.id === "node-runtime")?.message
+      ).toContain("package engines >=24.15 <27");
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }

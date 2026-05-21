@@ -41,6 +41,7 @@ export interface DoctorRunsteadOptions {
   codex?: boolean;
   worker?: "codex_direct" | WrappedWorkerKind;
   model?: string;
+  nodeVersion?: string;
   codexAuthStatus?: () => Promise<
     Pick<CodexAuthStatus, "loggedIn" | "accessTokenExpired" | "authPath">
   >;
@@ -58,6 +59,7 @@ export async function doctorRunstead(
   const cwd = resolvedRoot.cwd;
   const checks: DoctorCheck[] = [];
 
+  checks.push(checkNodeRuntime(options.nodeVersion ?? process.version));
   checks.push(
     await checkReadableFile("config", "config.yaml", join(root, "config.yaml"))
   );
@@ -1046,6 +1048,46 @@ function fail(id: string, label: string, message: string): DoctorCheck {
     label,
     status: "fail",
     message
+  };
+}
+
+function checkNodeRuntime(version: string): DoctorCheck {
+  const parsed = parseNodeVersion(version);
+
+  if (parsed === undefined) {
+    return pass(
+      "node-runtime",
+      "Node runtime",
+      `could not parse ${version}; Runstead CLI expects Node >=24.15 <27`
+    );
+  }
+
+  const supported =
+    (parsed.major > 24 || (parsed.major === 24 && parsed.minor >= 15)) &&
+    parsed.major < 27;
+
+  return pass(
+    "node-runtime",
+    "Node runtime",
+    supported
+      ? `${version} satisfies package engines >=24.15 <27`
+      : `${version} is outside package engines >=24.15 <27; use Node 24.15+ before release packaging`
+  );
+}
+
+function parseNodeVersion(
+  version: string
+): { major: number; minor: number; patch: number } | undefined {
+  const match = /^v?(\d+)\.(\d+)\.(\d+)/.exec(version);
+
+  if (match === null) {
+    return undefined;
+  }
+
+  return {
+    major: Number(match[1] ?? "0"),
+    minor: Number(match[2] ?? "0"),
+    patch: Number(match[3] ?? "0")
   };
 }
 
