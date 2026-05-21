@@ -7,6 +7,7 @@ import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sql
 import { describe, expect, it } from "vitest";
 
 import { decideApproval, showApproval } from "./approvals.js";
+import { installDomainPack } from "./domain-pack-install.js";
 import { createGoal } from "./goals.js";
 import { initRunstead } from "./init.js";
 import { claimTask, showTask } from "./tasks.js";
@@ -386,6 +387,82 @@ describe("runTaskVerifiers", () => {
       expect(showApproval({ cwd: workspace, id: approvalId }).approval.status).toBe(
         "expired"
       );
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("discovers startup MVP verifier commands when an empty-repo task is run later", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-startup-verifier-"));
+
+    try {
+      await initRunstead({ cwd: workspace, profile: "trusted-local" });
+      await installDomainPack({
+        cwd: workspace,
+        ref: "ai-native-startup",
+        now: new Date("2026-05-14T07:00:00.000Z")
+      });
+      const created = await createGoal({
+        cwd: workspace,
+        domain: "ai-native-startup",
+        template: "build-mvp",
+        now: new Date("2026-05-14T07:01:00.000Z")
+      });
+      const verifierTask = created.generatedTasks.find(
+        (task) => task.type === "run_mvp_verifiers"
+      );
+
+      if (verifierTask === undefined) {
+        throw new Error("Expected build-mvp goal to create run_mvp_verifiers");
+      }
+
+      expect(verifierTask.input).toMatchObject({
+        commands: []
+      });
+      await writeFile(
+        join(workspace, "package.json"),
+        JSON.stringify(
+          {
+            private: true,
+            scripts: {
+              test: "node -e \"process.exit(0)\"",
+              lint: "node -e \"process.exit(0)\"",
+              typecheck: "node -e \"process.exit(0)\"",
+              build: "node -e \"process.exit(0)\""
+            }
+          },
+          null,
+          2
+        ),
+        "utf8"
+      );
+
+      const result = await runTaskVerifiers({
+        cwd: workspace,
+        taskId: verifierTask.id,
+        timeoutMs: 15_000,
+        now: new Date("2026-05-14T07:02:00.000Z")
+      });
+      const storedTask = showTask({ cwd: workspace, id: verifierTask.id }).task;
+
+      expect(result.task.status).toBe("completed");
+      expect(result.commandResults.map((command) => command.verifier)).toEqual([
+        "test",
+        "lint",
+        "typecheck",
+        "build"
+      ]);
+      expect(result.commandResults.every((command) => command.exitCode === 0)).toBe(
+        true
+      );
+      expect(storedTask.input).toMatchObject({
+        commands: [
+          { name: "test", command: "npm test" },
+          { name: "lint", command: "npm run lint" },
+          { name: "typecheck", command: "npm run typecheck" },
+          { name: "build", command: "npm run build" }
+        ]
+      });
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }

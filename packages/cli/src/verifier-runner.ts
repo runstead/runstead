@@ -15,6 +15,7 @@ import {
   ToolActionApprovalRequiredError,
   ToolActionDeniedError
 } from "./governed-action.js";
+import { collectRepoInspection } from "./inspection-evidence.js";
 import { withRunsteadManagerLock } from "./manager-lock.js";
 import { showGoal } from "./goals.js";
 import { loadPolicyProfileFromFile } from "./policy-loader.js";
@@ -82,13 +83,27 @@ export async function runTaskVerifiersUnlocked(
     ...(options.claim === undefined ? {} : { claim: options.claim }),
     ...(options.now === undefined ? {} : { now: options.now })
   });
-  const policy = await loadVerifierPolicy({ root, cwd, task });
+  const commands = await verifierCommandsFromTask({
+    cwd,
+    task,
+    ...(options.now === undefined ? {} : { now: options.now })
+  });
+  const taskWithCommands =
+    commands.length > 0 && configuredVerifierCommandsFromTask(task).length === 0
+      ? {
+          ...task,
+          input: {
+            ...task.input,
+            commands
+          }
+        }
+      : task;
+  const policy = await loadVerifierPolicy({ root, cwd, task: taskWithCommands });
   const runningTask: Task = {
-    ...task,
+    ...taskWithCommands,
     status: "running",
     updatedAt: createdAt
   };
-  const commands = verifierCommandsFromTask(task);
   const database = openRunsteadDatabase(stateDb);
 
   try {
@@ -367,7 +382,33 @@ function loadVerifierTask(input: {
   }).task;
 }
 
-function verifierCommandsFromTask(task: Task): CommandVerifierInput[] {
+async function verifierCommandsFromTask(input: {
+  cwd: string;
+  task: Task;
+  now?: Date;
+}): Promise<CommandVerifierInput[]> {
+  const configured = configuredVerifierCommandsFromTask(input.task);
+
+  if (configured.length > 0 || input.task.type !== "run_mvp_verifiers") {
+    return configured;
+  }
+
+  const inspection = await collectRepoInspection(
+    input.cwd,
+    (input.now ?? new Date()).toISOString()
+  );
+
+  return [
+    discoveredVerifierCommand("test", inspection.commands.test.command),
+    discoveredVerifierCommand("lint", inspection.commands.lint.command),
+    discoveredVerifierCommand("typecheck", inspection.commands.typecheck.command),
+    discoveredVerifierCommand("build", inspection.commands.build.command)
+  ].filter(
+    (command): command is CommandVerifierInput => command !== undefined
+  );
+}
+
+function configuredVerifierCommandsFromTask(task: Task): CommandVerifierInput[] {
   const commands = task.input.commands;
 
   if (!Array.isArray(commands)) {
@@ -393,6 +434,13 @@ function verifierCommandsFromTask(task: Task): CommandVerifierInput[] {
 
     return [];
   });
+}
+
+function discoveredVerifierCommand(
+  name: string,
+  command: string | undefined
+): CommandVerifierInput | undefined {
+  return command === undefined ? undefined : { name, command };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
