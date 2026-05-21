@@ -104,8 +104,12 @@ describe("generateLaunchReadinessReport", () => {
 
       expect(result.status).toBe("blocked");
       expect(result.blockers).toContain("CI configuration is missing");
+      expect(result.trustSummary.qualityScore).toBeLessThan(1);
+      expect(result.jsonPath).toContain("launch-readiness-ai-native-startup.json");
       expect(markdown).toBe(result.markdown);
       expect(markdown).toContain("# Runstead Launch Readiness Report");
+      expect(markdown).toContain("## Trust Summary");
+      expect(markdown).toContain("Quality score:");
       expect(markdown).toContain("## Repo Health");
       expect(markdown).toContain("## Verifier Status");
       expect(markdown).toContain("## Governance Boundary");
@@ -142,6 +146,10 @@ describe("generateLaunchReadinessReport", () => {
           reportType: "launch_readiness",
           domain: "ai-native-startup",
           status: "blocked",
+          blockers: result.blockers,
+          trustSummary: {
+            conclusion: expect.stringContaining("Not launch-ready")
+          },
           summary: {
             blockers: result.blockers.length,
             tasks: 4
@@ -265,7 +273,11 @@ describe("generateLaunchReadinessReport", () => {
         });
 
         for (const [type, summary, content] of [
-          ["startup_measurement_framework", "measurement framework recorded", undefined],
+          [
+            "startup_measurement_framework",
+            "measurement framework recorded",
+            undefined
+          ],
           [
             "startup_metric_snapshot",
             "activation metric snapshot recorded",
@@ -300,7 +312,20 @@ describe("generateLaunchReadinessReport", () => {
               criticalFlowStatus: "pass"
             }
           ],
-          ["startup_founder_bottleneck", "founder bottleneck handoff recorded", undefined]
+          [
+            "startup_founder_bottleneck",
+            "founder bottleneck handoff recorded",
+            undefined
+          ],
+          [
+            "startup_decision",
+            "accepted debt decision recorded",
+            {
+              decision: "launch_with_accepted_debt",
+              reason: "Manual support runbook accepted for beta launch",
+              owner: "founder"
+            }
+          ]
         ] as const) {
           const artifactPath = join(evidenceDir, `${type}.json`);
           const sources =
@@ -322,9 +347,7 @@ describe("generateLaunchReadinessReport", () => {
               {
                 schemaVersion: 1,
                 ...(sources === undefined ? {} : { sources }),
-                ...(content === undefined
-                  ? {}
-                  : { content: JSON.stringify(content) })
+                ...(content === undefined ? {} : { content: JSON.stringify(content) })
               },
               null,
               2
@@ -350,10 +373,30 @@ describe("generateLaunchReadinessReport", () => {
         domain: "ai-native-startup",
         now: new Date("2026-05-14T12:00:00.000Z")
       });
+      const nextResult = await generateLaunchReadinessReport({
+        cwd: workspace,
+        domain: "ai-native-startup",
+        now: new Date("2026-05-14T12:05:00.000Z")
+      });
+      const json = await readFile(result.jsonPath, "utf8");
 
       expect(result.status).toBe("launch_ready");
       expect(result.blockers).toEqual([]);
+      expect(result.trustSummary.conclusion).toContain("Launch-ready");
+      expect(result.trustSummary.acceptedDebtRegister).toEqual(
+        expect.arrayContaining([
+          expect.stringContaining("Manual support runbook accepted")
+        ])
+      );
+      expect(nextResult.trustSummary.trend).toMatchObject({
+        previousStatus: "launch_ready",
+        blockerDelta: 0
+      });
+      expect(json).toContain('"schemaVersion": 1');
+      expect(json).toContain('"trustSummary"');
       expect(result.markdown).toContain("Command evidence records: 1");
+      expect(result.markdown).toContain("## Trust Summary");
+      expect(result.markdown).toContain("Accepted debt register:");
       expect(result.markdown).toContain("ev_wrapped_worker_command_001");
       expect(result.markdown).toContain("wrapped worker post-run verifier evidence");
       expect(result.markdown).toContain("`codex_direct` is the hard-proxy path");

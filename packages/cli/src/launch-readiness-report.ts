@@ -34,13 +34,35 @@ export interface LaunchReadinessReportResult {
   stateDb: string;
   domain: string;
   reportPath: string;
+  jsonPath: string;
   markdown: string;
   event: RunsteadEvent;
   status: LaunchReadinessStatus;
   blockers: string[];
+  trustSummary: LaunchReadinessTrustSummary;
 }
 
 type LaunchReadinessStatus = "launch_ready" | "blocked";
+
+export interface LaunchReadinessTrustSummary {
+  qualityScore: number;
+  evidenceCompletenessScore: number;
+  conclusion: string;
+  remediationEffort: string;
+  acceptedDebtRegister: string[];
+  trend: {
+    previousStatus?: string;
+    previousBlockers?: number;
+    blockerDelta: number;
+    addedBlockers: string[];
+    resolvedBlockers: string[];
+  };
+  auditExport: {
+    schemaVersion: 1;
+    evidenceRecords: number;
+    structuredArtifacts: number;
+  };
+}
 
 interface GoalReportRow {
   id: string;
@@ -92,6 +114,12 @@ interface ApprovalReportRow {
   risk: string;
   reason: string;
   updated_at: string;
+}
+
+interface PreviousLaunchReadinessReport {
+  eventId: string;
+  status?: string;
+  blockers: string[];
 }
 
 interface EvidenceProvenanceArtifact {
@@ -149,11 +177,20 @@ export async function generateLaunchReadinessReport(
     const blockers = releaseBlockers(data);
     const status: LaunchReadinessStatus =
       blockers.length === 0 ? "launch_ready" : "blocked";
+    const aggregateId = `launch_readiness_${domain.replaceAll("-", "_")}`;
+    const previousReport = readPreviousLaunchReadinessEvent(database, aggregateId);
+    const trustSummary = launchReadinessTrustSummary({
+      status,
+      blockers,
+      data,
+      ...(previousReport === undefined ? {} : { previousReport })
+    });
     const markdown = formatLaunchReadinessReport({
       generatedAt,
       domain,
       status,
       blockers,
+      trustSummary,
       data
     });
     const reportPath = join(
@@ -161,17 +198,45 @@ export async function generateLaunchReadinessReport(
       "reports",
       `launch-readiness-${domain}.md`
     );
+    const jsonPath = join(
+      resolvedState.root,
+      "reports",
+      `launch-readiness-${domain}.json`
+    );
+    const auditExport = {
+      schemaVersion: 1,
+      generatedAt,
+      domain,
+      status,
+      blockers,
+      trustSummary,
+      evidence: data.evidence.map((item) => ({
+        id: item.id,
+        type: item.type,
+        summary: item.summary,
+        uri: item.uri,
+        createdAt: item.created_at
+      })),
+      structuredArtifacts: data.structuredArtifacts.map((item) => ({
+        id: item.id,
+        kind: item.kind,
+        path: item.path,
+        sourceEvidenceIds: item.sourceEvidenceIds
+      }))
+    };
     const event: RunsteadEvent = {
       eventId: createRunsteadId("evt"),
       type: "report.generated",
       aggregateType: "report",
-      aggregateId: `launch_readiness_${domain.replaceAll("-", "_")}`,
+      aggregateId,
       payload: reportEventPayload({
         domain,
         status,
         blockers,
         reportPath,
+        jsonPath,
         markdown,
+        trustSummary,
         data
       }),
       createdAt: generatedAt
@@ -179,6 +244,7 @@ export async function generateLaunchReadinessReport(
 
     await mkdir(join(resolvedState.root, "reports"), { recursive: true });
     await writeFile(reportPath, markdown, "utf8");
+    await writeFile(jsonPath, `${JSON.stringify(auditExport, null, 2)}\n`, "utf8");
     appendEventAndProject(database, { event });
 
     return {
@@ -186,10 +252,12 @@ export async function generateLaunchReadinessReport(
       stateDb,
       domain,
       reportPath,
+      jsonPath,
       markdown,
       event,
       status,
-      blockers
+      blockers,
+      trustSummary
     };
   } finally {
     database.close();
@@ -294,6 +362,7 @@ function formatLaunchReadinessReport(input: {
   domain: string;
   status: LaunchReadinessStatus;
   blockers: string[];
+  trustSummary: LaunchReadinessTrustSummary;
   data: LaunchReadinessReportData;
 }): string {
   return [
@@ -302,6 +371,10 @@ function formatLaunchReadinessReport(input: {
     `Domain: ${input.domain}`,
     `Generated: ${input.generatedAt}`,
     `Status: ${input.status}`,
+    "",
+    "## Trust Summary",
+    "",
+    trustSummaryMarkdown(input.trustSummary),
     "",
     "## Repo Health",
     "",
@@ -396,6 +469,147 @@ function repoHealth(repo: RepoInspectionSnapshot): string {
     `- Build command: ${buildCommand}`,
     `- CI: ${ci}`
   ].join("\n");
+}
+
+function trustSummaryMarkdown(summary: LaunchReadinessTrustSummary): string {
+  return [
+    `- Quality score: ${formatPercent(summary.qualityScore)}`,
+    `- Evidence completeness: ${formatPercent(summary.evidenceCompletenessScore)}`,
+    `- Conclusion: ${summary.conclusion}`,
+    `- Remediation effort: ${summary.remediationEffort}`,
+    `- Trend: blocker_delta=${summary.trend.blockerDelta}, previous_status=${summary.trend.previousStatus ?? "none"}`,
+    "- Accepted debt register:",
+    indentList(summary.acceptedDebtRegister),
+    "- Audit export:",
+    `  - schemaVersion=${summary.auditExport.schemaVersion}`,
+    `  - evidenceRecords=${summary.auditExport.evidenceRecords}`,
+    `  - structuredArtifacts=${summary.auditExport.structuredArtifacts}`
+  ].join("\n");
+}
+
+function launchReadinessTrustSummary(input: {
+  status: LaunchReadinessStatus;
+  blockers: string[];
+  data: LaunchReadinessReportData;
+  previousReport?: PreviousLaunchReadinessReport;
+}): LaunchReadinessTrustSummary {
+  const requiredEvidenceTypes = [
+    "command_output",
+    "startup_measurement_framework",
+    "startup_metric_snapshot",
+    "startup_repo_readiness",
+    "startup_security_baseline",
+    "startup_migration_plan",
+    "startup_rollback_plan",
+    "startup_observability",
+    "startup_founder_bottleneck"
+  ];
+  const completedEvidence = requiredEvidenceTypes.filter((type) =>
+    hasEvidenceType(input.data.evidence, type)
+  );
+  const evidenceCompletenessScore =
+    completedEvidence.length / requiredEvidenceTypes.length;
+  const hasProvenance = input.data.evidence.some(
+    (item) => artifactSources(readEvidenceProvenanceArtifact(item.uri)).length > 0
+  );
+  const qualityScore = clampScore(
+    evidenceCompletenessScore * 0.7 +
+      (input.data.structuredArtifacts.length > 0 ? 0.1 : 0) +
+      (hasProvenance ? 0.1 : 0) +
+      (input.status === "launch_ready" ? 0.1 : 0) -
+      Math.min(input.blockers.length * 0.06, 0.5)
+  );
+  const previousBlockers = input.previousReport?.blockers ?? [];
+  const currentBlockers = input.blockers;
+  const acceptedDebtRegister = acceptedDebtRegisterRows(input.data);
+
+  return {
+    qualityScore,
+    evidenceCompletenessScore,
+    conclusion:
+      input.status === "launch_ready"
+        ? "Launch-ready: required gate, verifier, readiness, security, and operational evidence are present."
+        : `Not launch-ready: ${input.blockers.length} blocker${input.blockers.length === 1 ? "" : "s"} remain; top blocker is ${input.blockers[0] ?? "unknown"}.`,
+    remediationEffort: remediationEffort(input.blockers),
+    acceptedDebtRegister,
+    trend: {
+      ...(input.previousReport?.status === undefined
+        ? {}
+        : { previousStatus: input.previousReport.status }),
+      ...(input.previousReport === undefined
+        ? {}
+        : { previousBlockers: previousBlockers.length }),
+      blockerDelta: currentBlockers.length - previousBlockers.length,
+      addedBlockers: currentBlockers.filter(
+        (blocker) => !previousBlockers.includes(blocker)
+      ),
+      resolvedBlockers: previousBlockers.filter(
+        (blocker) => !currentBlockers.includes(blocker)
+      )
+    },
+    auditExport: {
+      schemaVersion: 1,
+      evidenceRecords: input.data.evidence.length,
+      structuredArtifacts: input.data.structuredArtifacts.length
+    }
+  };
+}
+
+function acceptedDebtRegisterRows(data: LaunchReadinessReportData): string[] {
+  const debtEvidence = data.evidence.filter(
+    (item) =>
+      item.type === "startup_acceptable_debt" || item.type === "startup_decision"
+  );
+  const rows = debtEvidence.flatMap((item) => {
+    const content = parsedEvidenceContent(item.uri);
+
+    if (!isRecord(content)) {
+      return item.type === "startup_acceptable_debt"
+        ? [`${item.id}: ${item.summary ?? "accepted debt"} owner=unknown`]
+        : [];
+    }
+
+    if (
+      item.type !== "startup_acceptable_debt" &&
+      content.decision !== "launch_with_accepted_debt"
+    ) {
+      return [];
+    }
+
+    return [
+      `${item.id}: ${stringValue(content.reason) ?? item.summary ?? "accepted debt"} owner=${stringValue(content.owner) ?? "unknown"} expires=${stringValue(content.expiresAt) ?? "none"}`
+    ];
+  });
+
+  return rows.length === 0 ? ["none recorded"] : rows;
+}
+
+function remediationEffort(blockers: string[]): string {
+  if (blockers.length === 0) {
+    return "low: keep gates green and rerun before release";
+  }
+
+  if (blockers.length <= 2) {
+    return "medium: one focused remediation loop should be enough";
+  }
+
+  if (blockers.length <= 5) {
+    return "high: split remediation into verifier, evidence, and governance tracks";
+  }
+
+  return "very high: defer launch and run a full remediation plan";
+}
+
+function clampScore(value: number): number {
+  return Math.max(0, Math.min(1, Math.round(value * 100) / 100));
+}
+
+function formatPercent(value: number): string {
+  return `${Math.round(value * 100)}%`;
+}
+
+function indentList(items: string[]): string {
+  return items.map((item) => `  - ${item}`).join("\n");
 }
 
 function verifierStatus(data: LaunchReadinessReportData): string {
@@ -599,7 +813,9 @@ function readEvidenceProvenanceArtifact(
   }
 }
 
-function artifactSources(artifact: EvidenceProvenanceArtifact | undefined): JsonObject[] {
+function artifactSources(
+  artifact: EvidenceProvenanceArtifact | undefined
+): JsonObject[] {
   if (artifact === undefined || !Array.isArray(artifact.sources)) {
     return [];
   }
@@ -862,20 +1078,71 @@ function stringValue(value: unknown): string | undefined {
   return typeof value === "string" && value.trim().length > 0 ? value : undefined;
 }
 
+function readPreviousLaunchReadinessEvent(
+  database: ReturnType<typeof openRunsteadDatabase>,
+  aggregateId: string
+): PreviousLaunchReadinessReport | undefined {
+  const row = database
+    .prepare(
+      `
+      SELECT event_id, payload_json
+      FROM events
+      WHERE type = 'report.generated'
+        AND aggregate_id = ?
+      ORDER BY created_at DESC, event_id DESC
+      LIMIT 1
+    `
+    )
+    .get(aggregateId) as { event_id: string; payload_json: string } | undefined;
+
+  if (row === undefined) {
+    return undefined;
+  }
+
+  try {
+    const payload = JSON.parse(row.payload_json) as unknown;
+
+    if (!isRecord(payload)) {
+      return {
+        eventId: row.event_id,
+        blockers: []
+      };
+    }
+
+    return {
+      eventId: row.event_id,
+      ...(typeof payload.status === "string" ? { status: payload.status } : {}),
+      blockers: Array.isArray(payload.blockers)
+        ? payload.blockers.filter((item): item is string => typeof item === "string")
+        : []
+    };
+  } catch {
+    return {
+      eventId: row.event_id,
+      blockers: []
+    };
+  }
+}
+
 function reportEventPayload(input: {
   domain: string;
   status: LaunchReadinessStatus;
   blockers: string[];
   reportPath: string;
+  jsonPath: string;
   markdown: string;
+  trustSummary: LaunchReadinessTrustSummary;
   data: LaunchReadinessReportData;
 }): JsonObject {
   return {
     reportType: "launch_readiness",
     domain: input.domain,
     status: input.status,
+    blockers: input.blockers,
     uri: pathToFileURL(input.reportPath).href,
+    jsonUri: pathToFileURL(input.jsonPath).href,
     hash: sha256(input.markdown),
+    trustSummary: input.trustSummary as unknown as JsonObject,
     summary: {
       blockers: input.blockers.length,
       goals: input.data.goals.length,
