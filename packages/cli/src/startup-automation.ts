@@ -12,12 +12,18 @@ import { installDomainPack, upgradeDomainPack } from "./domain-pack-install.js";
 import { createGoal, listGoals } from "./goals.js";
 import { initRunstead, type InitPolicyProfile } from "./init.js";
 import { collectRepoInspection } from "./inspection-evidence.js";
-import { recordProjectFact } from "./memory.js";
+import {
+  recordProjectFact,
+  retrieveProjectFacts,
+  type RetrieveProjectFactsResult
+} from "./memory.js";
 import { matchesPolicyPathPattern } from "./policy.js";
 import { resolveRunsteadRoot, requireRunsteadStateDb } from "./runstead-root.js";
 import {
   STARTUP_STRUCTURED_ARTIFACT_SCHEMA,
-  STARTUP_STRUCTURED_ARTIFACT_SCHEMA_VERSION
+  STARTUP_STRUCTURED_ARTIFACT_SCHEMA_VERSION,
+  listStartupArtifacts,
+  type StartupArtifactListItem
 } from "./startup-artifacts.js";
 import { addStartupEvidence } from "./startup-evidence.js";
 
@@ -116,6 +122,7 @@ export interface RecordSupportTriageOptions {
   outcome: string;
   customer?: string;
   severity?: string;
+  category?: string;
   sourceRefs?: string[];
   now?: Date;
 }
@@ -133,6 +140,8 @@ export interface GenerateFounderBottleneckMapOptions {
   bottlenecks?: string[];
   owner?: string;
   systemOfRecord?: string;
+  handoffDueDate?: string;
+  status?: string;
   now?: Date;
 }
 
@@ -150,6 +159,8 @@ export interface GenerateWorkflowRegistryOptions {
   workflows?: string[];
   delegationRules?: string[];
   approvalBoundaries?: string[];
+  allowedAgents?: string[];
+  constrainedTaskTypes?: string[];
   now?: Date;
 }
 
@@ -181,11 +192,21 @@ export interface CaptureInstitutionalMemoryResult {
   knowledge: string[];
 }
 
+export interface RetrieveStartupInstitutionalMemoryOptions {
+  cwd?: string;
+  scope?: string;
+  query?: string;
+  limit?: number;
+  now?: Date;
+}
+
 export interface GenerateIntegrationMapOptions {
   cwd?: string;
   integrations?: string[];
   lockInSignals?: string[];
   automationCoverage?: string[];
+  adoptionSignals?: string[];
+  workflowSignals?: string[];
   now?: Date;
 }
 
@@ -211,6 +232,24 @@ export interface GenerateScaleOpsReportResult {
   structuredFiles: string[];
   evidenceId: string;
   period: string;
+}
+
+export interface ScheduleScaleReportOptions {
+  cwd?: string;
+  cadence?: string;
+  owner?: string;
+  nextRunAt?: string;
+  periodTemplate?: string;
+  now?: Date;
+}
+
+export interface ScheduleScaleReportResult {
+  root: string;
+  stateDb: string;
+  files: string[];
+  structuredFiles: string[];
+  evidenceId: string;
+  nextCommand: string;
 }
 
 export interface GenerateOpsSopsOptions {
@@ -651,6 +690,7 @@ export async function recordSupportTriage(
     outcome: options.outcome,
     ...(options.customer === undefined ? {} : { customer: options.customer }),
     severity: options.severity ?? "medium",
+    category: options.category ?? "uncategorized",
     sourceRefs: options.sourceRefs ?? []
   });
 
@@ -674,6 +714,7 @@ export async function recordSupportTriage(
         outcome: options.outcome,
         customer: options.customer ?? null,
         severity: options.severity ?? "medium",
+        category: options.category ?? "uncategorized",
         sourceRefs: options.sourceRefs ?? []
       }
     })
@@ -682,7 +723,7 @@ export async function recordSupportTriage(
   const evidence = await addStartupEvidence({
     cwd,
     type: "support_triage",
-    summary: `Support triage recorded: ${options.outcome}`,
+    summary: `Support triage recorded (${options.category ?? "uncategorized"}): ${options.outcome}`,
     sourceRefs: [runtimePath, ...structuredFiles, ...(options.sourceRefs ?? [])],
     content: markdown,
     ...(options.now === undefined ? {} : { now: options.now })
@@ -711,7 +752,11 @@ export async function generateFounderBottleneckMap(
     generatedAt,
     bottlenecks,
     owner: options.owner ?? "unassigned",
-    systemOfRecord: options.systemOfRecord ?? "Runstead evidence ledger"
+    systemOfRecord: options.systemOfRecord ?? "Runstead evidence ledger",
+    status: options.status ?? "handoff-in-progress",
+    ...(options.handoffDueDate === undefined
+      ? {}
+      : { handoffDueDate: options.handoffDueDate })
   });
 
   await mkdir(join(state.root, "startup"), { recursive: true });
@@ -727,7 +772,9 @@ export async function generateFounderBottleneckMap(
       data: {
         bottlenecks,
         owner: options.owner ?? "unassigned",
-        systemOfRecord: options.systemOfRecord ?? "Runstead evidence ledger"
+        systemOfRecord: options.systemOfRecord ?? "Runstead evidence ledger",
+        status: options.status ?? "handoff-in-progress",
+        handoffDueDate: options.handoffDueDate ?? null
       }
     })
   ];
@@ -737,7 +784,18 @@ export async function generateFounderBottleneckMap(
     type: "founder_bottleneck",
     summary: `Founder bottleneck map recorded (${bottlenecks.length} item${bottlenecks.length === 1 ? "" : "s"})`,
     sourceRefs: [runtimePath, ...structuredFiles],
-    content: markdown,
+    content: JSON.stringify(
+      {
+        markdown,
+        bottlenecks,
+        owner: options.owner ?? "unassigned",
+        systemOfRecord: options.systemOfRecord ?? "Runstead evidence ledger",
+        status: options.status ?? "handoff-in-progress",
+        handoffDueDate: options.handoffDueDate ?? null
+      },
+      null,
+      2
+    ),
     ...(options.now === undefined ? {} : { now: options.now })
   });
 
@@ -774,6 +832,15 @@ export async function generateWorkflowRegistry(
     options.approvalBoundaries === undefined || options.approvalBoundaries.length === 0
       ? ["publish", "external_write", "protected_path", "dependency_change"]
       : options.approvalBoundaries;
+  const allowedAgents =
+    options.allowedAgents === undefined || options.allowedAgents.length === 0
+      ? ["codex_cli", "claude_code"]
+      : options.allowedAgents;
+  const constrainedTaskTypes =
+    options.constrainedTaskTypes === undefined ||
+    options.constrainedTaskTypes.length === 0
+      ? ["startup_remediation", "run_mvp_verifiers", "startup_scale_report"]
+      : options.constrainedTaskTypes;
   const workflowMarkdown = formatWorkflowRegistry({
     generatedAt,
     workflows,
@@ -782,7 +849,9 @@ export async function generateWorkflowRegistry(
   const delegationMarkdown = formatDelegationPolicy({
     generatedAt,
     delegationRules,
-    approvalBoundaries
+    approvalBoundaries,
+    allowedAgents,
+    constrainedTaskTypes
   });
 
   await mkdir(join(state.root, "startup"), { recursive: true });
@@ -798,7 +867,8 @@ export async function generateWorkflowRegistry(
     markdownPath: workflowPath,
     data: {
       workflows,
-      approvalBoundaries
+      approvalBoundaries,
+      constrainedTaskTypes
     }
   });
   const delegationStructuredPath = await writeStartupStructuredArtifact({
@@ -807,7 +877,9 @@ export async function generateWorkflowRegistry(
     markdownPath: delegationPath,
     data: {
       delegationRules,
-      approvalBoundaries
+      approvalBoundaries,
+      allowedAgents,
+      constrainedTaskTypes
     }
   });
   const structuredFiles = [workflowStructuredPath, delegationStructuredPath];
@@ -825,7 +897,17 @@ export async function generateWorkflowRegistry(
     type: "delegation_policy",
     summary: `Delegation policy recorded (${delegationRules.length} rule${delegationRules.length === 1 ? "" : "s"})`,
     sourceRefs: [delegationPath, delegationStructuredPath, workflowPath],
-    content: delegationMarkdown,
+    content: JSON.stringify(
+      {
+        markdown: delegationMarkdown,
+        delegationRules,
+        approvalBoundaries,
+        allowedAgents,
+        constrainedTaskTypes
+      },
+      null,
+      2
+    ),
     ...(options.now === undefined ? {} : { now: options.now })
   });
 
@@ -909,6 +991,18 @@ export async function captureInstitutionalMemory(
   };
 }
 
+export function retrieveStartupInstitutionalMemory(
+  options: RetrieveStartupInstitutionalMemoryOptions = {}
+): RetrieveProjectFactsResult {
+  return retrieveProjectFacts({
+    ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+    scope: options.scope ?? "startup/institutional-memory",
+    ...(options.query === undefined ? {} : { query: options.query }),
+    ...(options.limit === undefined ? {} : { limit: options.limit }),
+    ...(options.now === undefined ? {} : { now: options.now })
+  });
+}
+
 export async function generateIntegrationMap(
   options: GenerateIntegrationMapOptions = {}
 ): Promise<GenerateIntegrationMapResult> {
@@ -925,7 +1019,9 @@ export async function generateIntegrationMap(
     generatedAt,
     integrations,
     lockInSignals: options.lockInSignals ?? [],
-    automationCoverage: options.automationCoverage ?? []
+    automationCoverage: options.automationCoverage ?? [],
+    adoptionSignals: options.adoptionSignals ?? [],
+    workflowSignals: options.workflowSignals ?? []
   });
 
   await mkdir(join(state.root, "startup"), { recursive: true });
@@ -941,7 +1037,9 @@ export async function generateIntegrationMap(
       data: {
         integrations,
         lockInSignals: options.lockInSignals ?? [],
-        automationCoverage: options.automationCoverage ?? []
+        automationCoverage: options.automationCoverage ?? [],
+        adoptionSignals: options.adoptionSignals ?? [],
+        workflowSignals: options.workflowSignals ?? []
       }
     })
   ];
@@ -951,7 +1049,18 @@ export async function generateIntegrationMap(
     type: "integration_map",
     summary: `Integration depth map recorded (${integrations.length} integration${integrations.length === 1 ? "" : "s"})`,
     sourceRefs: [runtimePath, ...structuredFiles],
-    content: markdown,
+    content: JSON.stringify(
+      {
+        markdown,
+        integrations,
+        lockInSignals: options.lockInSignals ?? [],
+        automationCoverage: options.automationCoverage ?? [],
+        adoptionSignals: options.adoptionSignals ?? [],
+        workflowSignals: options.workflowSignals ?? []
+      },
+      null,
+      2
+    ),
     ...(options.now === undefined ? {} : { now: options.now })
   });
 
@@ -980,11 +1089,14 @@ export async function generateScaleOpsReport(
   } finally {
     database.close();
   }
+  const startupArtifacts = (await listStartupArtifacts({ cwd })).artifacts;
+  const supportCategoryCounts = supportCategoryCountsFromArtifacts(startupArtifacts);
 
   const markdown = formatScaleOpsReport({
     generatedAt,
     period,
-    evidence
+    evidence,
+    supportCategoryCounts
   });
 
   await mkdir(join(state.root, "reports"), { recursive: true });
@@ -999,7 +1111,8 @@ export async function generateScaleOpsReport(
       markdownPath: runtimePath,
       data: {
         period,
-        evidence
+        evidence,
+        supportCategoryCounts
       }
     })
   ];
@@ -1020,6 +1133,75 @@ export async function generateScaleOpsReport(
     structuredFiles,
     evidenceId: reportEvidence.evidence.id,
     period
+  };
+}
+
+export async function scheduleScaleReport(
+  options: ScheduleScaleReportOptions = {}
+): Promise<ScheduleScaleReportResult> {
+  const cwd = resolve(options.cwd ?? process.cwd());
+  const state = await requireRunsteadStateDb(cwd);
+  const generatedAt = (options.now ?? new Date()).toISOString();
+  const cadence = options.cadence ?? "weekly";
+  const owner = options.owner ?? "unassigned";
+  const periodTemplate = options.periodTemplate ?? "YYYY-WW";
+  const nextRunAt = options.nextRunAt ?? generatedAt.slice(0, 10);
+  const nextCommand = `runstead startup scale report --period ${periodTemplate}`;
+  const markdown = formatScaleReportSchedule({
+    generatedAt,
+    cadence,
+    owner,
+    nextRunAt,
+    periodTemplate,
+    nextCommand
+  });
+
+  await mkdir(join(state.root, "startup"), { recursive: true });
+
+  const runtimePath = join(state.root, "startup", "scale-report-schedule.md");
+
+  await writeFile(runtimePath, markdown, "utf8");
+  const structuredFiles = [
+    await writeStartupStructuredArtifact({
+      kind: "startup_ops_schedule",
+      generatedAt,
+      markdownPath: runtimePath,
+      data: {
+        cadence,
+        owner,
+        nextRunAt,
+        periodTemplate,
+        nextCommand
+      }
+    })
+  ];
+  const evidence = await addStartupEvidence({
+    cwd,
+    type: "ops_schedule",
+    summary: `Scale report schedule recorded (${cadence})`,
+    sourceRefs: [runtimePath, ...structuredFiles],
+    content: JSON.stringify(
+      {
+        markdown,
+        cadence,
+        owner,
+        nextRunAt,
+        periodTemplate,
+        nextCommand
+      },
+      null,
+      2
+    ),
+    ...(options.now === undefined ? {} : { now: options.now })
+  });
+
+  return {
+    root: state.root,
+    stateDb: state.stateDb,
+    files: [runtimePath],
+    structuredFiles,
+    evidenceId: evidence.evidence.id,
+    nextCommand
   };
 }
 
@@ -1117,7 +1299,16 @@ export async function verifyGtmArtifacts(
     type: "gtm_artifact",
     summary: `GTM artifacts verified (${claims.length} claim${claims.length === 1 ? "" : "s"})`,
     sourceRefs: [runtimePath, ...structuredFiles, ...(options.evidenceRefs ?? [])],
-    content: markdown,
+    content: JSON.stringify(
+      {
+        markdown,
+        claims,
+        evidenceRefs: options.evidenceRefs ?? [],
+        productState: options.productState ?? "unrecorded"
+      },
+      null,
+      2
+    ),
     ...(options.now === undefined ? {} : { now: options.now })
   });
 
@@ -1496,6 +1687,7 @@ function formatSupportTriage(input: {
   outcome: string;
   customer?: string;
   severity: string;
+  category: string;
   sourceRefs: string[];
 }): string {
   return [
@@ -1504,6 +1696,7 @@ function formatSupportTriage(input: {
     `Generated: ${input.generatedAt}`,
     `Customer: ${input.customer ?? "unknown"}`,
     `Severity: ${input.severity}`,
+    `Category: ${input.category}`,
     "",
     "## Request",
     "",
@@ -1533,6 +1726,8 @@ function formatFounderBottleneckMap(input: {
   bottlenecks: string[];
   owner: string;
   systemOfRecord: string;
+  status: string;
+  handoffDueDate?: string;
 }): string {
   return [
     "# Founder Bottleneck Map",
@@ -1540,6 +1735,10 @@ function formatFounderBottleneckMap(input: {
     `Generated: ${input.generatedAt}`,
     `Owner: ${input.owner}`,
     `System of record: ${input.systemOfRecord}`,
+    `Status: ${input.status}`,
+    ...(input.handoffDueDate === undefined
+      ? []
+      : [`Handoff due: ${input.handoffDueDate}`]),
     "",
     "## Founder-only Bottlenecks",
     "",
@@ -1589,6 +1788,8 @@ function formatDelegationPolicy(input: {
   generatedAt: string;
   delegationRules: string[];
   approvalBoundaries: string[];
+  allowedAgents: string[];
+  constrainedTaskTypes: string[];
 }): string {
   return [
     "# Startup Delegation Policy",
@@ -1602,6 +1803,14 @@ function formatDelegationPolicy(input: {
     "## Approval Boundaries",
     "",
     listItems(input.approvalBoundaries),
+    "",
+    "## Allowed Agents",
+    "",
+    listItems(input.allowedAgents),
+    "",
+    "## Constrained Task Types",
+    "",
+    listItems(input.constrainedTaskTypes),
     "",
     "## Audit Contract",
     "",
@@ -1650,6 +1859,8 @@ function formatIntegrationMap(input: {
   integrations: string[];
   lockInSignals: string[];
   automationCoverage: string[];
+  adoptionSignals: string[];
+  workflowSignals: string[];
 }): string {
   return [
     "# Startup Integration Depth Map",
@@ -1668,6 +1879,14 @@ function formatIntegrationMap(input: {
     "",
     listItemsOrNone(input.automationCoverage),
     "",
+    "## Adoption Signals",
+    "",
+    listItemsOrNone(input.adoptionSignals),
+    "",
+    "## Workflow Signals",
+    "",
+    listItemsOrNone(input.workflowSignals),
+    "",
     "## Scale Contract",
     "",
     listItems([
@@ -1683,6 +1902,7 @@ function formatScaleOpsReport(input: {
   generatedAt: string;
   period: string;
   evidence: StartupEvidenceSummaryRow[];
+  supportCategoryCounts: Record<string, number>;
 }): string {
   const supportEvidence = input.evidence.filter(
     (item) => item.type === "startup_support_triage"
@@ -1712,6 +1932,10 @@ function formatScaleOpsReport(input: {
     "",
     formatEvidenceSummary(supportEvidence),
     "",
+    "## Support Category Aggregation",
+    "",
+    formatCategoryCounts(input.supportCategoryCounts),
+    "",
     "## Weekly Engineering Evidence",
     "",
     formatEvidenceSummary(engineeringEvidence),
@@ -1730,6 +1954,35 @@ function formatScaleOpsReport(input: {
       "Ops, engineering, and GTM sections must cite Runstead evidence.",
       "Missing evidence should become the next scale-stage task.",
       "This report should be regenerated before weekly planning."
+    ]),
+    ""
+  ].join("\n");
+}
+
+function formatScaleReportSchedule(input: {
+  generatedAt: string;
+  cadence: string;
+  owner: string;
+  nextRunAt: string;
+  periodTemplate: string;
+  nextCommand: string;
+}): string {
+  return [
+    "# Startup Scale Report Schedule",
+    "",
+    `Generated: ${input.generatedAt}`,
+    `Cadence: ${input.cadence}`,
+    `Owner: ${input.owner}`,
+    `Next run: ${input.nextRunAt}`,
+    `Period template: ${input.periodTemplate}`,
+    `Command: ${input.nextCommand}`,
+    "",
+    "## Recurrence Contract",
+    "",
+    listItems([
+      "Generate the scale report on the recorded cadence.",
+      "Attach generated reports as startup_ops_report evidence.",
+      "Review overdue handoffs, support categories, delegation constraints, memory retrieval, integrations, and GTM claims."
     ]),
     ""
   ].join("\n");
@@ -1800,6 +2053,37 @@ function formatEvidenceSummary(evidence: StartupEvidenceSummaryRow[]): string {
     : evidence
         .map((item) => `- ${item.id}: ${item.type}: ${item.summary ?? "no summary"}`)
         .join("\n");
+}
+
+function formatCategoryCounts(counts: Record<string, number>): string {
+  const entries = Object.entries(counts).sort(([left], [right]) =>
+    left.localeCompare(right)
+  );
+
+  return entries.length === 0
+    ? "- none"
+    : entries.map(([category, count]) => `- ${category}: ${count}`).join("\n");
+}
+
+function supportCategoryCountsFromArtifacts(
+  artifacts: StartupArtifactListItem[]
+): Record<string, number> {
+  const counts: Record<string, number> = {};
+
+  for (const item of artifacts) {
+    if (item.kind !== "startup_support_triage") {
+      continue;
+    }
+
+    const category =
+      typeof item.artifact.data.category === "string"
+        ? item.artifact.data.category
+        : "uncategorized";
+
+    counts[category] = (counts[category] ?? 0) + 1;
+  }
+
+  return counts;
 }
 
 function readStartupEvidenceSummaries(

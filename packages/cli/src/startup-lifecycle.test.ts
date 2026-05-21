@@ -210,7 +210,9 @@ describe("startup CLI lifecycle", () => {
         "--bottleneck",
         "Founder-only rollback decision",
         "--owner",
-        "ops-lead"
+        "ops-lead",
+        "--status",
+        "handoff-complete"
       );
 
       const launchGate = await runCli(
@@ -251,6 +253,17 @@ describe("startup CLI lifecycle", () => {
       await runCli(
         "startup",
         "scale",
+        "memory-retrieve",
+        "--cwd",
+        workspace,
+        "--query",
+        "Enterprise onboarding",
+        "--limit",
+        "3"
+      );
+      await runCli(
+        "startup",
+        "scale",
         "integration-map",
         "--cwd",
         workspace,
@@ -258,6 +271,10 @@ describe("startup CLI lifecycle", () => {
         "CRM launch readiness sync",
         "--lock-in-signal",
         "Customer reviews launch evidence inside CRM",
+        "--adoption-signal",
+        "Two beta customers reviewed readiness evidence inside CRM",
+        "--workflow-signal",
+        "Weekly launch review starts from CRM readiness sync",
         "--automation-coverage",
         "CRM sync is agent-assisted"
       );
@@ -270,7 +287,9 @@ describe("startup CLI lifecycle", () => {
         "--request",
         "Beta customer needs readiness summary",
         "--outcome",
-        "Add to weekly scale report"
+        "Add to weekly scale report",
+        "--category",
+        "readiness-summary"
       );
       await runCli(
         "startup",
@@ -297,6 +316,19 @@ describe("startup CLI lifecycle", () => {
         "startup:launch-gate",
         "--product-state",
         "CLI lifecycle fixture passed"
+      );
+      await runCli(
+        "startup",
+        "scale",
+        "schedule-report",
+        "--cwd",
+        workspace,
+        "--cadence",
+        "weekly",
+        "--owner",
+        "ops-lead",
+        "--period-template",
+        "2026-W20"
       );
       await runCli(
         "startup",
@@ -328,6 +360,12 @@ describe("startup CLI lifecycle", () => {
           "utf8"
         )
       ).resolves.toContain("Startup Scale Ops Report");
+      await expect(
+        readFile(
+          join(workspace, ".runstead", "reports", "startup-ops-2026-W20.md"),
+          "utf8"
+        )
+      ).resolves.toContain("readiness-summary");
       expect(readEvidenceTypes(workspace)).toEqual(
         expect.arrayContaining([
           "command_output",
@@ -335,6 +373,7 @@ describe("startup CLI lifecycle", () => {
           "startup_founder_bottleneck",
           "startup_gtm_artifact",
           "startup_measurement_framework",
+          "startup_ops_schedule",
           "startup_ops_report",
           "startup_repo_readiness",
           "startup_security_baseline",

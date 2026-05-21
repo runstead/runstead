@@ -304,6 +304,7 @@ export function registerStartupCommands(program: Command): void {
     .requiredOption("--outcome <text>", "Triage outcome and next action")
     .option("--customer <text>", "Customer or account identifier")
     .option("--severity <level>", "Severity label", "medium")
+    .option("--category <name>", "Support category", "uncategorized")
     .option("--source <ref>", "Evidence source reference", collectValues, [])
     .option("--actor <id>", "RBAC subject for support triage writes", "local-admin")
     .action(
@@ -313,6 +314,7 @@ export function registerStartupCommands(program: Command): void {
         outcome: string;
         customer?: string;
         severity: string;
+        category: string;
         source: string[];
         actor: string;
       }) => {
@@ -330,6 +332,7 @@ export function registerStartupCommands(program: Command): void {
           outcome: options.outcome,
           ...(options.customer === undefined ? {} : { customer: options.customer }),
           severity: options.severity,
+          category: options.category,
           sourceRefs: options.source
         });
 
@@ -353,6 +356,12 @@ export function registerStartupCommands(program: Command): void {
     )
     .option("--owner <text>", "Handoff owner")
     .option("--system-of-record <text>", "Durable system of record")
+    .option("--handoff-due <date>", "Handoff due date")
+    .option(
+      "--status <status>",
+      "Handoff status: open, handoff-in-progress, or handoff-complete",
+      "handoff-in-progress"
+    )
     .option("--actor <id>", "RBAC subject for bottleneck audit writes", "local-admin")
     .action(
       async (options: {
@@ -360,6 +369,8 @@ export function registerStartupCommands(program: Command): void {
         bottleneck: string[];
         owner?: string;
         systemOfRecord?: string;
+        handoffDue?: string;
+        status: string;
         actor: string;
       }) => {
         await requireRbacPermission({
@@ -377,7 +388,11 @@ export function registerStartupCommands(program: Command): void {
           ...(options.owner === undefined ? {} : { owner: options.owner }),
           ...(options.systemOfRecord === undefined
             ? {}
-            : { systemOfRecord: options.systemOfRecord })
+            : { systemOfRecord: options.systemOfRecord }),
+          ...(options.handoffDue === undefined
+            ? {}
+            : { handoffDueDate: options.handoffDue }),
+          status: options.status
         });
 
         console.log(`Generated founder bottleneck evidence: ${result.evidenceId}`);
@@ -411,6 +426,18 @@ export function registerStartupCommands(program: Command): void {
       []
     )
     .option(
+      "--allowed-agent <id>",
+      "Agent allowed by delegation policy",
+      collectValues,
+      []
+    )
+    .option(
+      "--constrained-task <type>",
+      "Task type constrained by delegation policy",
+      collectValues,
+      []
+    )
+    .option(
       "--actor <id>",
       "RBAC subject for workflow registry generation",
       "local-admin"
@@ -421,6 +448,8 @@ export function registerStartupCommands(program: Command): void {
         workflow: string[];
         delegationRule: string[];
         approvalBoundary: string[];
+        allowedAgent: string[];
+        constrainedTask: string[];
         actor: string;
       }) => {
         await requireRbacPermission({
@@ -435,7 +464,9 @@ export function registerStartupCommands(program: Command): void {
           ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
           workflows: options.workflow,
           delegationRules: options.delegationRule,
-          approvalBoundaries: options.approvalBoundary
+          approvalBoundaries: options.approvalBoundary,
+          allowedAgents: options.allowedAgent,
+          constrainedTaskTypes: options.constrainedTask
         });
 
         console.log(`Generated workflow evidence: ${result.evidenceIds.join(", ")}`);
@@ -500,11 +531,52 @@ export function registerStartupCommands(program: Command): void {
     );
 
   startupScale
+    .command("memory-retrieve")
+    .description("Retrieve institutional memory for worker context and audit access.")
+    .option("--cwd <path>", "Workspace directory")
+    .option("--scope <scope>", "Memory scope", "startup/institutional-memory")
+    .option("--query <text>", "Search text")
+    .option("--limit <number>", "Maximum facts to return", "10")
+    .option("--actor <id>", "RBAC subject for memory retrieval", "local-admin")
+    .action(
+      async (options: {
+        cwd?: string;
+        scope: string;
+        query?: string;
+        limit: string;
+        actor: string;
+      }) => {
+        await requireRbacPermission({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          actor: options.actor,
+          permission: "memory.read",
+          action: "retrieve startup institutional memory"
+        });
+
+        const { retrieveStartupInstitutionalMemory } =
+          await import("./startup-automation.js");
+        const result = retrieveStartupInstitutionalMemory({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          scope: options.scope,
+          ...(options.query === undefined ? {} : { query: options.query }),
+          limit: parsePositiveInteger(options.limit, "--limit")
+        });
+
+        console.log(`Retrieval audit: ${result.retrievalId}`);
+        for (const fact of result.facts) {
+          console.log(`${fact.id} ${fact.scope}: ${fact.content}`);
+        }
+      }
+    );
+
+  startupScale
     .command("integration-map")
     .description("Generate integration depth and automation coverage evidence.")
     .option("--cwd <path>", "Workspace directory")
     .option("--integration <text>", "Customer workflow integration", collectValues, [])
     .option("--lock-in-signal <text>", "Workflow lock-in signal", collectValues, [])
+    .option("--adoption-signal <text>", "Adoption signal", collectValues, [])
+    .option("--workflow-signal <text>", "Workflow usage signal", collectValues, [])
     .option(
       "--automation-coverage <text>",
       "Automation coverage note",
@@ -521,6 +593,8 @@ export function registerStartupCommands(program: Command): void {
         cwd?: string;
         integration: string[];
         lockInSignal: string[];
+        adoptionSignal: string[];
+        workflowSignal: string[];
         automationCoverage: string[];
         actor: string;
       }) => {
@@ -536,13 +610,58 @@ export function registerStartupCommands(program: Command): void {
           ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
           integrations: options.integration,
           lockInSignals: options.lockInSignal,
-          automationCoverage: options.automationCoverage
+          automationCoverage: options.automationCoverage,
+          adoptionSignals: options.adoptionSignal,
+          workflowSignals: options.workflowSignal
         });
 
         console.log(`Generated integration map evidence: ${result.evidenceId}`);
         console.log(`Integrations: ${result.integrations.length}`);
         for (const file of result.files) {
           console.log(`Wrote integration map file: ${file}`);
+        }
+        logStructuredFiles(result.structuredFiles);
+      }
+    );
+
+  startupScale
+    .command("schedule-report")
+    .description("Record the recurring scale report schedule.")
+    .option("--cwd <path>", "Workspace directory")
+    .option("--cadence <cadence>", "Schedule cadence", "weekly")
+    .option("--owner <id>", "Schedule owner")
+    .option("--next-run <date>", "Next run date or timestamp")
+    .option("--period-template <template>", "Period template", "YYYY-WW")
+    .option("--actor <id>", "RBAC subject for schedule writes", "local-admin")
+    .action(
+      async (options: {
+        cwd?: string;
+        cadence: string;
+        owner?: string;
+        nextRun?: string;
+        periodTemplate: string;
+        actor: string;
+      }) => {
+        await requireRbacPermission({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          actor: options.actor,
+          permission: "evidence.write",
+          action: "record startup scale report schedule"
+        });
+
+        const { scheduleScaleReport } = await import("./startup-automation.js");
+        const result = await scheduleScaleReport({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          cadence: options.cadence,
+          ...(options.owner === undefined ? {} : { owner: options.owner }),
+          ...(options.nextRun === undefined ? {} : { nextRunAt: options.nextRun }),
+          periodTemplate: options.periodTemplate
+        });
+
+        console.log(`Recorded scale report schedule evidence: ${result.evidenceId}`);
+        console.log(`Next command: ${result.nextCommand}`);
+        for (const file of result.files) {
+          console.log(`Wrote schedule file: ${file}`);
         }
         logStructuredFiles(result.structuredFiles);
       }
@@ -835,7 +954,7 @@ export function registerStartupCommands(program: Command): void {
     .option("--cwd <path>", "Workspace directory")
     .requiredOption(
       "--type <type>",
-      "Evidence type: customer_interview, competitor, metric, metric_snapshot, measurement_framework, agent_context, repo_readiness, security_baseline, migration_plan, rollback_plan, release_plan, hypothesis, problem_hypothesis, user_hypothesis, solution_hypothesis, disconfirming, support_triage, founder_bottleneck, workflow_registry, delegation_policy, institutional_memory, ops_report, integration_map, ops_sop, gtm_artifact, decision, acceptable_debt, false_positive, or observability"
+      "Evidence type: customer_interview, competitor, metric, metric_snapshot, measurement_framework, agent_context, repo_readiness, security_baseline, migration_plan, rollback_plan, release_plan, hypothesis, problem_hypothesis, user_hypothesis, solution_hypothesis, disconfirming, support_triage, founder_bottleneck, workflow_registry, delegation_policy, institutional_memory, memory_retrieval, ops_schedule, ops_report, integration_map, ops_sop, gtm_artifact, decision, acceptable_debt, false_positive, or observability"
     )
     .requiredOption("--summary <text>", "Evidence summary")
     .option("--source <ref>", "Evidence source reference", collectValues, [])
@@ -1068,6 +1187,16 @@ function parseStartupHypothesisStatus(
   throw new Error(
     "--status must be one of: open, validated, invalidated, needs-more-evidence"
   );
+}
+
+function parsePositiveInteger(value: string, optionName: string): number {
+  const parsed = Number(value);
+
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    throw new Error(`${optionName} must be a positive integer`);
+  }
+
+  return parsed;
 }
 
 async function requireRbacPermission(options: {

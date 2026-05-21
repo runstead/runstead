@@ -444,6 +444,7 @@ describe("startup evidence ledger", () => {
           "workflow registry is missing",
           "delegation policy is missing",
           "institutional memory evidence is missing",
+          "scale report schedule is missing",
           "recurring ops report is missing",
           "integration depth map is missing",
           "ops SOP evidence is missing",
@@ -457,6 +458,7 @@ describe("startup evidence ledger", () => {
         ["workflow_registry", "Recurring workflows are registered"],
         ["delegation_policy", "Agent delegation boundaries are recorded"],
         ["institutional_memory", "Founder context is captured"],
+        ["ops_schedule", "Weekly scale report schedule is recorded"],
         ["ops_report", "Weekly ops report generated"],
         ["integration_map", "Customer workflow integrations are mapped"],
         ["ops_sop", "Support SOP is generated"],
@@ -467,6 +469,7 @@ describe("startup evidence ledger", () => {
           cwd: workspace,
           type,
           summary,
+          content: scaleEvidenceContent(type),
           goalId: created.goal.id,
           now: new Date("2026-05-14T03:20:00.000Z")
         });
@@ -629,6 +632,38 @@ function launchRemediationContent(type: string): string {
     remediationTask: `Maintain ${type} evidence for launch readiness`,
     acceptanceCriteria: `${type} evidence is reviewed before launch`
   });
+}
+
+function scaleEvidenceContent(type: string): string {
+  if (type === "founder_bottleneck") {
+    return JSON.stringify({
+      status: "handoff-complete",
+      handoffDueDate: "2026-05-13"
+    });
+  }
+
+  if (type === "delegation_policy") {
+    return JSON.stringify({
+      allowedAgents: ["codex_cli"],
+      constrainedTaskTypes: ["startup_remediation"]
+    });
+  }
+
+  if (type === "integration_map") {
+    return JSON.stringify({
+      adoptionSignals: ["Two customers use the integration weekly"],
+      workflowSignals: ["Launch review starts from the integration"]
+    });
+  }
+
+  if (type === "gtm_artifact") {
+    return JSON.stringify({
+      evidenceRefs: ["startup:metric"],
+      productState: "beta"
+    });
+  }
+
+  return JSON.stringify({ recorded: true });
 }
 
 async function writeVerifierArtifact(input: {
