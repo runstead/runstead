@@ -24,3 +24,12 @@ benchmarks:
       - sops_generated
       - support_triage_ready
       - gtm_artifacts_verified
+  - id: dogfood-saas
+    fixture: dogfood-saas
+    acceptance_contracts:
+      - hypotheses_validated
+      - verifier_report_recorded
+      - analytics_snapshot_attached
+      - launch_readiness_report_ready
+      - support_category_aggregated
+      - scale_gate_passed

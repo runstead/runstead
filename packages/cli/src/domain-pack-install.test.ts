@@ -184,7 +184,15 @@ describe("installDomainPack", () => {
       const domainYaml = await readFile(join(packRoot, "domain.yaml"), "utf8");
       await writeFile(
         join(packRoot, "domain.yaml"),
-        domainYaml.replace("version: 0.1.0", "version: 0.2.0"),
+        `${domainYaml.replace("version: 0.1.0", "version: 0.2.0")}\n${[
+          "migrations:",
+          "  - from_version: 0.1.0",
+          "    to_version: 0.2.0",
+          "    description: Add customer ops launch contracts.",
+          "    steps:",
+          "      - Rebuild generated tasks from the upgraded pack.",
+          "      - Re-run pack evals before resuming active goals."
+        ].join("\n")}\n`,
         "utf8"
       );
 
@@ -225,6 +233,10 @@ describe("installDomainPack", () => {
         });
         expect(result.previousManifest?.domain.version).toBe("0.1.0");
         expect(result.manifest.domain.version).toBe("0.2.0");
+        expect(result.migrationSteps).toEqual([
+          "Rebuild generated tasks from the upgraded pack.",
+          "Re-run pack evals before resuming active goals."
+        ]);
         expect(installedManifest.domain.version).toBe("0.2.0");
         expect(event).toMatchObject({
           type: "domain_pack.upgraded",
@@ -236,6 +248,10 @@ describe("installDomainPack", () => {
           id: "customer-ops",
           previousVersion: "0.1.0",
           nextVersion: "0.2.0",
+          migrationSteps: [
+            "Rebuild generated tasks from the upgraded pack.",
+            "Re-run pack evals before resuming active goals."
+          ],
           activeGoals: 0,
           activeTasks: 0,
           forced: false

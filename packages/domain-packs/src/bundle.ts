@@ -54,7 +54,8 @@ const DomainPackBundleArtifactSchema: z.ZodType<DomainPackBundleArtifact> = z.ob
     domain: z.object({
       id: z.string().min(1),
       version: z.string().min(1),
-      name: z.string().min(1)
+      name: z.string().min(1),
+      schemaVersion: z.number().int().positive().optional()
     }),
     compatibility: z.object({
       runsteadMinVersion: z.string().min(1),
@@ -67,6 +68,53 @@ const DomainPackBundleArtifactSchema: z.ZodType<DomainPackBundleArtifact> = z.ob
     evals: z.array(z.string().min(1)),
     requiredTools: z.array(z.string().min(1)),
     supportedWorkers: z.array(z.string().min(1)),
+    migrations: z
+      .array(
+        z.object({
+          fromVersion: z.string().min(1),
+          toVersion: z.string().min(1),
+          description: z.string().min(1),
+          steps: z.array(z.string().min(1))
+        })
+      )
+      .default([]),
+    repoTemplates: z
+      .array(
+        z.object({
+          id: z.string().min(1),
+          label: z.string().min(1),
+          description: z.string().min(1),
+          requiredSignals: z.array(z.string().min(1))
+        })
+      )
+      .default([]),
+    gateThresholds: z
+      .record(
+        z.string(),
+        z.object({
+          maxCriticalBlockers: z.number().int().nonnegative().optional(),
+          maxMajorBlockers: z.number().int().nonnegative().optional(),
+          minimumEvidenceCompleteness: z.number().min(0).max(1).optional(),
+          minimumReportQuality: z.number().min(0).max(1).optional()
+        })
+      )
+      .default({}),
+    reportSections: z
+      .array(
+        z.object({
+          id: z.string().min(1),
+          title: z.string().min(1),
+          description: z.string().min(1),
+          evidenceTypes: z.array(z.string().min(1))
+        })
+      )
+      .default([]),
+    evalQuality: z
+      .object({
+        minimumScore: z.number().min(0).max(1),
+        requiredContracts: z.array(z.string().min(1))
+      })
+      .optional(),
     files: z.array(
       z.object({
         path: z.string().min(1),

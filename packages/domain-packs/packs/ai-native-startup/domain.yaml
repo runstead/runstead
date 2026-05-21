@@ -1,4 +1,5 @@
 id: ai-native-startup
+schema_version: 1
 version: 0.1.0
 name: AI-native Startup
 description: Govern AI-coded MVP work with startup-specific context, measurement, readiness, and verifier evidence.
@@ -66,3 +67,92 @@ security:
     - "infra/prod/**"
     - "billing/**"
     - "compliance/**"
+
+migrations:
+  - from_version: 0.0.0
+    to_version: 0.1.0
+    description: Install initial startup lifecycle tasks, security policy, fixtures, and launch readiness evidence contracts.
+    steps:
+      - Install the ai-native-startup domain pack into .runstead/domains.
+      - Generate startup context, measurement framework, repo readiness, and security baseline evidence.
+      - Run launch readiness report once evidence is recorded.
+
+repo_templates:
+  - id: saas
+    label: AI-coded SaaS
+    description: Auth, database, billing, analytics, support, deployment, and launch gates.
+    required_signals:
+      - auth
+      - database
+      - billing
+      - analytics
+      - support
+      - deployment
+  - id: chrome-extension
+    label: Chrome Extension
+    description: Extension manifest, permissions, store review, privacy notes, and release rollback.
+    required_signals:
+      - manifest
+      - permissions
+      - privacy
+      - store_review
+  - id: api-service
+    label: API Service
+    description: HTTP surface, schema contract, auth, rate limits, observability, and rollback.
+    required_signals:
+      - api_contract
+      - auth
+      - rate_limit
+      - observability
+  - id: landing-waitlist
+    label: Landing + Waitlist
+    description: Public claim evidence, waitlist funnel, consent, analytics, and launch copy gates.
+    required_signals:
+      - gtm_claims
+      - waitlist
+      - consent
+      - analytics
+
+gate_thresholds:
+  mvp:
+    max_critical_blockers: 0
+    max_major_blockers: 1
+    minimum_evidence_completeness: 0.7
+    minimum_report_quality: 0.7
+  launch:
+    max_critical_blockers: 0
+    max_major_blockers: 0
+    minimum_evidence_completeness: 0.9
+    minimum_report_quality: 0.85
+  scale:
+    max_critical_blockers: 0
+    max_major_blockers: 0
+    minimum_evidence_completeness: 0.95
+    minimum_report_quality: 0.9
+
+report_sections:
+  - id: repo-readiness
+    title: Repository Readiness
+    description: Scripts, CI, verifier evidence, and protected path review.
+    evidence_types:
+      - startup_repo_readiness
+      - command_output
+  - id: measurement
+    title: Measurement Readiness
+    description: Activation, retention, false-positive, cohort, and trend signals.
+    evidence_types:
+      - startup_measurement_framework
+      - startup_metric_snapshot
+  - id: security-launch-risk
+    title: Security And Launch Risk
+    description: Secrets, dependencies, license, rollback, privacy, and third-party integration risk.
+    evidence_types:
+      - startup_security_baseline
+      - startup_rollback_plan
+
+eval_quality:
+  minimum_score: 0.85
+  required_contracts:
+    - verifier_report_recorded
+    - launch_readiness_report_ready
+    - scale_gate_passed

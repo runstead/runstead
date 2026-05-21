@@ -58,6 +58,7 @@ describe("cli entrypoint", () => {
       expect.arrayContaining([
         "install",
         "manifest",
+        "maturity",
         "pack",
         "show",
         "uninstall",

@@ -15,7 +15,7 @@ export interface DomainPackManifestFile {
 
 export interface DomainPackManifest {
   schemaVersion: 1;
-  domain: Pick<DomainPack, "id" | "version" | "name">;
+  domain: Pick<DomainPack, "id" | "version" | "name" | "schemaVersion">;
   compatibility: DomainPack["compatibility"];
   defaultPolicy: string;
   goalTemplates: string[];
@@ -24,6 +24,11 @@ export interface DomainPackManifest {
   evals: string[];
   requiredTools: string[];
   supportedWorkers: string[];
+  migrations: NonNullable<DomainPack["migrations"]>;
+  repoTemplates: NonNullable<DomainPack["repoTemplates"]>;
+  gateThresholds: NonNullable<DomainPack["gateThresholds"]>;
+  reportSections: NonNullable<DomainPack["reportSections"]>;
+  evalQuality?: DomainPack["evalQuality"];
   files: DomainPackManifestFile[];
 }
 
@@ -55,7 +60,8 @@ const DomainPackManifestSchema = z.object({
   domain: z.object({
     id: z.string().min(1),
     version: z.string().min(1),
-    name: z.string().min(1)
+    name: z.string().min(1),
+    schemaVersion: z.number().int().positive().optional()
   }),
   compatibility: z.object({
     runsteadMinVersion: z.string().min(1),
@@ -68,6 +74,53 @@ const DomainPackManifestSchema = z.object({
   evals: z.array(z.string().min(1)),
   requiredTools: z.array(z.string().min(1)),
   supportedWorkers: z.array(z.string().min(1)),
+  migrations: z
+    .array(
+      z.object({
+        fromVersion: z.string().min(1),
+        toVersion: z.string().min(1),
+        description: z.string().min(1),
+        steps: z.array(z.string().min(1))
+      })
+    )
+    .default([]),
+  repoTemplates: z
+    .array(
+      z.object({
+        id: z.string().min(1),
+        label: z.string().min(1),
+        description: z.string().min(1),
+        requiredSignals: z.array(z.string().min(1))
+      })
+    )
+    .default([]),
+  gateThresholds: z
+    .record(
+      z.string(),
+      z.object({
+        maxCriticalBlockers: z.number().int().nonnegative().optional(),
+        maxMajorBlockers: z.number().int().nonnegative().optional(),
+        minimumEvidenceCompleteness: z.number().min(0).max(1).optional(),
+        minimumReportQuality: z.number().min(0).max(1).optional()
+      })
+    )
+    .default({}),
+  reportSections: z
+    .array(
+      z.object({
+        id: z.string().min(1),
+        title: z.string().min(1),
+        description: z.string().min(1),
+        evidenceTypes: z.array(z.string().min(1))
+      })
+    )
+    .default([]),
+  evalQuality: z
+    .object({
+      minimumScore: z.number().min(0).max(1),
+      requiredContracts: z.array(z.string().min(1))
+    })
+    .optional(),
   files: z.array(DomainPackManifestFileSchema)
 });
 
@@ -101,7 +154,10 @@ export async function buildDomainPackManifest(
     domain: {
       id: domain.id,
       version: domain.version,
-      name: domain.name
+      name: domain.name,
+      ...(domain.schemaVersion === undefined
+        ? {}
+        : { schemaVersion: domain.schemaVersion })
     },
     compatibility: domain.compatibility,
     defaultPolicy: domain.defaultPolicy,
@@ -111,6 +167,11 @@ export async function buildDomainPackManifest(
     evals: validation.evals.map((evaluation) => evaluation.id),
     requiredTools: [...domain.requiredTools],
     supportedWorkers: [...domain.supportedWorkers],
+    migrations: domain.migrations ?? [],
+    repoTemplates: domain.repoTemplates ?? [],
+    gateThresholds: domain.gateThresholds ?? {},
+    reportSections: domain.reportSections ?? [],
+    ...(domain.evalQuality === undefined ? {} : { evalQuality: domain.evalQuality }),
     files: files.sort((left, right) => left.path.localeCompare(right.path))
   };
 }
@@ -351,6 +412,11 @@ function manifestMetadata(
     fixtures: manifest.fixtures,
     evals: manifest.evals,
     requiredTools: manifest.requiredTools,
-    supportedWorkers: manifest.supportedWorkers
+    supportedWorkers: manifest.supportedWorkers,
+    migrations: manifest.migrations,
+    repoTemplates: manifest.repoTemplates,
+    gateThresholds: manifest.gateThresholds,
+    reportSections: manifest.reportSections,
+    ...(manifest.evalQuality === undefined ? {} : { evalQuality: manifest.evalQuality })
   };
 }

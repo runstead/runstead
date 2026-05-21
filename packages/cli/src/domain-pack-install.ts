@@ -68,6 +68,7 @@ export interface UpgradeDomainPackResult {
   manifestPath: string;
   installedFiles: string[];
   previousManifest?: DomainPackManifest;
+  migrationSteps: string[];
   activeGoals: number;
   activeTasks: number;
   forced: boolean;
@@ -232,6 +233,10 @@ export async function upgradeDomainPack(
   }
 
   const previousManifest = await readInstalledManifest(manifestPath);
+  const migrationSteps = domainPackMigrationSteps({
+    ...(previousManifest === undefined ? {} : { previousManifest }),
+    manifest
+  });
   const database = openRunsteadDatabase(resolved.stateDb);
 
   try {
@@ -261,6 +266,7 @@ export async function upgradeDomainPack(
         manifestPath,
         ...(previousManifest === undefined ? {} : { previousManifest }),
         manifest,
+        migrationSteps,
         activeGoals: usage.activeGoals,
         activeTasks: usage.activeTasks,
         forced: options.force === true,
@@ -276,6 +282,7 @@ export async function upgradeDomainPack(
       manifestPath,
       installedFiles,
       ...(previousManifest === undefined ? {} : { previousManifest }),
+      migrationSteps,
       activeGoals: usage.activeGoals,
       activeTasks: usage.activeTasks,
       forced: options.force === true
@@ -432,6 +439,7 @@ function domainPackUpgradedEvent(input: {
   manifestPath: string;
   previousManifest?: DomainPackManifest;
   manifest: DomainPackManifest;
+  migrationSteps: string[];
   activeGoals: number;
   activeTasks: number;
   forced: boolean;
@@ -450,10 +458,28 @@ function domainPackUpgradedEvent(input: {
       nextVersion: input.manifest.domain.version,
       previousFiles: input.previousManifest?.files.length ?? null,
       nextFiles: input.manifest.files.length,
+      migrationSteps: input.migrationSteps,
       activeGoals: input.activeGoals,
       activeTasks: input.activeTasks,
       forced: input.forced
     },
     createdAt: input.createdAt
   };
+}
+
+function domainPackMigrationSteps(input: {
+  previousManifest?: DomainPackManifest;
+  manifest: DomainPackManifest;
+}): string[] {
+  const previousVersion = input.previousManifest?.domain.version;
+  const nextVersion = input.manifest.domain.version;
+
+  return (input.manifest.migrations ?? [])
+    .filter((migration) =>
+      previousVersion === undefined
+        ? migration.toVersion === nextVersion
+        : migration.fromVersion === previousVersion &&
+          migration.toVersion === nextVersion
+    )
+    .flatMap((migration) => migration.steps);
 }

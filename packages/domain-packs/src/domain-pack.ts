@@ -20,8 +20,42 @@ export const DomainPackSecuritySchema = z.object({
   protectedPaths: z.array(z.string().min(1))
 });
 
+export const DomainPackMigrationSchema = z.object({
+  fromVersion: z.string().regex(SEMVER_PATTERN),
+  toVersion: z.string().regex(SEMVER_PATTERN),
+  description: z.string().min(1),
+  steps: z.array(z.string().min(1)).min(1)
+});
+
+export const DomainPackRepoTemplateSchema = z.object({
+  id: z.string().min(1),
+  label: z.string().min(1),
+  description: z.string().min(1),
+  requiredSignals: z.array(z.string().min(1)).min(1)
+});
+
+export const DomainPackGateThresholdSchema = z.object({
+  maxCriticalBlockers: z.number().int().nonnegative().optional(),
+  maxMajorBlockers: z.number().int().nonnegative().optional(),
+  minimumEvidenceCompleteness: z.number().min(0).max(1).optional(),
+  minimumReportQuality: z.number().min(0).max(1).optional()
+});
+
+export const DomainPackReportSectionSchema = z.object({
+  id: z.string().min(1),
+  title: z.string().min(1),
+  description: z.string().min(1),
+  evidenceTypes: z.array(z.string().min(1)).min(1)
+});
+
+export const DomainPackEvalQualitySchema = z.object({
+  minimumScore: z.number().min(0).max(1),
+  requiredContracts: z.array(z.string().min(1)).min(1)
+});
+
 export const DomainPackSchema = z.object({
   id: z.string().regex(DOMAIN_PACK_ID_PATTERN),
+  schemaVersion: z.number().int().positive().optional(),
   version: z.string().regex(SEMVER_PATTERN),
   name: z.string().min(1),
   description: z.string().min(1),
@@ -33,13 +67,48 @@ export const DomainPackSchema = z.object({
   defaultVerifiers: z.array(z.string().min(1)),
   requiredTools: z.array(z.string().min(1)),
   supportedWorkers: z.array(z.string().min(1)),
-  security: DomainPackSecuritySchema.optional()
+  security: DomainPackSecuritySchema.optional(),
+  migrations: z.array(DomainPackMigrationSchema).optional(),
+  repoTemplates: z.array(DomainPackRepoTemplateSchema).optional(),
+  gateThresholds: z.record(z.string(), DomainPackGateThresholdSchema).optional(),
+  reportSections: z.array(DomainPackReportSectionSchema).optional(),
+  evalQuality: DomainPackEvalQualitySchema.optional()
 });
 
 export type DomainPack = z.infer<typeof DomainPackSchema>;
 
+const DomainPackMigrationYamlSchema = z.object({
+  from_version: z.string().regex(SEMVER_PATTERN),
+  to_version: z.string().regex(SEMVER_PATTERN),
+  description: z.string().min(1),
+  steps: z.array(z.string().min(1)).min(1)
+});
+const DomainPackRepoTemplateYamlSchema = z.object({
+  id: z.string().min(1),
+  label: z.string().min(1),
+  description: z.string().min(1),
+  required_signals: z.array(z.string().min(1)).min(1)
+});
+const DomainPackGateThresholdYamlSchema = z.object({
+  max_critical_blockers: z.number().int().nonnegative().optional(),
+  max_major_blockers: z.number().int().nonnegative().optional(),
+  minimum_evidence_completeness: z.number().min(0).max(1).optional(),
+  minimum_report_quality: z.number().min(0).max(1).optional()
+});
+const DomainPackReportSectionYamlSchema = z.object({
+  id: z.string().min(1),
+  title: z.string().min(1),
+  description: z.string().min(1),
+  evidence_types: z.array(z.string().min(1)).min(1)
+});
+const DomainPackEvalQualityYamlSchema = z.object({
+  minimum_score: z.number().min(0).max(1),
+  required_contracts: z.array(z.string().min(1)).min(1)
+});
+
 const DomainPackYamlSchema = z.object({
   id: z.string().regex(DOMAIN_PACK_ID_PATTERN),
+  schema_version: z.number().int().positive().optional(),
   version: z.string().regex(SEMVER_PATTERN),
   name: z.string().min(1),
   description: z.string().min(1),
@@ -63,7 +132,12 @@ const DomainPackYamlSchema = z.object({
       untrusted_inputs: z.array(z.string().min(1)),
       protected_paths: z.array(z.string().min(1))
     })
-    .optional()
+    .optional(),
+  migrations: z.array(DomainPackMigrationYamlSchema).optional(),
+  repo_templates: z.array(DomainPackRepoTemplateYamlSchema).optional(),
+  gate_thresholds: z.record(z.string(), DomainPackGateThresholdYamlSchema).optional(),
+  report_sections: z.array(DomainPackReportSectionYamlSchema).optional(),
+  eval_quality: DomainPackEvalQualityYamlSchema.optional()
 });
 
 export function parseDomainPack(input: unknown): DomainPack {
@@ -75,6 +149,9 @@ export function parseDomainPackYaml(input: unknown): DomainPack {
 
   return DomainPackSchema.parse({
     id: parsed.id,
+    ...(parsed.schema_version === undefined
+      ? {}
+      : { schemaVersion: parsed.schema_version }),
     version: parsed.version,
     name: parsed.name,
     description: parsed.description,
@@ -102,7 +179,71 @@ export function parseDomainPackYaml(input: unknown): DomainPack {
         : {
             untrustedInputs: parsed.security.untrusted_inputs,
             protectedPaths: parsed.security.protected_paths
+          },
+    ...(parsed.migrations === undefined
+      ? {}
+      : {
+          migrations: parsed.migrations.map((migration) => ({
+            fromVersion: migration.from_version,
+            toVersion: migration.to_version,
+            description: migration.description,
+            steps: migration.steps
+          }))
+        }),
+    ...(parsed.repo_templates === undefined
+      ? {}
+      : {
+          repoTemplates: parsed.repo_templates.map((template) => ({
+            id: template.id,
+            label: template.label,
+            description: template.description,
+            requiredSignals: template.required_signals
+          }))
+        }),
+    ...(parsed.gate_thresholds === undefined
+      ? {}
+      : {
+          gateThresholds: Object.fromEntries(
+            Object.entries(parsed.gate_thresholds).map(([stage, threshold]) => [
+              stage,
+              {
+                ...(threshold.max_critical_blockers === undefined
+                  ? {}
+                  : { maxCriticalBlockers: threshold.max_critical_blockers }),
+                ...(threshold.max_major_blockers === undefined
+                  ? {}
+                  : { maxMajorBlockers: threshold.max_major_blockers }),
+                ...(threshold.minimum_evidence_completeness === undefined
+                  ? {}
+                  : {
+                      minimumEvidenceCompleteness:
+                        threshold.minimum_evidence_completeness
+                    }),
+                ...(threshold.minimum_report_quality === undefined
+                  ? {}
+                  : { minimumReportQuality: threshold.minimum_report_quality })
+              }
+            ])
+          )
+        }),
+    ...(parsed.report_sections === undefined
+      ? {}
+      : {
+          reportSections: parsed.report_sections.map((section) => ({
+            id: section.id,
+            title: section.title,
+            description: section.description,
+            evidenceTypes: section.evidence_types
+          }))
+        }),
+    ...(parsed.eval_quality === undefined
+      ? {}
+      : {
+          evalQuality: {
+            minimumScore: parsed.eval_quality.minimum_score,
+            requiredContracts: parsed.eval_quality.required_contracts
           }
+        })
   });
 }
 

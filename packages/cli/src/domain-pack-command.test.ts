@@ -14,4 +14,21 @@ describe("domain pack command helpers", () => {
     expect(report).toContain("Manifest files:");
     expect(report).toContain("Validation: valid");
   });
+
+  it("shows startup pack maturity metadata for founder-facing domain packs", async () => {
+    const result = await showDomainPack("ai-native-startup");
+    const report = formatDomainPackShowResult(result);
+
+    expect(result.entry.id).toBe("ai-native-startup");
+    expect(result.maturity.passed).toBe(true);
+    expect(report).toContain(
+      "Repo templates: 4 (saas, chrome-extension, api-service, landing-waitlist)"
+    );
+    expect(report).toContain("Gate thresholds: 3 (mvp, launch, scale)");
+    expect(report).toContain(
+      "Report sections: 3 (repo-readiness, measurement, security-launch-risk)"
+    );
+    expect(report).toContain("Migrations: 1 (0.0.0->0.1.0)");
+    expect(report).toContain("Maturity: passed (100%)");
+  });
 });

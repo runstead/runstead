@@ -1697,6 +1697,7 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
         console.log(`Destination: ${result.destination}`);
         console.log(`Manifest: ${result.manifestPath}`);
         console.log(`Files: ${result.installedFiles.length}`);
+        console.log(`Migration steps: ${result.migrationSteps.length}`);
         console.log(`Active goals: ${result.activeGoals}`);
         console.log(`Active tasks: ${result.activeTasks}`);
       }
@@ -1713,6 +1714,23 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
 
       console.log(formatDomainPackValidationResult(result));
       if (!result.valid) {
+        process.exitCode = 1;
+      }
+    });
+
+  domain
+    .command("maturity")
+    .description(
+      "Assess domain pack maturity for schema, migrations, gates, fixtures, and reports."
+    )
+    .argument("<path>", "Domain pack directory")
+    .action(async (path: string) => {
+      const { assessDomainPackMaturity, formatDomainPackMaturityResult } =
+        await import("@runstead/domain-packs");
+      const result = await assessDomainPackMaturity(path);
+
+      console.log(formatDomainPackMaturityResult(result));
+      if (!result.passed) {
         process.exitCode = 1;
       }
     });

@@ -76,7 +76,25 @@ describe("validateDomainPackDir", () => {
     expect(result.evals.map((evaluation) => evaluation.id)).toEqual([
       "validation-ledger-smoke",
       "ai-coded-mvp-smoke",
-      "ops-handoff-smoke"
+      "ops-handoff-smoke",
+      "dogfood-saas"
+    ]);
+    expect(result.domain?.schemaVersion).toBe(1);
+    expect(result.domain?.repoTemplates?.map((template) => template.id)).toEqual([
+      "saas",
+      "chrome-extension",
+      "api-service",
+      "landing-waitlist"
+    ]);
+    expect(Object.keys(result.domain?.gateThresholds ?? {})).toEqual([
+      "mvp",
+      "launch",
+      "scale"
+    ]);
+    expect(result.domain?.reportSections?.map((section) => section.id)).toEqual([
+      "repo-readiness",
+      "measurement",
+      "security-launch-risk"
     ]);
     expect(
       result.goalTemplates.find((template) => template.id === "build-mvp")?.generated

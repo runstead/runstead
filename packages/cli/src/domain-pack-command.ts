@@ -2,9 +2,11 @@ import { join } from "node:path";
 
 import {
   buildDomainPackManifest,
+  assessDomainPackMaturity,
   resolveDomainPackRef,
   validateDomainPackDir,
   type DomainPackManifest,
+  type DomainPackMaturityResult,
   type DomainPackRegistryEntry,
   type DomainPackValidationResult
 } from "@runstead/domain-packs";
@@ -21,6 +23,7 @@ export interface ShowDomainPackResult {
   entry: DomainPackRegistryEntry;
   validation: DomainPackValidationResult;
   manifest: DomainPackManifest;
+  maturity: DomainPackMaturityResult;
 }
 
 export async function showDomainPack(
@@ -39,15 +42,17 @@ export async function showDomainPack(
       ? {}
       : { includeBuiltIns: options.includeBuiltIns })
   });
-  const [validation, manifest] = await Promise.all([
+  const [validation, manifest, maturity] = await Promise.all([
     validateDomainPackDir(entry.root),
-    buildDomainPackManifest(entry.root)
+    buildDomainPackManifest(entry.root),
+    assessDomainPackMaturity(entry.root)
   ]);
 
   return {
     entry,
     validation,
-    manifest
+    manifest,
+    maturity
   };
 }
 
@@ -65,10 +70,15 @@ export function formatDomainPackShowResult(result: ShowDomainPackResult): string
     `Task types: ${formatCountedList(domain.taskTypes)}`,
     `Fixtures: ${formatCountedList(result.validation.fixtures.map((fixture) => fixture.id))}`,
     `Evals: ${formatCountedList(result.validation.evals.map((evaluation) => evaluation.id))}`,
+    `Repo templates: ${formatCountedList(domain.repoTemplates?.map((template) => template.id) ?? [])}`,
+    `Gate thresholds: ${formatCountedList(Object.keys(domain.gateThresholds ?? {}))}`,
+    `Report sections: ${formatCountedList(domain.reportSections?.map((section) => section.id) ?? [])}`,
+    `Migrations: ${formatCountedList(domain.migrations?.map((migration) => `${migration.fromVersion}->${migration.toVersion}`) ?? [])}`,
     `Required tools: ${formatCountedList(domain.requiredTools)}`,
     `Supported workers: ${formatCountedList(domain.supportedWorkers)}`,
     `Manifest files: ${result.manifest.files.length}`,
-    `Validation: ${result.validation.valid ? "valid" : "invalid"}`
+    `Validation: ${result.validation.valid ? "valid" : "invalid"}`,
+    `Maturity: ${result.maturity.passed ? "passed" : "needs work"} (${Math.round(result.maturity.score * 100)}%)`
   ].join("\n");
 }
 
