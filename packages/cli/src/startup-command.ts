@@ -46,6 +46,50 @@ export function registerStartupCommands(program: Command): void {
       }
     );
 
+  startup
+    .command("assess")
+    .description("Assess startup gates across MVP, launch, and scale.")
+    .option("--cwd <path>", "Workspace directory")
+    .option("--stage <stage>", "Stage to assess: all, mvp, launch, or scale", "all")
+    .option("--domain <id>", "Domain id to evaluate", "ai-native-startup")
+    .option("--actor <id>", "RBAC subject for assessment", "local-admin")
+    .action(
+      async (options: {
+        cwd?: string;
+        stage: string;
+        domain: string;
+        actor: string;
+      }) => {
+        await requireRbacPermission({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          actor: options.actor,
+          permission: "evidence.read",
+          action: "assess startup gates"
+        });
+
+        const { checkStartupGate } = await import("./startup-evidence.js");
+        const stages = parseStartupAssessStages(options.stage);
+        const results = [];
+
+        for (const stage of stages) {
+          results.push(
+            await checkStartupGate({
+              ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+              domain: options.domain,
+              stage
+            })
+          );
+        }
+
+        console.log("Startup assessment:");
+        for (const result of results) {
+          console.log(
+            `- ${result.stage}: ${result.passed ? "passed" : "blocked"} (${result.blockers.length} blocker${result.blockers.length === 1 ? "" : "s"})`
+          );
+        }
+      }
+    );
+
   const startupContext = startup
     .command("context")
     .description("Generate startup agent context artifacts.");
@@ -295,6 +339,87 @@ export function registerStartupCommands(program: Command): void {
       }
       logStructuredFiles(result.structuredFiles);
     });
+
+  startupLaunch
+    .command("prepare")
+    .description("Prepare launch readiness artifacts and generate a readiness report.")
+    .option("--cwd <path>", "Workspace directory")
+    .option("--domain <id>", "Domain id to evaluate", "ai-native-startup")
+    .option("--actor <id>", "RBAC subject for launch preparation", "local-admin")
+    .action(async (options: { cwd?: string; domain: string; actor: string }) => {
+      await requireRbacPermission({
+        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+        actor: options.actor,
+        permission: "evidence.write",
+        action: "prepare startup launch readiness"
+      });
+      await requireRbacPermission({
+        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+        actor: options.actor,
+        permission: "audit.read",
+        action: "generate startup launch readiness report"
+      });
+
+      const { generateRepoReadinessAudit, generateSecurityBaseline } =
+        await import("./startup-automation.js");
+      const { generateLaunchReadinessReport } =
+        await import("./launch-readiness-report.js");
+      const readiness = await generateRepoReadinessAudit({
+        ...(options.cwd === undefined ? {} : { cwd: options.cwd })
+      });
+      const security = await generateSecurityBaseline({
+        ...(options.cwd === undefined ? {} : { cwd: options.cwd })
+      });
+      const report = await generateLaunchReadinessReport({
+        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+        domain: options.domain
+      });
+
+      console.log(`Prepared repo readiness evidence: ${readiness.evidenceId}`);
+      console.log(`Prepared security baseline evidence: ${security.evidenceId}`);
+      console.log(`Generated launch readiness report: ${report.reportPath}`);
+      console.log(`Status: ${report.status}`);
+      console.log(`Blockers: ${report.blockers.length}`);
+    });
+
+  startupLaunch
+    .command("report")
+    .description("Generate the startup launch readiness report.")
+    .option("--cwd <path>", "Workspace directory")
+    .option("--domain <id>", "Domain id to evaluate", "ai-native-startup")
+    .option("--print", "Print the generated markdown")
+    .option("--actor <id>", "RBAC subject for report generation", "local-admin")
+    .action(
+      async (options: {
+        cwd?: string;
+        domain: string;
+        print?: boolean;
+        actor: string;
+      }) => {
+        await requireRbacPermission({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          actor: options.actor,
+          permission: "audit.read",
+          action: "generate startup launch readiness report"
+        });
+
+        const { generateLaunchReadinessReport } =
+          await import("./launch-readiness-report.js");
+        const report = await generateLaunchReadinessReport({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          domain: options.domain
+        });
+
+        console.log(`Generated launch readiness report: ${report.reportPath}`);
+        console.log(`Status: ${report.status}`);
+        console.log(`Blockers: ${report.blockers.length}`);
+
+        if (options.print === true) {
+          console.log("");
+          console.log(report.markdown);
+        }
+      }
+    );
 
   startupLaunch
     .command("support-triage")
@@ -1154,6 +1279,18 @@ function parseStartupGateStage(value: string): "idea" | "mvp" | "launch" | "scal
   }
 
   throw new Error("--stage must be one of: idea, mvp, launch, scale");
+}
+
+function parseStartupAssessStages(value: string): ("mvp" | "launch" | "scale")[] {
+  if (value === "all") {
+    return ["mvp", "launch", "scale"];
+  }
+
+  if (value === "mvp" || value === "launch" || value === "scale") {
+    return [value];
+  }
+
+  throw new Error("--stage must be one of: all, mvp, launch, scale");
 }
 
 function parseStartupInitStage(value: string): "mvp" | "launch" | "scale" {

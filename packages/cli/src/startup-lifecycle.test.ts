@@ -227,6 +227,33 @@ describe("startup CLI lifecycle", () => {
 
       expect(launchGate).toContain("Status: passed");
 
+      const launchAssessment = await runCli(
+        "startup",
+        "assess",
+        "--cwd",
+        workspace,
+        "--stage",
+        "launch"
+      );
+      const launchPrepare = await runCli(
+        "startup",
+        "launch",
+        "prepare",
+        "--cwd",
+        workspace
+      );
+      const launchReport = await runCli(
+        "startup",
+        "launch",
+        "report",
+        "--cwd",
+        workspace
+      );
+
+      expect(launchAssessment).toContain("- launch: passed");
+      expect(launchPrepare).toContain("Generated launch readiness report:");
+      expect(launchReport).toContain("Generated launch readiness report:");
+
       await runCli("startup", "init", "--cwd", workspace, "--stage", "scale");
       await runCli(
         "startup",

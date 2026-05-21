@@ -357,6 +357,7 @@ describe("cli entrypoint", () => {
       (command) => command.name() === "startup"
     );
     const init = startup?.commands.find((command) => command.name() === "init");
+    const assess = startup?.commands.find((command) => command.name() === "assess");
     const context = startup?.commands.find((command) => command.name() === "context");
     const contextGenerate = context?.commands.find(
       (command) => command.name() === "generate"
@@ -371,6 +372,12 @@ describe("cli entrypoint", () => {
     const launchAudit = launch?.commands.find((command) => command.name() === "audit");
     const launchSecurityBaseline = launch?.commands.find(
       (command) => command.name() === "security-baseline"
+    );
+    const launchPrepare = launch?.commands.find(
+      (command) => command.name() === "prepare"
+    );
+    const launchReport = launch?.commands.find(
+      (command) => command.name() === "report"
     );
     const launchSupportTriage = launch?.commands.find(
       (command) => command.name() === "support-triage"
@@ -402,12 +409,18 @@ describe("cli entrypoint", () => {
       (command) => command.name() === "add"
     );
     const evidence = startup?.commands.find((command) => command.name() === "evidence");
+    const artifact = startup?.commands.find((command) => command.name() === "artifact");
+    const remediate = startup?.commands.find(
+      (command) => command.name() === "remediate"
+    );
     const evidenceAdd = evidence?.commands.find((command) => command.name() === "add");
     const gate = startup?.commands.find((command) => command.name() === "gate");
     const gateCheck = gate?.commands.find((command) => command.name() === "check");
 
     expect(startup?.commands.map((command) => command.name())).toEqual(
       expect.arrayContaining([
+        "artifact",
+        "assess",
         "context",
         "evidence",
         "gate",
@@ -415,8 +428,12 @@ describe("cli entrypoint", () => {
         "init",
         "launch",
         "measurement",
+        "remediate",
         "scale"
       ])
+    );
+    expect(assess?.options.map((option) => option.long)).toEqual(
+      expect.arrayContaining(["--actor", "--cwd", "--domain", "--stage"])
     );
     expect(init?.options.map((option) => option.long)).toEqual(
       expect.arrayContaining(["--cwd", "--force", "--profile", "--stage"])
@@ -458,6 +475,12 @@ describe("cli entrypoint", () => {
     );
     expect(launchSecurityBaseline?.options.map((option) => option.long)).toEqual(
       expect.arrayContaining(["--actor", "--cwd"])
+    );
+    expect(launchPrepare?.options.map((option) => option.long)).toEqual(
+      expect.arrayContaining(["--actor", "--cwd", "--domain"])
+    );
+    expect(launchReport?.options.map((option) => option.long)).toEqual(
+      expect.arrayContaining(["--actor", "--cwd", "--domain", "--print"])
     );
     expect(launchSupportTriage?.options.map((option) => option.long)).toEqual(
       expect.arrayContaining([
@@ -527,6 +550,12 @@ describe("cli entrypoint", () => {
         "--summary",
         "--type"
       ])
+    );
+    expect(artifact?.commands.map((command) => command.name())).toEqual(
+      expect.arrayContaining(["list", "show"])
+    );
+    expect(remediate?.options.map((option) => option.long)).toEqual(
+      expect.arrayContaining(["--actor", "--cwd", "--domain", "--stage"])
     );
     expect(gateCheck?.options.map((option) => option.long)).toEqual(
       expect.arrayContaining(["--actor", "--cwd", "--domain", "--stage"])
