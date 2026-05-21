@@ -12,8 +12,10 @@ import type { TaskType } from "@runstead/domain-packs";
 import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sqlite";
 
 import {
+  inspectBuildCommand,
   inspectLintCommand,
   inspectTestCommand,
+  inspectTypecheckCommand,
   type PackageScriptCommandInspection
 } from "./repo-inspection.js";
 import { requireRunsteadStateDbSync } from "./runstead-root.js";
@@ -128,6 +130,33 @@ export async function buildRunLocalVerifiersTask(
       commands
     },
     createdAt
+  };
+
+  return {
+    task,
+    event
+  };
+}
+
+export async function buildCommandVerifierDomainTask(
+  options: BuildDomainTaskOptions
+): Promise<{ task: Task; event: RunsteadEvent }> {
+  const cwd = resolve(options.cwd ?? process.cwd());
+  const generated = buildDomainTask(options);
+  const commands = await inspectCommandVerifierScripts(cwd);
+  const task: Task = {
+    ...generated.task,
+    input: {
+      ...generated.task.input,
+      commands
+    }
+  };
+  const event: RunsteadEvent = {
+    ...generated.event,
+    payload: {
+      ...generated.event.payload,
+      commands
+    }
   };
 
   return {
@@ -408,9 +437,27 @@ function resolveStateDb(cwd = process.cwd()): string {
 }
 
 interface LocalVerifierCommand {
-  name: "test" | "lint";
+  name: "test" | "lint" | "typecheck" | "build";
   command: string;
   rawScript: string;
+}
+
+async function inspectCommandVerifierScripts(
+  cwd: string
+): Promise<LocalVerifierCommand[]> {
+  const [testCommand, lintCommand, typecheckCommand, buildCommand] = await Promise.all([
+    inspectTestCommand(cwd),
+    inspectLintCommand(cwd),
+    inspectTypecheckCommand(cwd),
+    inspectBuildCommand(cwd)
+  ]);
+
+  return [
+    verifierCommand("test", testCommand),
+    verifierCommand("lint", lintCommand),
+    verifierCommand("typecheck", typecheckCommand),
+    verifierCommand("build", buildCommand)
+  ].filter((command) => command !== undefined);
 }
 
 function verifierCommand(

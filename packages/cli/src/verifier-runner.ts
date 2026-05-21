@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { access } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
 import {
@@ -15,6 +16,7 @@ import {
   ToolActionDeniedError
 } from "./governed-action.js";
 import { withRunsteadManagerLock } from "./manager-lock.js";
+import { showGoal } from "./goals.js";
 import { loadPolicyProfileFromFile } from "./policy-loader.js";
 import { type ActionEnvelope, type PolicyProfile } from "./policy.js";
 import { requireRunsteadStateDbSync } from "./runstead-root.js";
@@ -74,13 +76,13 @@ export async function runTaskVerifiersUnlocked(
   const stateDb = resolvedState.stateDb;
   const createdAt = (options.now ?? new Date()).toISOString();
   const projectTaskState = options.mode !== "evidence_only";
-  const policy = await loadVerifierPolicy(root);
   const task = loadVerifierTask({
     cwd,
     taskId: options.taskId,
     ...(options.claim === undefined ? {} : { claim: options.claim }),
     ...(options.now === undefined ? {} : { now: options.now })
   });
+  const policy = await loadVerifierPolicy({ root, cwd, task });
   const runningTask: Task = {
     ...task,
     status: "running",
@@ -492,8 +494,53 @@ function verifierActionId(input: {
   return `act_${input.task.id}_${input.index}_${verifier}_${hash.slice(0, 12)}`;
 }
 
-async function loadVerifierPolicy(root: string): Promise<PolicyProfile> {
-  return loadPolicyProfileFromFile(join(root, "policies", "repo-maintenance.yaml"));
+async function loadVerifierPolicy(input: {
+  root: string;
+  cwd: string;
+  task: Task;
+}): Promise<PolicyProfile> {
+  const goal = showGoal({ cwd: input.cwd, id: input.task.goalId }).goal;
+
+  for (const path of policyCandidatePaths({
+    root: input.root,
+    domain: goal.domain,
+    ...(goal.policyRef === undefined ? {} : { policyRef: goal.policyRef })
+  })) {
+    if (await exists(path)) {
+      return loadPolicyProfileFromFile(path);
+    }
+  }
+
+  return loadPolicyProfileFromFile(
+    join(input.root, "policies", "repo-maintenance.yaml")
+  );
+}
+
+function policyCandidatePaths(input: {
+  root: string;
+  domain: string;
+  policyRef?: string;
+}): string[] {
+  const fallback = join(input.root, "policies", "repo-maintenance.yaml");
+
+  if (input.policyRef === undefined) {
+    return [fallback];
+  }
+
+  return [
+    join(input.root, input.policyRef),
+    join(input.root, "domains", input.domain, input.policyRef),
+    fallback
+  ].filter((path, index, paths) => paths.indexOf(path) === index);
+}
+
+async function exists(path: string): Promise<boolean> {
+  try {
+    await access(path);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function taskEvent(

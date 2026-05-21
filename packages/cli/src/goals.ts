@@ -17,7 +17,11 @@ import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sql
 import { inspectGitRepository } from "./repo-inspection.js";
 import { resolveRepositoryReference } from "./repositories.js";
 import { requireRunsteadStateDb, requireRunsteadStateDbSync } from "./runstead-root.js";
-import { buildDomainTask, buildRunLocalVerifiersTask } from "./tasks.js";
+import {
+  buildCommandVerifierDomainTask,
+  buildDomainTask,
+  buildRunLocalVerifiersTask
+} from "./tasks.js";
 
 export interface CreateGoalOptions {
   cwd?: string;
@@ -256,6 +260,18 @@ async function buildGeneratedGoalTasks(input: {
       throw new Error(
         `Goal template references unknown task type ${taskTypeId} in domain pack ${input.bundle.domain.id}`
       );
+    }
+
+    if (taskTypeId === "run_mvp_verifiers") {
+      generated.push(
+        await buildCommandVerifierDomainTask({
+          cwd: input.cwd,
+          goal: input.goal,
+          taskType,
+          now: input.now
+        })
+      );
+      continue;
     }
 
     generated.push(
