@@ -46,7 +46,8 @@ export const STARTUP_EVIDENCE_TYPES = [
   "decision",
   "acceptable_debt",
   "false_positive",
-  "observability"
+  "observability",
+  "remediation_failure"
 ] as const;
 
 export type StartupEvidenceType = (typeof STARTUP_EVIDENCE_TYPES)[number];

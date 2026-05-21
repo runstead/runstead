@@ -41,15 +41,17 @@ describe("startup remediation", () => {
         now: new Date("2026-05-14T03:10:00.000Z")
       });
       const formatted = formatStartupRemediationPlan(first);
-      const metricTask = first.tasks.find((item) =>
-        item.blocker.toLowerCase().includes("metric")
+      const measurementTask = first.tasks.find((item) =>
+        /metric|measurement/.test(item.blocker.toLowerCase())
       );
 
       expect(first.status).toBe("blocked");
       expect(first.reportPath).toContain("launch-readiness-ai-native-startup.md");
       expect(first.tasks).toHaveLength(first.blockers.length);
       expect(first.tasks.every((item) => !item.reused)).toBe(true);
-      expect(metricTask?.task).toMatchObject({
+      expect(first.plan.nodes).toHaveLength(first.tasks.length);
+      expect(first.plan.edges.length).toBeGreaterThan(0);
+      expect(measurementTask?.task).toMatchObject({
         type: "startup_remediation",
         status: "queued",
         priority: "high",
@@ -58,6 +60,10 @@ describe("startup remediation", () => {
           workerCandidates: ["codex_cli", "claude_code"],
           verifier: "runstead startup gate check --stage launch",
           expectedEvidence: ["startup_metric", "startup_measurement_framework"],
+          acceptanceCriteria: [
+            "measurement framework or metric snapshot evidence is recorded",
+            "metric source, threshold, current value, and freshness are reviewable"
+          ],
           completionEvidence: [
             "diff_ref",
             "checkpoint_ref",
@@ -67,7 +73,12 @@ describe("startup remediation", () => {
           ]
         }
       });
-      expect(metricTask?.task.verifiers).toEqual([
+      expect(measurementTask?.severity).toBe("critical");
+      expect(measurementTask?.acceptanceCriteria).toContain(
+        "measurement framework or metric snapshot evidence is recorded"
+      );
+      expect(first.tasks[1]?.dependsOn).toContain(first.tasks[0]?.task.id);
+      expect(measurementTask?.task.verifiers).toEqual([
         "evidence:startup_metric",
         "command:startup_gate_check"
       ]);
@@ -159,9 +170,15 @@ describe("startup remediation", () => {
       expect(result.executed).toHaveLength(1);
       expect(result.executed[0]).toMatchObject({
         status: "completed",
-        resolved: false
+        resolved: false,
+        failureEvidenceId: expect.stringMatching(/^ev_/)
       });
       expect(result.finalGate.passed).toBe(false);
+      expect(result.executionOutcome).toBe("blocked");
+      expect(result.budget).toMatchObject({
+        maxTasks: 1,
+        selectedTasks: 1
+      });
       expect(localAgentTasks).toHaveLength(1);
       expect(executedRemediationTask?.output).toMatchObject({
         execution: {
@@ -172,6 +189,7 @@ describe("startup remediation", () => {
       });
       expect(formatted).toContain("Execution:");
       expect(formatted).toContain("Worker: codex_cli");
+      expect(formatted).toContain("failureEvidence=");
       expect(formatted).toContain("Final gate:");
     } finally {
       await rm(workspace, { force: true, recursive: true });

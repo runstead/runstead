@@ -19,7 +19,12 @@ import {
   type RunLocalAgentTaskResult
 } from "./local-agent.js";
 import { requireRunsteadStateDb } from "./runstead-root.js";
-import { checkStartupGate, type StartupGateStage } from "./startup-evidence.js";
+import {
+  addStartupEvidence,
+  checkStartupGate,
+  type StartupGateFindingSeverity,
+  type StartupGateStage
+} from "./startup-evidence.js";
 import { listTasks } from "./tasks.js";
 import type { WorkerProcessRunner } from "./wrapped-worker.js";
 
@@ -34,6 +39,9 @@ export interface StartupRemediationTaskSummary {
   task: Task;
   blocker: string;
   reused: boolean;
+  severity: StartupGateFindingSeverity;
+  acceptanceCriteria: string[];
+  dependsOn: string[];
 }
 
 export interface GenerateStartupRemediationPlanResult {
@@ -45,6 +53,7 @@ export interface GenerateStartupRemediationPlanResult {
   blockers: string[];
   reportPath?: string;
   tasks: StartupRemediationTaskSummary[];
+  plan: StartupRemediationPlanGraph;
   nextCommands: string[];
 }
 
@@ -66,6 +75,32 @@ export interface StartupRemediationExecutionSummary {
   resolved: boolean;
   remainingBlockers: string[];
   gateEventId: string;
+  failureEvidenceId?: string;
+}
+
+export interface StartupRemediationPlanGraph {
+  nodes: StartupRemediationPlanNode[];
+  edges: StartupRemediationPlanEdge[];
+  budget: StartupRemediationBudget;
+}
+
+export interface StartupRemediationPlanNode {
+  taskId: string;
+  blocker: string;
+  severity: StartupGateFindingSeverity;
+  acceptanceCriteria: string[];
+}
+
+export interface StartupRemediationPlanEdge {
+  fromTaskId: string;
+  toTaskId: string;
+  reason: string;
+}
+
+export interface StartupRemediationBudget {
+  maxTasks?: number;
+  selectedTasks: number;
+  skippedTasks: number;
 }
 
 export interface ExecuteStartupRemediationPlanResult extends GenerateStartupRemediationPlanResult {
@@ -77,6 +112,8 @@ export interface ExecuteStartupRemediationPlanResult extends GenerateStartupReme
     warnings: string[];
     eventId: string;
   };
+  executionOutcome: "clear" | "partial" | "blocked";
+  budget: StartupRemediationBudget;
   finalReportPath?: string;
 }
 
@@ -97,7 +134,9 @@ export async function generateStartupRemediationPlan(
       ? await generateLaunchReadinessReport({ cwd, domain, now })
       : undefined;
   const gate = await checkStartupGate({ cwd, domain, stage, now });
-  const blockers = uniqueStrings([...(report?.blockers ?? []), ...gate.blockers]);
+  const blockers = prioritizedBlockers(
+    uniqueBlockers([...(report?.blockers ?? []), ...gate.blockers])
+  );
   const goal = activeStartupGoal({ cwd, domain });
   const existingTasks = listTasks({ cwd }).tasks.filter(
     (task) => task.domain === domain && task.type === REMEDIATION_TASK_TYPE
@@ -110,7 +149,14 @@ export async function generateStartupRemediationPlan(
       const existing = reusableRemediationTask(existingTasks, stage, blocker);
 
       if (existing !== undefined) {
-        createdTasks.push({ task: existing, blocker, reused: true });
+        createdTasks.push(
+          remediationTaskSummary({
+            task: existing,
+            blocker,
+            reused: true,
+            gate
+          })
+        );
         continue;
       }
 
@@ -131,11 +177,19 @@ export async function generateStartupRemediationPlan(
         }
       });
       existingTasks.push(task);
-      createdTasks.push({ task, blocker, reused: false });
+      createdTasks.push(
+        remediationTaskSummary({
+          task,
+          blocker,
+          reused: false,
+          gate
+        })
+      );
     }
   } finally {
     database.close();
   }
+  const plannedTasks = withRemediationDependencies(createdTasks);
 
   return {
     root: resolvedState.root,
@@ -145,7 +199,8 @@ export async function generateStartupRemediationPlan(
     status: blockers.length === 0 ? "clear" : "blocked",
     blockers,
     ...(report?.reportPath === undefined ? {} : { reportPath: report.reportPath }),
-    tasks: createdTasks,
+    tasks: plannedTasks,
+    plan: remediationPlanGraph(plannedTasks),
     nextCommands: remediationNextCommands(stage)
   };
 }
@@ -166,6 +221,11 @@ export async function executeStartupRemediationPlan(
   const executionTargets =
     options.maxTasks === undefined ? plan.tasks : plan.tasks.slice(0, options.maxTasks);
   const executed: StartupRemediationExecutionSummary[] = [];
+  const budget: StartupRemediationBudget = {
+    ...(options.maxTasks === undefined ? {} : { maxTasks: options.maxTasks }),
+    selectedTasks: executionTargets.length,
+    skippedTasks: Math.max(0, plan.tasks.length - executionTargets.length)
+  };
 
   for (const item of executionTargets) {
     const execution = await executeRemediationTask({
@@ -217,6 +277,8 @@ export async function executeStartupRemediationPlan(
       warnings: finalGate.warnings,
       eventId: finalGate.event.eventId
     },
+    executionOutcome: remediationExecutionOutcome(finalGate.passed, executed),
+    budget,
     ...(finalReport?.reportPath === undefined
       ? {}
       : { finalReportPath: finalReport.reportPath })
@@ -239,7 +301,13 @@ export function formatStartupRemediationPlan(
     listOrNone(
       result.tasks,
       (item) =>
-        `- ${item.task.id} ${item.reused ? "(reused)" : "(created)"}: ${item.blocker}`
+        `- ${item.task.id} ${item.reused ? "(reused)" : "(created)"} [${item.severity}]: ${item.blocker}`
+    ),
+    "",
+    "Dependencies:",
+    listOrNone(
+      result.plan.edges,
+      (edge) => `- ${edge.fromTaskId} -> ${edge.toTaskId}: ${edge.reason}`
     ),
     "",
     "Next commands:",
@@ -255,10 +323,12 @@ export function formatStartupRemediationExecution(
     "",
     "Execution:",
     `- Worker: ${result.worker}`,
+    `- Outcome: ${result.executionOutcome}`,
+    `- Budget: selected=${result.budget.selectedTasks} skipped=${result.budget.skippedTasks}`,
     listOrNone(
       result.executed,
       (item) =>
-        `- ${item.remediationTaskId} -> ${item.localAgentTaskId}: ${item.status}; resolved=${item.resolved ? "yes" : "no"}; remaining=${item.remainingBlockers.length}`
+        `- ${item.remediationTaskId} -> ${item.localAgentTaskId}: ${item.status}; resolved=${item.resolved ? "yes" : "no"}; remaining=${item.remainingBlockers.length}${item.failureEvidenceId === undefined ? "" : `; failureEvidence=${item.failureEvidenceId}`}`
     ),
     "",
     "Final gate:",
@@ -312,6 +382,19 @@ async function executeRemediationTask(input: {
     ...(input.now === undefined ? {} : { now: input.now })
   });
   const resolved = !gate.blockers.includes(input.item.blocker);
+  const failureEvidence =
+    resolved && run.status === "completed"
+      ? undefined
+      : await recordRemediationFailureEvidence({
+          cwd: input.cwd,
+          stage: input.stage,
+          blocker: input.item.blocker,
+          localAgentTaskId: created.task.id,
+          status: run.status,
+          summary: run.summary,
+          remainingBlockers: gate.blockers,
+          ...(input.now === undefined ? {} : { now: input.now })
+        });
   const execution: StartupRemediationExecutionSummary = {
     remediationTaskId: input.item.task.id,
     localAgentTaskId: created.task.id,
@@ -320,7 +403,10 @@ async function executeRemediationTask(input: {
     summary: run.summary,
     resolved,
     remainingBlockers: gate.blockers,
-    gateEventId: gate.event.eventId
+    gateEventId: gate.event.eventId,
+    ...(failureEvidence === undefined
+      ? {}
+      : { failureEvidenceId: failureEvidence.evidence.id })
   };
 
   await recordRemediationExecution({
@@ -341,6 +427,8 @@ function remediationWorkerPrompt(item: StartupRemediationTaskSummary): string {
     `Stage: ${String(item.task.input.stage)}`,
     `Scope: ${String(item.task.input.scope)}`,
     `Expected evidence: ${jsonStringArray(item.task.input.expectedEvidence).join(", ")}`,
+    `Acceptance criteria: ${item.acceptanceCriteria.join("; ")}`,
+    `Depends on: ${item.dependsOn.length === 0 ? "none" : item.dependsOn.join(", ")}`,
     `Verifier: ${String(item.task.input.verifier)}`,
     "",
     "After implementation, record or refresh the relevant Runstead startup evidence and leave the repo in a verifier-ready state.",
@@ -410,6 +498,107 @@ function remediationTaskStatus(
   return execution.resolved ? "completed" : "blocked";
 }
 
+function remediationTaskSummary(input: {
+  task: Task;
+  blocker: string;
+  reused: boolean;
+  gate: Awaited<ReturnType<typeof checkStartupGate>>;
+}): StartupRemediationTaskSummary {
+  const finding = input.gate.findings.find((item) => item.message === input.blocker);
+  const guidance = remediationGuidance(input.blocker);
+
+  return {
+    task: input.task,
+    blocker: input.blocker,
+    reused: input.reused,
+    severity: finding?.severity ?? "major",
+    acceptanceCriteria: jsonStringArray(input.task.input.acceptanceCriteria).length
+      ? jsonStringArray(input.task.input.acceptanceCriteria)
+      : guidance.acceptanceCriteria,
+    dependsOn: []
+  };
+}
+
+function withRemediationDependencies(
+  tasks: StartupRemediationTaskSummary[]
+): StartupRemediationTaskSummary[] {
+  const sorted = [...tasks].sort(
+    (a, b) =>
+      remediationGuidance(a.blocker).order - remediationGuidance(b.blocker).order
+  );
+
+  return sorted.map((item, index) => ({
+    ...item,
+    dependsOn: sorted.slice(0, index).map((previous) => previous.task.id)
+  }));
+}
+
+function remediationPlanGraph(
+  tasks: StartupRemediationTaskSummary[]
+): StartupRemediationPlanGraph {
+  return {
+    nodes: tasks.map((item) => ({
+      taskId: item.task.id,
+      blocker: item.blocker,
+      severity: item.severity,
+      acceptanceCriteria: item.acceptanceCriteria
+    })),
+    edges: tasks.flatMap((item) =>
+      item.dependsOn.map((dependency) => ({
+        fromTaskId: dependency,
+        toTaskId: item.task.id,
+        reason: "resolve earlier launch-readiness dependency first"
+      }))
+    ),
+    budget: {
+      selectedTasks: tasks.length,
+      skippedTasks: 0
+    }
+  };
+}
+
+function remediationExecutionOutcome(
+  finalGatePassed: boolean,
+  executed: StartupRemediationExecutionSummary[]
+): "clear" | "partial" | "blocked" {
+  if (finalGatePassed) {
+    return "clear";
+  }
+
+  return executed.some((item) => item.resolved) ? "partial" : "blocked";
+}
+
+async function recordRemediationFailureEvidence(input: {
+  cwd: string;
+  stage: StartupGateStage;
+  blocker: string;
+  localAgentTaskId: string;
+  status: RunLocalAgentTaskResult["status"];
+  summary: string;
+  remainingBlockers: string[];
+  now?: Date;
+}): Promise<Awaited<ReturnType<typeof addStartupEvidence>>> {
+  return addStartupEvidence({
+    cwd: input.cwd,
+    type: "remediation_failure",
+    summary: `Remediation unresolved: ${input.blocker}`,
+    gate: input.stage,
+    blocker: input.blocker,
+    content: JSON.stringify(
+      {
+        localAgentTaskId: input.localAgentTaskId,
+        status: input.status,
+        summary: input.summary,
+        remainingBlockers: input.remainingBlockers,
+        nextAction: "review blocker evidence or rerun remediation with tighter scope"
+      },
+      null,
+      2
+    ),
+    ...(input.now === undefined ? {} : { now: input.now })
+  });
+}
+
 function activeStartupGoal(input: { cwd: string; domain: string }): Goal {
   const goals = listGoals({ cwd: input.cwd }).goals.filter(
     (goal) => goal.domain === input.domain
@@ -456,6 +645,7 @@ function buildRemediationTask(input: {
     workerCandidates: ["codex_cli", "claude_code"],
     verifier: guidance.verifier,
     expectedEvidence: guidance.expectedEvidence,
+    acceptanceCriteria: guidance.acceptanceCriteria,
     completionEvidence: [
       "diff_ref",
       "checkpoint_ref",
@@ -510,6 +700,8 @@ function remediationGuidance(blocker: string): {
   verifier: string;
   verifiers: string[];
   expectedEvidence: string[];
+  acceptanceCriteria: string[];
+  order: number;
 } {
   const normalized = blocker.toLowerCase();
 
@@ -519,7 +711,12 @@ function remediationGuidance(blocker: string): {
         "Define or attach launch metric evidence with source, threshold, current value, and snapshot date.",
       verifier: "runstead startup gate check --stage launch",
       verifiers: ["evidence:startup_metric", "command:startup_gate_check"],
-      expectedEvidence: ["startup_metric", "startup_measurement_framework"]
+      expectedEvidence: ["startup_metric", "startup_measurement_framework"],
+      acceptanceCriteria: [
+        "measurement framework or metric snapshot evidence is recorded",
+        "metric source, threshold, current value, and freshness are reviewable"
+      ],
+      order: 20
     };
   }
 
@@ -529,7 +726,12 @@ function remediationGuidance(blocker: string): {
         "Run the MVP verifier task after the latest product change and attach passing command_output evidence.",
       verifier: "runstead verifier run <task-id>",
       verifiers: ["evidence:command_output", "command:startup_gate_check"],
-      expectedEvidence: ["command_output"]
+      expectedEvidence: ["command_output"],
+      acceptanceCriteria: [
+        "verifier command evidence exists",
+        "startup gate no longer reports missing passing verifier evidence"
+      ],
+      order: 30
     };
   }
 
@@ -539,7 +741,12 @@ function remediationGuidance(blocker: string): {
         "Produce or refresh the launch security baseline and remediate any high-risk findings.",
       verifier: "runstead startup launch security-baseline",
       verifiers: ["evidence:startup_security_baseline", "command:startup_gate_check"],
-      expectedEvidence: ["startup_security_baseline"]
+      expectedEvidence: ["startup_security_baseline"],
+      acceptanceCriteria: [
+        "security baseline evidence is recorded",
+        "critical launch security findings have owners or fixes"
+      ],
+      order: 15
     };
   }
 
@@ -549,7 +756,12 @@ function remediationGuidance(blocker: string): {
         "Fix repository readiness gaps such as missing scripts, CI, or launch-critical hygiene.",
       verifier: "runstead startup launch audit",
       verifiers: ["evidence:startup_repo_readiness", "command:startup_gate_check"],
-      expectedEvidence: ["startup_repo_readiness"]
+      expectedEvidence: ["startup_repo_readiness"],
+      acceptanceCriteria: [
+        "repo readiness evidence is recorded",
+        "required local verifier scripts or CI signals are present"
+      ],
+      order: 10
     };
   }
 
@@ -559,7 +771,11 @@ function remediationGuidance(blocker: string): {
         "Record migration owner, remediation task, and acceptance criteria for this launch.",
       verifier: "runstead startup gate check --stage launch",
       verifiers: ["evidence:startup_migration_plan", "command:startup_gate_check"],
-      expectedEvidence: ["startup_migration_plan"]
+      expectedEvidence: ["startup_migration_plan"],
+      acceptanceCriteria: [
+        "migration evidence has owner, task, and acceptance criteria"
+      ],
+      order: 40
     };
   }
 
@@ -569,7 +785,11 @@ function remediationGuidance(blocker: string): {
         "Record rollback owner, remediation task, and acceptance criteria for this launch.",
       verifier: "runstead startup gate check --stage launch",
       verifiers: ["evidence:startup_rollback_plan", "command:startup_gate_check"],
-      expectedEvidence: ["startup_rollback_plan"]
+      expectedEvidence: ["startup_rollback_plan"],
+      acceptanceCriteria: [
+        "rollback evidence has owner, task, and acceptance criteria"
+      ],
+      order: 45
     };
   }
 
@@ -579,7 +799,11 @@ function remediationGuidance(blocker: string): {
         "Record launch observability owner, remediation task, alert surface, and acceptance criteria.",
       verifier: "runstead startup gate check --stage launch",
       verifiers: ["evidence:startup_observability", "command:startup_gate_check"],
-      expectedEvidence: ["startup_observability"]
+      expectedEvidence: ["startup_observability"],
+      acceptanceCriteria: [
+        "observability evidence has owner, alert surface, and acceptance criteria"
+      ],
+      order: 50
     };
   }
 
@@ -589,7 +813,11 @@ function remediationGuidance(blocker: string): {
         "Map founder-only launch knowledge to an owner, system of record, and handoff acceptance check.",
       verifier: "runstead startup launch bottleneck-map",
       verifiers: ["evidence:startup_founder_bottleneck", "command:startup_gate_check"],
-      expectedEvidence: ["startup_founder_bottleneck"]
+      expectedEvidence: ["startup_founder_bottleneck"],
+      acceptanceCriteria: [
+        "founder bottleneck evidence assigns an owner and handoff status"
+      ],
+      order: 60
     };
   }
 
@@ -598,7 +826,9 @@ function remediationGuidance(blocker: string): {
       scope: "Attach an explicit decision record before accepting launch debt.",
       verifier: "runstead startup gate check --stage launch",
       verifiers: ["evidence:startup_decision", "command:startup_gate_check"],
-      expectedEvidence: ["startup_decision", "startup_acceptable_debt"]
+      expectedEvidence: ["startup_decision", "startup_acceptable_debt"],
+      acceptanceCriteria: ["accepted debt is linked to an explicit decision record"],
+      order: 70
     };
   }
 
@@ -606,7 +836,9 @@ function remediationGuidance(blocker: string): {
     scope: `Resolve launch readiness blocker: ${blocker}`,
     verifier: "runstead startup gate check --stage launch",
     verifiers: ["command:startup_gate_check"],
-    expectedEvidence: ["startup_evidence"]
+    expectedEvidence: ["startup_evidence"],
+    acceptanceCriteria: ["startup gate no longer reports this blocker"],
+    order: 90
   };
 }
 
@@ -622,8 +854,50 @@ function jsonStringArray(value: unknown): string[] {
     : [];
 }
 
-function uniqueStrings(values: string[]): string[] {
-  return [...new Set(values)];
+function uniqueBlockers(values: string[]): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+
+  for (const value of values) {
+    const key = blockerClusterKey(value);
+
+    if (seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    result.push(value);
+  }
+
+  return result;
+}
+
+function prioritizedBlockers(values: string[]): string[] {
+  return [...values].sort(
+    (a, b) => remediationGuidance(a).order - remediationGuidance(b).order
+  );
+}
+
+function blockerClusterKey(value: string): string {
+  const lowered = value.toLowerCase();
+
+  if (lowered.includes("metric") || lowered.includes("measurement")) {
+    return "measurement";
+  }
+
+  if (lowered.includes("verifier") || lowered.includes("command")) {
+    return "verifier";
+  }
+
+  if (lowered.includes("security") || lowered.includes("dependency")) {
+    return "security";
+  }
+
+  if (lowered.includes("repo") || lowered.includes("ci")) {
+    return "repo";
+  }
+
+  return lowered.replace(/\s+/g, " ").trim();
 }
 
 function listOrNone<T>(items: T[], formatter: (item: T) => string): string {
