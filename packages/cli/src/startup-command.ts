@@ -52,6 +52,24 @@ export function registerStartupCommands(program: Command): void {
     );
 
   startup
+    .command("status")
+    .description(
+      "Show the founder startup stage, gate blockers, evidence freshness, and next action."
+    )
+    .option("--cwd <path>", "Workspace directory")
+    .option("--domain <id>", "Domain id to evaluate", "ai-native-startup")
+    .action(async (options: { cwd?: string; domain: string }) => {
+      const { formatStartupStatus, getStartupStatus } =
+        await import("./startup-status.js");
+      const result = await getStartupStatus({
+        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+        domain: options.domain
+      });
+
+      console.log(formatStartupStatus(result));
+    });
+
+  startup
     .command("assess")
     .description("Assess startup gates across MVP, launch, and scale.")
     .option("--cwd <path>", "Workspace directory")
