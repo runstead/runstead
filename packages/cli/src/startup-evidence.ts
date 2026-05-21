@@ -124,6 +124,7 @@ export interface StartupEvidenceSourceInput {
   capturedAt?: string;
   freshnessDays?: number;
   hash?: string;
+  trustLevel?: string;
   provenance?: JsonObject;
 }
 
@@ -133,6 +134,7 @@ export interface StartupEvidenceSource {
   capturedAt: string;
   freshnessDays?: number;
   hash?: string;
+  trustLevel?: string;
   provenance?: JsonObject;
 }
 
@@ -1128,8 +1130,28 @@ function normalizeStartupEvidenceSource(
       ? {}
       : { freshnessDays: source.freshnessDays }),
     ...(source.hash === undefined ? {} : { hash: source.hash }),
+    ...(source.trustLevel === undefined
+      ? {}
+      : { trustLevel: normalizeTrustLevel(source.trustLevel) }),
     ...(source.provenance === undefined ? {} : { provenance: source.provenance })
   };
+}
+
+function normalizeTrustLevel(value: string): string {
+  const normalized = value.trim().toLowerCase();
+
+  if (
+    normalized === "low" ||
+    normalized === "medium" ||
+    normalized === "high" ||
+    normalized === "authoritative"
+  ) {
+    return normalized;
+  }
+
+  throw new Error(
+    "startup evidence source trustLevel must be one of: low, medium, high, authoritative"
+  );
 }
 
 function inferStartupEvidenceSourceKind(uri: string): string {

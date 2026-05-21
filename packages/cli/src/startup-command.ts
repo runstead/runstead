@@ -317,6 +317,90 @@ export function registerStartupCommands(program: Command): void {
       }
     );
 
+  const startupSource = startup
+    .command("source")
+    .description("Ingest startup evidence from external source connectors.");
+
+  startupSource
+    .command("record")
+    .description(
+      "Record GitHub, deployment, analytics, support, billing, or security source evidence."
+    )
+    .option("--cwd <path>", "Workspace directory")
+    .requiredOption(
+      "--connector <kind>",
+      "Connector: github_actions, github_pr, github_issue, deployment, observability, analytics, billing, support, dependency"
+    )
+    .requiredOption("--source-uri <uri>", "Canonical source URI")
+    .requiredOption("--summary <text>", "Evidence summary")
+    .option("--status <status>", "Source status or outcome")
+    .option("--captured-at <iso>", "Timestamp when the source was captured")
+    .option("--freshness-days <days>", "Maximum acceptable source age in days")
+    .option("--source-hash <hash>", "Optional hash of the captured source payload")
+    .option(
+      "--trust <level>",
+      "Source trust level: low, medium, high, authoritative",
+      "medium"
+    )
+    .option("--payload <json>", "Connector-specific JSON object payload")
+    .option("--goal <id>", "Associated goal id")
+    .option("--actor <id>", "RBAC subject for source evidence writes", "local-admin")
+    .action(
+      async (options: {
+        cwd?: string;
+        connector: string;
+        sourceUri: string;
+        summary: string;
+        status?: string;
+        capturedAt?: string;
+        freshnessDays?: string;
+        sourceHash?: string;
+        trust: string;
+        payload?: string;
+        goal?: string;
+        actor: string;
+      }) => {
+        await requireRbacPermission({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          actor: options.actor,
+          permission: "evidence.write",
+          action: "record startup source evidence"
+        });
+
+        const { recordStartupSourceEvidence } =
+          await import("./startup-source-connectors.js");
+        const result = await recordStartupSourceEvidence({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          connector: options.connector,
+          uri: options.sourceUri,
+          summary: options.summary,
+          ...(options.status === undefined ? {} : { status: options.status }),
+          ...(options.capturedAt === undefined
+            ? {}
+            : { capturedAt: options.capturedAt }),
+          ...(options.freshnessDays === undefined
+            ? {}
+            : {
+                freshnessDays: parsePositiveInteger(
+                  options.freshnessDays,
+                  "--freshness-days"
+                )
+              }),
+          ...(options.sourceHash === undefined
+            ? {}
+            : { sourceHash: options.sourceHash }),
+          trustLevel: options.trust,
+          ...(options.payload === undefined ? {} : { payload: options.payload }),
+          ...(options.goal === undefined ? {} : { goalId: options.goal })
+        });
+
+        console.log(`Recorded source evidence: ${result.evidence.id}`);
+        console.log(`Connector: ${result.connector}`);
+        console.log(`Evidence type: startup_${result.evidenceType}`);
+        console.log(`Artifact: ${result.artifactPath}`);
+      }
+    );
+
   startupMeasurement
     .command("snapshot")
     .description("Record a metric snapshot from analytics, query, CSV, or manual data.")
