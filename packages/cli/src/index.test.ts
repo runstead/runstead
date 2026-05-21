@@ -357,6 +357,7 @@ describe("cli entrypoint", () => {
       (command) => command.name() === "startup"
     );
     const init = startup?.commands.find((command) => command.name() === "init");
+    const onboard = startup?.commands.find((command) => command.name() === "onboard");
     const assess = startup?.commands.find((command) => command.name() === "assess");
     const context = startup?.commands.find((command) => command.name() === "context");
     const contextGenerate = context?.commands.find(
@@ -444,6 +445,9 @@ describe("cli entrypoint", () => {
     );
     expect(init?.options.map((option) => option.long)).toEqual(
       expect.arrayContaining(["--cwd", "--force", "--profile", "--stage"])
+    );
+    expect(onboard?.options.map((option) => option.long)).toEqual(
+      expect.arrayContaining(["--cwd", "--force", "--profile", "--write-ci"])
     );
     expect(contextGenerate?.options.map((option) => option.long)).toEqual(
       expect.arrayContaining([

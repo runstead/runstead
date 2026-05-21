@@ -140,6 +140,25 @@ describe("inspectPackageManager", () => {
     }
   });
 
+  it("falls back to npm when package.json exists without a lockfile", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-pm-"));
+
+    try {
+      await writeFile(join(workspace, "package.json"), "{}", "utf8");
+
+      const inspection = await inspectPackageManager(workspace);
+
+      expect(inspection).toMatchObject({
+        detected: true,
+        packageManager: "npm",
+        source: "package_json",
+        packageJsonPath: join(workspace, "package.json")
+      });
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
   it("returns undetected when no package metadata exists", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "runstead-pm-"));
 

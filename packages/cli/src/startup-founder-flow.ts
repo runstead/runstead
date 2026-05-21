@@ -27,17 +27,24 @@ import {
   checkStartupGate,
   type StartupGateCheckResult
 } from "./startup-evidence.js";
+import {
+  formatStartupRepoOnboarding,
+  prepareStartupRepoOnboarding,
+  type StartupRepoOnboardingResult
+} from "./startup-repo-onboarding.js";
 import type { WorkerProcessRunner } from "./wrapped-worker.js";
 
 export interface StartupFounderFlowOptions {
   cwd?: string;
   profile?: InitPolicyProfile;
   force?: boolean;
+  writeCi?: boolean;
   now?: Date;
 }
 
 export interface StartupOnboardResult {
   root: string;
+  repo: StartupRepoOnboardingResult;
   init: StartupInitResult;
   context: StartupGeneratedStep<GenerateStartupContextResult>;
   measurement: StartupGeneratedStep<GenerateMeasurementFrameworkResult>;
@@ -89,6 +96,13 @@ export async function startupOnboard(
   options: StartupFounderFlowOptions = {}
 ): Promise<StartupOnboardResult> {
   const cwd = resolve(options.cwd ?? process.cwd());
+  const repo = await prepareStartupRepoOnboarding({
+    cwd,
+    writeGitignore: true,
+    writeCi: options.writeCi === true,
+    force: options.force === true,
+    ...(options.now === undefined ? {} : { now: options.now })
+  });
   const init = await initStartup({
     cwd,
     stage: "mvp",
@@ -113,6 +127,7 @@ export async function startupOnboard(
 
   return {
     root: init.root,
+    repo,
     init,
     context,
     measurement,
@@ -255,6 +270,9 @@ export function formatStartupOnboard(result: StartupOnboardResult): string {
     "Startup onboard",
     `Root: ${result.root}`,
     `Goal: ${result.init.goal.id} ${result.init.goal.title}`,
+    "",
+    formatStartupRepoOnboarding(result.repo),
+    "",
     `Context: ${formatGeneratedStep(result.context)}`,
     `Measurement: ${formatGeneratedStep(result.measurement)}`,
     "",

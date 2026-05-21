@@ -72,6 +72,8 @@ describe("startup founder flow", () => {
 
       expect(onboard.context.status).toBe("generated");
       expect(onboard.measurement.status).toBe("generated");
+      expect(onboard.repo.stateBoundary.ignoredState).toBe(true);
+      expect(onboard.repo.packageManager).toBe("npm");
       expect(onboard.nextCommands).toContain(
         "runstead startup build-mvp --worker codex_cli"
       );

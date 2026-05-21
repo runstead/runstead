@@ -144,7 +144,13 @@ export async function inspectPackageManager(
   };
 
   if (await exists(packageJsonPath)) {
-    result.packageJsonPath = packageJsonPath;
+    return {
+      detected: true,
+      cwd: workspace,
+      packageManager: "npm",
+      source: "package_json",
+      packageJsonPath
+    };
   }
 
   return result;

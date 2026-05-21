@@ -101,18 +101,21 @@ export function registerStartupCommands(program: Command): void {
       "trusted-local"
     )
     .option("--force", "Overwrite generated context and measurement artifacts")
+    .option("--write-ci", "Generate a GitHub Actions verifier workflow")
     .action(
       async (options: {
         cwd?: string;
         profile: "default" | "trusted-local";
         force?: boolean;
+        writeCi?: boolean;
       }) => {
         const { formatStartupOnboard, startupOnboard } =
           await import("./startup-founder-flow.js");
         const result = await startupOnboard({
           ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
           profile: options.profile,
-          force: options.force === true
+          force: options.force === true,
+          writeCi: options.writeCi === true
         });
 
         console.log(formatStartupOnboard(result));
