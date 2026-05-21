@@ -688,6 +688,43 @@ export function registerStartupCommands(program: Command): void {
       }
     );
 
+  startup
+    .command("remediate")
+    .description("Generate worker-ready remediation tasks for startup gate blockers.")
+    .option("--cwd <path>", "Workspace directory")
+    .option(
+      "--stage <stage>",
+      "Stage to remediate: idea, mvp, launch, or scale",
+      "launch"
+    )
+    .option("--domain <id>", "Domain id to evaluate", "ai-native-startup")
+    .option("--actor <id>", "RBAC subject for remediation task creation", "local-admin")
+    .action(
+      async (options: {
+        cwd?: string;
+        stage: string;
+        domain: string;
+        actor: string;
+      }) => {
+        await requireRbacPermission({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          actor: options.actor,
+          permission: "task.run",
+          action: "create startup remediation tasks"
+        });
+
+        const { generateStartupRemediationPlan, formatStartupRemediationPlan } =
+          await import("./startup-remediation.js");
+        const result = await generateStartupRemediationPlan({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          domain: options.domain,
+          stage: parseStartupGateStage(options.stage)
+        });
+
+        console.log(formatStartupRemediationPlan(result));
+      }
+    );
+
   const startupGate = startup
     .command("gate")
     .description("Check startup stage gates against Runstead evidence.");
