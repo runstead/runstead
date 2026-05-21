@@ -11,9 +11,16 @@ import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sql
 
 import { listGoals } from "./goals.js";
 import { generateLaunchReadinessReport } from "./launch-readiness-report.js";
+import {
+  createLocalAgentTask,
+  runLocalAgentTask,
+  type LocalAgentWorkerKind,
+  type RunLocalAgentTaskResult
+} from "./local-agent.js";
 import { requireRunsteadStateDb } from "./runstead-root.js";
 import { checkStartupGate, type StartupGateStage } from "./startup-evidence.js";
 import { listTasks } from "./tasks.js";
+import type { WorkerProcessRunner } from "./wrapped-worker.js";
 
 export interface GenerateStartupRemediationPlanOptions {
   cwd?: string;
@@ -38,6 +45,38 @@ export interface GenerateStartupRemediationPlanResult {
   reportPath?: string;
   tasks: StartupRemediationTaskSummary[];
   nextCommands: string[];
+}
+
+export interface ExecuteStartupRemediationPlanOptions
+  extends GenerateStartupRemediationPlanOptions {
+  worker?: LocalAgentWorkerKind;
+  model?: string;
+  workerRunner?: WorkerProcessRunner;
+  maxTasks?: number;
+}
+
+export interface StartupRemediationExecutionSummary {
+  remediationTaskId: string;
+  localAgentTaskId: string;
+  blocker: string;
+  status: RunLocalAgentTaskResult["status"];
+  summary: string;
+  resolved: boolean;
+  remainingBlockers: string[];
+  gateEventId: string;
+}
+
+export interface ExecuteStartupRemediationPlanResult
+  extends GenerateStartupRemediationPlanResult {
+  worker: LocalAgentWorkerKind;
+  executed: StartupRemediationExecutionSummary[];
+  finalGate: {
+    passed: boolean;
+    blockers: string[];
+    warnings: string[];
+    eventId: string;
+  };
+  finalReportPath?: string;
 }
 
 const STARTUP_DOMAIN = "ai-native-startup";
@@ -110,6 +149,73 @@ export async function generateStartupRemediationPlan(
   };
 }
 
+export async function executeStartupRemediationPlan(
+  options: ExecuteStartupRemediationPlanOptions = {}
+): Promise<ExecuteStartupRemediationPlanResult> {
+  const cwd = resolve(options.cwd ?? process.cwd());
+  const domain = options.domain ?? STARTUP_DOMAIN;
+  const stage = options.stage ?? "launch";
+  const worker = options.worker ?? "codex_cli";
+  const plan = await generateStartupRemediationPlan({
+    cwd,
+    domain,
+    stage,
+    ...(options.now === undefined ? {} : { now: options.now })
+  });
+  const executionTargets =
+    options.maxTasks === undefined ? plan.tasks : plan.tasks.slice(0, options.maxTasks);
+  const executed: StartupRemediationExecutionSummary[] = [];
+
+  for (const item of executionTargets) {
+    const execution = await executeRemediationTask({
+      cwd,
+      domain,
+      stage,
+      worker,
+      item,
+      ...(options.model === undefined ? {} : { model: options.model }),
+      ...(options.workerRunner === undefined
+        ? {}
+        : { workerRunner: options.workerRunner }),
+      ...(options.now === undefined ? {} : { now: options.now })
+    });
+
+    executed.push(execution);
+  }
+
+  const finalGate = await checkStartupGate({
+    cwd,
+    domain,
+    stage,
+    ...(options.now === undefined ? {} : { now: options.now })
+  });
+  const finalReport =
+    stage === "launch"
+      ? await generateLaunchReadinessReport({
+          cwd,
+          domain,
+          ...(options.now === undefined ? {} : { now: options.now })
+        })
+      : undefined;
+
+  return {
+    ...plan,
+    status: finalGate.passed ? "clear" : "blocked",
+    blockers: finalGate.blockers,
+    worker,
+    executed,
+    finalGate: {
+      passed: finalGate.passed,
+      blockers: finalGate.blockers,
+      warnings: finalGate.warnings,
+      eventId: finalGate.event.eventId
+    },
+    ...(finalReport?.reportPath === undefined
+      ? {}
+      : { finalReportPath: finalReport.reportPath })
+  };
+}
+
 export function formatStartupRemediationPlan(
   result: GenerateStartupRemediationPlanResult
 ): string {
@@ -132,6 +238,161 @@ export function formatStartupRemediationPlan(
     "Next commands:",
     listOrNone(result.nextCommands, (command) => `- ${command}`)
   ].join("\n");
+}
+
+export function formatStartupRemediationExecution(
+  result: ExecuteStartupRemediationPlanResult
+): string {
+  return [
+    formatStartupRemediationPlan(result),
+    "",
+    "Execution:",
+    `- Worker: ${result.worker}`,
+    listOrNone(
+      result.executed,
+      (item) =>
+        `- ${item.remediationTaskId} -> ${item.localAgentTaskId}: ${item.status}; resolved=${item.resolved ? "yes" : "no"}; remaining=${item.remainingBlockers.length}`
+    ),
+    "",
+    "Final gate:",
+    `- Status: ${result.finalGate.passed ? "passed" : "blocked"}`,
+    `- Event: ${result.finalGate.eventId}`,
+    listOrNone(result.finalGate.blockers, (blocker) => `- blocker: ${blocker}`),
+    ...(result.finalReportPath === undefined
+      ? []
+      : ["", `Final report: ${result.finalReportPath}`])
+  ].join("\n");
+}
+
+async function executeRemediationTask(input: {
+  cwd: string;
+  domain: string;
+  stage: StartupGateStage;
+  worker: LocalAgentWorkerKind;
+  item: StartupRemediationTaskSummary;
+  model?: string;
+  workerRunner?: WorkerProcessRunner;
+  now?: Date;
+}): Promise<StartupRemediationExecutionSummary> {
+  const created = await createLocalAgentTask({
+    cwd: input.cwd,
+    title: `Remediate startup blocker: ${input.item.blocker}`,
+    prompt: remediationWorkerPrompt(input.item),
+    worker: input.worker,
+    mode: "repair",
+    checkpoint: true,
+    ...(input.model === undefined ? {} : { model: input.model }),
+    ...(input.now === undefined ? {} : { now: input.now })
+  });
+  const run = await runLocalAgentTask({
+    cwd: input.cwd,
+    taskId: created.task.id,
+    ...(input.workerRunner === undefined ? {} : { workerRunner: input.workerRunner }),
+    ...(input.now === undefined ? {} : { now: input.now })
+  });
+  const gate = await checkStartupGate({
+    cwd: input.cwd,
+    domain: input.domain,
+    stage: input.stage,
+    ...(input.now === undefined ? {} : { now: input.now })
+  });
+  const resolved = !gate.blockers.includes(input.item.blocker);
+  const execution: StartupRemediationExecutionSummary = {
+    remediationTaskId: input.item.task.id,
+    localAgentTaskId: created.task.id,
+    blocker: input.item.blocker,
+    status: run.status,
+    summary: run.summary,
+    resolved,
+    remainingBlockers: gate.blockers,
+    gateEventId: gate.event.eventId
+  };
+
+  await recordRemediationExecution({
+    cwd: input.cwd,
+    task: input.item.task,
+    execution,
+    ...(input.now === undefined ? {} : { now: input.now })
+  });
+
+  return execution;
+}
+
+function remediationWorkerPrompt(item: StartupRemediationTaskSummary): string {
+  return [
+    "Resolve the Runstead startup readiness blocker below.",
+    "",
+    `Blocker: ${item.blocker}`,
+    `Stage: ${String(item.task.input.stage)}`,
+    `Scope: ${String(item.task.input.scope)}`,
+    `Expected evidence: ${jsonStringArray(item.task.input.expectedEvidence).join(", ")}`,
+    `Verifier: ${String(item.task.input.verifier)}`,
+    "",
+    "After implementation, record or refresh the relevant Runstead startup evidence and leave the repo in a verifier-ready state.",
+    "Do not push, publish, or change unrelated product scope."
+  ].join("\n");
+}
+
+async function recordRemediationExecution(input: {
+  cwd: string;
+  task: Task;
+  execution: StartupRemediationExecutionSummary;
+  now?: Date;
+}): Promise<void> {
+  const resolvedState = await requireRunsteadStateDb(input.cwd);
+  const updatedAt = (input.now ?? new Date()).toISOString();
+  const status = remediationTaskStatus(input.execution);
+  const task: Task = {
+    ...input.task,
+    status,
+    attempt: input.task.attempt + 1,
+    output: {
+      ...input.task.output,
+      execution: {
+        localAgentTaskId: input.execution.localAgentTaskId,
+        status: input.execution.status,
+        summary: input.execution.summary,
+        resolved: input.execution.resolved,
+        remainingBlockers: input.execution.remainingBlockers,
+        gateEventId: input.execution.gateEventId
+      }
+    },
+    updatedAt
+  };
+  const database = openRunsteadDatabase(resolvedState.stateDb);
+
+  try {
+    appendEventAndProject(database, {
+      event: {
+        eventId: createRunsteadId("evt"),
+        type: "task.remediation_executed",
+        aggregateType: "task",
+        aggregateId: task.id,
+        payload: task.output ?? {},
+        createdAt: updatedAt
+      },
+      projection: {
+        type: "task",
+        value: task
+      }
+    });
+  } finally {
+    database.close();
+  }
+}
+
+function remediationTaskStatus(
+  execution: StartupRemediationExecutionSummary
+): Task["status"] {
+  if (execution.status === "waiting_approval") {
+    return "waiting_approval";
+  }
+
+  if (execution.status === "failed" || execution.status === "blocked") {
+    return execution.status;
+  }
+
+  return execution.resolved ? "completed" : "blocked";
 }
 
 function activeStartupGoal(input: { cwd: string; domain: string }): Goal {
@@ -338,6 +599,12 @@ function remediationNextCommands(stage: StartupGateStage): string[] {
   return stage === "launch"
     ? ["runstead startup gate check --stage launch", "runstead startup launch report"]
     : [`runstead startup gate check --stage ${stage}`];
+}
+
+function jsonStringArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string")
+    : [];
 }
 
 function uniqueStrings(values: string[]): string[] {

@@ -555,7 +555,16 @@ describe("cli entrypoint", () => {
       expect.arrayContaining(["list", "show"])
     );
     expect(remediate?.options.map((option) => option.long)).toEqual(
-      expect.arrayContaining(["--actor", "--cwd", "--domain", "--stage"])
+      expect.arrayContaining([
+        "--actor",
+        "--cwd",
+        "--domain",
+        "--execute",
+        "--max-tasks",
+        "--model",
+        "--stage",
+        "--worker"
+      ])
     );
     expect(gateCheck?.options.map((option) => option.long)).toEqual(
       expect.arrayContaining(["--actor", "--cwd", "--domain", "--stage"])
