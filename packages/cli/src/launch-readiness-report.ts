@@ -215,6 +215,7 @@ function readLaunchReadinessData(
       LEFT JOIN tasks t ON e.subject_type = 'task' AND e.subject_id = t.id
       WHERE t.domain = ?
          OR e.type = 'repo_inspection'
+         OR e.type = 'command_output'
          OR e.type LIKE 'startup_%'
       ORDER BY e.created_at DESC, e.id ASC
     `
@@ -365,17 +366,16 @@ function verifierStatus(data: LaunchReadinessReportData): string {
 }
 
 function testCoverageGaps(data: LaunchReadinessReportData): string {
+  const hasVerifierEvidence = hasEvidenceType(data.evidence, "command_output");
   const gaps = [
     ...(data.repo.commands.test.detected ? [] : ["test command is missing"]),
     ...(data.repo.commands.lint.detected ? [] : ["lint command is missing"]),
     ...(data.repo.commands.typecheck.detected ? [] : ["typecheck command is missing"]),
     ...(data.repo.commands.build.detected ? [] : ["build command is missing"]),
-    ...(hasCompletedTask(data.tasks, "run_mvp_verifiers")
+    ...(hasVerifierEvidence || hasCompletedTask(data.tasks, "run_mvp_verifiers")
       ? []
       : ["run_mvp_verifiers has not completed"]),
-    ...(hasEvidenceType(data.evidence, "command_output")
-      ? []
-      : ["no command_output evidence is recorded"])
+    ...(hasVerifierEvidence ? [] : ["no command_output evidence is recorded"])
   ];
 
   return listOrNone(gaps, (gap) => `- ${gap}`);
@@ -585,6 +585,8 @@ function recommendedTaskForRisk(risk: string): string {
 }
 
 function releaseBlockers(data: LaunchReadinessReportData): string[] {
+  const hasVerifierEvidence = hasEvidenceType(data.evidence, "command_output");
+
   return [
     ...(data.goals.length === 0 ? ["no startup goal exists"] : []),
     ...(data.repo.commands.test.detected ? [] : ["test command is missing"]),
@@ -592,12 +594,10 @@ function releaseBlockers(data: LaunchReadinessReportData): string[] {
     ...(data.repo.commands.typecheck.detected ? [] : ["typecheck command is missing"]),
     ...(data.repo.commands.build.detected ? [] : ["build command is missing"]),
     ...(data.repo.ci.detected ? [] : ["CI configuration is missing"]),
-    ...(hasCompletedTask(data.tasks, "run_mvp_verifiers")
+    ...(hasVerifierEvidence || hasCompletedTask(data.tasks, "run_mvp_verifiers")
       ? []
       : ["MVP verifier task has not completed"]),
-    ...(hasEvidenceType(data.evidence, "command_output")
-      ? []
-      : ["verifier command evidence is missing"]),
+    ...(hasVerifierEvidence ? [] : ["verifier command evidence is missing"]),
     ...(hasEvidenceType(data.evidence, "startup_measurement_framework") ||
     hasCompletedTask(data.tasks, "define_measurement_framework")
       ? []
@@ -627,6 +627,7 @@ function releaseBlockers(data: LaunchReadinessReportData): string[] {
         ]),
     ...data.tasks
       .filter((task) => ["failed", "blocked", "waiting_approval"].includes(task.status))
+      .filter((task) => !(hasVerifierEvidence && task.type === "run_mvp_verifiers"))
       .map((task) => `${task.type} is ${task.status}`),
     ...data.approvals
       .filter((approval) => approval.status === "pending")

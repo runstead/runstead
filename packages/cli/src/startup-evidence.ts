@@ -335,6 +335,7 @@ function readStartupGateEvidence(
       FROM evidence e
       LEFT JOIN tasks t ON e.subject_type = 'task' AND e.subject_id = t.id
       WHERE t.domain = ?
+         OR e.type = 'command_output'
          OR e.type LIKE 'startup_%'
       ORDER BY e.created_at DESC, e.id ASC
     `

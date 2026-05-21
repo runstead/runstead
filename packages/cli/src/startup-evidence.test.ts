@@ -183,15 +183,38 @@ describe("startup evidence ledger", () => {
       });
 
       const commandEvidenceDatabase = openRunsteadDatabase(initialized.stateDb);
+      const wrappedWorkerTask: Task = {
+        id: "task_repo_wrapped_worker_001",
+        goalId: created.goal.id,
+        domain: "repo-maintenance",
+        type: "local_agent_task",
+        status: "completed",
+        priority: "medium",
+        attempt: 1,
+        maxAttempts: 1,
+        input: {
+          worker: "codex_cli",
+          commands: [
+            {
+              name: "test",
+              command: "npm test"
+            }
+          ]
+        },
+        verifiers: ["command:test"],
+        createdAt: "2026-05-14T04:29:00.000Z",
+        updatedAt: "2026-05-14T04:32:00.000Z"
+      };
 
       try {
+        projectTask(commandEvidenceDatabase, wrappedWorkerTask);
         projectEvidence(commandEvidenceDatabase, {
           id: "ev_startup_launch_command_001",
           type: "command_output",
           subjectType: "task",
-          subjectId: verifierTask.id,
+          subjectId: wrappedWorkerTask.id,
           uri: `file://${join(initialized.root, "evidence", "verifier-passed.json")}`,
-          summary: "MVP verifier commands passed",
+          summary: "Wrapped Codex CLI verifier commands passed",
           createdAt: "2026-05-14T04:31:00.000Z"
         });
       } finally {
