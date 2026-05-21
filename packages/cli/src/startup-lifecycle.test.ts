@@ -91,23 +91,20 @@ describe("startup CLI lifecycle", () => {
       );
       await runCli(
         "startup",
-        "evidence",
-        "add",
+        "measurement",
+        "snapshot",
         "--cwd",
         workspace,
-        "--type",
-        "metric",
-        "--summary",
-        "Activation snapshot exceeds the MVP threshold",
+        "--metric",
+        "activation",
         "--source",
-        "analytics:activation:2026-05-14",
-        "--content",
-        JSON.stringify({
-          metric: "activation",
-          source: "manual snapshot",
-          threshold: 0.4,
-          current: 0.51
-        })
+        "manual snapshot",
+        "--threshold",
+        "0.40",
+        "--current",
+        "0.51",
+        "--source-ref",
+        "analytics:activation:2026-05-14"
       );
       await runCli(
         "startup",

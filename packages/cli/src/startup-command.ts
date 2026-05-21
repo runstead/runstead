@@ -159,6 +159,81 @@ export function registerStartupCommands(program: Command): void {
       }
     );
 
+  startupMeasurement
+    .command("snapshot")
+    .description("Record a metric snapshot from analytics, query, CSV, or manual data.")
+    .option("--cwd <path>", "Workspace directory")
+    .requiredOption(
+      "--metric <name>",
+      "Metric name, such as activation or d7_retention"
+    )
+    .requiredOption(
+      "--source <source>",
+      "Metric source, such as PostHog, SQL, CSV, or manual"
+    )
+    .requiredOption("--threshold <value>", "Launch threshold for the metric")
+    .requiredOption("--current <value>", "Current metric value")
+    .option("--source-ref <ref>", "Evidence source reference", collectValues, [])
+    .option("--unit <unit>", "Metric unit")
+    .option("--window <window>", "Measurement window")
+    .option("--date <date>", "Snapshot date or timestamp")
+    .option(
+      "--false-positive <text>",
+      "False-positive control or observed false-positive record"
+    )
+    .option("--goal <id>", "Associated goal id")
+    .option("--actor <id>", "RBAC subject for metric snapshot writes", "local-admin")
+    .action(
+      async (options: {
+        cwd?: string;
+        metric: string;
+        source: string;
+        threshold: string;
+        current: string;
+        sourceRef: string[];
+        unit?: string;
+        window?: string;
+        date?: string;
+        falsePositive?: string;
+        goal?: string;
+        actor: string;
+      }) => {
+        await requireRbacPermission({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          actor: options.actor,
+          permission: "evidence.write",
+          action: "record startup metric snapshot"
+        });
+
+        const { recordStartupMetricSnapshot } = await import("./startup-metrics.js");
+        const result = await recordStartupMetricSnapshot({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          metric: options.metric,
+          source: options.source,
+          threshold: options.threshold,
+          current: options.current,
+          sourceRefs: options.sourceRef,
+          ...(options.unit === undefined ? {} : { unit: options.unit }),
+          ...(options.window === undefined ? {} : { window: options.window }),
+          ...(options.date === undefined ? {} : { snapshotDate: options.date }),
+          ...(options.falsePositive === undefined
+            ? {}
+            : { falsePositive: options.falsePositive }),
+          ...(options.goal === undefined ? {} : { goalId: options.goal })
+        });
+
+        console.log(
+          `Recorded metric snapshot evidence: ${result.metricEvidence.evidence.id}`
+        );
+        console.log(`Artifact: ${result.metricEvidence.artifactPath}`);
+        if (result.falsePositiveEvidence !== undefined) {
+          console.log(
+            `Recorded false-positive evidence: ${result.falsePositiveEvidence.evidence.id}`
+          );
+        }
+      }
+    );
+
   const startupLaunch = startup
     .command("launch")
     .description("Generate startup launch readiness artifacts.");
@@ -637,7 +712,7 @@ export function registerStartupCommands(program: Command): void {
     .option("--cwd <path>", "Workspace directory")
     .requiredOption(
       "--type <type>",
-      "Evidence type: customer_interview, competitor, metric, measurement_framework, agent_context, repo_readiness, security_baseline, migration_plan, rollback_plan, release_plan, hypothesis, problem_hypothesis, user_hypothesis, solution_hypothesis, disconfirming, support_triage, founder_bottleneck, workflow_registry, delegation_policy, institutional_memory, ops_report, integration_map, ops_sop, gtm_artifact, decision, acceptable_debt, or observability"
+      "Evidence type: customer_interview, competitor, metric, metric_snapshot, measurement_framework, agent_context, repo_readiness, security_baseline, migration_plan, rollback_plan, release_plan, hypothesis, problem_hypothesis, user_hypothesis, solution_hypothesis, disconfirming, support_triage, founder_bottleneck, workflow_registry, delegation_policy, institutional_memory, ops_report, integration_map, ops_sop, gtm_artifact, decision, acceptable_debt, false_positive, or observability"
     )
     .requiredOption("--summary <text>", "Evidence summary")
     .option("--source <ref>", "Evidence source reference", collectValues, [])

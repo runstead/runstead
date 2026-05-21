@@ -470,7 +470,22 @@ export async function generateMeasurementFramework(
       options.day30Metric ?? "Day 30 retained active users by signup cohort.",
     falsePositiveMetric:
       options.falsePositiveMetric ??
-      "Runstead or product claim is counted as success without user-confirmed value."
+      "Runstead or product claim is counted as success without user-confirmed value.",
+    metrics: measurementMetricDefinitions({
+      ...(options.activationMetric === undefined
+        ? {}
+        : { activationMetric: options.activationMetric }),
+      ...(options.retentionMetric === undefined
+        ? {}
+        : { retentionMetric: options.retentionMetric }),
+      ...(options.day7Metric === undefined ? {} : { day7Metric: options.day7Metric }),
+      ...(options.day30Metric === undefined
+        ? {}
+        : { day30Metric: options.day30Metric }),
+      ...(options.falsePositiveMetric === undefined
+        ? {}
+        : { falsePositiveMetric: options.falsePositiveMetric })
+    })
   };
 
   await writeFile(runtimePath, framework, "utf8");
@@ -1324,6 +1339,46 @@ function formatMeasurementFramework(input: {
     "- Re-run the launch gate after metrics or verifier evidence changes.",
     ""
   ].join("\n");
+}
+
+function measurementMetricDefinitions(input: {
+  activationMetric?: string;
+  retentionMetric?: string;
+  day7Metric?: string;
+  day30Metric?: string;
+  falsePositiveMetric?: string;
+}): Record<string, unknown>[] {
+  return [
+    {
+      key: "activation",
+      definition:
+        input.activationMetric ?? "User completes the first successful core workflow.",
+      requiredSnapshotFields: ["source", "threshold", "current", "snapshotDate"]
+    },
+    {
+      key: "retention",
+      definition:
+        input.retentionMetric ?? "User returns and completes a core workflow again.",
+      requiredSnapshotFields: ["source", "threshold", "current", "snapshotDate"]
+    },
+    {
+      key: "d7_retention",
+      definition: input.day7Metric ?? "Day 7 retained active users by signup cohort.",
+      requiredSnapshotFields: ["source", "threshold", "current", "snapshotDate"]
+    },
+    {
+      key: "d30_retention",
+      definition: input.day30Metric ?? "Day 30 retained active users by signup cohort.",
+      requiredSnapshotFields: ["source", "threshold", "current", "snapshotDate"]
+    },
+    {
+      key: "false_positive",
+      definition:
+        input.falsePositiveMetric ??
+        "Runstead or product claim is counted as success without user-confirmed value.",
+      requiredSnapshotFields: ["source", "falsePositive", "snapshotDate"]
+    }
+  ];
 }
 
 function listItems(items: string[]): string {

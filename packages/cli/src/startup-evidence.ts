@@ -18,6 +18,7 @@ export const STARTUP_EVIDENCE_TYPES = [
   "customer_interview",
   "competitor",
   "metric",
+  "metric_snapshot",
   "measurement_framework",
   "agent_context",
   "repo_readiness",
@@ -41,6 +42,7 @@ export const STARTUP_EVIDENCE_TYPES = [
   "gtm_artifact",
   "decision",
   "acceptable_debt",
+  "false_positive",
   "observability"
 ] as const;
 
@@ -356,7 +358,8 @@ function gateWarnings(input: {
       ...(hasEvidenceType(input.evidence, "startup_competitor")
         ? []
         : ["competitor evidence is not recorded"]),
-      ...(hasEvidenceType(input.evidence, "startup_metric")
+      ...(hasEvidenceType(input.evidence, "startup_metric") ||
+      hasEvidenceType(input.evidence, "startup_metric_snapshot")
         ? []
         : ["metric evidence is not recorded"])
     ];
