@@ -146,6 +146,18 @@ export interface CheckStartupGateOptions {
   recordEvent?: boolean;
 }
 
+export interface RecordStartupGateDecisionOptions {
+  cwd?: string;
+  domain?: string;
+  stage: StartupGateStage;
+  decision: "launch" | "no_launch" | "launch_with_accepted_debt" | "waive_blocker";
+  reason: string;
+  owner?: string;
+  blocker?: string;
+  expiresAt?: string;
+  now?: Date;
+}
+
 export interface StartupGateCheckResult {
   root: string;
   stateDb: string;
@@ -154,7 +166,45 @@ export interface StartupGateCheckResult {
   passed: boolean;
   blockers: string[];
   warnings: string[];
+  findings: StartupGateFinding[];
+  waivedBlockers: StartupGateWaiver[];
+  diff: StartupGateDiff;
   event: RunsteadEvent;
+}
+
+export type StartupGateFindingSeverity = "critical" | "major" | "minor" | "warning";
+
+export interface StartupGateFinding {
+  id: string;
+  severity: StartupGateFindingSeverity;
+  message: string;
+  explanation: string;
+  remediationTask: string;
+  waived: boolean;
+  waiverEvidenceId?: string;
+}
+
+export interface StartupGateWaiver {
+  evidenceId: string;
+  blocker: string;
+  owner: string;
+  reason: string;
+  expiresAt: string;
+}
+
+export interface StartupGateDiff {
+  previousEventId?: string;
+  addedBlockers: string[];
+  resolvedBlockers: string[];
+}
+
+export interface StartupGateRule {
+  id: string;
+  stage: StartupGateStage;
+  severity: StartupGateFindingSeverity;
+  blocker: string;
+  explanation: string;
+  remediationTask: string;
 }
 
 interface StartupGateTaskRow {
@@ -175,13 +225,54 @@ interface StartupGateEvidenceRow {
 
 interface StartupGateEvidenceArtifact {
   sourceRefs?: unknown;
+  sources?: unknown;
   associations?: unknown;
   remediation?: unknown;
   content?: unknown;
   result?: unknown;
 }
 
+interface StartupGatePreviousEventRow {
+  event_id: string;
+  payload_json: string;
+}
+
 const STARTUP_DOMAIN = "ai-native-startup";
+
+export const STARTUP_GATE_RULES: StartupGateRule[] = [
+  gateRule("mvp", "problem hypothesis is missing", "major"),
+  gateRule("mvp", "user hypothesis is missing", "major"),
+  gateRule("mvp", "solution hypothesis is missing", "major"),
+  gateRule(
+    "mvp",
+    "customer, competitor, or metric validation evidence is missing",
+    "critical"
+  ),
+  gateRule("mvp", "disconfirming evidence is missing", "major"),
+  gateRule("launch", "measurement framework is missing", "critical"),
+  gateRule(
+    "launch",
+    "metric snapshot with source, threshold, and current value is missing",
+    "critical"
+  ),
+  gateRule("launch", "repo readiness audit is missing", "major"),
+  gateRule("launch", "security baseline is missing", "critical"),
+  gateRule("launch", "passing verifier command evidence is missing", "critical"),
+  gateRule("launch", "migration plan evidence is missing", "major"),
+  gateRule("launch", "rollback plan evidence is missing", "major"),
+  gateRule("launch", "observability evidence is missing", "major"),
+  gateRule("launch", "founder bottleneck audit is missing", "major"),
+  gateRule("scale", "founder bottleneck map is missing", "major"),
+  gateRule("scale", "workflow registry is missing", "major"),
+  gateRule("scale", "delegation policy is missing", "major"),
+  gateRule("scale", "institutional memory evidence is missing", "major"),
+  gateRule("scale", "scale report schedule is missing", "minor"),
+  gateRule("scale", "recurring ops report is missing", "minor"),
+  gateRule("scale", "integration depth map is missing", "major"),
+  gateRule("scale", "ops SOP evidence is missing", "major"),
+  gateRule("scale", "support triage evidence is missing", "minor"),
+  gateRule("scale", "GTM artifact verification is missing", "major")
+];
 
 export async function addStartupEvidence(
   options: AddStartupEvidenceOptions
@@ -301,8 +392,25 @@ export async function checkStartupGate(
     const tasks = readStartupGateTasks(database, domain);
     const evidence = readStartupGateEvidence(database, domain);
     const artifacts = readStartupGateEvidenceArtifacts(evidence);
-    const blockers = gateBlockers({ stage, tasks, evidence, artifacts, checkedAt });
-    const warnings = gateWarnings({ stage, tasks, evidence, artifacts });
+    const rawBlockers = gateBlockers({ stage, tasks, evidence, artifacts, checkedAt });
+    const activeWaivers = activeStartupGateWaivers({
+      stage,
+      evidence,
+      artifacts,
+      checkedAt
+    });
+    const findings = startupGateFindings(stage, rawBlockers, activeWaivers);
+    const blockers = findings
+      .filter((finding) => !finding.waived && finding.severity !== "warning")
+      .map((finding) => finding.message);
+    const warnings = [
+      ...gateWarnings({ stage, tasks, evidence, artifacts, checkedAt }),
+      ...findings
+        .filter((finding) => finding.waived)
+        .map((finding) => `waived blocker: ${finding.message}`)
+    ];
+    const previousEvent = readPreviousStartupGateEvent(database, domain, stage);
+    const diff = startupGateDiff(previousEvent, blockers);
     const event: RunsteadEvent = {
       eventId: createRunsteadId("evt"),
       type: "startup_gate.checked",
@@ -313,7 +421,10 @@ export async function checkStartupGate(
         stage,
         passed: blockers.length === 0,
         blockers,
-        warnings
+        warnings,
+        findings,
+        waivedBlockers: activeWaivers,
+        diff
       },
       createdAt: checkedAt
     };
@@ -330,6 +441,9 @@ export async function checkStartupGate(
       passed: blockers.length === 0,
       blockers,
       warnings,
+      findings,
+      waivedBlockers: activeWaivers,
+      diff,
       event
     };
   } finally {
@@ -342,9 +456,18 @@ export function formatStartupGateCheckResult(result: StartupGateCheckResult): st
     `Startup gate: ${result.stage}`,
     `Domain: ${result.domain}`,
     `Status: ${result.passed ? "passed" : "blocked"}`,
+    `Added blockers: ${result.diff.addedBlockers.length}`,
+    `Resolved blockers: ${result.diff.resolvedBlockers.length}`,
     "",
     "Blockers:",
     listOrNone(result.blockers, (blocker) => `- ${blocker}`),
+    "",
+    "Findings:",
+    listOrNone(
+      result.findings,
+      (finding) =>
+        `- [${finding.severity}] ${finding.message}${finding.waived ? " (waived)" : ""}`
+    ),
     ...(result.stage === "mvp" && !result.passed
       ? [
           "",
@@ -356,6 +479,54 @@ export function formatStartupGateCheckResult(result: StartupGateCheckResult): st
     "Warnings:",
     listOrNone(result.warnings, (warning) => `- ${warning}`)
   ].join("\n");
+}
+
+export async function recordStartupGateDecision(
+  options: RecordStartupGateDecisionOptions
+): Promise<AddStartupEvidenceResult> {
+  const isWaiver = options.decision === "waive_blocker";
+
+  if (isWaiver) {
+    if (options.blocker === undefined || options.blocker.trim().length === 0) {
+      throw new Error("gate waiver requires a blocker");
+    }
+
+    if (options.owner === undefined || options.owner.trim().length === 0) {
+      throw new Error("gate waiver requires an owner");
+    }
+
+    if (
+      options.expiresAt === undefined ||
+      Number.isNaN(Date.parse(options.expiresAt))
+    ) {
+      throw new Error("gate waiver requires a valid expiresAt timestamp");
+    }
+  }
+
+  return addStartupEvidence({
+    ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+    type: "decision",
+    summary: isWaiver
+      ? `Waived ${options.stage} blocker: ${options.blocker}`
+      : `Startup ${options.stage} decision: ${options.decision}`,
+    gate: options.stage,
+    ...(options.blocker === undefined ? {} : { blocker: options.blocker }),
+    content: JSON.stringify(
+      {
+        kind: isWaiver ? "gate_waiver" : "release_decision",
+        domain: options.domain ?? STARTUP_DOMAIN,
+        gate: options.stage,
+        decision: options.decision,
+        reason: options.reason,
+        ...(options.owner === undefined ? {} : { owner: options.owner }),
+        ...(options.blocker === undefined ? {} : { blocker: options.blocker }),
+        ...(options.expiresAt === undefined ? {} : { expiresAt: options.expiresAt })
+      },
+      null,
+      2
+    ),
+    ...(options.now === undefined ? {} : { now: options.now })
+  });
 }
 
 function readStartupGateTasks(
@@ -421,6 +592,7 @@ function gateWarnings(input: {
   tasks: StartupGateTaskRow[];
   evidence: StartupGateEvidenceRow[];
   artifacts: Map<string, StartupGateEvidenceArtifact>;
+  checkedAt: string;
 }): string[] {
   if (input.stage === "mvp") {
     return [
@@ -430,12 +602,17 @@ function gateWarnings(input: {
       ...(hasEvidenceType(input.evidence, "startup_metric") ||
       hasEvidenceType(input.evidence, "startup_metric_snapshot")
         ? []
-        : ["metric evidence is not recorded"])
+        : ["metric evidence is not recorded"]),
+      ...staleEvidenceSourceWarnings(input.evidence, input.artifacts, input.checkedAt)
     ];
   }
 
   if (input.stage !== "launch") {
-    return [];
+    return staleEvidenceSourceWarnings(
+      input.evidence,
+      input.artifacts,
+      input.checkedAt
+    );
   }
 
   return [
@@ -445,8 +622,164 @@ function gateWarnings(input: {
     ...(hasPassingCommandOutput(input.evidence, input.artifacts) ||
     hasStructuredMetricEvidence(input.evidence, input.artifacts)
       ? []
-      : ["no verifier or metric evidence is recorded"])
+      : ["no verifier or metric evidence is recorded"]),
+    ...staleEvidenceSourceWarnings(input.evidence, input.artifacts, input.checkedAt)
   ];
+}
+
+function activeStartupGateWaivers(input: {
+  stage: StartupGateStage;
+  evidence: StartupGateEvidenceRow[];
+  artifacts: Map<string, StartupGateEvidenceArtifact>;
+  checkedAt: string;
+}): StartupGateWaiver[] {
+  return input.evidence
+    .filter((item) => item.type === "startup_decision")
+    .flatMap((item) => {
+      const content = parsedArtifactContent(input.artifacts.get(item.id));
+
+      if (
+        !isRecord(content) ||
+        content.kind !== "gate_waiver" ||
+        content.gate !== input.stage ||
+        !hasNonEmptyString(content.blocker) ||
+        !hasNonEmptyString(content.owner) ||
+        !hasNonEmptyString(content.reason) ||
+        !hasNonEmptyString(content.expiresAt)
+      ) {
+        return [];
+      }
+
+      if (Date.parse(content.expiresAt) <= Date.parse(input.checkedAt)) {
+        return [];
+      }
+
+      return [
+        {
+          evidenceId: item.id,
+          blocker: content.blocker,
+          owner: content.owner,
+          reason: content.reason,
+          expiresAt: content.expiresAt
+        }
+      ];
+    });
+}
+
+function startupGateFindings(
+  stage: StartupGateStage,
+  blockers: string[],
+  waivers: StartupGateWaiver[]
+): StartupGateFinding[] {
+  return blockers.map((blocker) => {
+    const waiver = waivers.find((item) => item.blocker === blocker);
+    const rule = startupGateRuleForBlocker(stage, blocker);
+
+    return {
+      id: rule?.id ?? stableGateFindingId(stage, blocker),
+      severity: rule?.severity ?? inferGateFindingSeverity(blocker),
+      message: blocker,
+      explanation: rule?.explanation ?? explainGateBlocker(blocker),
+      remediationTask: rule?.remediationTask ?? remediationTaskForBlocker(blocker),
+      waived: waiver !== undefined,
+      ...(waiver === undefined ? {} : { waiverEvidenceId: waiver.evidenceId })
+    };
+  });
+}
+
+function startupGateRuleForBlocker(
+  stage: StartupGateStage,
+  blocker: string
+): StartupGateRule | undefined {
+  return STARTUP_GATE_RULES.find(
+    (rule) => rule.stage === stage && rule.blocker === blocker
+  );
+}
+
+function startupGateDiff(
+  previous: { eventId: string; blockers: string[] } | undefined,
+  blockers: string[]
+): StartupGateDiff {
+  const previousBlockers = new Set(previous?.blockers ?? []);
+  const currentBlockers = new Set(blockers);
+
+  return {
+    ...(previous === undefined ? {} : { previousEventId: previous.eventId }),
+    addedBlockers: blockers.filter((blocker) => !previousBlockers.has(blocker)),
+    resolvedBlockers: [...previousBlockers].filter(
+      (blocker) => !currentBlockers.has(blocker)
+    )
+  };
+}
+
+function readPreviousStartupGateEvent(
+  database: ReturnType<typeof openRunsteadDatabase>,
+  domain: string,
+  stage: StartupGateStage
+): { eventId: string; blockers: string[] } | undefined {
+  const row = database
+    .prepare(
+      `
+      SELECT event_id, payload_json
+      FROM events
+      WHERE type = 'startup_gate.checked'
+        AND aggregate_type = 'startup_gate'
+        AND aggregate_id = ?
+      ORDER BY created_at DESC, id DESC
+      LIMIT 1
+    `
+    )
+    .get(`${domain}_${stage}`) as StartupGatePreviousEventRow | undefined;
+
+  if (row === undefined) {
+    return undefined;
+  }
+
+  try {
+    const payload = JSON.parse(row.payload_json) as unknown;
+
+    return {
+      eventId: row.event_id,
+      blockers:
+        isRecord(payload) && Array.isArray(payload.blockers)
+          ? payload.blockers.filter(hasNonEmptyString)
+          : []
+    };
+  } catch {
+    return {
+      eventId: row.event_id,
+      blockers: []
+    };
+  }
+}
+
+function staleEvidenceSourceWarnings(
+  evidence: StartupGateEvidenceRow[],
+  artifacts: Map<string, StartupGateEvidenceArtifact>,
+  checkedAt: string
+): string[] {
+  return evidence.flatMap((row) => {
+    const sources = artifactSources(artifacts.get(row.id));
+
+    return sources.flatMap((source) => {
+      if (
+        !hasNonEmptyString(source.uri) ||
+        !hasNonEmptyString(source.capturedAt) ||
+        typeof source.freshnessDays !== "number"
+      ) {
+        return [];
+      }
+
+      const capturedAt = Date.parse(source.capturedAt);
+      const ageDays = Math.floor((Date.parse(checkedAt) - capturedAt) / 86_400_000);
+
+      return Number.isNaN(capturedAt) || ageDays <= source.freshnessDays
+        ? []
+        : [
+            `stale evidence source for ${row.type}: ${source.uri} is ${ageDays}d old (freshness ${source.freshnessDays}d)`
+          ];
+    });
+  });
 }
 
 function validationBlockers(
@@ -942,6 +1275,20 @@ function parsedArtifactContent(
   }
 }
 
+function artifactSources(artifact: StartupGateEvidenceArtifact | undefined): {
+  uri?: unknown;
+  capturedAt?: unknown;
+  freshnessDays?: unknown;
+}[] {
+  return Array.isArray(artifact?.sources)
+    ? artifact.sources.filter(isRecord).map((source) => ({
+        uri: source.uri,
+        capturedAt: source.capturedAt,
+        freshnessDays: source.freshnessDays
+      }))
+    : [];
+}
+
 function hasSourceRefs(artifact: StartupGateEvidenceArtifact | undefined): boolean {
   return (
     artifact !== undefined &&
@@ -1031,6 +1378,73 @@ function parseStartupEvidenceType(value: string): StartupEvidenceType {
   throw new Error(
     `Unsupported startup evidence type ${value}. Expected one of: ${STARTUP_EVIDENCE_TYPES.join(", ")}`
   );
+}
+
+function gateRule(
+  stage: StartupGateStage,
+  blocker: string,
+  severity: StartupGateFindingSeverity
+): StartupGateRule {
+  return {
+    id: stableGateFindingId(stage, blocker),
+    stage,
+    severity,
+    blocker,
+    explanation: explainGateBlocker(blocker),
+    remediationTask: remediationTaskForBlocker(blocker)
+  };
+}
+
+function stableGateFindingId(stage: StartupGateStage, blocker: string): string {
+  return `${stage}_${blocker
+    .toLowerCase()
+    .replaceAll(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")}`;
+}
+
+function inferGateFindingSeverity(blocker: string): StartupGateFindingSeverity {
+  const lowered = blocker.toLowerCase();
+
+  if (
+    lowered.includes("security") ||
+    lowered.includes("verifier") ||
+    lowered.includes("measurement") ||
+    lowered.includes("validation evidence")
+  ) {
+    return "critical";
+  }
+
+  if (
+    lowered.includes("missing") ||
+    lowered.includes("failed") ||
+    lowered.includes("overdue") ||
+    lowered.includes("requires")
+  ) {
+    return "major";
+  }
+
+  return "minor";
+}
+
+function explainGateBlocker(blocker: string): string {
+  return `Runstead cannot clear this gate until this requirement is backed by current evidence: ${blocker}`;
+}
+
+function remediationTaskForBlocker(blocker: string): string {
+  if (blocker.includes("measurement")) return "record startup measurement evidence";
+  if (blocker.includes("metric"))
+    return "record a metric snapshot with source and threshold";
+  if (blocker.includes("security")) return "run startup launch security-baseline";
+  if (blocker.includes("repo readiness")) return "run startup launch audit";
+  if (blocker.includes("verifier"))
+    return "run MVP verifier commands and record evidence";
+  if (blocker.includes("migration")) return "record migration plan evidence";
+  if (blocker.includes("rollback")) return "record rollback plan evidence";
+  if (blocker.includes("observability")) return "record observability evidence";
+  if (blocker.includes("bottleneck")) return "run startup launch bottleneck-map";
+  if (blocker.includes("hypothesis")) return "validate startup hypothesis evidence";
+
+  return "record evidence or execute remediation for this blocker";
 }
 
 export function parseStartupHypothesisStatusValue(

@@ -1622,6 +1622,99 @@ export function registerStartupCommands(program: Command): void {
         }
       }
     );
+
+  startupGate
+    .command("waive")
+    .description(
+      "Record a time-boxed owner-approved waiver for a startup gate blocker."
+    )
+    .option("--cwd <path>", "Workspace directory")
+    .option("--stage <stage>", "Stage to waive: idea, mvp, launch, or scale", "launch")
+    .option("--domain <id>", "Domain id to evaluate", "ai-native-startup")
+    .requiredOption("--blocker <text>", "Exact blocker text to waive")
+    .requiredOption("--owner <id>", "Owner accepting the waived risk")
+    .requiredOption("--reason <text>", "Reason the blocker can be accepted")
+    .requiredOption("--expires-at <iso>", "Expiration timestamp for the waiver")
+    .option("--actor <id>", "RBAC subject for gate decisions", "local-admin")
+    .action(
+      async (options: {
+        cwd?: string;
+        stage: string;
+        domain: string;
+        blocker: string;
+        owner: string;
+        reason: string;
+        expiresAt: string;
+        actor: string;
+      }) => {
+        await requireRbacPermission({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          actor: options.actor,
+          permission: "evidence.write",
+          action: "record startup gate waiver"
+        });
+
+        const { recordStartupGateDecision } = await import("./startup-evidence.js");
+        const result = await recordStartupGateDecision({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          domain: options.domain,
+          stage: parseStartupGateStage(options.stage),
+          decision: "waive_blocker",
+          blocker: options.blocker,
+          owner: options.owner,
+          reason: options.reason,
+          expiresAt: options.expiresAt
+        });
+
+        console.log(`Recorded gate waiver: ${result.evidence.id}`);
+        console.log(`Artifact: ${result.artifactPath}`);
+      }
+    );
+
+  startupGate
+    .command("decide")
+    .description("Record a launch/no-launch decision for a startup gate.")
+    .option("--cwd <path>", "Workspace directory")
+    .option("--stage <stage>", "Stage to decide: idea, mvp, launch, or scale", "launch")
+    .option("--domain <id>", "Domain id to evaluate", "ai-native-startup")
+    .requiredOption(
+      "--decision <value>",
+      "Decision: launch, no_launch, or launch_with_accepted_debt"
+    )
+    .requiredOption("--reason <text>", "Decision rationale")
+    .option("--owner <id>", "Decision owner")
+    .option("--actor <id>", "RBAC subject for gate decisions", "local-admin")
+    .action(
+      async (options: {
+        cwd?: string;
+        stage: string;
+        domain: string;
+        decision: string;
+        reason: string;
+        owner?: string;
+        actor: string;
+      }) => {
+        await requireRbacPermission({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          actor: options.actor,
+          permission: "evidence.write",
+          action: "record startup gate decision"
+        });
+
+        const { recordStartupGateDecision } = await import("./startup-evidence.js");
+        const result = await recordStartupGateDecision({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          domain: options.domain,
+          stage: parseStartupGateStage(options.stage),
+          decision: parseStartupGateDecision(options.decision),
+          reason: options.reason,
+          ...(options.owner === undefined ? {} : { owner: options.owner })
+        });
+
+        console.log(`Recorded gate decision: ${result.evidence.id}`);
+        console.log(`Artifact: ${result.artifactPath}`);
+      }
+    );
 }
 
 function collectValues(value: string, previous: string[]): string[] {
@@ -1686,6 +1779,22 @@ function parseStartupGateStage(value: string): "idea" | "mvp" | "launch" | "scal
   }
 
   throw new Error("--stage must be one of: idea, mvp, launch, scale");
+}
+
+function parseStartupGateDecision(
+  value: string
+): "launch" | "no_launch" | "launch_with_accepted_debt" {
+  if (
+    value === "launch" ||
+    value === "no_launch" ||
+    value === "launch_with_accepted_debt"
+  ) {
+    return value;
+  }
+
+  throw new Error(
+    "--decision must be one of: launch, no_launch, launch_with_accepted_debt"
+  );
 }
 
 function parseStartupAssessStages(value: string): ("mvp" | "launch" | "scale")[] {

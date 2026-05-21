@@ -14,6 +14,7 @@ import {
   addStartupHypothesis,
   checkStartupGate,
   formatStartupGateCheckResult,
+  recordStartupGateDecision,
   type StartupEvidenceArtifact
 } from "./startup-evidence.js";
 
@@ -769,6 +770,116 @@ describe("startup evidence ledger", () => {
       expect(formatStartupGateCheckResult(gate)).toContain(
         "MVP build cannot start until each blocker has evidence"
       );
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("records gate waivers, freshness warnings, gate diffs, and release decisions", async () => {
+    const workspace = join(tmpdir(), `runstead-startup-gate-engine-${process.pid}`);
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await initRunstead({ cwd: workspace });
+      await installDomainPack({
+        cwd: workspace,
+        ref: "ai-native-startup",
+        now: new Date("2026-05-14T00:00:00.000Z")
+      });
+      await addStartupEvidence({
+        cwd: workspace,
+        type: "metric_snapshot",
+        summary: "Activation metric is stale",
+        sources: [
+          {
+            uri: "posthog:activation",
+            kind: "posthog",
+            capturedAt: "2026-04-01T00:00:00.000Z",
+            freshnessDays: 7
+          }
+        ],
+        content: JSON.stringify({
+          source: "posthog",
+          threshold: "0.4",
+          current: "0.5"
+        }),
+        now: new Date("2026-05-14T00:05:00.000Z")
+      });
+
+      const firstGate = await checkStartupGate({
+        cwd: workspace,
+        stage: "launch",
+        now: new Date("2026-05-14T00:10:00.000Z")
+      });
+
+      expect(firstGate.findings).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            severity: "critical",
+            message: "measurement framework is missing",
+            waived: false
+          })
+        ])
+      );
+      expect(firstGate.diff.addedBlockers).toContain(
+        "measurement framework is missing"
+      );
+      expect(firstGate.warnings).toEqual(
+        expect.arrayContaining([
+          expect.stringContaining("stale evidence source for startup_metric_snapshot")
+        ])
+      );
+
+      const waiver = await recordStartupGateDecision({
+        cwd: workspace,
+        stage: "launch",
+        decision: "waive_blocker",
+        blocker: "measurement framework is missing",
+        owner: "founder",
+        reason: "Temporary launch rehearsal uses manually recorded metric contract",
+        expiresAt: "2026-05-21T00:00:00.000Z",
+        now: new Date("2026-05-14T00:15:00.000Z")
+      });
+      const secondGate = await checkStartupGate({
+        cwd: workspace,
+        stage: "launch",
+        now: new Date("2026-05-14T00:20:00.000Z")
+      });
+
+      expect(secondGate.blockers).not.toContain("measurement framework is missing");
+      expect(secondGate.waivedBlockers).toEqual([
+        expect.objectContaining({
+          evidenceId: waiver.evidence.id,
+          blocker: "measurement framework is missing",
+          owner: "founder"
+        })
+      ]);
+      expect(secondGate.diff.previousEventId).toBe(firstGate.event.eventId);
+      expect(secondGate.diff.resolvedBlockers).toContain(
+        "measurement framework is missing"
+      );
+      expect(formatStartupGateCheckResult(secondGate)).toContain(
+        "[critical] measurement framework is missing (waived)"
+      );
+
+      const decision = await recordStartupGateDecision({
+        cwd: workspace,
+        stage: "launch",
+        decision: "launch_with_accepted_debt",
+        owner: "founder",
+        reason: "Remaining risks have owners and expiry dates",
+        now: new Date("2026-05-14T00:25:00.000Z")
+      });
+      const artifact = JSON.parse(await readFile(decision.artifactPath, "utf8")) as {
+        content: string;
+      };
+
+      expect(JSON.parse(artifact.content)).toMatchObject({
+        kind: "release_decision",
+        gate: "launch",
+        decision: "launch_with_accepted_debt",
+        owner: "founder"
+      });
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }
