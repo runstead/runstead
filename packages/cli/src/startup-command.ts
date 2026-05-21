@@ -469,6 +469,8 @@ export function registerStartupCommands(program: Command): void {
     .option("--source-hash <hash>", "Optional hash of the captured source payload")
     .option("--unit <unit>", "Metric unit")
     .option("--window <window>", "Measurement window")
+    .option("--cohort <cohort>", "Metric cohort")
+    .option("--trend <trend>", "Metric trend, such as up, flat, or down")
     .option("--date <date>", "Snapshot date or timestamp")
     .option(
       "--false-positive <text>",
@@ -491,6 +493,8 @@ export function registerStartupCommands(program: Command): void {
         sourceHash?: string;
         unit?: string;
         window?: string;
+        cohort?: string;
+        trend?: string;
         date?: string;
         falsePositive?: string;
         goal?: string;
@@ -514,6 +518,8 @@ export function registerStartupCommands(program: Command): void {
           ...evidenceSourceDetails(options),
           ...(options.unit === undefined ? {} : { unit: options.unit }),
           ...(options.window === undefined ? {} : { window: options.window }),
+          ...(options.cohort === undefined ? {} : { cohort: options.cohort }),
+          ...(options.trend === undefined ? {} : { trend: options.trend }),
           ...(options.date === undefined ? {} : { snapshotDate: options.date }),
           ...(options.falsePositive === undefined
             ? {}
@@ -530,6 +536,46 @@ export function registerStartupCommands(program: Command): void {
             `Recorded false-positive evidence: ${result.falsePositiveEvidence.evidence.id}`
           );
         }
+      }
+    );
+
+  startupMeasurement
+    .command("assess")
+    .description(
+      "Assess required launch metrics for missing, stale, or below-threshold data."
+    )
+    .option("--cwd <path>", "Workspace directory")
+    .option("--metric <name>", "Required metric", collectValues, [])
+    .option("--create-tasks", "Create instrumentation tasks for missing metrics")
+    .option("--actor <id>", "RBAC subject for metric assessment", "local-admin")
+    .action(
+      async (options: {
+        cwd?: string;
+        metric: string[];
+        createTasks?: boolean;
+        actor: string;
+      }) => {
+        await requireRbacPermission({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          actor: options.actor,
+          permission: "evidence.read",
+          action: "assess startup metrics"
+        });
+
+        const { assessStartupMetrics } = await import("./startup-metrics.js");
+        const result = await assessStartupMetrics({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          ...(options.metric.length === 0 ? {} : { requiredMetrics: options.metric }),
+          createTasks: options.createTasks === true
+        });
+
+        console.log("Startup measurement assessment");
+        for (const metric of result.metrics) {
+          console.log(
+            `- ${metric.metric}: ${metric.status}${metric.evidenceId === undefined ? "" : ` evidence=${metric.evidenceId}`}`
+          );
+        }
+        console.log(`Instrumentation tasks: ${result.instrumentationTasks.length}`);
       }
     );
 

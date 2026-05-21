@@ -8,7 +8,12 @@ import { describe, expect, it, vi } from "vitest";
 import { createProgram } from "./index.js";
 import { initRunstead } from "./init.js";
 import { addStartupEvidence, checkStartupGate } from "./startup-evidence.js";
-import { recordStartupMetricSnapshot } from "./startup-metrics.js";
+import {
+  assessStartupMetrics,
+  recordStartupMetricSnapshot
+} from "./startup-metrics.js";
+import { installDomainPack } from "./domain-pack-install.js";
+import { createGoal } from "./goals.js";
 
 describe("startup metric snapshots", () => {
   it("records structured metric snapshots and false-positive evidence", async () => {
@@ -27,6 +32,8 @@ describe("startup metric snapshots", () => {
         sourceRefs: ["posthog:funnel:activation:2026-05-14"],
         unit: "ratio",
         window: "7d",
+        cohort: "new_signups",
+        trend: "up",
         snapshotDate: "2026-05-14",
         falsePositive: "Exclude internal founder smoke-test events",
         now: new Date("2026-05-14T05:00:00.000Z")
@@ -54,7 +61,9 @@ describe("startup metric snapshots", () => {
         threshold: 0.4,
         current: 0.53,
         snapshotDate: "2026-05-14",
-        falsePositive: "Exclude internal founder smoke-test events"
+        falsePositive: "Exclude internal founder smoke-test events",
+        cohort: "new_signups",
+        trend: "up"
       });
       expect(recorded.falsePositiveEvidence?.evidence.type).toBe(
         "startup_false_positive"
@@ -113,6 +122,78 @@ describe("startup metric snapshots", () => {
           "startup_metric_snapshot"
         ])
       );
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("assesses missing, stale, and below-threshold metrics and creates instrumentation tasks", async () => {
+    const workspace = join(tmpdir(), `runstead-startup-metric-assess-${process.pid}`);
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await initRunstead({ cwd: workspace });
+      await installDomainPack({
+        cwd: workspace,
+        ref: "ai-native-startup",
+        now: new Date("2026-05-14T01:00:00.000Z")
+      });
+      await createGoal({
+        cwd: workspace,
+        domain: "ai-native-startup",
+        template: "build-mvp",
+        now: new Date("2026-05-14T01:05:00.000Z")
+      });
+      await recordStartupMetricSnapshot({
+        cwd: workspace,
+        metric: "activation",
+        source: "PostHog",
+        threshold: "0.50",
+        current: "0.42",
+        sources: [
+          {
+            uri: "posthog:activation",
+            kind: "posthog",
+            capturedAt: "2026-05-01T00:00:00.000Z",
+            freshnessDays: 7
+          }
+        ],
+        window: "7d",
+        cohort: "new_signups",
+        trend: "down",
+        now: new Date("2026-05-14T01:10:00.000Z")
+      });
+
+      const assessed = await assessStartupMetrics({
+        cwd: workspace,
+        requiredMetrics: ["activation", "retention"],
+        createTasks: true,
+        now: new Date("2026-05-14T01:15:00.000Z")
+      });
+
+      expect(assessed.metrics).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            metric: "activation",
+            status: "stale",
+            cohort: "new_signups",
+            trend: "down"
+          }),
+          expect.objectContaining({
+            metric: "retention",
+            status: "missing"
+          })
+        ])
+      );
+      expect(assessed.staleMetrics).toEqual(["activation"]);
+      expect(assessed.missingMetrics).toEqual(["retention"]);
+      expect(assessed.instrumentationTasks).toHaveLength(1);
+      expect(assessed.instrumentationTasks[0]).toMatchObject({
+        type: "instrument_metric",
+        input: {
+          metric: "retention"
+        }
+      });
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }

@@ -1,3 +1,11 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+
+import { createRunsteadId, type Task } from "@runstead/core";
+import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sqlite";
+
+import { listGoals } from "./goals.js";
+import { requireRunsteadStateDb } from "./runstead-root.js";
 import {
   addStartupEvidence,
   type AddStartupEvidenceResult,
@@ -14,6 +22,8 @@ export interface RecordStartupMetricSnapshotOptions {
   sources?: StartupEvidenceSourceInput[];
   unit?: string;
   window?: string;
+  cohort?: string;
+  trend?: string;
   snapshotDate?: string;
   goalId?: string;
   falsePositive?: string;
@@ -23,6 +33,36 @@ export interface RecordStartupMetricSnapshotOptions {
 export interface RecordStartupMetricSnapshotResult {
   metricEvidence: AddStartupEvidenceResult;
   falsePositiveEvidence?: AddStartupEvidenceResult;
+}
+
+export interface AssessStartupMetricsOptions {
+  cwd?: string;
+  requiredMetrics?: string[];
+  createTasks?: boolean;
+  now?: Date;
+}
+
+export interface AssessStartupMetricsResult {
+  root: string;
+  stateDb: string;
+  requiredMetrics: string[];
+  metrics: StartupMetricAssessment[];
+  missingMetrics: string[];
+  belowThresholdMetrics: string[];
+  staleMetrics: string[];
+  instrumentationTasks: Task[];
+}
+
+export interface StartupMetricAssessment {
+  metric: string;
+  status: "ok" | "missing" | "below_threshold" | "stale";
+  current?: number | string;
+  threshold?: number | string;
+  window?: string;
+  cohort?: string;
+  trend?: string;
+  evidenceId?: string;
+  source?: string;
 }
 
 export async function recordStartupMetricSnapshot(
@@ -38,6 +78,8 @@ export async function recordStartupMetricSnapshot(
     snapshotDate,
     ...(options.unit === undefined ? {} : { unit: options.unit }),
     ...(options.window === undefined ? {} : { window: options.window }),
+    ...(options.cohort === undefined ? {} : { cohort: options.cohort }),
+    ...(options.trend === undefined ? {} : { trend: options.trend }),
     ...(options.falsePositive === undefined
       ? {}
       : { falsePositive: options.falsePositive })
@@ -86,8 +128,273 @@ export async function recordStartupMetricSnapshot(
   };
 }
 
+export async function assessStartupMetrics(
+  options: AssessStartupMetricsOptions = {}
+): Promise<AssessStartupMetricsResult> {
+  const cwd = options.cwd ?? process.cwd();
+  const resolvedState = await requireRunsteadStateDb(cwd);
+  const requiredMetrics = options.requiredMetrics ?? ["activation", "retention"];
+  const snapshots = readMetricSnapshots(
+    resolvedState.stateDb,
+    options.now ?? new Date()
+  );
+  const metrics = requiredMetrics.map((metric) =>
+    assessRequiredMetric(metric, snapshots)
+  );
+  const missingMetrics = metrics
+    .filter((metric) => metric.status === "missing")
+    .map((metric) => metric.metric);
+  const belowThresholdMetrics = metrics
+    .filter((metric) => metric.status === "below_threshold")
+    .map((metric) => metric.metric);
+  const staleMetrics = metrics
+    .filter((metric) => metric.status === "stale")
+    .map((metric) => metric.metric);
+  const instrumentationTasks =
+    options.createTasks === true && missingMetrics.length > 0
+      ? createMetricInstrumentationTasks({
+          cwd,
+          stateDb: resolvedState.stateDb,
+          metrics: missingMetrics,
+          now: options.now ?? new Date()
+        })
+      : [];
+
+  return {
+    root: resolvedState.root,
+    stateDb: resolvedState.stateDb,
+    requiredMetrics,
+    metrics,
+    missingMetrics,
+    belowThresholdMetrics,
+    staleMetrics,
+    instrumentationTasks
+  };
+}
+
 function parseMetricValue(value: string): string | number {
   const numeric = Number(value);
 
   return value.trim() !== "" && Number.isFinite(numeric) ? numeric : value;
+}
+
+interface MetricSnapshotRow {
+  id: string;
+  uri: string;
+  created_at: string;
+}
+
+interface MetricSnapshotArtifact {
+  sources?: unknown;
+  content?: unknown;
+}
+
+interface ParsedMetricSnapshot {
+  evidenceId: string;
+  metric: string;
+  source: string;
+  current: number | string;
+  threshold: number | string;
+  window?: string;
+  cohort?: string;
+  trend?: string;
+  stale: boolean;
+  createdAt: string;
+}
+
+function readMetricSnapshots(stateDb: string, now: Date): ParsedMetricSnapshot[] {
+  const database = openRunsteadDatabase(stateDb);
+
+  try {
+    const rows = database
+      .prepare(
+        `
+        SELECT id, uri, created_at
+        FROM evidence
+        WHERE type = 'startup_metric_snapshot'
+        ORDER BY created_at DESC, id DESC
+      `
+      )
+      .all() as unknown as MetricSnapshotRow[];
+
+    return rows.flatMap((row) => {
+      const artifact = readMetricSnapshotArtifact(row.uri);
+      const content = parsedArtifactContent(artifact);
+
+      if (
+        !isRecord(content) ||
+        typeof content.metric !== "string" ||
+        typeof content.source !== "string"
+      ) {
+        return [];
+      }
+
+      return [
+        {
+          evidenceId: row.id,
+          metric: content.metric,
+          source: content.source,
+          current: metricValue(content.current),
+          threshold: metricValue(content.threshold),
+          ...(typeof content.window === "string" ? { window: content.window } : {}),
+          ...(typeof content.cohort === "string" ? { cohort: content.cohort } : {}),
+          ...(typeof content.trend === "string" ? { trend: content.trend } : {}),
+          stale: metricSnapshotStale(artifact, now),
+          createdAt: row.created_at
+        }
+      ];
+    });
+  } finally {
+    database.close();
+  }
+}
+
+function assessRequiredMetric(
+  metric: string,
+  snapshots: ParsedMetricSnapshot[]
+): StartupMetricAssessment {
+  const snapshot = snapshots.find((item) => item.metric === metric);
+
+  if (snapshot === undefined) {
+    return {
+      metric,
+      status: "missing"
+    };
+  }
+
+  const belowThreshold =
+    typeof snapshot.current === "number" &&
+    typeof snapshot.threshold === "number" &&
+    snapshot.current < snapshot.threshold;
+
+  return {
+    metric,
+    status: snapshot.stale ? "stale" : belowThreshold ? "below_threshold" : "ok",
+    current: snapshot.current,
+    threshold: snapshot.threshold,
+    ...(snapshot.window === undefined ? {} : { window: snapshot.window }),
+    ...(snapshot.cohort === undefined ? {} : { cohort: snapshot.cohort }),
+    ...(snapshot.trend === undefined ? {} : { trend: snapshot.trend }),
+    evidenceId: snapshot.evidenceId,
+    source: snapshot.source
+  };
+}
+
+function createMetricInstrumentationTasks(input: {
+  cwd: string;
+  stateDb: string;
+  metrics: string[];
+  now: Date;
+}): Task[] {
+  const goals = listGoals({ cwd: input.cwd }).goals;
+  const goal =
+    goals.find(
+      (item) => item.domain === "ai-native-startup" && item.status === "active"
+    ) ?? goals.find((item) => item.status === "active");
+
+  if (goal === undefined) {
+    return [];
+  }
+
+  const createdAt = input.now.toISOString();
+  const tasks = input.metrics.map((metric) => ({
+    id: createRunsteadId("task"),
+    goalId: goal.id,
+    domain: goal.domain,
+    type: "instrument_metric",
+    status: "queued" as const,
+    priority: "medium" as const,
+    attempt: 0,
+    maxAttempts: 1,
+    input: {
+      metric,
+      acceptanceCriteria: [
+        "metric source is connected",
+        "threshold and current values are recorded",
+        "freshness window is configured"
+      ]
+    },
+    verifiers: ["evidence:startup_metric_snapshot"],
+    createdAt,
+    updatedAt: createdAt
+  }));
+  const database = openRunsteadDatabase(input.stateDb);
+
+  try {
+    for (const task of tasks) {
+      appendEventAndProject(database, {
+        event: {
+          eventId: createRunsteadId("evt"),
+          type: "task.created",
+          aggregateType: "task",
+          aggregateId: task.id,
+          payload: {
+            type: task.type,
+            metric: task.input.metric
+          },
+          createdAt
+        },
+        projection: {
+          type: "task",
+          value: task
+        }
+      });
+    }
+  } finally {
+    database.close();
+  }
+
+  return tasks;
+}
+
+function readMetricSnapshotArtifact(uri: string): MetricSnapshotArtifact | undefined {
+  try {
+    const parsed = JSON.parse(readFileSync(fileURLToPath(uri), "utf8")) as unknown;
+
+    return isRecord(parsed) ? parsed : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function parsedArtifactContent(artifact: MetricSnapshotArtifact | undefined): unknown {
+  if (typeof artifact?.content !== "string") {
+    return undefined;
+  }
+
+  try {
+    return JSON.parse(artifact.content) as unknown;
+  } catch {
+    return undefined;
+  }
+}
+
+function metricSnapshotStale(
+  artifact: MetricSnapshotArtifact | undefined,
+  now: Date
+): boolean {
+  const sources = Array.isArray(artifact?.sources) ? artifact.sources : [];
+
+  return sources.some((source) => {
+    if (
+      !isRecord(source) ||
+      typeof source.capturedAt !== "string" ||
+      typeof source.freshnessDays !== "number"
+    ) {
+      return false;
+    }
+
+    return (
+      Math.floor((now.getTime() - Date.parse(source.capturedAt)) / 86_400_000) >
+      source.freshnessDays
+    );
+  });
+}
+
+function metricValue(value: unknown): string | number {
+  return typeof value === "number" || typeof value === "string" ? value : "";
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
