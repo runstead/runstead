@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import {
   createRunsteadId,
@@ -120,7 +121,16 @@ interface StartupGateEvidenceRow {
   type: string;
   subject_type: string;
   subject_id: string;
+  uri: string;
   summary: string | null;
+  created_at: string;
+}
+
+interface StartupGateEvidenceArtifact {
+  sourceRefs?: unknown;
+  associations?: unknown;
+  content?: unknown;
+  result?: unknown;
 }
 
 const STARTUP_DOMAIN = "ai-native-startup";
@@ -230,8 +240,9 @@ export async function checkStartupGate(
   try {
     const tasks = readStartupGateTasks(database, domain);
     const evidence = readStartupGateEvidence(database, domain);
-    const blockers = gateBlockers({ stage, tasks, evidence });
-    const warnings = gateWarnings({ stage, tasks, evidence });
+    const artifacts = readStartupGateEvidenceArtifacts(evidence);
+    const blockers = gateBlockers({ stage, tasks, evidence, artifacts });
+    const warnings = gateWarnings({ stage, tasks, evidence, artifacts });
     const event: RunsteadEvent = {
       eventId: createRunsteadId("evt"),
       type: "startup_gate.checked",
@@ -301,7 +312,8 @@ function readStartupGateEvidence(
   return database
     .prepare(
       `
-      SELECT DISTINCT e.id, e.type, e.subject_type, e.subject_id, e.summary
+      SELECT DISTINCT e.id, e.type, e.subject_type, e.subject_id, e.uri,
+             e.summary, e.created_at
       FROM evidence e
       LEFT JOIN tasks t ON e.subject_type = 'task' AND e.subject_id = t.id
       WHERE t.domain = ?
@@ -316,9 +328,10 @@ function gateBlockers(input: {
   stage: StartupGateStage;
   tasks: StartupGateTaskRow[];
   evidence: StartupGateEvidenceRow[];
+  artifacts: Map<string, StartupGateEvidenceArtifact>;
 }): string[] {
   if (input.stage === "mvp") {
-    return validationBlockers(input.evidence);
+    return validationBlockers(input.evidence, input.artifacts);
   }
 
   if (input.stage === "scale") {
@@ -336,6 +349,7 @@ function gateWarnings(input: {
   stage: StartupGateStage;
   tasks: StartupGateTaskRow[];
   evidence: StartupGateEvidenceRow[];
+  artifacts: Map<string, StartupGateEvidenceArtifact>;
 }): string[] {
   if (input.stage === "mvp") {
     return [
@@ -356,14 +370,17 @@ function gateWarnings(input: {
     ...(hasCompletedTask(input.tasks, "run_mvp_verifiers")
       ? []
       : ["run_mvp_verifiers has not completed"]),
-    ...(hasEvidenceType(input.evidence, "command_output") ||
-    hasEvidenceType(input.evidence, "startup_metric")
+    ...(hasPassingCommandOutput(input.evidence, input.artifacts) ||
+    hasStructuredMetricEvidence(input.evidence, input.artifacts)
       ? []
       : ["no verifier or metric evidence is recorded"])
   ];
 }
 
-function validationBlockers(evidence: StartupGateEvidenceRow[]): string[] {
+function validationBlockers(
+  evidence: StartupGateEvidenceRow[],
+  artifacts: Map<string, StartupGateEvidenceArtifact>
+): string[] {
   return [
     ...(hasEvidenceType(evidence, "startup_problem_hypothesis")
       ? []
@@ -374,7 +391,7 @@ function validationBlockers(evidence: StartupGateEvidenceRow[]): string[] {
     ...(hasEvidenceType(evidence, "startup_solution_hypothesis")
       ? []
       : ["solution hypothesis is missing"]),
-    ...(hasValidationEvidence(evidence)
+    ...(hasValidationEvidence(evidence, artifacts)
       ? []
       : ["customer, competitor, or metric validation evidence is missing"]),
     ...(hasEvidenceType(evidence, "startup_disconfirming")
@@ -383,18 +400,32 @@ function validationBlockers(evidence: StartupGateEvidenceRow[]): string[] {
   ];
 }
 
-function hasValidationEvidence(evidence: StartupGateEvidenceRow[]): boolean {
+function hasValidationEvidence(
+  evidence: StartupGateEvidenceRow[],
+  artifacts: Map<string, StartupGateEvidenceArtifact>
+): boolean {
+  if (hasStructuredMetricEvidence(evidence, artifacts)) {
+    return true;
+  }
+
   return ["startup_customer_interview", "startup_competitor", "startup_metric"].some(
-    (type) => hasEvidenceType(evidence, type)
+    (type) =>
+      evidence
+        .filter((item) => item.type === type)
+        .some((item) => hasStructuredValidationArtifact(item, artifacts.get(item.id)))
   );
 }
 
 function launchBlockers(input: {
   tasks: StartupGateTaskRow[];
   evidence: StartupGateEvidenceRow[];
+  artifacts: Map<string, StartupGateEvidenceArtifact>;
 }): string[] {
   return [
     ...(hasMeasurementFramework(input) ? [] : ["measurement framework is missing"]),
+    ...(hasStructuredMetricEvidence(input.evidence, input.artifacts)
+      ? []
+      : ["metric snapshot with source, threshold, and current value is missing"]),
     ...(hasEvidenceType(input.evidence, "startup_repo_readiness") ||
     hasCompletedTask(input.tasks, "inspect_repo_readiness")
       ? []
@@ -402,9 +433,9 @@ function launchBlockers(input: {
     ...(hasEvidenceType(input.evidence, "startup_security_baseline")
       ? []
       : ["security baseline is missing"]),
-    ...(hasEvidenceType(input.evidence, "command_output")
+    ...(hasPassingCommandOutput(input.evidence, input.artifacts)
       ? []
-      : ["verifier command evidence is missing"]),
+      : ["passing verifier command evidence is missing"]),
     ...(hasEvidenceType(input.evidence, "startup_migration_plan")
       ? []
       : ["migration plan evidence is missing"]),
@@ -416,7 +447,9 @@ function launchBlockers(input: {
       : ["observability evidence is missing"]),
     ...(hasEvidenceType(input.evidence, "startup_founder_bottleneck")
       ? []
-      : ["founder bottleneck audit is missing"])
+      : ["founder bottleneck audit is missing"]),
+    ...launchEvidenceQualityBlockers(input.evidence, input.artifacts),
+    ...acceptedDebtDecisionBlockers(input.evidence, input.artifacts)
   ];
 }
 
@@ -468,6 +501,222 @@ function hasCompletedTask(tasks: StartupGateTaskRow[], type: string): boolean {
 
 function hasEvidenceType(evidence: StartupGateEvidenceRow[], type: string): boolean {
   return evidence.some((item) => item.type === type);
+}
+
+function readStartupGateEvidenceArtifacts(
+  evidence: StartupGateEvidenceRow[]
+): Map<string, StartupGateEvidenceArtifact> {
+  const artifacts = new Map<string, StartupGateEvidenceArtifact>();
+
+  for (const item of evidence) {
+    const artifact = readStartupGateEvidenceArtifact(item.uri);
+
+    if (artifact !== undefined) {
+      artifacts.set(item.id, artifact);
+    }
+  }
+
+  return artifacts;
+}
+
+function readStartupGateEvidenceArtifact(
+  uri: string
+): StartupGateEvidenceArtifact | undefined {
+  try {
+    const parsed = JSON.parse(readFileSync(fileURLToPath(uri), "utf8")) as unknown;
+
+    return isRecord(parsed) ? parsed : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function hasPassingCommandOutput(
+  evidence: StartupGateEvidenceRow[],
+  artifacts: Map<string, StartupGateEvidenceArtifact>
+): boolean {
+  return evidence
+    .filter((item) => item.type === "command_output")
+    .some((item) => {
+      const result = artifacts.get(item.id)?.result;
+
+      return (
+        isRecord(result) &&
+        result.exitCode === 0 &&
+        result.timedOut === false &&
+        result.forceKilled === false
+      );
+    });
+}
+
+function hasStructuredMetricEvidence(
+  evidence: StartupGateEvidenceRow[],
+  artifacts: Map<string, StartupGateEvidenceArtifact>
+): boolean {
+  return evidence
+    .filter(
+      (item) =>
+        item.type === "startup_metric" || item.type === "startup_metric_snapshot"
+    )
+    .some((item) => {
+      const content = parsedArtifactContent(artifacts.get(item.id));
+
+      return (
+        isRecord(content) &&
+        hasNonEmptyString(content.source) &&
+        hasNonEmptyValue(content.threshold) &&
+        hasNonEmptyValue(content.current)
+      );
+    });
+}
+
+function hasStructuredValidationArtifact(
+  row: StartupGateEvidenceRow,
+  artifact: StartupGateEvidenceArtifact | undefined
+): boolean {
+  if (row.type === "startup_metric") {
+    const content = parsedArtifactContent(artifact);
+
+    return (
+      isRecord(content) &&
+      hasNonEmptyString(content.source) &&
+      hasNonEmptyValue(content.threshold) &&
+      hasNonEmptyValue(content.current)
+    );
+  }
+
+  if (row.type === "startup_customer_interview") {
+    const content = parsedArtifactContent(artifact);
+
+    return (
+      isRecord(content) &&
+      hasSourceRefs(artifact) &&
+      hasHypothesisAssociation(artifact) &&
+      hasNonEmptyString(content.persona) &&
+      hasNonEmptyString(content.problem) &&
+      hasNonEmptyString(content.signalStrength) &&
+      (hasNonEmptyString(content.quote) || hasNonEmptyString(content.summary))
+    );
+  }
+
+  if (row.type === "startup_competitor") {
+    const content = parsedArtifactContent(artifact);
+
+    return (
+      isRecord(content) &&
+      hasSourceRefs(artifact) &&
+      hasNonEmptyString(content.competitor) &&
+      hasNonEmptyString(content.finding) &&
+      hasNonEmptyString(content.signalStrength)
+    );
+  }
+
+  return false;
+}
+
+function launchEvidenceQualityBlockers(
+  evidence: StartupGateEvidenceRow[],
+  artifacts: Map<string, StartupGateEvidenceArtifact>
+): string[] {
+  return evidence
+    .filter((item) =>
+      [
+        "startup_migration_plan",
+        "startup_rollback_plan",
+        "startup_observability"
+      ].includes(item.type)
+    )
+    .filter((item) => !hasRemediationQuality(artifacts.get(item.id)))
+    .map(
+      (item) =>
+        `${startupEvidenceLabel(item.type)} needs owner, remediation task, and acceptance criteria`
+    );
+}
+
+function acceptedDebtDecisionBlockers(
+  evidence: StartupGateEvidenceRow[],
+  artifacts: Map<string, StartupGateEvidenceArtifact>
+): string[] {
+  const undecidedDebt = evidence
+    .filter((item) => item.type === "startup_acceptable_debt")
+    .filter((item) => !hasDecisionAssociation(artifacts.get(item.id)));
+
+  return undecidedDebt.length === 0
+    ? []
+    : ["accepted debt requires an explicit decision association"];
+}
+
+function hasRemediationQuality(
+  artifact: StartupGateEvidenceArtifact | undefined
+): boolean {
+  const content = parsedArtifactContent(artifact);
+
+  return (
+    isRecord(content) &&
+    hasNonEmptyString(content.owner) &&
+    hasNonEmptyString(content.remediationTask) &&
+    hasNonEmptyString(content.acceptanceCriteria)
+  );
+}
+
+function parsedArtifactContent(
+  artifact: StartupGateEvidenceArtifact | undefined
+): unknown {
+  if (artifact === undefined || typeof artifact.content !== "string") {
+    return undefined;
+  }
+
+  try {
+    return JSON.parse(artifact.content) as unknown;
+  } catch {
+    return undefined;
+  }
+}
+
+function hasSourceRefs(artifact: StartupGateEvidenceArtifact | undefined): boolean {
+  return (
+    artifact !== undefined &&
+    Array.isArray(artifact.sourceRefs) &&
+    artifact.sourceRefs.some((sourceRef) => hasNonEmptyString(sourceRef))
+  );
+}
+
+function hasHypothesisAssociation(
+  artifact: StartupGateEvidenceArtifact | undefined
+): boolean {
+  return (
+    isRecord(artifact?.associations) &&
+    hasNonEmptyString(artifact.associations.hypothesisId)
+  );
+}
+
+function hasDecisionAssociation(
+  artifact: StartupGateEvidenceArtifact | undefined
+): boolean {
+  return (
+    isRecord(artifact?.associations) &&
+    hasNonEmptyString(artifact.associations.decisionId)
+  );
+}
+
+function hasNonEmptyValue(value: unknown): boolean {
+  return (
+    hasNonEmptyString(value) ||
+    (typeof value === "number" && Number.isFinite(value)) ||
+    typeof value === "boolean"
+  );
+}
+
+function hasNonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function startupEvidenceLabel(type: string): string {
+  return type.replace(/^startup_/, "").replaceAll("_", " ");
 }
 
 function evidenceSubject(artifact: StartupEvidenceArtifact): {

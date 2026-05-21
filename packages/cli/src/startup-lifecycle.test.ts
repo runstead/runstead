@@ -39,12 +39,14 @@ describe("startup CLI lifecycle", () => {
         "Founder repeats the launch check after a product change"
       );
 
+      let problemHypothesisId: string | undefined;
+
       for (const [kind, statement] of [
         ["problem", "Founders cannot trust AI-coded launch readiness"],
         ["user", "Technical founders need evidence-backed launch gates"],
         ["solution", "Runstead records verifier-backed startup gates"]
       ] as const) {
-        await runCli(
+        const hypothesisOutput = await runCli(
           "startup",
           "hypothesis",
           "add",
@@ -55,7 +57,16 @@ describe("startup CLI lifecycle", () => {
           "--statement",
           statement
         );
+
+        if (kind === "problem") {
+          problemHypothesisId = extractRecordedId(hypothesisOutput);
+        }
       }
+
+      if (problemHypothesisId === undefined) {
+        throw new Error("Expected problem hypothesis id");
+      }
+
       await runCli(
         "startup",
         "evidence",
@@ -65,7 +76,38 @@ describe("startup CLI lifecycle", () => {
         "--type",
         "customer_interview",
         "--summary",
-        "Three founders asked for governed launch evidence"
+        "Three founders asked for governed launch evidence",
+        "--source",
+        "interview-notes:2026-05-14",
+        "--hypothesis",
+        problemHypothesisId,
+        "--content",
+        JSON.stringify({
+          persona: "technical founder",
+          problem: "AI-coded launches lack evidence-backed readiness",
+          summary: "Three founders asked for governed launch evidence",
+          signalStrength: "strong"
+        })
+      );
+      await runCli(
+        "startup",
+        "evidence",
+        "add",
+        "--cwd",
+        workspace,
+        "--type",
+        "metric",
+        "--summary",
+        "Activation snapshot exceeds the MVP threshold",
+        "--source",
+        "analytics:activation:2026-05-14",
+        "--content",
+        JSON.stringify({
+          metric: "activation",
+          source: "manual snapshot",
+          threshold: 0.4,
+          current: 0.51
+        })
       );
       await runCli(
         "startup",
@@ -141,7 +183,9 @@ describe("startup CLI lifecycle", () => {
           "--type",
           type,
           "--summary",
-          summary
+          summary,
+          "--content",
+          launchRemediationContent(type)
         );
       }
       await runCli(
@@ -353,4 +397,22 @@ function readEvidenceTypes(workspace: string): string[] {
   } finally {
     database.close();
   }
+}
+
+function extractRecordedId(output: string): string {
+  const match = /Recorded startup hypothesis: (\S+)/.exec(output);
+
+  if (match?.[1] === undefined) {
+    throw new Error(`Could not extract hypothesis id from output: ${output}`);
+  }
+
+  return match[1];
+}
+
+function launchRemediationContent(type: string): string {
+  return JSON.stringify({
+    owner: "founder",
+    remediationTask: `Maintain ${type} evidence for launch readiness`,
+    acceptanceCriteria: `${type} evidence is reviewed before launch`
+  });
 }

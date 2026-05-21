@@ -1,4 +1,4 @@
-import { readFile, rm } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -76,6 +76,20 @@ describe("startup evidence ledger", () => {
         goalId: created.goal.id,
         now: new Date("2026-05-14T04:20:00.000Z")
       });
+      await addStartupEvidence({
+        cwd: workspace,
+        type: "metric",
+        summary: "Activation metric snapshot is above launch threshold",
+        sourceRefs: ["analytics:activation:2026-05-14"],
+        goalId: created.goal.id,
+        content: JSON.stringify({
+          metric: "activation",
+          source: "manual snapshot",
+          threshold: 0.4,
+          current: 0.52
+        }),
+        now: new Date("2026-05-14T04:22:00.000Z")
+      });
       for (const [type, summary] of [
         ["repo_readiness", "Repository readiness audit is clean"],
         ["security_baseline", "Security baseline is clean"],
@@ -89,6 +103,7 @@ describe("startup evidence ledger", () => {
           type,
           summary,
           goalId: created.goal.id,
+          content: launchRemediationContent(type),
           now: new Date("2026-05-14T04:25:00.000Z")
         });
       }
@@ -122,11 +137,50 @@ describe("startup evidence ledger", () => {
 
       expect(missingVerifierEvidenceGate.passed).toBe(false);
       expect(missingVerifierEvidenceGate.blockers).toEqual([
-        "verifier command evidence is missing"
+        "passing verifier command evidence is missing"
       ]);
-      expect(missingVerifierEvidenceGate.warnings).toContain(
-        "no verifier or metric evidence is recorded"
-      );
+      expect(missingVerifierEvidenceGate.warnings).toEqual([]);
+
+      await writeVerifierArtifact({
+        root: initialized.root,
+        fileName: "verifier-failed.json",
+        exitCode: 1,
+        createdAt: "2026-05-14T04:31:00.000Z"
+      });
+      const failedCommandEvidenceDatabase = openRunsteadDatabase(initialized.stateDb);
+
+      try {
+        projectEvidence(failedCommandEvidenceDatabase, {
+          id: "ev_startup_launch_command_failed_001",
+          type: "command_output",
+          subjectType: "task",
+          subjectId: verifierTask.id,
+          uri: `file://${join(initialized.root, "evidence", "verifier-failed.json")}`,
+          summary: "MVP verifier commands failed",
+          createdAt: "2026-05-14T04:31:00.000Z"
+        });
+      } finally {
+        failedCommandEvidenceDatabase.close();
+      }
+
+      const failedVerifierEvidenceGate = await checkStartupGate({
+        cwd: workspace,
+        stage: "launch",
+        domain: "ai-native-startup",
+        now: new Date("2026-05-14T04:31:30.000Z")
+      });
+
+      expect(failedVerifierEvidenceGate.passed).toBe(false);
+      expect(failedVerifierEvidenceGate.blockers).toEqual([
+        "passing verifier command evidence is missing"
+      ]);
+
+      await writeVerifierArtifact({
+        root: initialized.root,
+        fileName: "verifier-passed.json",
+        exitCode: 0,
+        createdAt: "2026-05-14T04:32:00.000Z"
+      });
 
       const commandEvidenceDatabase = openRunsteadDatabase(initialized.stateDb);
 
@@ -136,7 +190,7 @@ describe("startup evidence ledger", () => {
           type: "command_output",
           subjectType: "task",
           subjectId: verifierTask.id,
-          uri: "file:///repo/.runstead/evidence/verifier.json",
+          uri: `file://${join(initialized.root, "evidence", "verifier-passed.json")}`,
           summary: "MVP verifier commands passed",
           createdAt: "2026-05-14T04:31:00.000Z"
         });
@@ -154,6 +208,26 @@ describe("startup evidence ledger", () => {
       expect(passedGate.passed).toBe(true);
       expect(passedGate.blockers).toEqual([]);
       expect(passedGate.warnings).toEqual([]);
+
+      await addStartupEvidence({
+        cwd: workspace,
+        type: "acceptable_debt",
+        summary: "Ship without automated retention cohort export",
+        sourceRefs: ["launch-review:2026-05-14"],
+        goalId: created.goal.id,
+        now: new Date("2026-05-14T04:33:00.000Z")
+      });
+      const undecidedDebtGate = await checkStartupGate({
+        cwd: workspace,
+        stage: "launch",
+        domain: "ai-native-startup",
+        now: new Date("2026-05-14T04:34:00.000Z")
+      });
+
+      expect(undecidedDebtGate.passed).toBe(false);
+      expect(undecidedDebtGate.blockers).toContain(
+        "accepted debt requires an explicit decision association"
+      );
 
       const database = openRunsteadDatabase(initialized.stateDb);
 
@@ -180,9 +254,11 @@ describe("startup evidence ledger", () => {
           .all() as { type: string; aggregate_type: string; aggregate_id: string }[];
 
         expect(evidenceRows.map((row) => row.type)).toEqual([
+          "startup_acceptable_debt",
           "startup_customer_interview",
           "startup_founder_bottleneck",
           "startup_measurement_framework",
+          "startup_metric",
           "startup_migration_plan",
           "startup_observability",
           "startup_repo_readiness",
@@ -190,6 +266,16 @@ describe("startup evidence ledger", () => {
           "startup_security_baseline"
         ]);
         expect(gateEvents).toEqual([
+          {
+            type: "startup_gate.checked",
+            aggregate_type: "startup_gate",
+            aggregate_id: "ai-native-startup_launch"
+          },
+          {
+            type: "startup_gate.checked",
+            aggregate_type: "startup_gate",
+            aggregate_id: "ai-native-startup_launch"
+          },
           {
             type: "startup_gate.checked",
             aggregate_type: "startup_gate",
@@ -249,25 +335,43 @@ describe("startup evidence ledger", () => {
         ])
       );
 
+      let problemHypothesisId: string | undefined;
+
       for (const [kind, statement] of [
         ["problem", "Founders do not trust AI-coded MVP readiness"],
         ["user", "Technical founders need an evidence-backed launch gate"],
         ["solution", "Runstead can govern AI-coded launch readiness"]
       ] as const) {
-        await addStartupHypothesis({
+        const hypothesis = await addStartupHypothesis({
           cwd: workspace,
           kind,
           statement,
           goalId: created.goal.id,
           now: new Date("2026-05-14T03:20:00.000Z")
         });
+
+        if (kind === "problem") {
+          problemHypothesisId = hypothesis.evidence.id;
+        }
+      }
+
+      if (problemHypothesisId === undefined) {
+        throw new Error("Expected problem hypothesis id");
       }
 
       await addStartupEvidence({
         cwd: workspace,
         type: "customer_interview",
         summary: "Two founders reported launch uncertainty",
+        sourceRefs: ["interview-notes:2026-05-14"],
+        hypothesisId: problemHypothesisId,
         goalId: created.goal.id,
+        content: JSON.stringify({
+          persona: "technical founder",
+          problem: "launch readiness is unverifiable after AI coding",
+          summary: "Two founders wanted launch evidence before beta outreach",
+          signalStrength: "strong"
+        }),
         now: new Date("2026-05-14T03:30:00.000Z")
       });
       const missingDisconfirming = await checkStartupGate({
@@ -424,4 +528,40 @@ function projectEvidence(
       value: evidence
     }
   });
+}
+
+function launchRemediationContent(type: string): string {
+  return JSON.stringify({
+    owner: "founder",
+    remediationTask: `Maintain ${type} evidence for launch readiness`,
+    acceptanceCriteria: `${type} evidence is reviewed before launch`
+  });
+}
+
+async function writeVerifierArtifact(input: {
+  root: string;
+  fileName: string;
+  exitCode: number;
+  createdAt: string;
+}): Promise<void> {
+  const evidenceDir = join(input.root, "evidence");
+
+  await mkdir(evidenceDir, { recursive: true });
+  await writeFile(
+    join(evidenceDir, input.fileName),
+    `${JSON.stringify(
+      {
+        schemaVersion: 1,
+        createdAt: input.createdAt,
+        result: {
+          exitCode: input.exitCode,
+          timedOut: false,
+          forceKilled: false
+        }
+      },
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
 }
