@@ -47,7 +47,8 @@ export const STARTUP_EVIDENCE_TYPES = [
   "acceptable_debt",
   "false_positive",
   "observability",
-  "remediation_failure"
+  "remediation_failure",
+  "team_collaboration"
 ] as const;
 
 export type StartupEvidenceType = (typeof STARTUP_EVIDENCE_TYPES)[number];
@@ -153,6 +154,7 @@ export interface RecordStartupGateDecisionOptions {
   stage: StartupGateStage;
   decision: "launch" | "no_launch" | "launch_with_accepted_debt" | "waive_blocker";
   reason: string;
+  comment?: string;
   owner?: string;
   blocker?: string;
   expiresAt?: string;
@@ -519,6 +521,7 @@ export async function recordStartupGateDecision(
         gate: options.stage,
         decision: options.decision,
         reason: options.reason,
+        ...(options.comment === undefined ? {} : { comment: options.comment }),
         ...(options.owner === undefined ? {} : { owner: options.owner }),
         ...(options.blocker === undefined ? {} : { blocker: options.blocker }),
         ...(options.expiresAt === undefined ? {} : { expiresAt: options.expiresAt })

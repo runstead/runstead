@@ -438,7 +438,8 @@ describe("cli entrypoint", () => {
         "onboard",
         "remediate",
         "scale",
-        "scale-check"
+        "scale-check",
+        "team"
       ])
     );
     expect(assess?.options.map((option) => option.long)).toEqual(

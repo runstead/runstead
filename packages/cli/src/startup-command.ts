@@ -1289,6 +1289,65 @@ export function registerStartupCommands(program: Command): void {
       }
     );
 
+  const startupTeam = startup
+    .command("team")
+    .description("Generate team collaboration and launch review surfaces.");
+
+  startupTeam
+    .command("digest")
+    .description(
+      "Export pending approvals, risk acceptances, reminders, and role views."
+    )
+    .option("--cwd <path>", "Workspace directory")
+    .option("--owner <id>", "Launch decision owner")
+    .option("--reviewer <id>", "Launch reviewer")
+    .option("--notify <target>", "Notification target", collectValues, [])
+    .option("--expiry-window-days <days>", "Reminder window for expiring approvals")
+    .option("--actor <id>", "RBAC subject for collaboration digest", "local-admin")
+    .action(
+      async (options: {
+        cwd?: string;
+        owner?: string;
+        reviewer?: string;
+        notify: string[];
+        expiryWindowDays?: string;
+        actor: string;
+      }) => {
+        await requireRbacPermission({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          actor: options.actor,
+          permission: "evidence.write",
+          action: "generate startup collaboration digest"
+        });
+
+        const { generateStartupCollaborationDigest } =
+          await import("./startup-collaboration.js");
+        const result = await generateStartupCollaborationDigest({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          ...(options.owner === undefined ? {} : { owner: options.owner }),
+          ...(options.reviewer === undefined ? {} : { reviewer: options.reviewer }),
+          notify: options.notify,
+          ...(options.expiryWindowDays === undefined
+            ? {}
+            : {
+                expiryWindowDays: parsePositiveInteger(
+                  options.expiryWindowDays,
+                  "--expiry-window-days"
+                )
+              })
+        });
+
+        console.log(`Generated collaboration digest evidence: ${result.evidenceId}`);
+        console.log(`Pending approvals: ${result.pendingApprovals.length}`);
+        console.log(`Risk acceptances: ${result.riskAcceptances.length}`);
+        console.log(`Expiry reminders: ${result.expiryReminders.length}`);
+        console.log(`JSON export: ${result.jsonPath}`);
+        for (const file of result.files) {
+          console.log(`Wrote collaboration digest file: ${file}`);
+        }
+      }
+    );
+
   const startupHypothesis = startup
     .command("hypothesis")
     .description("Manage startup hypothesis ledger records.");
@@ -1726,6 +1785,7 @@ export function registerStartupCommands(program: Command): void {
     .requiredOption("--blocker <text>", "Exact blocker text to waive")
     .requiredOption("--owner <id>", "Owner accepting the waived risk")
     .requiredOption("--reason <text>", "Reason the blocker can be accepted")
+    .option("--comment <text>", "Reviewer or approver comment")
     .requiredOption("--expires-at <iso>", "Expiration timestamp for the waiver")
     .option("--actor <id>", "RBAC subject for gate decisions", "local-admin")
     .action(
@@ -1736,6 +1796,7 @@ export function registerStartupCommands(program: Command): void {
         blocker: string;
         owner: string;
         reason: string;
+        comment?: string;
         expiresAt: string;
         actor: string;
       }) => {
@@ -1755,6 +1816,7 @@ export function registerStartupCommands(program: Command): void {
           blocker: options.blocker,
           owner: options.owner,
           reason: options.reason,
+          ...(options.comment === undefined ? {} : { comment: options.comment }),
           expiresAt: options.expiresAt
         });
 
@@ -1775,6 +1837,7 @@ export function registerStartupCommands(program: Command): void {
     )
     .requiredOption("--reason <text>", "Decision rationale")
     .option("--owner <id>", "Decision owner")
+    .option("--comment <text>", "Reviewer or approver comment")
     .option("--actor <id>", "RBAC subject for gate decisions", "local-admin")
     .action(
       async (options: {
@@ -1784,6 +1847,7 @@ export function registerStartupCommands(program: Command): void {
         decision: string;
         reason: string;
         owner?: string;
+        comment?: string;
         actor: string;
       }) => {
         await requireRbacPermission({
@@ -1800,6 +1864,7 @@ export function registerStartupCommands(program: Command): void {
           stage: parseStartupGateStage(options.stage),
           decision: parseStartupGateDecision(options.decision),
           reason: options.reason,
+          ...(options.comment === undefined ? {} : { comment: options.comment }),
           ...(options.owner === undefined ? {} : { owner: options.owner })
         });
 
