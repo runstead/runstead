@@ -10,7 +10,7 @@ export interface DiscoverVerifierCommandsOptions {
 
 type PackageManager = "pnpm" | "npm" | "yarn" | "bun";
 
-const STANDARD_VERIFIERS = ["test", "lint", "typecheck"] as const;
+const STANDARD_VERIFIERS = ["test", "lint", "typecheck", "build"] as const;
 
 export async function discoverVerifierCommands(
   options: DiscoverVerifierCommandsOptions = {}

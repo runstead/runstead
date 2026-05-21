@@ -19,7 +19,8 @@ describe("verifier discovery", () => {
             scripts: {
               test: "vitest run",
               lint: "eslint .",
-              typecheck: "tsc --noEmit"
+              typecheck: "tsc --noEmit",
+              build: "tsc -b"
             }
           },
           null,
@@ -40,6 +41,10 @@ describe("verifier discovery", () => {
         {
           name: "typecheck",
           command: "pnpm typecheck"
+        },
+        {
+          name: "build",
+          command: "pnpm build"
         }
       ]);
     } finally {
@@ -59,7 +64,7 @@ describe("verifier discovery", () => {
       await writeFile(join(workspace, "pnpm-workspace.yaml"), "packages: []\n");
       await writeFile(
         join(workspace, "turbo.json"),
-        JSON.stringify({ tasks: { lint: {}, typecheck: {} } }, null, 2),
+        JSON.stringify({ tasks: { lint: {}, typecheck: {}, build: {} } }, null, 2),
         "utf8"
       );
 
@@ -75,6 +80,10 @@ describe("verifier discovery", () => {
         {
           name: "typecheck",
           command: "pnpm exec turbo run typecheck"
+        },
+        {
+          name: "build",
+          command: "pnpm exec turbo run build"
         }
       ]);
     } finally {
