@@ -26,6 +26,7 @@ export const STARTUP_EVIDENCE_TYPES = [
   "migration_plan",
   "rollback_plan",
   "release_plan",
+  "ui_validation",
   "hypothesis",
   "problem_hypothesis",
   "user_hypothesis",
@@ -578,6 +579,7 @@ function launchBlockers(input: {
       ? []
       : ["founder bottleneck audit is missing"]),
     ...launchEvidenceQualityBlockers(input.evidence, input.artifacts),
+    ...uiValidationBlockers(input.evidence, input.artifacts),
     ...acceptedDebtDecisionBlockers(input.evidence, input.artifacts)
   ];
 }
@@ -784,6 +786,32 @@ function acceptedDebtDecisionBlockers(
   return undecidedDebt.length === 0
     ? []
     : ["accepted debt requires an explicit decision association"];
+}
+
+function uiValidationBlockers(
+  evidence: StartupGateEvidenceRow[],
+  artifacts: Map<string, StartupGateEvidenceArtifact>
+): string[] {
+  return evidence
+    .filter((item) => item.type === "startup_ui_validation")
+    .filter((item) => uiValidationFailed(artifacts.get(item.id)))
+    .map((item) => `frontend UI validation failed: ${item.summary ?? item.id}`);
+}
+
+function uiValidationFailed(
+  artifact: StartupGateEvidenceArtifact | undefined
+): boolean {
+  const content = parsedArtifactContent(artifact);
+
+  return (
+    isRecord(content) &&
+    [
+      content.domStatus,
+      content.accessibilityStatus,
+      content.responsiveStatus,
+      content.criticalFlowStatus
+    ].some((status) => status === "fail" || status === "failed")
+  );
 }
 
 function founderBottleneckAgingBlockers(

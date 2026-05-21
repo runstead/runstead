@@ -288,6 +288,18 @@ describe("generateLaunchReadinessReport", () => {
             "observability recorded",
             launchQualityContent("observability")
           ],
+          [
+            "startup_ui_validation",
+            "desktop UI validation passed",
+            {
+              url: "http://localhost:3000",
+              viewport: "desktop",
+              domStatus: "pass",
+              accessibilityStatus: "pass",
+              responsiveStatus: "pass",
+              criticalFlowStatus: "pass"
+            }
+          ],
           ["startup_founder_bottleneck", "founder bottleneck handoff recorded", undefined]
         ] as const) {
           const artifactPath = join(evidenceDir, `${type}.json`);
@@ -346,6 +358,8 @@ describe("generateLaunchReadinessReport", () => {
       expect(result.markdown).toContain("wrapped worker post-run verifier evidence");
       expect(result.markdown).toContain("`codex_direct` is the hard-proxy path");
       expect(result.markdown).toContain("## Evidence Provenance");
+      expect(result.markdown).toContain("## Frontend UI Validation");
+      expect(result.markdown).toContain("url=http://localhost:3000");
       expect(result.markdown).toContain("source=posthog");
       expect(result.markdown).toContain(
         "https://posthog.example/project/1/insights/activation"

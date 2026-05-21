@@ -335,6 +335,10 @@ function formatLaunchReadinessReport(input: {
     "",
     missingObservability(input.data),
     "",
+    "## Frontend UI Validation",
+    "",
+    frontendUiValidation(input.data),
+    "",
     "## Structured Startup Artifacts",
     "",
     structuredStartupArtifacts(input.data),
@@ -519,6 +523,41 @@ function missingObservability(data: LaunchReadinessReportData): string {
   ];
 
   return rows.map((row) => `- ${row}`).join("\n");
+}
+
+function frontendUiValidation(data: LaunchReadinessReportData): string {
+  const rows = data.evidence.filter((item) => item.type === "startup_ui_validation");
+
+  return listOrNone(rows, (item) => {
+    const content = parsedEvidenceContent(item.uri);
+
+    if (!isRecord(content)) {
+      return `- ${item.id}: ${item.summary ?? item.uri}`;
+    }
+
+    return [
+      `- ${item.id}: url=${stringValue(content.url) ?? "unknown"}`,
+      `viewport=${stringValue(content.viewport) ?? "unknown"}`,
+      `dom=${stringValue(content.domStatus) ?? "unknown"}`,
+      `accessibility=${stringValue(content.accessibilityStatus) ?? "unknown"}`,
+      `responsive=${stringValue(content.responsiveStatus) ?? "unknown"}`,
+      `flow=${stringValue(content.criticalFlowStatus) ?? "unknown"}`
+    ].join(" ");
+  });
+}
+
+function parsedEvidenceContent(uri: string): unknown {
+  const artifact = readEvidenceProvenanceArtifact(uri);
+
+  if (!isRecord(artifact) || typeof artifact.content !== "string") {
+    return undefined;
+  }
+
+  try {
+    return JSON.parse(artifact.content) as unknown;
+  } catch {
+    return undefined;
+  }
 }
 
 function structuredStartupArtifacts(data: LaunchReadinessReportData): string {

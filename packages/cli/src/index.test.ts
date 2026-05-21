@@ -382,6 +382,9 @@ describe("cli entrypoint", () => {
     const launchSupportTriage = launch?.commands.find(
       (command) => command.name() === "support-triage"
     );
+    const launchUiValidate = launch?.commands.find(
+      (command) => command.name() === "ui-validate"
+    );
     const launchBottleneckMap = launch?.commands.find(
       (command) => command.name() === "bottleneck-map"
     );
@@ -495,6 +498,19 @@ describe("cli entrypoint", () => {
         "--request",
         "--severity",
         "--source"
+      ])
+    );
+    expect(launchUiValidate?.options.map((option) => option.long)).toEqual(
+      expect.arrayContaining([
+        "--accessibility",
+        "--actor",
+        "--cwd",
+        "--dom",
+        "--flow",
+        "--responsive",
+        "--screenshot",
+        "--url",
+        "--viewport"
       ])
     );
     expect(launchBottleneckMap?.options.map((option) => option.long)).toEqual(

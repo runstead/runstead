@@ -565,6 +565,86 @@ export function registerStartupCommands(program: Command): void {
     );
 
   startupLaunch
+    .command("ui-validate")
+    .description("Record screenshot, DOM, accessibility, responsive, and flow UI validation evidence.")
+    .option("--cwd <path>", "Workspace directory")
+    .requiredOption("--url <url>", "Validated local or deployed URL")
+    .requiredOption("--viewport <viewport>", "Viewport label or dimensions")
+    .option("--screenshot <ref>", "Screenshot artifact URI or path")
+    .option("--dom <status>", "DOM smoke status: pass, fail, or not_run", "not_run")
+    .option(
+      "--accessibility <status>",
+      "Accessibility check status: pass, fail, or not_run",
+      "not_run"
+    )
+    .option(
+      "--responsive <status>",
+      "Responsive viewport status: pass, fail, or not_run",
+      "not_run"
+    )
+    .option("--flow <name>", "Critical user flow name")
+    .option("--flow-status <status>", "Critical flow status: pass, fail, or not_run", "not_run")
+    .option("--source <ref>", "Evidence source reference", collectValues, [])
+    .option("--source-uri <uri>", "Canonical browser/UI source URI")
+    .option("--source-kind <kind>", "Source kind, usually browser_ui")
+    .option("--captured-at <iso>", "Timestamp when the source was captured")
+    .option("--freshness-days <days>", "Maximum acceptable source age in days")
+    .option("--source-hash <hash>", "Optional hash of the captured source payload")
+    .option("--goal <id>", "Associated goal id")
+    .option("--actor <id>", "RBAC subject for UI validation writes", "local-admin")
+    .action(
+      async (options: {
+        cwd?: string;
+        url: string;
+        viewport: string;
+        screenshot?: string;
+        dom: string;
+        accessibility: string;
+        responsive: string;
+        flow?: string;
+        flowStatus: string;
+        source: string[];
+        sourceUri?: string;
+        sourceKind?: string;
+        capturedAt?: string;
+        freshnessDays?: string;
+        sourceHash?: string;
+        goal?: string;
+        actor: string;
+      }) => {
+        await requireRbacPermission({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          actor: options.actor,
+          permission: "evidence.write",
+          action: "record startup UI validation"
+        });
+
+        const { parseStartupUiValidationStatus, recordStartupUiValidation } =
+          await import("./startup-ui-validation.js");
+        const result = await recordStartupUiValidation({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          url: options.url,
+          viewport: options.viewport,
+          ...(options.screenshot === undefined ? {} : { screenshot: options.screenshot }),
+          domStatus: parseStartupUiValidationStatus(options.dom),
+          accessibilityStatus: parseStartupUiValidationStatus(options.accessibility),
+          responsiveStatus: parseStartupUiValidationStatus(options.responsive),
+          ...(options.flow === undefined ? {} : { criticalFlow: options.flow }),
+          criticalFlowStatus: parseStartupUiValidationStatus(options.flowStatus),
+          sourceRefs: options.source,
+          ...evidenceSourceDetails(options),
+          ...(options.goal === undefined ? {} : { goalId: options.goal })
+        });
+
+        console.log(
+          `Recorded UI validation evidence: ${result.evidence.evidence.id}`
+        );
+        console.log(`Failed: ${result.failed ? "yes" : "no"}`);
+        console.log(`Artifact: ${result.evidence.artifactPath}`);
+      }
+    );
+
+  startupLaunch
     .command("bottleneck-map")
     .description("Generate founder bottleneck audit evidence.")
     .option("--cwd <path>", "Workspace directory")
@@ -1174,7 +1254,7 @@ export function registerStartupCommands(program: Command): void {
     .option("--cwd <path>", "Workspace directory")
     .requiredOption(
       "--type <type>",
-      "Evidence type: customer_interview, competitor, metric, metric_snapshot, measurement_framework, agent_context, repo_readiness, security_baseline, migration_plan, rollback_plan, release_plan, hypothesis, problem_hypothesis, user_hypothesis, solution_hypothesis, disconfirming, support_triage, founder_bottleneck, workflow_registry, delegation_policy, institutional_memory, memory_retrieval, ops_schedule, ops_report, integration_map, ops_sop, gtm_artifact, decision, acceptable_debt, false_positive, or observability"
+      "Evidence type: customer_interview, competitor, metric, metric_snapshot, measurement_framework, agent_context, repo_readiness, security_baseline, migration_plan, rollback_plan, release_plan, ui_validation, hypothesis, problem_hypothesis, user_hypothesis, solution_hypothesis, disconfirming, support_triage, founder_bottleneck, workflow_registry, delegation_policy, institutional_memory, memory_retrieval, ops_schedule, ops_report, integration_map, ops_sop, gtm_artifact, decision, acceptable_debt, false_positive, or observability"
     )
     .requiredOption("--summary <text>", "Evidence summary")
     .option("--source <ref>", "Evidence source reference", collectValues, [])
