@@ -291,7 +291,19 @@ describe("local agent task primitives", () => {
         summary: "Inspected package metadata; no immediate risks found.",
         worker: "codex_direct",
         modelProvider: "chatgpt_codex",
-        model: "gpt-5.3-codex"
+        model: "gpt-5.3-codex",
+        governance: {
+          level: "level_2_native_proxy",
+          boundary: "native_tool_proxy",
+          hardProxyToolCalls: true,
+          internalToolProxy: "runstead_governed_actions",
+          policyEnforcement: "per_tool_call",
+          auditedActions: expect.arrayContaining([
+            "filesystem.read",
+            "shell.exec",
+            "verifier.run"
+          ])
+        }
       });
       expect(requests).toHaveLength(1);
       expect(requests[0]?.model).toBe("gpt-5.3-codex");
@@ -305,6 +317,12 @@ describe("local agent task primitives", () => {
       expect(formatLocalAgentRunReport(result)).toContain("Runstead agent run");
       expect(formatLocalAgentRunReport(result)).toContain("Provider: chatgpt_codex");
       expect(formatLocalAgentRunReport(result)).toContain(
+        "Governance: level_2_native_proxy"
+      );
+      expect(formatLocalAgentRunReport(result)).toContain(
+        "Tool proxy: runstead_governed_actions (per_tool_call)"
+      );
+      expect(formatLocalAgentRunReport(result)).toContain(
         "tool_calls: model.inference.request completed x1"
       );
       expect(localAgentRunExitCode(result)).toBe(0);
@@ -315,6 +333,9 @@ describe("local agent task primitives", () => {
       });
       expect(formatLocalAgentTaskReport(report)).toContain("Runstead agent report");
       expect(formatLocalAgentTaskReport(report)).toContain("Model summary:");
+      expect(formatLocalAgentTaskReport(report)).toContain(
+        "governance level: level_2_native_proxy"
+      );
       expect(formatLocalAgentTaskReport(report)).toContain("File/tool activity:");
       expect(formatLocalAgentTaskReport(report)).toContain(
         "policy_decisions: allow medium x2"
@@ -435,6 +456,7 @@ describe("local agent task primitives", () => {
         modelSource: "runstead_model_option",
         status: "completed",
         governance: {
+          level: "level_1_wrapper",
           boundary: "process_wrapper",
           hardProxyToolCalls: false
         },
@@ -446,6 +468,9 @@ describe("local agent task primitives", () => {
       expect(formatLocalAgentRunReport(result)).toContain("Command: codex");
       expect(formatLocalAgentRunReport(result)).toContain(
         "Tool proxy: none (worker-internal tool calls are not hard-proxied)"
+      );
+      expect(formatLocalAgentRunReport(result)).toContain(
+        "Governance: level_1_wrapper"
       );
       expect(formatLocalAgentRunReport(result)).toContain(
         "Model source: runstead_model_option"

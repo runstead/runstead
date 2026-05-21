@@ -177,6 +177,19 @@ export interface LocalAgentReportToolCall {
   summary?: string;
 }
 
+export interface LocalAgentWorkerGovernanceProfile {
+  level: "level_1_wrapper" | "level_2_native_proxy";
+  enforcement?: string;
+  boundary: "process_wrapper" | "native_tool_proxy";
+  hardProxyToolCalls: boolean;
+  internalToolProxy: "none" | "runstead_governed_actions";
+  policyEnforcement: "launch_gate" | "per_tool_call";
+  workspaceCheckpoint?: boolean;
+  postRunDiffVerification?: boolean;
+  auditedActions: string[];
+  limitations: string[];
+}
+
 export async function attachLocalAgentVerifierEvidence(options: {
   cwd?: string;
   taskId: string;
@@ -790,10 +803,14 @@ function formatLocalAgentWorkerResultLines(
   workerResult: LocalAgentWorkerResult
 ): string[] {
   if (isCodexDirectLocalAgentWorkerResult(workerResult)) {
+    const governance = localNativeWorkerGovernanceOutput();
+
     return [
       `Worker: ${workerResult.worker}`,
       `Provider: ${workerResult.modelProvider}`,
       `Model: ${workerResult.model}`,
+      `Governance: ${String(governance.level)}`,
+      `Tool proxy: ${String(governance.internalToolProxy)} (${governance.policyEnforcement})`,
       `Tool calls: ${workerResult.toolCalls}`,
       `Failed tool calls: ${workerResult.failedToolCalls}`
     ];
@@ -805,6 +822,7 @@ function formatLocalAgentWorkerResultLines(
     `Mode: wrapped external worker`,
     `Model: ${wrappedWorkerModel(workerResult) ?? wrappedWorkerDefaultModelLabel(workerResult)}`,
     `Model source: ${wrappedWorkerModelSource(workerResult)}`,
+    `Governance: ${String(localWrappedWorkerGovernanceOutput(workerResult).level)}`,
     "Tool proxy: none (worker-internal tool calls are not hard-proxied)",
     `Exit: ${workerResult.exitCode}`,
     `Output valid: ${workerResult.outputValidation.valid ? "yes" : "no"}`,
@@ -1029,12 +1047,13 @@ function formatReportVerifiers(
 function formatWrappedWorkerTaskReportLines(
   sections: ReturnType<typeof localAgentReportSections>
 ): string[] {
-  if (sections.workerRuntime.command === undefined) {
+  const governance = sections.workerRuntime.governance;
+
+  if (sections.workerRuntime.command === undefined && governance === undefined) {
     return [];
   }
 
   const outputValidation = sections.workerRuntime.outputValidation;
-  const governance = sections.workerRuntime.governance;
   const outputValid =
     outputValidation === undefined
       ? "unknown"
@@ -1050,12 +1069,21 @@ function formatWrappedWorkerTaskReportLines(
 
   return [
     "Worker runtime:",
-    `  command: ${sections.workerRuntime.command}`,
-    `  boundary: process wrapper`,
+    ...(sections.workerRuntime.command === undefined
+      ? []
+      : [`  command: ${sections.workerRuntime.command}`]),
+    `  boundary: ${stringRecordValue(governance, "boundary") ?? "unknown"}`,
+    `  governance level: ${stringRecordValue(governance, "level") ?? "unknown"}`,
     `  hard-proxied tool calls: ${hardProxy}`,
-    `  output valid: ${outputValid}`,
-    `  stdout bytes: ${sections.workerRuntime.stdoutBytes ?? 0}`,
-    `  stderr bytes: ${sections.workerRuntime.stderrBytes ?? 0}`
+    ...(sections.workerRuntime.outputValidation === undefined
+      ? []
+      : [`  output valid: ${outputValid}`]),
+    ...(sections.workerRuntime.stdoutBytes === undefined
+      ? []
+      : [`  stdout bytes: ${sections.workerRuntime.stdoutBytes}`]),
+    ...(sections.workerRuntime.stderrBytes === undefined
+      ? []
+      : [`  stderr bytes: ${sections.workerRuntime.stderrBytes}`])
   ];
 }
 
@@ -1415,6 +1443,7 @@ function localAgentTaskOutput(input: {
     toolCalls: input.workerResult.toolCalls,
     failedToolCalls: input.workerResult.failedToolCalls,
     workerRunId: input.workerResult.workerRun.id,
+    governance: localNativeWorkerGovernanceOutput(),
     ...(input.workerResult.warnings.length === 0
       ? {}
       : { warnings: input.workerResult.warnings }),
@@ -1479,6 +1508,7 @@ function localAgentWorkerOutput(input: {
     toolCalls: input.workerResult.toolCalls,
     failedToolCalls: input.workerResult.failedToolCalls,
     summary: input.summary ?? input.workerResult.summary,
+    governance: localNativeWorkerGovernanceOutput(),
     ...(input.workerResult.warnings.length === 0
       ? {}
       : { warnings: input.workerResult.warnings }),
@@ -1780,15 +1810,55 @@ function wrappedWorkerDefaultModelLabel(workerResult: WrappedWorkerRunResult): s
 function localWrappedWorkerGovernanceOutput(
   workerResult: WrappedWorkerRunResult
 ): JsonObject {
-  return {
+  const profile: LocalAgentWorkerGovernanceProfile = {
+    level: "level_1_wrapper",
     enforcement: workerResult.governance.enforcement,
     boundary: "process_wrapper",
     hardProxyToolCalls: workerResult.governance.capabilities.hardProxyToolCalls,
     internalToolProxy: workerResult.governance.internalToolProxy.mode,
+    policyEnforcement: "launch_gate",
     workspaceCheckpoint: workerResult.governance.capabilities.workspaceCheckpoint,
     postRunDiffVerification:
-      workerResult.governance.capabilities.postRunDiffVerification
+      workerResult.governance.capabilities.postRunDiffVerification,
+    auditedActions: ["worker.external.start", "checkpoint", "diff_scope", "verifier"],
+    limitations: [
+      "worker-internal tool calls are governed only by the worker runtime",
+      "Runstead verifies process launch, checkpoint, diff, and verifier evidence after exit"
+    ]
   };
+
+  return profile as unknown as JsonObject;
+}
+
+function localNativeWorkerGovernanceOutput(): JsonObject {
+  const profile: LocalAgentWorkerGovernanceProfile = {
+    level: "level_2_native_proxy",
+    boundary: "native_tool_proxy",
+    hardProxyToolCalls: true,
+    internalToolProxy: "runstead_governed_actions",
+    policyEnforcement: "per_tool_call",
+    auditedActions: [
+      "worker.native.start",
+      "model.inference.request",
+      "filesystem.read",
+      "filesystem.write",
+      "filesystem.patch",
+      "shell.exec",
+      "git.status",
+      "git.diff",
+      "git.log",
+      "git.show",
+      "verifier.run",
+      "evidence.read",
+      "workspace.facts.read"
+    ],
+    limitations: [
+      "native proxy depends on Runstead-owned tool implementations",
+      "external MCP/plugin ecosystems remain available through wrapped workers"
+    ]
+  };
+
+  return profile as unknown as JsonObject;
 }
 
 function workerStartAction(input: {
@@ -2025,6 +2095,15 @@ function recordOutput(output: JsonObject, key: string): JsonObject | undefined {
   const value = output[key];
 
   return isRecord(value) ? value : undefined;
+}
+
+function stringRecordValue(
+  record: JsonObject | undefined,
+  key: string
+): string | undefined {
+  const value = record?.[key];
+
+  return typeof value === "string" ? value : undefined;
 }
 
 function parseJsonObject(value: unknown): JsonObject {
