@@ -174,6 +174,7 @@ interface StartupGateEvidenceRow {
 interface StartupGateEvidenceArtifact {
   sourceRefs?: unknown;
   associations?: unknown;
+  remediation?: unknown;
   content?: unknown;
   result?: unknown;
 }
@@ -760,19 +761,23 @@ function launchEvidenceQualityBlockers(
   evidence: StartupGateEvidenceRow[],
   artifacts: Map<string, StartupGateEvidenceArtifact>
 ): string[] {
-  return evidence
-    .filter((item) =>
-      [
-        "startup_migration_plan",
-        "startup_rollback_plan",
-        "startup_observability"
-      ].includes(item.type)
-    )
-    .filter((item) => !hasRemediationQuality(artifacts.get(item.id)))
-    .map(
-      (item) =>
-        `${startupEvidenceLabel(item.type)} needs owner, remediation task, and acceptance criteria`
-    );
+  return [
+    "startup_migration_plan",
+    "startup_rollback_plan",
+    "startup_observability"
+  ].flatMap((type) => {
+    const rows = evidence.filter((item) => item.type === type);
+
+    if (rows.length === 0) {
+      return [];
+    }
+
+    return rows.some((item) => hasRemediationQuality(artifacts.get(item.id)))
+      ? []
+      : [
+          `${startupEvidenceLabel(type)} needs owner, remediation task, and acceptance criteria`
+        ];
+  });
 }
 
 function acceptedDebtDecisionBlockers(
@@ -903,12 +908,21 @@ function hasRemediationQuality(
   artifact: StartupGateEvidenceArtifact | undefined
 ): boolean {
   const content = parsedArtifactContent(artifact);
+  const remediation = artifact?.remediation;
 
   return (
-    isRecord(content) &&
-    hasNonEmptyString(content.owner) &&
-    hasNonEmptyString(content.remediationTask) &&
-    hasNonEmptyString(content.acceptanceCriteria)
+    hasRemediationQualityFields(content) || hasRemediationQualityFields(remediation)
+  );
+}
+
+function hasRemediationQualityFields(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    hasNonEmptyString(value.owner) &&
+    hasNonEmptyString(
+      value.remediationTask === undefined ? value.task : value.remediationTask
+    ) &&
+    hasNonEmptyString(value.acceptanceCriteria)
   );
 }
 

@@ -366,6 +366,133 @@ describe("startup evidence ledger", () => {
     }
   });
 
+  it("accepts later high-quality launch evidence and remediation metadata", async () => {
+    const workspace = join(
+      tmpdir(),
+      `runstead-startup-evidence-quality-${process.pid}`
+    );
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      const initialized = await initRunstead({ cwd: workspace });
+      await installDomainPack({
+        cwd: workspace,
+        ref: "ai-native-startup",
+        now: new Date("2026-05-14T05:00:00.000Z")
+      });
+      const created = await createGoal({
+        cwd: workspace,
+        domain: "ai-native-startup",
+        template: "build-mvp",
+        now: new Date("2026-05-14T05:01:00.000Z")
+      });
+
+      for (const [type, summary, content] of [
+        ["measurement_framework", "Measurement framework exists", undefined],
+        [
+          "metric",
+          "Activation is above launch threshold",
+          JSON.stringify({ source: "manual", threshold: 1, current: 1 })
+        ],
+        ["repo_readiness", "Repo readiness is clean", undefined],
+        ["security_baseline", "Security baseline is clean", undefined],
+        ["founder_bottleneck", "Founder bottleneck handoff recorded", undefined]
+      ] as const) {
+        await addStartupEvidence({
+          cwd: workspace,
+          type,
+          summary,
+          ...(content === undefined ? {} : { content }),
+          goalId: created.goal.id,
+          now: new Date("2026-05-14T05:02:00.000Z")
+        });
+      }
+
+      for (const type of ["migration_plan", "rollback_plan", "observability"]) {
+        await addStartupEvidence({
+          cwd: workspace,
+          type,
+          summary: `${type} initially lacks quality fields`,
+          goalId: created.goal.id,
+          now: new Date("2026-05-14T05:03:00.000Z")
+        });
+      }
+
+      await addStartupEvidence({
+        cwd: workspace,
+        type: "migration_plan",
+        summary: "Migration plan has remediation metadata",
+        content: JSON.stringify({ scope: "static local-first launch" }),
+        owner: "founder",
+        remediationTask: "Keep migration status current before launch",
+        acceptanceCriteria: "Migration plan owner and launch validation are recorded",
+        goalId: created.goal.id,
+        now: new Date("2026-05-14T05:04:00.000Z")
+      });
+      for (const type of ["rollback_plan", "observability"]) {
+        await addStartupEvidence({
+          cwd: workspace,
+          type,
+          summary: `${type} has content quality fields`,
+          content: launchRemediationContent(type),
+          goalId: created.goal.id,
+          now: new Date("2026-05-14T05:05:00.000Z")
+        });
+      }
+
+      const verifierTask = created.generatedTasks.find(
+        (task) => task.type === "run_mvp_verifiers"
+      );
+
+      if (verifierTask === undefined) {
+        throw new Error("Expected build-mvp goal to create run_mvp_verifiers");
+      }
+
+      await writeVerifierArtifact({
+        root: initialized.root,
+        fileName: "verifier-quality-passed.json",
+        exitCode: 0,
+        createdAt: "2026-05-14T05:06:00.000Z"
+      });
+      const database = openRunsteadDatabase(initialized.stateDb);
+
+      try {
+        projectTask(database, {
+          ...verifierTask,
+          status: "completed",
+          updatedAt: "2026-05-14T05:06:00.000Z"
+        });
+        projectEvidence(database, {
+          id: "ev_startup_launch_quality_command_001",
+          type: "command_output",
+          subjectType: "task",
+          subjectId: verifierTask.id,
+          uri: `file://${join(
+            initialized.root,
+            "evidence",
+            "verifier-quality-passed.json"
+          )}`,
+          summary: "MVP verifier commands passed",
+          createdAt: "2026-05-14T05:06:00.000Z"
+        });
+      } finally {
+        database.close();
+      }
+
+      const gate = await checkStartupGate({
+        cwd: workspace,
+        stage: "launch",
+        domain: "ai-native-startup",
+        now: new Date("2026-05-14T05:07:00.000Z")
+      });
+
+      expect(gate.passed).toBe(true);
+      expect(gate.blockers).toEqual([]);
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
   it("enforces the MVP build gate with hypotheses and disconfirming evidence", async () => {
     const workspace = join(tmpdir(), `runstead-startup-validation-${process.pid}`);
 
