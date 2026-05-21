@@ -435,6 +435,7 @@ describe("cli entrypoint", () => {
 
     expect(startup?.commands.map((command) => command.name())).toEqual(
       expect.arrayContaining([
+        "api",
         "artifact",
         "assess",
         "build-mvp",

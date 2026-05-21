@@ -8,6 +8,12 @@ import { registerStartupCommands } from "./startup-command.js";
 import type { LocalAgentVerifierPolicy } from "./local-agent-presets.js";
 import type { CommandVerifierInput } from "./verifier-evidence.js";
 
+export {
+  createStartupReadinessClient,
+  ingestStartupWebhookEvidence,
+  startupApiSnapshot
+} from "./startup-sdk.js";
+
 export interface CreateProgramOptions {
   entrypoint?: string;
 }
