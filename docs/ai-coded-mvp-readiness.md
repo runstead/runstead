@@ -16,6 +16,12 @@ runstead startup ready \
   --target local
 ```
 
+The command output names the selected worker governance boundary. `codex_cli`
+is a Level 1 wrapped worker: Runstead governs launch, checkpoint, dependency
+policy, diff scope, verifier evidence, and reports, but it does not hard-proxy
+every internal Codex CLI tool call. Use `codex_direct` when the product promise
+requires Runstead to govern exposed model tool calls through its native proxy.
+
 The run performs these phases:
 
 1. onboard repository and initialize Runstead state

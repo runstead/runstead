@@ -72,6 +72,10 @@ runstead agent run \
 
 ## Governance Levels
 
+`runstead startup ready --plan` and completed readiness summaries print this
+boundary explicitly so launch reports do not overstate what a selected worker
+can prove.
+
 ### Level 1: Wrapped Worker
 
 Used by `codex_cli` and `claude_code`.

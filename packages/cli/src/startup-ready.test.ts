@@ -8,6 +8,8 @@ import { describe, expect, it } from "vitest";
 import {
   createStartupReadinessRun,
   evaluateStartupReadinessVerdict,
+  formatStartupReadinessRun,
+  formatStartupReadyPlan,
   planStartupReady,
   readStartupReadinessRun,
   runStartupReady,
@@ -165,6 +167,7 @@ describe("startup readiness run model", () => {
       const uiSmoke = plan.phases.find((phase) => phase.id === "ui_smoke");
       const launchAudit = plan.phases.find((phase) => phase.id === "launch_audit");
       const launchReport = plan.phases.find((phase) => phase.id === "launch_report");
+      const formatted = formatStartupReadyPlan(plan);
 
       expect(verifiers?.blockers).toEqual(
         expect.arrayContaining([
@@ -191,6 +194,36 @@ describe("startup readiness run model", () => {
           "support or feedback triage evidence is missing"
         ])
       );
+      expect(formatted).toContain("Worker: codex_cli");
+      expect(formatted).toContain("Level 1 process wrapper path");
+      expect(formatted).toContain("worker-internal tool calls are not hard-proxied");
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("surfaces strict native proxy governance for codex_direct", async () => {
+    const workspace = join(
+      tmpdir(),
+      `runstead-startup-ready-governance-${process.pid}`
+    );
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await mkdir(workspace, { recursive: true });
+
+      const { run } = await createStartupReadinessRun({
+        cwd: workspace,
+        stage: "launch",
+        target: "local",
+        worker: "codex_direct",
+        now: new Date("2026-05-22T01:25:00.000Z")
+      });
+      const formatted = formatStartupReadinessRun(run);
+
+      expect(formatted).toContain("Worker: codex_direct");
+      expect(formatted).toContain("Level 2 native tool proxy path");
+      expect(formatted).toContain("model tool calls are governed inside Runstead");
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }

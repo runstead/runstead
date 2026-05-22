@@ -13,6 +13,7 @@ import { requireRunsteadStateDb, resolveRunsteadRoot } from "./runstead-root.js"
 import { generateStartupCiSummary } from "./startup-ci-integration.js";
 import { detectStartupDevServerCommand } from "./startup-dev-server.js";
 import {
+  formatStartupWorkerGovernanceNotice,
   startupBuildMvp,
   startupLaunchCheck,
   startupOnboard,
@@ -376,6 +377,7 @@ export function formatStartupReadyPlan(plan: StartupReadyPlan): string {
     `Stage: ${plan.stage}`,
     `Target: ${plan.target}`,
     `Worker: ${plan.worker}`,
+    formatStartupWorkerGovernanceNotice(plan.worker),
     `Runstead initialized: ${plan.runsteadInitialized ? "yes" : "no"}`,
     "",
     "Phases:",
@@ -389,6 +391,8 @@ export function formatStartupReadyPlan(plan: StartupReadyPlan): string {
 export function formatStartupReadinessRun(run: StartupReadinessRun): string {
   return [
     `Runstead startup readiness run: ${run.id}`,
+    `Worker: ${run.worker}`,
+    formatStartupWorkerGovernanceNotice(run.worker),
     "",
     ...run.phases.map(
       (phase, index) => `${index + 1}. ${phase.title.padEnd(28)} ${phase.status}`
@@ -869,6 +873,8 @@ async function writeStartupReadinessDecisionReport(
       cwd: run.cwd,
       stage: run.stage,
       target: run.target,
+      worker: run.worker,
+      workerGovernance: formatStartupWorkerGovernanceNotice(run.worker),
       status: run.status,
       verdict: run.verdict,
       verdictBlockers: run.verdictBlockers,
@@ -1040,6 +1046,8 @@ function formatStartupReadinessDecisionMarkdown(input: {
     cwd: string;
     stage: StartupReadyStage;
     target: StartupReadyTarget;
+    worker: LocalAgentWorkerKind;
+    workerGovernance: string;
     status: StartupReadinessRunStatus;
     verdict: StartupReadinessVerdict;
     verdictBlockers: string[];
@@ -1084,6 +1092,8 @@ function formatStartupReadinessDecisionMarkdown(input: {
     `Workspace: ${input.run.cwd}`,
     `Stage: ${input.run.stage}`,
     `Requested target: ${input.run.target}`,
+    `Worker: ${input.run.worker}`,
+    input.run.workerGovernance,
     `Status: ${input.run.status}`,
     `Verdict: ${input.run.verdict}`,
     "",
