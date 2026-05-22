@@ -208,8 +208,7 @@ export function registerStartupCommands(program: Command): void {
           formatStartupWorkerGovernanceNotice,
           resolveStartupDependencyApprovalBoundary,
           startupBuildMvp
-        } =
-          await import("./startup-founder-flow.js");
+        } = await import("./startup-founder-flow.js");
         const worker = parseLocalAgentWorker(options.worker);
         const dependencyApproval = resolveStartupDependencyApprovalBoundary({
           policy: options.dependencyPolicy,
@@ -522,6 +521,11 @@ export function registerStartupCommands(program: Command): void {
     .option("--source-ref <ref>", "Evidence source reference", collectValues, [])
     .option("--source-uri <uri>", "Canonical analytics, query, CSV, or BI source URI")
     .option("--source-kind <kind>", "Source kind, such as posthog, sql, csv, or manual")
+    .option(
+      "--source-class <class>",
+      "Metric evidence class: synthetic_smoke, founder_manual, or analytics_real_user"
+    )
+    .option("--confidence <score>", "Metric confidence score from 0 to 1")
     .option("--captured-at <iso>", "Timestamp when the source was captured")
     .option("--freshness-days <days>", "Maximum acceptable source age in days")
     .option("--source-hash <hash>", "Optional hash of the captured source payload")
@@ -546,6 +550,8 @@ export function registerStartupCommands(program: Command): void {
         sourceRef: string[];
         sourceUri?: string;
         sourceKind?: string;
+        sourceClass?: string;
+        confidence?: string;
         capturedAt?: string;
         freshnessDays?: string;
         sourceHash?: string;
@@ -572,6 +578,12 @@ export function registerStartupCommands(program: Command): void {
           source: options.source,
           threshold: options.threshold,
           current: options.current,
+          ...(options.sourceClass === undefined
+            ? {}
+            : { sourceClass: options.sourceClass }),
+          ...(options.confidence === undefined
+            ? {}
+            : { confidence: options.confidence }),
           sourceRefs: options.sourceRef,
           ...evidenceSourceDetails(options),
           ...(options.unit === undefined ? {} : { unit: options.unit }),
@@ -587,6 +599,9 @@ export function registerStartupCommands(program: Command): void {
 
         console.log(
           `Recorded metric snapshot evidence: ${result.metricEvidence.evidence.id}`
+        );
+        console.log(
+          `Metric source class: ${result.confidenceProfile.sourceClass} confidence=${result.confidenceProfile.confidence} launch_weight=${result.confidenceProfile.launchWeight}`
         );
         console.log(`Artifact: ${result.metricEvidence.artifactPath}`);
         if (result.falsePositiveEvidence !== undefined) {

@@ -295,11 +295,7 @@ function readLaunchReadinessData(
   domain: string
 ): Omit<
   LaunchReadinessReportData,
-  | "repo"
-  | "protectedPathChanges"
-  | "gate"
-  | "structuredArtifacts"
-  | "currentCodeState"
+  "repo" | "protectedPathChanges" | "gate" | "structuredArtifacts" | "currentCodeState"
 > {
   const goals = database
     .prepare(
@@ -386,6 +382,10 @@ function formatLaunchReadinessReport(input: {
     "## Trust Summary",
     "",
     trustSummaryMarkdown(input.trustSummary),
+    "",
+    "## Metric Evidence Confidence",
+    "",
+    metricEvidenceConfidence(input.data),
     "",
     "## Repo Health",
     "",
@@ -496,6 +496,44 @@ function trustSummaryMarkdown(summary: LaunchReadinessTrustSummary): string {
     `  - evidenceRecords=${summary.auditExport.evidenceRecords}`,
     `  - structuredArtifacts=${summary.auditExport.structuredArtifacts}`
   ].join("\n");
+}
+
+function metricEvidenceConfidence(data: LaunchReadinessReportData): string {
+  const metricEvidence = data.evidence.filter(
+    (item) => item.type === "startup_metric_snapshot"
+  );
+
+  return listOrNone(metricEvidence, (item) => {
+    const content = parsedEvidenceContent(item.uri);
+
+    if (!isRecord(content)) {
+      return `- ${item.id}: source_class=missing confidence=unknown launch_weight=unknown`;
+    }
+
+    const sourceClass = stringValue(content.sourceClass) ?? "founder_manual";
+    const confidence =
+      typeof content.confidence === "number"
+        ? formatScore(content.confidence)
+        : "unknown";
+    const launchWeight =
+      typeof content.launchWeight === "number"
+        ? formatScore(content.launchWeight)
+        : "unknown";
+    const realUserData =
+      typeof content.realUserData === "boolean"
+        ? content.realUserData
+          ? "yes"
+          : "no"
+        : "unknown";
+
+    return [
+      `- ${item.id}: metric=${stringValue(content.metric) ?? "unknown"}`,
+      `source_class=${sourceClass}`,
+      `confidence=${confidence}`,
+      `launch_weight=${launchWeight}`,
+      `real_user_data=${realUserData}`
+    ].join(" ");
+  });
 }
 
 function launchReadinessTrustSummary(input: {
@@ -619,6 +657,10 @@ function formatPercent(value: number): string {
   return `${Math.round(value * 100)}%`;
 }
 
+function formatScore(value: number): string {
+  return String(clampScore(value));
+}
+
 function indentList(items: string[]): string {
   return items.map((item) => `  - ${item}`).join("\n");
 }
@@ -720,8 +762,12 @@ function testCoverageGaps(data: LaunchReadinessReportData): string {
 function staleCommandEvidenceGaps(data: LaunchReadinessReportData): string[] {
   return data.evidence
     .filter((item) => item.type === "command_output")
-    .filter((item) => commandEvidenceCodeState(data, item).startsWith("code_state=stale"))
-    .map((item) => `${item.id}: verifier evidence was recorded against stale code state`);
+    .filter((item) =>
+      commandEvidenceCodeState(data, item).startsWith("code_state=stale")
+    )
+    .map(
+      (item) => `${item.id}: verifier evidence was recorded against stale code state`
+    );
 }
 
 function dependencyAndSecurityRisk(data: LaunchReadinessReportData): string {

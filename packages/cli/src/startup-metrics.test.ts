@@ -60,6 +60,10 @@ describe("startup metric snapshots", () => {
         source: "PostHog activation funnel",
         threshold: 0.4,
         current: 0.53,
+        sourceClass: "analytics_real_user",
+        confidence: 0.9,
+        launchWeight: 1,
+        realUserData: true,
         snapshotDate: "2026-05-14",
         falsePositive: "Exclude internal founder smoke-test events",
         cohort: "new_signups",
@@ -95,11 +99,15 @@ describe("startup metric snapshots", () => {
         "--metric",
         "d7_retention",
         "--source",
-        "manual cohort CSV",
+        "local smoke flow",
+        "--source-class",
+        "synthetic_smoke",
+        "--confidence",
+        "0.4",
         "--source-uri",
-        "file:cohorts/d7.csv",
+        "file:cohorts/d7-smoke.json",
         "--source-kind",
-        "csv",
+        "browser_ui",
         "--captured-at",
         "2026-05-14T04:00:00.000Z",
         "--freshness-days",
@@ -115,6 +123,9 @@ describe("startup metric snapshots", () => {
       );
 
       expect(cliOutput).toContain("Recorded metric snapshot evidence:");
+      expect(cliOutput).toContain(
+        "Metric source class: synthetic_smoke confidence=0.4 launch_weight=0.25"
+      );
       expect(evidenceTypes(workspace)).toEqual(
         expect.arrayContaining([
           "startup_false_positive",
@@ -176,6 +187,10 @@ describe("startup metric snapshots", () => {
           expect.objectContaining({
             metric: "activation",
             status: "stale",
+            sourceClass: "analytics_real_user",
+            confidence: 0.9,
+            launchWeight: 1,
+            realUserData: true,
             cohort: "new_signups",
             trend: "down"
           }),

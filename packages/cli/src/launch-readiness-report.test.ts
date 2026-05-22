@@ -303,7 +303,16 @@ describe("generateLaunchReadinessReport", () => {
           [
             "startup_metric_snapshot",
             "activation metric snapshot recorded",
-            { source: "manual", threshold: 0.5, current: 0.7 }
+            {
+              metric: "activation",
+              source: "PostHog activation funnel",
+              threshold: 0.5,
+              current: 0.7,
+              sourceClass: "analytics_real_user",
+              confidence: 0.9,
+              launchWeight: 1,
+              realUserData: true
+            }
           ],
           ["startup_repo_readiness", "repo readiness clean", undefined],
           ["startup_security_baseline", "security baseline clean", undefined],
@@ -422,6 +431,9 @@ describe("generateLaunchReadinessReport", () => {
         "verifier evidence was recorded against stale code state"
       );
       expect(result.markdown).toContain("## Trust Summary");
+      expect(result.markdown).toContain("## Metric Evidence Confidence");
+      expect(result.markdown).toContain("source_class=analytics_real_user");
+      expect(result.markdown).toContain("launch_weight=1");
       expect(result.markdown).toContain("Accepted debt register:");
       expect(result.markdown).toContain("ev_wrapped_worker_command_001");
       expect(result.markdown).toContain("wrapped worker post-run verifier evidence");

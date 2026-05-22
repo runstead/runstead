@@ -18,6 +18,8 @@ export interface RecordStartupMetricSnapshotOptions {
   source: string;
   threshold: string;
   current: string;
+  sourceClass?: string;
+  confidence?: string | number;
   sourceRefs?: string[];
   sources?: StartupEvidenceSourceInput[];
   unit?: string;
@@ -32,6 +34,7 @@ export interface RecordStartupMetricSnapshotOptions {
 
 export interface RecordStartupMetricSnapshotResult {
   metricEvidence: AddStartupEvidenceResult;
+  confidenceProfile: StartupMetricConfidenceProfile;
   falsePositiveEvidence?: AddStartupEvidenceResult;
 }
 
@@ -58,6 +61,10 @@ export interface StartupMetricAssessment {
   status: "ok" | "missing" | "below_threshold" | "stale";
   current?: number | string;
   threshold?: number | string;
+  sourceClass?: StartupMetricSourceClass;
+  confidence?: number;
+  launchWeight?: number;
+  realUserData?: boolean;
   window?: string;
   cohort?: string;
   trend?: string;
@@ -65,17 +72,37 @@ export interface StartupMetricAssessment {
   source?: string;
 }
 
+export const STARTUP_METRIC_SOURCE_CLASSES = [
+  "synthetic_smoke",
+  "founder_manual",
+  "analytics_real_user"
+] as const;
+
+export type StartupMetricSourceClass = (typeof STARTUP_METRIC_SOURCE_CLASSES)[number];
+
+export interface StartupMetricConfidenceProfile {
+  sourceClass: StartupMetricSourceClass;
+  confidence: number;
+  launchWeight: number;
+  realUserData: boolean;
+}
+
 export async function recordStartupMetricSnapshot(
   options: RecordStartupMetricSnapshotOptions
 ): Promise<RecordStartupMetricSnapshotResult> {
   const snapshotDate =
     options.snapshotDate ?? (options.now ?? new Date()).toISOString();
+  const confidenceProfile = resolveStartupMetricConfidenceProfile(options);
   const content = {
     metric: options.metric,
     source: options.source,
     threshold: parseMetricValue(options.threshold),
     current: parseMetricValue(options.current),
     snapshotDate,
+    sourceClass: confidenceProfile.sourceClass,
+    confidence: confidenceProfile.confidence,
+    launchWeight: confidenceProfile.launchWeight,
+    realUserData: confidenceProfile.realUserData,
     ...(options.unit === undefined ? {} : { unit: options.unit }),
     ...(options.window === undefined ? {} : { window: options.window }),
     ...(options.cohort === undefined ? {} : { cohort: options.cohort }),
@@ -91,7 +118,7 @@ export async function recordStartupMetricSnapshot(
   const metricEvidence = await addStartupEvidence({
     ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
     type: "metric_snapshot",
-    summary: `${options.metric} metric snapshot: current=${options.current}, threshold=${options.threshold}`,
+    summary: `${options.metric} metric snapshot: current=${options.current}, threshold=${options.threshold}, source_class=${confidenceProfile.sourceClass}, confidence=${confidenceProfile.confidence}`,
     sourceRefs,
     ...(options.sources === undefined ? {} : { sources: options.sources }),
     content: JSON.stringify(content, null, 2),
@@ -112,6 +139,8 @@ export async function recordStartupMetricSnapshot(
               metric: options.metric,
               source: options.source,
               snapshotEvidenceId: metricEvidence.evidence.id,
+              sourceClass: confidenceProfile.sourceClass,
+              confidence: confidenceProfile.confidence,
               falsePositive: options.falsePositive,
               snapshotDate
             },
@@ -124,6 +153,7 @@ export async function recordStartupMetricSnapshot(
 
   return {
     metricEvidence,
+    confidenceProfile,
     ...(falsePositiveEvidence === undefined ? {} : { falsePositiveEvidence })
   };
 }
@@ -178,6 +208,113 @@ function parseMetricValue(value: string): string | number {
   return value.trim() !== "" && Number.isFinite(numeric) ? numeric : value;
 }
 
+function resolveStartupMetricConfidenceProfile(
+  options: RecordStartupMetricSnapshotOptions
+): StartupMetricConfidenceProfile {
+  const sourceClass =
+    options.sourceClass === undefined
+      ? inferStartupMetricSourceClass({
+          source: options.source,
+          sourceRefs: options.sourceRefs ?? [],
+          sources: options.sources ?? []
+        })
+      : parseStartupMetricSourceClass(options.sourceClass);
+
+  return startupMetricConfidenceProfile(
+    sourceClass,
+    options.confidence === undefined
+      ? undefined
+      : parseMetricConfidence(options.confidence)
+  );
+}
+
+function parseStartupMetricSourceClass(value: string): StartupMetricSourceClass {
+  if (STARTUP_METRIC_SOURCE_CLASSES.includes(value as StartupMetricSourceClass)) {
+    return value as StartupMetricSourceClass;
+  }
+
+  throw new Error(
+    `Unsupported metric source class ${value}. Expected one of: ${STARTUP_METRIC_SOURCE_CLASSES.join(", ")}`
+  );
+}
+
+function inferStartupMetricSourceClass(input: {
+  source: string;
+  sourceRefs: string[];
+  sources: { kind?: string; uri?: string }[];
+}): StartupMetricSourceClass {
+  const text = [
+    input.source,
+    ...input.sourceRefs,
+    ...input.sources.flatMap((source) => [source.kind ?? "", source.uri ?? ""])
+  ]
+    .join(" ")
+    .toLowerCase();
+
+  if (
+    text.includes("smoke") ||
+    text.includes("synthetic") ||
+    text.includes("local") ||
+    text.includes("browser_ui")
+  ) {
+    return "synthetic_smoke";
+  }
+
+  if (
+    text.includes("posthog") ||
+    text.includes("amplitude") ||
+    text.includes("mixpanel") ||
+    text.includes("segment") ||
+    text.includes("analytics")
+  ) {
+    return "analytics_real_user";
+  }
+
+  return "founder_manual";
+}
+
+function startupMetricConfidenceProfile(
+  sourceClass: StartupMetricSourceClass,
+  explicitConfidence?: number
+): StartupMetricConfidenceProfile {
+  const defaults: Record<StartupMetricSourceClass, StartupMetricConfidenceProfile> = {
+    synthetic_smoke: {
+      sourceClass,
+      confidence: 0.35,
+      launchWeight: 0.25,
+      realUserData: false
+    },
+    founder_manual: {
+      sourceClass,
+      confidence: 0.55,
+      launchWeight: 0.5,
+      realUserData: false
+    },
+    analytics_real_user: {
+      sourceClass,
+      confidence: 0.9,
+      launchWeight: 1,
+      realUserData: true
+    }
+  };
+  const profile = defaults[sourceClass];
+
+  return {
+    ...profile,
+    ...(explicitConfidence === undefined ? {} : { confidence: explicitConfidence })
+  };
+}
+
+function parseMetricConfidence(value: string | number): number {
+  const confidence = typeof value === "number" ? value : Number(value);
+
+  if (!Number.isFinite(confidence) || confidence < 0 || confidence > 1) {
+    throw new Error("--confidence must be a number from 0 to 1");
+  }
+
+  return confidence;
+}
+
 interface MetricSnapshotRow {
   id: string;
   uri: string;
@@ -195,6 +332,10 @@ interface ParsedMetricSnapshot {
   source: string;
   current: number | string;
   threshold: number | string;
+  sourceClass: StartupMetricSourceClass;
+  confidence: number;
+  launchWeight: number;
+  realUserData: boolean;
   window?: string;
   cohort?: string;
   trend?: string;
@@ -230,18 +371,37 @@ function readMetricSnapshots(stateDb: string, now: Date): ParsedMetricSnapshot[]
       }
 
       return [
-        {
-          evidenceId: row.id,
-          metric: content.metric,
-          source: content.source,
-          current: metricValue(content.current),
-          threshold: metricValue(content.threshold),
-          ...(typeof content.window === "string" ? { window: content.window } : {}),
-          ...(typeof content.cohort === "string" ? { cohort: content.cohort } : {}),
-          ...(typeof content.trend === "string" ? { trend: content.trend } : {}),
-          stale: metricSnapshotStale(artifact, now),
-          createdAt: row.created_at
-        }
+        (() => {
+          const sourceClass =
+            typeof content.sourceClass === "string"
+              ? parseStartupMetricSourceClass(content.sourceClass)
+              : inferStartupMetricSourceClass({
+                  source: content.source,
+                  sourceRefs: [],
+                  sources: artifactSources(artifact)
+                });
+          const profile = startupMetricConfidenceProfile(
+            sourceClass,
+            metricNumber(content.confidence)
+          );
+
+          return {
+            evidenceId: row.id,
+            metric: content.metric,
+            source: content.source,
+            current: metricValue(content.current),
+            threshold: metricValue(content.threshold),
+            sourceClass: profile.sourceClass,
+            confidence: profile.confidence,
+            launchWeight: profile.launchWeight,
+            realUserData: profile.realUserData,
+            ...(typeof content.window === "string" ? { window: content.window } : {}),
+            ...(typeof content.cohort === "string" ? { cohort: content.cohort } : {}),
+            ...(typeof content.trend === "string" ? { trend: content.trend } : {}),
+            stale: metricSnapshotStale(artifact, now),
+            createdAt: row.created_at
+          };
+        })()
       ];
     });
   } finally {
@@ -272,6 +432,10 @@ function assessRequiredMetric(
     status: snapshot.stale ? "stale" : belowThreshold ? "below_threshold" : "ok",
     current: snapshot.current,
     threshold: snapshot.threshold,
+    sourceClass: snapshot.sourceClass,
+    confidence: snapshot.confidence,
+    launchWeight: snapshot.launchWeight,
+    realUserData: snapshot.realUserData,
     ...(snapshot.window === undefined ? {} : { window: snapshot.window }),
     ...(snapshot.cohort === undefined ? {} : { cohort: snapshot.cohort }),
     ...(snapshot.trend === undefined ? {} : { trend: snapshot.trend }),
@@ -389,6 +553,20 @@ function metricSnapshotStale(
       source.freshnessDays
     );
   });
+}
+
+function artifactSources(
+  artifact: MetricSnapshotArtifact | undefined
+): { kind?: string; uri?: string }[] {
+  return Array.isArray(artifact?.sources)
+    ? artifact.sources.filter((source): source is { kind?: string; uri?: string } =>
+        isRecord(source)
+      )
+    : [];
+}
+
+function metricNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
 function metricValue(value: unknown): string | number {
