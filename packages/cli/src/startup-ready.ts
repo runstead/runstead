@@ -21,6 +21,7 @@ import {
 } from "./startup-founder-flow.js";
 import { generateStartupCompleteProductCheck } from "./startup-complete-check.js";
 import { executeStartupUiValidation } from "./startup-ui-validation.js";
+import { checkStartupGate, type StartupGateStage } from "./startup-evidence.js";
 
 const execFileAsync = promisify(execFile);
 const DEFAULT_UI_SMOKE_TIMEOUT_MS = 20_000;
@@ -183,10 +184,15 @@ export async function planStartupReady(
   const target = options.target ?? "local";
   const worker = options.worker ?? "codex_cli";
   const now = options.now ?? new Date();
-  const [root, inspection] = await Promise.all([
+  const [root, inspection, devServer, recordedEvidence, gate] = await Promise.all([
     resolveRunsteadRoot(cwd),
-    collectRepoInspection(cwd, now.toISOString())
+    collectRepoInspection(cwd, now.toISOString()),
+    inspectStartupReadyDevServer(cwd),
+    collectRecordedStartupReadinessEvidence(cwd),
+    inspectStartupReadyGate(cwd, startupReadyStageToGateStage(stage), now)
   ]);
+  const evidenceTypes = new Set(recordedEvidence.evidenceTypes);
+  const evidenceTiers = new Set(recordedEvidence.evidenceTiers);
 
   return {
     cwd,
@@ -196,14 +202,34 @@ export async function planStartupReady(
     runsteadInitialized: root.source !== "missing",
     phases: [
       planPhase("onboard", "Onboard repo", root.source === "missing" ? [] : []),
-      planPhase("context", "Generate context", []),
-      planPhase("measurement", "Measurement framework", []),
+      planPhase("context", "Generate context", hypothesisPlanBlockers(evidenceTypes)),
+      planPhase(
+        "measurement",
+        "Measurement framework",
+        metricPlanBlockers(evidenceTypes)
+      ),
       planPhase("build_mvp", "Build or repair MVP", []),
-      planPhase("verifiers", "Run verifiers", verifierBlockers(inspection)),
-      planPhase("ui_smoke", "UI smoke", []),
-      planPhase("launch_audit", "Launch audit/security", []),
-      planPhase("launch_report", "Launch report", []),
-      planPhase("complete_check", "Complete product check", [])
+      planPhase("verifiers", "Run verifiers", [
+        ...packageManagerBlockers(inspection),
+        ...verifierBlockers(inspection)
+      ]),
+      planPhase("ui_smoke", "UI smoke", [
+        ...(devServer.ok ? [] : [devServer.blocker]),
+        ...uiPlanBlockers(evidenceTypes)
+      ]),
+      planPhase("launch_audit", "Launch audit/security", [
+        ...ciPlanBlockers(inspection, target),
+        ...gate.blockers,
+        ...releasePlanBlockers(evidenceTypes, target)
+      ]),
+      planPhase("launch_report", "Launch report", [
+        ...deploymentPlanBlockers(evidenceTiers, target),
+        ...productionEvidencePlanBlockers(evidenceTiers, target)
+      ]),
+      planPhase("complete_check", "Complete product check", [
+        ...gate.blockers,
+        ...completePlanBlockers(evidenceTypes)
+      ])
     ].filter((phase) => phaseIncludedForStage(phase.id, stage))
   };
 }
@@ -211,11 +237,30 @@ export async function planStartupReady(
 export async function runStartupReady(
   options: StartupReadyOptions = {}
 ): Promise<RunStartupReadyResult> {
-  const plan = await planStartupReady(options);
-  const persisted = await createStartupReadinessRun(options);
+  const resumed =
+    options.resumeRunId === undefined
+      ? undefined
+      : await readStartupReadinessRun({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          runId: options.resumeRunId
+        });
+  const plan =
+    resumed === undefined
+      ? await planStartupReady(options)
+      : await planStartupReady({
+          cwd: resumed.run.cwd,
+          stage: resumed.run.stage,
+          target: resumed.run.target,
+          worker: resumed.run.worker,
+          ...(options.now === undefined ? {} : { now: options.now })
+        });
+  const persisted = resumed ?? (await createStartupReadinessRun(options));
+  const persistedRun = { ...persisted.run };
+  delete persistedRun.completedAt;
   const run = {
-    ...persisted.run,
-    status: "running" as const
+    ...persistedRun,
+    status: "running" as const,
+    phases: persisted.run.phases.map(resetResumablePhase)
   };
 
   await writeStartupReadinessRun(run);
@@ -364,7 +409,11 @@ async function executeStartupReadyRun(
   run: StartupReadinessRun,
   options: StartupReadyOptions
 ): Promise<void> {
-  if (hasPhase(run, "onboard")) {
+  if (
+    shouldRunPhase(run, "onboard") ||
+    shouldRunPhase(run, "context") ||
+    shouldRunPhase(run, "measurement")
+  ) {
     updatePhase(run, "onboard", { status: "running" });
     await writeStartupReadinessRun(run);
     const onboard = await startupOnboard({
@@ -406,7 +455,7 @@ async function executeStartupReadyRun(
     await writeStartupReadinessRun(run);
   }
 
-  if (hasPhase(run, "build_mvp")) {
+  if (shouldRunPhase(run, "build_mvp") || shouldRunPhase(run, "verifiers")) {
     updatePhase(run, "build_mvp", { status: "running" });
     await writeStartupReadinessRun(run);
     const build = await startupBuildMvp({
@@ -436,7 +485,7 @@ async function executeStartupReadyRun(
     await writeStartupReadinessRun(run);
   }
 
-  if (hasPhase(run, "ui_smoke")) {
+  if (shouldRunPhase(run, "ui_smoke")) {
     updatePhase(run, "ui_smoke", { status: "running" });
     await writeStartupReadinessRun(run);
     const uiSmoke = await executeStartupReadyUiSmoke({
@@ -458,7 +507,7 @@ async function executeStartupReadyRun(
     await writeStartupReadinessRun(run);
   }
 
-  if (hasPhase(run, "launch_audit") || hasPhase(run, "launch_report")) {
+  if (shouldRunPhase(run, "launch_audit") || shouldRunPhase(run, "launch_report")) {
     updatePhase(run, "launch_audit", { status: "running" });
     updatePhase(run, "launch_report", { status: "running" });
     await writeStartupReadinessRun(run);
@@ -495,7 +544,7 @@ async function executeStartupReadyRun(
     });
   }
 
-  if (hasPhase(run, "complete_check")) {
+  if (shouldRunPhase(run, "complete_check")) {
     updatePhase(run, "complete_check", { status: "running" });
     await writeStartupReadinessRun(run);
     const complete = await generateStartupCompleteProductCheck({
@@ -1357,8 +1406,31 @@ function updatePhase(
   });
 }
 
+function resetResumablePhase(
+  phase: StartupReadinessRunPhase
+): StartupReadinessRunPhase {
+  if (phase.status === "passed" || phase.status === "skipped") {
+    return phase;
+  }
+
+  const rest = { ...phase };
+  delete rest.nextAction;
+
+  return {
+    ...rest,
+    status: "pending",
+    blockers: []
+  };
+}
+
 function hasPhase(run: StartupReadinessRun, id: string): boolean {
   return run.phases.some((phase) => phase.id === id);
+}
+
+function shouldRunPhase(run: StartupReadinessRun, id: string): boolean {
+  const phase = run.phases.find((candidate) => candidate.id === id);
+
+  return phase !== undefined && phase.status !== "passed" && phase.status !== "skipped";
 }
 
 function collectRunEvidence(run: StartupReadinessRun): void {
@@ -1447,6 +1519,53 @@ function planPhase(
   };
 }
 
+async function inspectStartupReadyDevServer(
+  cwd: string
+): Promise<{ ok: true; command: string } | { ok: false; blocker: string }> {
+  try {
+    return {
+      ok: true,
+      command: await detectStartupDevServerCommand(cwd)
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      blocker: errorMessage(error)
+    };
+  }
+}
+
+async function inspectStartupReadyGate(
+  cwd: string,
+  stage: StartupGateStage,
+  now: Date
+): Promise<{ blockers: string[]; warnings: string[] }> {
+  try {
+    const gate = await checkStartupGate({
+      cwd,
+      stage,
+      now,
+      recordEvent: false
+    });
+
+    return {
+      blockers: gate.blockers,
+      warnings: gate.warnings
+    };
+  } catch {
+    return {
+      blockers: [],
+      warnings: []
+    };
+  }
+}
+
+function packageManagerBlockers(
+  inspection: Awaited<ReturnType<typeof collectRepoInspection>>
+): string[] {
+  return inspection.packageManager.detected ? [] : ["package manager is missing"];
+}
+
 function verifierBlockers(
   inspection: Awaited<ReturnType<typeof collectRepoInspection>>
 ): string[] {
@@ -1456,6 +1575,118 @@ function verifierBlockers(
     inspection.commands.typecheck.detected ? undefined : "typecheck command is missing",
     inspection.commands.build.detected ? undefined : "build command is missing"
   ].filter((blocker): blocker is string => blocker !== undefined);
+}
+
+function hypothesisPlanBlockers(evidenceTypes: Set<string>): string[] {
+  const required = [
+    "startup_problem_hypothesis",
+    "startup_user_hypothesis",
+    "startup_solution_hypothesis"
+  ];
+  const missing = required.filter((type) => !evidenceTypes.has(type));
+
+  return missing.length === 0
+    ? []
+    : [`hypothesis evidence is missing: ${missing.join(", ")}`];
+}
+
+function metricPlanBlockers(evidenceTypes: Set<string>): string[] {
+  return evidenceTypes.has("startup_metric") ||
+    evidenceTypes.has("startup_metric_snapshot")
+    ? []
+    : ["metric evidence is missing"];
+}
+
+function uiPlanBlockers(evidenceTypes: Set<string>): string[] {
+  return evidenceTypes.has("startup_ui_validation")
+    ? []
+    : ["UI validation evidence is missing"];
+}
+
+function ciPlanBlockers(
+  inspection: Awaited<ReturnType<typeof collectRepoInspection>>,
+  target: StartupReadyTarget
+): string[] {
+  if (target === "local") {
+    return [];
+  }
+
+  return inspection.ci.providers.length === 0
+    ? ["CI provider is missing for staging or production target"]
+    : [];
+}
+
+function releasePlanBlockers(
+  evidenceTypes: Set<string>,
+  target: StartupReadyTarget
+): string[] {
+  if (target === "local") {
+    return [];
+  }
+
+  return [
+    ...(evidenceTypes.has("startup_release_plan")
+      ? []
+      : ["release-plan evidence is missing"]),
+    ...(target === "production" && !evidenceTypes.has("startup_rollback_plan")
+      ? ["rollback-plan evidence is missing"]
+      : []),
+    ...(target === "production" && !evidenceTypes.has("startup_observability")
+      ? ["observability evidence is missing"]
+      : [])
+  ];
+}
+
+function deploymentPlanBlockers(
+  evidenceTiers: Set<StartupReadinessEvidenceTier>,
+  target: StartupReadyTarget
+): string[] {
+  if (target === "local") {
+    return [];
+  }
+
+  if (target === "staging") {
+    return evidenceTiers.has("staging_deployment")
+      ? []
+      : ["staging deployment evidence is missing"];
+  }
+
+  return evidenceTiers.has("production_deployment")
+    ? []
+    : ["production deployment evidence is missing"];
+}
+
+function productionEvidencePlanBlockers(
+  evidenceTiers: Set<StartupReadinessEvidenceTier>,
+  target: StartupReadyTarget
+): string[] {
+  if (target !== "production") {
+    return [];
+  }
+
+  return [
+    ...(evidenceTiers.has("real_user_analytics")
+      ? []
+      : ["real-user analytics evidence is missing"]),
+    ...(evidenceTiers.has("support_ticket")
+      ? []
+      : ["support or feedback triage evidence is missing"]),
+    ...(evidenceTiers.has("security_scan") ? [] : ["security scan evidence is missing"])
+  ];
+}
+
+function completePlanBlockers(evidenceTypes: Set<string>): string[] {
+  return [
+    ...(evidenceTypes.has("startup_repo_readiness")
+      ? []
+      : ["repo readiness evidence is missing"]),
+    ...(evidenceTypes.has("startup_security_baseline")
+      ? []
+      : ["security baseline evidence is missing"]),
+    ...(evidenceTypes.has("startup_release_plan")
+      ? []
+      : ["release-plan evidence is missing"])
+  ];
 }
 
 function phaseIncludedForStage(id: string, stage: StartupReadyStage): boolean {

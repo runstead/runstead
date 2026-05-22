@@ -8,6 +8,7 @@ import { describe, expect, it } from "vitest";
 import {
   createStartupReadinessRun,
   evaluateStartupReadinessVerdict,
+  planStartupReady,
   readStartupReadinessRun,
   runStartupReady,
   type StartupReadinessRunPhase
@@ -141,6 +142,112 @@ describe("startup readiness run model", () => {
         "| Local demo | yes | local_launch_ready |"
       );
       expect(persisted).toEqual(result.run);
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  }, 60_000);
+
+  it("plans missing launch evidence before execution", async () => {
+    const workspace = join(tmpdir(), `runstead-startup-ready-plan-${process.pid}`);
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await mkdir(workspace, { recursive: true });
+
+      const plan = await planStartupReady({
+        cwd: workspace,
+        stage: "launch",
+        target: "production",
+        now: new Date("2026-05-22T01:20:00.000Z")
+      });
+      const verifiers = plan.phases.find((phase) => phase.id === "verifiers");
+      const uiSmoke = plan.phases.find((phase) => phase.id === "ui_smoke");
+      const launchAudit = plan.phases.find((phase) => phase.id === "launch_audit");
+      const launchReport = plan.phases.find((phase) => phase.id === "launch_report");
+
+      expect(verifiers?.blockers).toEqual(
+        expect.arrayContaining([
+          "package manager is missing",
+          "test command is missing",
+          "build command is missing"
+        ])
+      );
+      expect(uiSmoke?.blockers).toEqual(
+        expect.arrayContaining(["UI validation evidence is missing"])
+      );
+      expect(launchAudit?.blockers).toEqual(
+        expect.arrayContaining([
+          "CI provider is missing for staging or production target",
+          "release-plan evidence is missing",
+          "rollback-plan evidence is missing",
+          "observability evidence is missing"
+        ])
+      );
+      expect(launchReport?.blockers).toEqual(
+        expect.arrayContaining([
+          "production deployment evidence is missing",
+          "real-user analytics evidence is missing",
+          "support or feedback triage evidence is missing"
+        ])
+      );
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("resumes an existing readiness run id", async () => {
+    const workspace = join(tmpdir(), `runstead-startup-ready-resume-${process.pid}`);
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await mkdir(workspace, { recursive: true });
+      await writeFile(
+        join(workspace, "package.json"),
+        `${JSON.stringify(
+          {
+            name: "startup-ready-resume-fixture",
+            private: true,
+            scripts: {
+              test: 'node -e "process.exit(0)"',
+              lint: 'node -e "process.exit(0)"',
+              typecheck: 'node -e "process.exit(0)"',
+              build: 'node -e "process.exit(0)"'
+            }
+          },
+          null,
+          2
+        )}\n`,
+        "utf8"
+      );
+      const created = await createStartupReadinessRun({
+        cwd: workspace,
+        stage: "mvp",
+        target: "local",
+        worker: "codex_cli",
+        now: new Date("2026-05-22T01:25:00.000Z")
+      });
+
+      const result = await runStartupReady({
+        cwd: workspace,
+        resumeRunId: created.run.id,
+        workerRunner: () =>
+          Promise.resolve({
+            stdout: JSON.stringify({
+              summary: "resumed MVP fixture",
+              files_changed: [],
+              commands_run: [],
+              risks: [],
+              needs_approval: false,
+              approval_reason: null
+            }),
+            stderr: "",
+            exitCode: 0
+          }),
+        now: new Date("2026-05-22T01:26:00.000Z")
+      });
+
+      expect(result.run.id).toBe(created.run.id);
+      expect(result.run.status).toBe("completed");
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }
