@@ -176,22 +176,30 @@ export function registerStartupCommands(program: Command): void {
       }) => {
         const {
           formatStartupReadyPlan,
+          formatStartupReadinessRun,
           parseStartupReadyStage,
           parseStartupReadyTarget,
+          planStartupReady,
           runStartupReady
         } = await import("./startup-ready.js");
-        const result = await runStartupReady({
+        const common = {
           ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
           stage: parseStartupReadyStage(options.stage),
           target: parseStartupReadyTarget(options.target),
           worker: parseLocalAgentWorker(options.worker),
-          plan: options.plan === true,
           ...(options.resume === undefined ? {} : { resumeRunId: options.resume }),
           writeCi: options.writeCi === true,
           ci: options.ci === true
-        });
+        };
 
-        console.log(formatStartupReadyPlan(result));
+        if (options.plan === true) {
+          console.log(formatStartupReadyPlan(await planStartupReady(common)));
+          return;
+        }
+
+        const result = await runStartupReady(common);
+
+        console.log(formatStartupReadinessRun(result.run));
       }
     );
 
