@@ -382,6 +382,97 @@ describe("startup evidence ledger", () => {
     }
   });
 
+  it("treats passing command evidence as launch verifier completion signal", async () => {
+    const workspace = join(
+      tmpdir(),
+      `runstead-startup-launch-verifier-signal-${process.pid}`
+    );
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      const initialized = await initRunstead({ cwd: workspace });
+      await installDomainPack({
+        cwd: workspace,
+        ref: "ai-native-startup",
+        now: new Date("2026-05-14T04:00:00.000Z")
+      });
+
+      await addStartupEvidence({
+        cwd: workspace,
+        type: "measurement_framework",
+        summary: "Activation and retention metrics are defined",
+        now: new Date("2026-05-14T04:20:00.000Z")
+      });
+      await addStartupEvidence({
+        cwd: workspace,
+        type: "metric_snapshot",
+        summary: "Local verifier metric snapshot is above threshold",
+        content: JSON.stringify({
+          metric: "required_checks",
+          source: "local verifier evidence",
+          threshold: 1,
+          current: 1
+        }),
+        now: new Date("2026-05-14T04:21:00.000Z")
+      });
+      for (const [type, summary] of [
+        ["repo_readiness", "Repository readiness audit is clean"],
+        ["security_baseline", "Security baseline is clean"],
+        ["migration_plan", "No migrations required for this release"],
+        ["rollback_plan", "Rollback uses the previous deployment artifact"],
+        ["observability", "Launch dashboard and alert owner are defined"],
+        ["founder_bottleneck", "Founder-only launch knowledge has an owner"]
+      ] as const) {
+        await addStartupEvidence({
+          cwd: workspace,
+          type,
+          summary,
+          content: launchRemediationContent(type),
+          now: new Date("2026-05-14T04:22:00.000Z")
+        });
+      }
+
+      await writeVerifierArtifact({
+        root: initialized.root,
+        fileName: "verifier-wrapped-worker-passed.json",
+        exitCode: 0,
+        createdAt: "2026-05-14T04:23:00.000Z"
+      });
+      const database = openRunsteadDatabase(initialized.stateDb);
+
+      try {
+        projectEvidence(database, {
+          id: "ev_wrapped_worker_command_signal_001",
+          type: "command_output",
+          subjectType: "task",
+          subjectId: "task_wrapped_worker_without_run_mvp_projection",
+          uri: `file://${join(
+            initialized.root,
+            "evidence",
+            "verifier-wrapped-worker-passed.json"
+          )}`,
+          summary: "Wrapped worker verifier commands passed",
+          createdAt: "2026-05-14T04:23:00.000Z"
+        });
+      } finally {
+        database.close();
+      }
+
+      const gate = await checkStartupGate({
+        cwd: workspace,
+        stage: "launch",
+        domain: "ai-native-startup",
+        now: new Date("2026-05-14T04:24:00.000Z")
+      });
+
+      expect(gate.passed).toBe(true);
+      expect(gate.blockers).toEqual([]);
+      expect(gate.warnings).not.toContain("run_mvp_verifiers has not completed");
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
   it("accepts later high-quality launch evidence and remediation metadata", async () => {
     const workspace = join(
       tmpdir(),

@@ -630,12 +630,13 @@ function gateWarnings(input: {
     );
   }
 
+  const hasVerifierEvidence = hasPassingCommandOutput(input.evidence, input.artifacts);
+
   return [
-    ...(hasCompletedTask(input.tasks, "run_mvp_verifiers")
+    ...(hasCompletedTask(input.tasks, "run_mvp_verifiers") || hasVerifierEvidence
       ? []
       : ["run_mvp_verifiers has not completed"]),
-    ...(hasPassingCommandOutput(input.evidence, input.artifacts) ||
-    hasStructuredMetricEvidence(input.evidence, input.artifacts)
+    ...(hasVerifierEvidence || hasStructuredMetricEvidence(input.evidence, input.artifacts)
       ? []
       : ["no verifier or metric evidence is recorded"]),
     ...staleEvidenceSourceWarnings(input.evidence, input.artifacts, input.checkedAt)
