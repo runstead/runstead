@@ -129,6 +129,14 @@ describe("startup readiness run model", () => {
       expect(result.run.evidenceIds.length).toBeGreaterThanOrEqual(6);
       expect(result.run.evidenceTiers).toContain("local_command");
       expect(result.run.evidenceTiers).toContain("ci_verified");
+      expect(result.run.evidenceTypes).toEqual(
+        expect.arrayContaining([
+          "startup_problem_hypothesis",
+          "startup_user_hypothesis",
+          "startup_solution_hypothesis",
+          "startup_disconfirming"
+        ])
+      );
       expect(result.run.verdict).toBe("local_launch_ready");
       expect(result.run.verdictBlockers).toEqual([]);
       expect(result.run.reportPaths).toEqual(
@@ -430,6 +438,16 @@ describe("startup readiness run model", () => {
         blockers: []
       });
       expect(uiPhase?.evidenceIds).toHaveLength(1);
+      expect(result.run.evidenceTypes).toEqual(
+        expect.arrayContaining([
+          "startup_metric_snapshot",
+          "startup_migration_plan",
+          "startup_rollback_plan",
+          "startup_observability",
+          "startup_release_plan",
+          "startup_founder_bottleneck"
+        ])
+      );
       expect(uiPhase?.artifacts).toEqual(
         expect.arrayContaining([
           join(workspace, ".runstead", "startup", "ui-smoke.yaml")

@@ -22,6 +22,14 @@ policy, diff scope, verifier evidence, and reports, but it does not hard-proxy
 every internal Codex CLI tool call. Use `codex_direct` when the product promise
 requires Runstead to govern exposed model tool calls through its native proxy.
 
+For the `local` target, `startup ready` also records a conservative local
+baseline when evidence is missing: problem/user/solution hypotheses,
+disconfirming-signal review, metric snapshot, migration plan, rollback plan,
+observability baseline, release plan, and founder bottleneck ownership. These
+records are marked as local/manual or local-command evidence; they make a local
+launch review smoother but do not replace staging deployment, production
+analytics, support, or customer evidence.
+
 The run performs these phases:
 
 1. onboard repository and initialize Runstead state
