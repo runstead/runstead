@@ -156,8 +156,12 @@ export function registerStartupCommands(program: Command): void {
     )
     .option(
       "--worker <worker>",
-      "Worker: codex_direct, codex_cli, or claude_code",
-      "codex_cli"
+      "Worker: codex_direct, codex_cli, or claude_code. Defaults from --governance."
+    )
+    .option(
+      "--governance <profile>",
+      "Governance profile: auto, readiness, or governed",
+      "auto"
     )
     .option("--plan", "Only print the readiness run plan")
     .option("--resume <run-id>", "Resume an existing startup readiness run")
@@ -169,7 +173,8 @@ export function registerStartupCommands(program: Command): void {
         cwd?: string;
         stage: string;
         target: string;
-        worker: string;
+        worker?: string;
+        governance: string;
         plan?: boolean;
         resume?: string;
         writeCi?: boolean;
@@ -180,15 +185,20 @@ export function registerStartupCommands(program: Command): void {
           formatStartupReadyPlan,
           formatStartupReadinessRun,
           parseStartupReadyStage,
+          parseStartupReadyGovernanceProfile,
           parseStartupReadyTarget,
           planStartupReady,
           runStartupReady
         } = await import("./startup-ready.js");
+        const target = parseStartupReadyTarget(options.target);
         const common = {
           ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
           stage: parseStartupReadyStage(options.stage),
-          target: parseStartupReadyTarget(options.target),
-          worker: parseLocalAgentWorker(options.worker),
+          target,
+          ...(options.worker === undefined
+            ? {}
+            : { worker: parseLocalAgentWorker(options.worker) }),
+          governanceProfile: parseStartupReadyGovernanceProfile(options.governance),
           ...(options.resume === undefined ? {} : { resumeRunId: options.resume }),
           writeCi: options.writeCi === true,
           ci: options.ci === true,

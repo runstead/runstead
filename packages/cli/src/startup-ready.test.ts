@@ -43,6 +43,7 @@ describe("startup readiness run model", () => {
         stage: "launch",
         target: "local",
         worker: "codex_cli",
+        governanceProfile: "readiness",
         status: "planned",
         startedAt: "2026-05-22T01:00:00.000Z"
       });
@@ -202,9 +203,54 @@ describe("startup readiness run model", () => {
           "support or feedback triage evidence is missing"
         ])
       );
-      expect(formatted).toContain("Worker: codex_cli");
-      expect(formatted).toContain("Level 1 process wrapper path");
-      expect(formatted).toContain("worker-internal tool calls are not hard-proxied");
+      expect(plan.worker).toBe("codex_direct");
+      expect(plan.governanceProfile).toBe("governed");
+      expect(formatted).toContain("Worker: codex_direct");
+      expect(formatted).toContain("Governance profile: governed");
+      expect(formatted).toContain("Level 2 native tool proxy path");
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("keeps local startup readiness on the readiness wrapper profile by default", async () => {
+    const workspace = join(tmpdir(), `runstead-startup-ready-local-${process.pid}`);
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await mkdir(workspace, { recursive: true });
+
+      const plan = await planStartupReady({
+        cwd: workspace,
+        stage: "launch",
+        target: "local",
+        now: new Date("2026-05-22T01:22:00.000Z")
+      });
+
+      expect(plan.worker).toBe("codex_cli");
+      expect(plan.governanceProfile).toBe("readiness");
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("fails closed when governed readiness is requested for a wrapped worker", async () => {
+    const workspace = join(tmpdir(), `runstead-startup-ready-governed-${process.pid}`);
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await mkdir(workspace, { recursive: true });
+
+      await expect(
+        planStartupReady({
+          cwd: workspace,
+          stage: "launch",
+          target: "local",
+          worker: "codex_cli",
+          governanceProfile: "governed",
+          now: new Date("2026-05-22T01:23:00.000Z")
+        })
+      ).rejects.toThrow("Governance profile governed requires --worker codex_direct");
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }
@@ -230,6 +276,7 @@ describe("startup readiness run model", () => {
       const formatted = formatStartupReadinessRun(run);
 
       expect(formatted).toContain("Worker: codex_direct");
+      expect(formatted).toContain("Governance profile: governed");
       expect(formatted).toContain("Level 2 native tool proxy path");
       expect(formatted).toContain("model tool calls are governed inside Runstead");
     } finally {

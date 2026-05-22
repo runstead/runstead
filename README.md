@@ -45,6 +45,12 @@ model tool call is routed through Runstead-native policy and audit before it
 executes. This is stronger but heavier; it may require explicit approval rules,
 larger turn budgets, and narrower repair tasks.
 
+`startup ready` makes this distinction executable. `--governance readiness`
+allows Level 1 wrapped workers such as `codex_cli`; `--governance governed`
+requires `codex_direct`. The default `--governance auto` keeps local readiness
+on `codex_cli` but selects `codex_direct` for production readiness unless a
+worker is explicitly supplied.
+
 | Mode           | Best for                                                         | Governance                                                                                                 | Tradeoff                                                 |
 | -------------- | ---------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
 | `codex_cli`    | Default MVP build, normal local coding, practical speed          | Level 1 wrapped worker: gated launch, checkpoint, post-run verifier evidence, audit                        | Worker-internal tool calls are not hard-proxied          |
@@ -63,6 +69,7 @@ runstead startup ready \
   --cwd /path/to/mvp \
   --stage launch \
   --worker codex_cli \
+  --governance readiness \
   --target local
 ```
 

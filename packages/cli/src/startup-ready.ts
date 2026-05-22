@@ -14,11 +14,14 @@ import { generateStartupCiSummary } from "./startup-ci-integration.js";
 import { detectStartupDevServerCommand } from "./startup-dev-server.js";
 import {
   formatStartupWorkerGovernanceNotice,
+  resolveStartupWorkerGovernance,
   startupBuildMvp,
   startupLaunchCheck,
   startupOnboard,
   startupScaleCheck,
-  type StartupBuildMvpOptions
+  type ResolvedStartupWorkerGovernanceProfile,
+  type StartupBuildMvpOptions,
+  type StartupWorkerGovernanceProfile
 } from "./startup-founder-flow.js";
 import { generateStartupCompleteProductCheck } from "./startup-complete-check.js";
 import { executeStartupUiValidation } from "./startup-ui-validation.js";
@@ -75,6 +78,7 @@ export interface StartupReadyOptions {
   stage?: StartupReadyStage;
   target?: StartupReadyTarget;
   worker?: LocalAgentWorkerKind;
+  governanceProfile?: StartupWorkerGovernanceProfile;
   plan?: boolean;
   resumeRunId?: string;
   writeCi?: boolean;
@@ -89,6 +93,7 @@ export interface StartupReadyPlan {
   stage: StartupReadyStage;
   target: StartupReadyTarget;
   worker: LocalAgentWorkerKind;
+  governanceProfile: ResolvedStartupWorkerGovernanceProfile;
   runsteadInitialized: boolean;
   phases: StartupReadyPlanPhase[];
 }
@@ -148,6 +153,7 @@ export interface StartupReadinessRun {
   stage: StartupReadyStage;
   target: StartupReadyTarget;
   worker: LocalAgentWorkerKind;
+  governanceProfile: ResolvedStartupWorkerGovernanceProfile;
   status: StartupReadinessRunStatus;
   phases: StartupReadinessRunPhase[];
   evidenceIds: string[];
@@ -187,7 +193,14 @@ export async function planStartupReady(
   const cwd = resolve(options.cwd ?? process.cwd());
   const stage = options.stage ?? "launch";
   const target = options.target ?? "local";
-  const worker = options.worker ?? "codex_cli";
+  const governance = resolveStartupWorkerGovernance({
+    target,
+    ...(options.worker === undefined ? {} : { worker: options.worker }),
+    ...(options.governanceProfile === undefined
+      ? {}
+      : { governanceProfile: options.governanceProfile })
+  });
+  const worker = governance.worker;
   const now = options.now ?? new Date();
   const [root, inspection, devServer, recordedEvidence, gate] = await Promise.all([
     resolveRunsteadRoot(cwd),
@@ -204,6 +217,7 @@ export async function planStartupReady(
     stage,
     target,
     worker,
+    governanceProfile: governance.profile,
     runsteadInitialized: root.source !== "missing",
     phases: [
       planPhase("onboard", "Onboard repo", root.source === "missing" ? [] : []),
@@ -257,6 +271,7 @@ export async function runStartupReady(
           stage: resumed.run.stage,
           target: resumed.run.target,
           worker: resumed.run.worker,
+          governanceProfile: startupReadinessRunGovernanceProfile(resumed.run),
           ...(options.now === undefined ? {} : { now: options.now })
         });
   const persisted = resumed ?? (await createStartupReadinessRun(options));
@@ -319,6 +334,7 @@ export async function createStartupReadinessRun(
     stage: plan.stage,
     target: plan.target,
     worker: plan.worker,
+    governanceProfile: plan.governanceProfile,
     status: "planned",
     phases: plan.phases.map((phase) => ({
       id: phase.id,
@@ -353,7 +369,10 @@ export async function readStartupReadinessRun(input: {
   const parsed = JSON.parse(await readFile(path, "utf8")) as StartupReadinessRun;
 
   return {
-    run: parsed,
+    run: {
+      ...parsed,
+      governanceProfile: startupReadinessRunGovernanceProfile(parsed)
+    },
     path
   };
 }
@@ -374,6 +393,17 @@ export async function writeStartupReadinessRun(
   };
 }
 
+function startupReadinessRunGovernanceProfile(
+  run: Pick<StartupReadinessRun, "worker"> & {
+    governanceProfile?: ResolvedStartupWorkerGovernanceProfile;
+  }
+): ResolvedStartupWorkerGovernanceProfile {
+  return (
+    run.governanceProfile ??
+    (run.worker === "codex_direct" ? "governed" : "readiness")
+  );
+}
+
 export function formatStartupReadyPlan(plan: StartupReadyPlan): string {
   return [
     "Startup readiness plan",
@@ -381,7 +411,8 @@ export function formatStartupReadyPlan(plan: StartupReadyPlan): string {
     `Stage: ${plan.stage}`,
     `Target: ${plan.target}`,
     `Worker: ${plan.worker}`,
-    formatStartupWorkerGovernanceNotice(plan.worker),
+    `Governance profile: ${plan.governanceProfile}`,
+    formatStartupWorkerGovernanceNotice(plan.worker, plan.governanceProfile),
     `Runstead initialized: ${plan.runsteadInitialized ? "yes" : "no"}`,
     "",
     "Phases:",
@@ -396,7 +427,11 @@ export function formatStartupReadinessRun(run: StartupReadinessRun): string {
   return [
     `Runstead startup readiness run: ${run.id}`,
     `Worker: ${run.worker}`,
-    formatStartupWorkerGovernanceNotice(run.worker),
+    `Governance profile: ${startupReadinessRunGovernanceProfile(run)}`,
+    formatStartupWorkerGovernanceNotice(
+      run.worker,
+      startupReadinessRunGovernanceProfile(run)
+    ),
     "",
     ...run.phases.map(
       (phase, index) => `${index + 1}. ${phase.title.padEnd(28)} ${phase.status}`
@@ -1906,6 +1941,16 @@ export function parseStartupReadyTarget(value: string): StartupReadyTarget {
   }
 
   throw new Error(`Unsupported startup ready target ${value}`);
+}
+
+export function parseStartupReadyGovernanceProfile(
+  value: string
+): StartupWorkerGovernanceProfile {
+  if (value === "auto" || value === "readiness" || value === "governed") {
+    return value;
+  }
+
+  throw new Error(`Unsupported startup ready governance profile ${value}`);
 }
 
 function planPhase(

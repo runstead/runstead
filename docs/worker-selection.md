@@ -76,6 +76,14 @@ runstead agent run \
 boundary explicitly so launch reports do not overstate what a selected worker
 can prove.
 
+`runstead startup ready` also has an explicit governance profile:
+
+- `--governance readiness` uses the Level 1 wrapped-worker readiness path.
+- `--governance governed` requires `codex_direct` and fails closed for
+  `codex_cli` or `claude_code`.
+- `--governance auto` keeps local readiness on `codex_cli`, but production
+  readiness defaults to `codex_direct`.
+
 ### Level 1: Wrapped Worker
 
 Used by `codex_cli` and `claude_code`.
