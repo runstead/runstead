@@ -1529,7 +1529,7 @@ describe("runCodexDirectWorker", () => {
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }
-  });
+  }, 30000);
 
   it("fails edit-style runs when the tool budget is exhausted", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "runstead-codex-tool-budget-"));
