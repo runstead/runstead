@@ -11,9 +11,11 @@ import {
 } from "@runstead/core";
 import {
   appendEventAndProject,
-  appendEventsAndProjects,
+  appendEventsAndProjectsInTransaction,
   openRunsteadDatabase,
-  type AppendEventAndProjectInput
+  runStateTransaction,
+  type AppendEventAndProjectInput,
+  type RunsteadDatabase
 } from "@runstead/state-sqlite";
 
 import { checkPermission } from "./rbac.js";
@@ -217,44 +219,43 @@ export async function decideApproval(
     throw new Error(`Subject ${subject} cannot decide approvals: ${permission.reason}`);
   }
 
-  const current = showApproval(options);
-
-  if (current.approval.status !== "pending") {
-    throw new Error(
-      `Approval ${options.id} is ${current.approval.status}, expected pending`
-    );
-  }
-
-  const decidedAt = (options.now ?? new Date()).toISOString();
-  const approval: ApprovalRequest = {
-    ...current.approval,
-    status: options.decision,
-    decidedAt,
-    decidedBy: subject,
-    updatedAt: decidedAt
-  };
-  const database = openRunsteadDatabase(current.stateDb);
+  const stateDb = requireRunsteadStateDbSync(options.cwd).stateDb;
+  const database = openRunsteadDatabase(stateDb);
 
   try {
-    const policyDecision = findPolicyDecision(database, approval.policyDecisionId);
-    const approvalTransition = createApprovalDecisionTransition({
-      approval,
-      ...(policyDecision === undefined ? {} : { policyDecision }),
-      decidedAt
+    return runStateTransaction(database, () => {
+      const currentApproval = readPendingApprovalForDecision(database, options.id);
+      const decidedAt = (options.now ?? new Date()).toISOString();
+      const approval: ApprovalRequest = {
+        ...currentApproval,
+        status: options.decision,
+        decidedAt,
+        decidedBy: subject,
+        updatedAt: decidedAt
+      };
+      const policyDecision = findPolicyDecision(database, approval.policyDecisionId);
+      const approvalTransition = createApprovalDecisionTransition({
+        approval,
+        ...(policyDecision === undefined ? {} : { policyDecision }),
+        decidedAt
+      });
+      const taskTransition = createTaskTransitionForApprovalDecision(
+        database,
+        approval
+      );
+
+      appendEventsAndProjectsInTransaction(database, [
+        approvalTransition.entry,
+        ...(taskTransition === undefined ? [] : [taskTransition])
+      ]);
+
+      return {
+        approval,
+        event: approvalTransition.event,
+        previousStatus: currentApproval.status,
+        stateDb
+      };
     });
-    const taskTransition = createTaskTransitionForApprovalDecision(database, approval);
-
-    appendEventsAndProjects(database, [
-      approvalTransition.entry,
-      ...(taskTransition === undefined ? [] : [taskTransition])
-    ]);
-
-    return {
-      approval,
-      event: approvalTransition.event,
-      previousStatus: current.approval.status,
-      stateDb: current.stateDb
-    };
   } finally {
     database.close();
   }
@@ -456,7 +457,7 @@ function createTaskTransitionForApprovalDecision(
 }
 
 function taskForApproval(
-  database: ReturnType<typeof openRunsteadDatabase>,
+  database: RunsteadDatabase,
   approval: ApprovalRequest
 ): Task | undefined {
   const row = database
@@ -475,6 +476,47 @@ function taskForApproval(
     .get(approval.policyDecisionId) as TaskRow | undefined;
 
   return row === undefined ? undefined : rowToTask(row);
+}
+
+function readPendingApprovalForDecision(
+  database: RunsteadDatabase,
+  id: string
+): ApprovalRequest {
+  const pendingRow = database
+    .prepare(
+      `
+      SELECT id, policy_decision_id, action_id, status, risk, reason,
+             requested_by, expires_at, decided_at, decided_by,
+             created_at, updated_at
+      FROM approvals
+      WHERE id = ? AND status = 'pending'
+    `
+    )
+    .get(id) as ApprovalRow | undefined;
+
+  if (pendingRow !== undefined) {
+    return rowToApproval(pendingRow);
+  }
+
+  const row = database
+    .prepare(
+      `
+      SELECT id, policy_decision_id, action_id, status, risk, reason,
+             requested_by, expires_at, decided_at, decided_by,
+             created_at, updated_at
+      FROM approvals
+      WHERE id = ?
+    `
+    )
+    .get(id) as ApprovalRow | undefined;
+
+  if (row === undefined) {
+    throw new Error(`Approval not found: ${id}`);
+  }
+
+  const approval = rowToApproval(row);
+
+  throw new Error(`Approval ${id} is ${approval.status}, expected pending`);
 }
 
 interface ApprovalRow {
@@ -540,7 +582,7 @@ function rowToApproval(row: ApprovalRow): ApprovalRequest {
 }
 
 function findPolicyDecision(
-  database: ReturnType<typeof openRunsteadDatabase>,
+  database: RunsteadDatabase,
   id: string
 ): PolicyDecisionRecord | undefined {
   const row = database

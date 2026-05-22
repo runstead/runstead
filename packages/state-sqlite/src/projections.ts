@@ -52,23 +52,39 @@ export function appendEventsAndProjects(
   database: RunsteadDatabase,
   inputs: AppendEventAndProjectInput[]
 ): void {
+  runStateTransaction(database, () => {
+    appendEventsAndProjectsInTransaction(database, inputs);
+  });
+}
+
+export function appendEventsAndProjectsInTransaction(
+  database: RunsteadDatabase,
+  inputs: AppendEventAndProjectInput[]
+): void {
   const entries = inputs.map((input) => ({
     event: RunsteadEventSchema.parse(input.event),
     projection: input.projection
   }));
 
+  for (const entry of entries) {
+    insertEvent(database, entry.event);
+
+    if (entry.projection !== undefined) {
+      upsertProjection(database, entry.projection);
+    }
+  }
+}
+
+export function runStateTransaction<T>(
+  database: RunsteadDatabase,
+  operation: () => T
+): T {
   database.exec("BEGIN IMMEDIATE");
 
   try {
-    for (const entry of entries) {
-      insertEvent(database, entry.event);
-
-      if (entry.projection !== undefined) {
-        upsertProjection(database, entry.projection);
-      }
-    }
-
+    const result = operation();
     database.exec("COMMIT");
+    return result;
   } catch (error) {
     database.exec("ROLLBACK");
     throw error;
