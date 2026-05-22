@@ -7,8 +7,10 @@ import { describe, expect, it } from "vitest";
 
 import {
   createStartupReadinessRun,
+  evaluateStartupReadinessVerdict,
   readStartupReadinessRun,
-  runStartupReady
+  runStartupReady,
+  type StartupReadinessRunPhase
 } from "./startup-ready.js";
 
 describe("startup readiness run model", () => {
@@ -117,11 +119,65 @@ describe("startup readiness run model", () => {
         result.run.phases.find((phase) => phase.id === "verifiers")?.evidenceIds
       ).toHaveLength(4);
       expect(result.run.evidenceIds.length).toBeGreaterThanOrEqual(6);
+      expect(result.run.evidenceTiers).toContain("local_command");
+      expect(result.run.verdict).toBe("local_launch_ready");
+      expect(result.run.verdictBlockers).toEqual([]);
       expect(persisted).toEqual(result.run);
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }
   }, 60_000);
+
+  it("keeps higher launch targets blocked until stronger evidence tiers exist", () => {
+    const phases: StartupReadinessRunPhase[] = [
+      {
+        id: "verifiers",
+        title: "Run verifiers",
+        status: "passed",
+        evidenceIds: ["ev_command"],
+        artifacts: [],
+        blockers: []
+      },
+      {
+        id: "ui_smoke",
+        title: "UI smoke",
+        status: "passed",
+        evidenceIds: ["ev_smoke"],
+        artifacts: [],
+        blockers: []
+      }
+    ];
+
+    expect(
+      evaluateStartupReadinessVerdict({
+        run: {
+          target: "local",
+          phases
+        },
+        evidenceTiers: ["local_command", "synthetic_smoke"]
+      }).verdict
+    ).toBe("local_launch_ready");
+    const production = evaluateStartupReadinessVerdict({
+      run: {
+        target: "production",
+        phases
+      },
+      evidenceTiers: ["local_command", "synthetic_smoke", "security_scan"],
+      evidenceTypes: ["startup_security_baseline"]
+    });
+
+    expect(production.verdict).toBe("public_launch_blocked");
+    expect(production.blockers).toEqual(
+      expect.arrayContaining([
+        "CI-verified evidence is required for staging or production",
+        "production deployment evidence is required",
+        "real-user analytics evidence is required",
+        "support or feedback triage evidence is required",
+        "rollback-plan evidence is required",
+        "observability evidence is required"
+      ])
+    );
+  });
 
   it("loads UI smoke config and executes the launch UI phase", async () => {
     const workspace = join(tmpdir(), `runstead-startup-ready-ui-${process.pid}`);

@@ -2,12 +2,14 @@ import { randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
+import { openRunsteadDatabase } from "@runstead/state-sqlite";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 
 import { collectRepoInspection } from "./inspection-evidence.js";
 import type { LocalAgentWorkerKind } from "./local-agent.js";
-import { resolveRunsteadRoot } from "./runstead-root.js";
+import { requireRunsteadStateDb, resolveRunsteadRoot } from "./runstead-root.js";
 import { detectStartupDevServerCommand } from "./startup-dev-server.js";
 import {
   startupBuildMvp,
@@ -38,6 +40,28 @@ export type StartupReadinessPhaseStatus =
   | "failed"
   | "skipped";
 export type StartupReadinessDirtyState = "clean" | "dirty" | "unknown";
+export const STARTUP_READINESS_EVIDENCE_TIERS = [
+  "synthetic_smoke",
+  "local_manual",
+  "local_command",
+  "ci_verified",
+  "staging_deployment",
+  "production_deployment",
+  "real_user_analytics",
+  "support_ticket",
+  "security_scan"
+] as const;
+
+export type StartupReadinessEvidenceTier =
+  (typeof STARTUP_READINESS_EVIDENCE_TIERS)[number];
+export type StartupReadinessVerdict =
+  | "not_evaluated"
+  | "local_launch_ready"
+  | "local_launch_blocked"
+  | "staging_launch_ready"
+  | "staging_launch_blocked"
+  | "public_launch_ready"
+  | "public_launch_blocked";
 
 export interface StartupReadyOptions {
   cwd?: string;
@@ -120,6 +144,9 @@ export interface StartupReadinessRun {
   status: StartupReadinessRunStatus;
   phases: StartupReadinessRunPhase[];
   evidenceIds: string[];
+  evidenceTiers: StartupReadinessEvidenceTier[];
+  verdict: StartupReadinessVerdict;
+  verdictBlockers: string[];
   reportPaths: string[];
   startedAt: string;
   completedAt?: string;
@@ -204,7 +231,7 @@ export async function runStartupReady(
     throw error;
   }
 
-  const finalRun = finalizeRun(run, options.now ?? new Date());
+  const finalRun = await finalizeRun(run, options.now ?? new Date());
   const finalPersisted = await writeStartupReadinessRun(finalRun);
 
   return {
@@ -237,6 +264,9 @@ export async function createStartupReadinessRun(
       ...(phase.nextAction === undefined ? {} : { nextAction: phase.nextAction })
     })),
     evidenceIds: [],
+    evidenceTiers: [],
+    verdict: "not_evaluated",
+    verdictBlockers: [],
     reportPaths: [],
     startedAt,
     ...(git.head === undefined ? {} : { gitHead: git.head }),
@@ -304,6 +334,9 @@ export function formatStartupReadinessRun(run: StartupReadinessRun): string {
     "",
     `Status: ${run.status}`,
     `Target: ${run.target}`,
+    `Verdict: ${run.verdict}`,
+    `Evidence tiers: ${run.evidenceTiers.length === 0 ? "none" : run.evidenceTiers.join(", ")}`,
+    `Verdict blockers: ${run.verdictBlockers.length === 0 ? "none" : run.verdictBlockers.join("; ")}`,
     `Git head: ${run.gitHead ?? "unknown"}`,
     `Dirty state: ${run.dirtyState}`
   ].join("\n");
@@ -718,19 +751,262 @@ function verifierPhaseUpdate(
   };
 }
 
-function finalizeRun(run: StartupReadinessRun, now: Date): StartupReadinessRun {
+async function finalizeRun(
+  run: StartupReadinessRun,
+  now: Date
+): Promise<StartupReadinessRun> {
+  const recordedEvidence = await collectRecordedStartupReadinessEvidence(run.cwd);
+  const evidenceTiers = uniqueEvidenceTiers([
+    ...inferPhaseEvidenceTiers(run),
+    ...recordedEvidence.evidenceTiers
+  ]);
+  const verdict = evaluateStartupReadinessVerdict({
+    run,
+    evidenceTiers,
+    evidenceTypes: recordedEvidence.evidenceTypes
+  });
   const phaseStatuses = run.phases.map((phase) => phase.status);
   const status = phaseStatuses.includes("failed")
     ? "failed"
-    : phaseStatuses.includes("blocked")
+    : phaseStatuses.includes("blocked") || verdict.blockers.length > 0
       ? "blocked"
       : "completed";
 
   return {
     ...run,
     status,
+    evidenceTiers,
+    verdict: verdict.verdict,
+    verdictBlockers: verdict.blockers,
     completedAt: now.toISOString()
   };
+}
+
+export function evaluateStartupReadinessVerdict(input: {
+  run: Pick<StartupReadinessRun, "target" | "phases">;
+  evidenceTiers: StartupReadinessEvidenceTier[];
+  evidenceTypes?: string[];
+}): { verdict: StartupReadinessVerdict; blockers: string[] } {
+  const phaseBlockers = input.run.phases
+    .filter((phase) => phase.status === "blocked" || phase.status === "failed")
+    .map((phase) => `${phase.title} is ${phase.status}`);
+  const tierBlockers = missingStartupReadinessEvidenceBlockers({
+    target: input.run.target,
+    phases: input.run.phases,
+    evidenceTiers: input.evidenceTiers,
+    evidenceTypes: input.evidenceTypes ?? []
+  });
+  const blockers = unique([...phaseBlockers, ...tierBlockers]);
+  const ready = blockers.length === 0;
+
+  if (input.run.target === "local") {
+    return {
+      verdict: ready ? "local_launch_ready" : "local_launch_blocked",
+      blockers
+    };
+  }
+
+  if (input.run.target === "staging") {
+    return {
+      verdict: ready ? "staging_launch_ready" : "staging_launch_blocked",
+      blockers
+    };
+  }
+
+  return {
+    verdict: ready ? "public_launch_ready" : "public_launch_blocked",
+    blockers
+  };
+}
+
+function missingStartupReadinessEvidenceBlockers(input: {
+  target: StartupReadyTarget;
+  phases: StartupReadinessRunPhase[];
+  evidenceTiers: StartupReadinessEvidenceTier[];
+  evidenceTypes: string[];
+}): string[] {
+  const tiers = new Set(input.evidenceTiers);
+  const evidenceTypes = new Set(input.evidenceTypes);
+  const requiresUiSmoke = input.phases.some((phase) => phase.id === "ui_smoke");
+  const blockers = [
+    ...(tiers.has("local_command")
+      ? []
+      : ["local command verifier evidence is required"])
+  ];
+
+  if (requiresUiSmoke && !tiers.has("synthetic_smoke")) {
+    blockers.push("synthetic UI smoke evidence is required");
+  }
+
+  if (input.target === "local") {
+    return blockers;
+  }
+
+  if (!tiers.has("ci_verified")) {
+    blockers.push("CI-verified evidence is required for staging or production");
+  }
+
+  if (input.target === "staging") {
+    if (!tiers.has("staging_deployment")) {
+      blockers.push("staging deployment evidence is required");
+    }
+
+    return blockers;
+  }
+
+  if (!tiers.has("production_deployment")) {
+    blockers.push("production deployment evidence is required");
+  }
+
+  if (!tiers.has("real_user_analytics")) {
+    blockers.push("real-user analytics evidence is required");
+  }
+
+  if (!tiers.has("support_ticket")) {
+    blockers.push("support or feedback triage evidence is required");
+  }
+
+  if (!tiers.has("security_scan")) {
+    blockers.push("security scan evidence is required");
+  }
+
+  if (!evidenceTypes.has("startup_rollback_plan")) {
+    blockers.push("rollback-plan evidence is required");
+  }
+
+  if (!evidenceTypes.has("startup_observability")) {
+    blockers.push("observability evidence is required");
+  }
+
+  return blockers;
+}
+
+async function collectRecordedStartupReadinessEvidence(cwd: string): Promise<{
+  evidenceTiers: StartupReadinessEvidenceTier[];
+  evidenceTypes: string[];
+}> {
+  try {
+    const state = await requireRunsteadStateDb(cwd);
+    const database = openRunsteadDatabase(state.stateDb);
+
+    try {
+      const rows = database
+        .prepare(
+          `
+          SELECT type, uri, summary
+          FROM evidence
+          WHERE type = 'command_output' OR type LIKE 'startup_%'
+          `
+        )
+        .all() as unknown as StartupReadinessEvidenceRow[];
+      const artifacts = await Promise.all(
+        rows.map((row) => readStartupReadinessEvidenceArtifact(row.uri))
+      );
+
+      return {
+        evidenceTiers: uniqueEvidenceTiers(
+          rows.flatMap((row, index) =>
+            inferRecordedEvidenceTiers(row, artifacts[index])
+          )
+        ),
+        evidenceTypes: unique(rows.map((row) => row.type))
+      };
+    } finally {
+      database.close();
+    }
+  } catch {
+    return {
+      evidenceTiers: [],
+      evidenceTypes: []
+    };
+  }
+}
+
+interface StartupReadinessEvidenceRow {
+  type: string;
+  uri: string;
+  summary?: string | null;
+}
+
+function inferRecordedEvidenceTiers(
+  row: StartupReadinessEvidenceRow,
+  artifact: unknown
+): StartupReadinessEvidenceTier[] {
+  const text = evidenceSearchText(row, artifact);
+  const tiers: StartupReadinessEvidenceTier[] = [];
+
+  if (row.type === "command_output") {
+    tiers.push("local_command");
+  }
+
+  if (row.type === "startup_ui_validation" || text.includes("synthetic")) {
+    tiers.push("synthetic_smoke");
+  }
+
+  if (text.includes("founder_manual") || text.includes("local_manual")) {
+    tiers.push("local_manual");
+  }
+
+  if (
+    row.type === "startup_ci_summary" ||
+    text.includes("github actions") ||
+    text.includes("ci_verified") ||
+    text.includes("ci verified")
+  ) {
+    tiers.push("ci_verified");
+  }
+
+  if (text.includes("staging_deployment") || stagingDeploymentText(text)) {
+    tiers.push("staging_deployment");
+  }
+
+  if (
+    text.includes("production_deployment") ||
+    text.includes("production deployment") ||
+    text.includes("prod deployment")
+  ) {
+    tiers.push("production_deployment");
+  }
+
+  if (
+    row.type === "startup_metric_snapshot" &&
+    (text.includes("analytics_real_user") ||
+      text.includes("real_user_analytics") ||
+      /realuserdata\\?":\s*true/.test(text))
+  ) {
+    tiers.push("real_user_analytics");
+  }
+
+  if (row.type === "startup_support_triage" || text.includes("support_ticket")) {
+    tiers.push("support_ticket");
+  }
+
+  if (row.type === "startup_security_baseline" || text.includes("security_scan")) {
+    tiers.push("security_scan");
+  }
+
+  return uniqueEvidenceTiers(tiers);
+}
+
+async function readStartupReadinessEvidenceArtifact(uri: string): Promise<unknown> {
+  try {
+    const path = uri.startsWith("file:") ? fileURLToPath(uri) : uri;
+
+    return JSON.parse(await readFile(path, "utf8")) as unknown;
+  } catch {
+    return undefined;
+  }
+}
+
+function evidenceSearchText(
+  row: StartupReadinessEvidenceRow,
+  artifact: unknown
+): string {
+  return `${row.type} ${row.uri} ${row.summary ?? ""} ${JSON.stringify(artifact ?? {})}`.toLowerCase();
+}
+
+function stagingDeploymentText(text: string): boolean {
+  return text.includes("staging") && text.includes("deployment");
 }
 
 function updatePhase(
@@ -758,10 +1034,40 @@ function hasPhase(run: StartupReadinessRun, id: string): boolean {
 
 function collectRunEvidence(run: StartupReadinessRun): void {
   run.evidenceIds = unique(run.phases.flatMap((phase) => phase.evidenceIds));
+  run.evidenceTiers = uniqueEvidenceTiers([
+    ...run.evidenceTiers,
+    ...inferPhaseEvidenceTiers(run)
+  ]);
   run.reportPaths = unique([
     ...run.reportPaths,
     ...run.phases.flatMap((phase) => phase.artifacts).filter(isReportPath)
   ]);
+}
+
+function inferPhaseEvidenceTiers(
+  run: Pick<StartupReadinessRun, "phases">
+): StartupReadinessEvidenceTier[] {
+  return uniqueEvidenceTiers(
+    run.phases.flatMap((phase) => {
+      if (phase.evidenceIds.length === 0) {
+        return [];
+      }
+
+      if (phase.id === "verifiers") {
+        return ["local_command"];
+      }
+
+      if (phase.id === "ui_smoke") {
+        return ["synthetic_smoke"];
+      }
+
+      if (phase.id === "launch_audit") {
+        return ["local_command", "security_scan"];
+      }
+
+      return [];
+    })
+  );
 }
 
 function isReportPath(path: string): boolean {
@@ -769,6 +1075,12 @@ function isReportPath(path: string): boolean {
 }
 
 function unique(values: string[]): string[] {
+  return [...new Set(values)];
+}
+
+function uniqueEvidenceTiers(
+  values: StartupReadinessEvidenceTier[]
+): StartupReadinessEvidenceTier[] {
   return [...new Set(values)];
 }
 
