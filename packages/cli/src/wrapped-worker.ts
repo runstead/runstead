@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { copyFile, mkdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
@@ -97,6 +97,8 @@ export interface WorkerProcessProgress {
   stdoutBytes: number;
   stderrBytes: number;
   capturedBytes: number;
+  workspaceChangedFiles?: number;
+  workspaceRecentFiles?: string[];
 }
 
 export interface WrappedWorkerStructuredOutput {
@@ -488,7 +490,14 @@ export function formatWorkerProcessProgress(progress: WorkerProcessProgress): st
     `wrapped worker still running: ${progress.command}`,
     `elapsed=${formatElapsed(progress.elapsedMs)}`,
     `stdout=${progress.stdoutBytes}B`,
-    `stderr=${progress.stderrBytes}B`
+    `stderr=${progress.stderrBytes}B`,
+    ...(progress.workspaceChangedFiles === undefined
+      ? []
+      : [`files=${progress.workspaceChangedFiles}`]),
+    ...(progress.workspaceRecentFiles === undefined ||
+    progress.workspaceRecentFiles.length === 0
+      ? []
+      : [`recent=${progress.workspaceRecentFiles.join(",")}`])
   ].join(" ");
 }
 
@@ -546,12 +555,16 @@ export async function runWorkerProcess(
       options.onProgress === undefined
         ? undefined
         : setInterval(() => {
+            const workspace = workerWorkspaceProgress(options.cwd);
+
             options.onProgress?.({
               command,
               elapsedMs: Date.now() - startedAt,
               stdoutBytes,
               stderrBytes,
-              capturedBytes
+              capturedBytes,
+              workspaceChangedFiles: workspace.changedFiles,
+              workspaceRecentFiles: workspace.recentFiles
             });
           }, progressIntervalMs);
 
@@ -637,6 +650,41 @@ export async function runWorkerProcess(
       });
     });
   });
+}
+
+function workerWorkspaceProgress(cwd: string): {
+  changedFiles: number;
+  recentFiles: string[];
+} {
+  const result = spawnSync(
+    "git",
+    ["status", "--short", "--untracked-files=all"],
+    {
+      cwd,
+      encoding: "utf8",
+      timeout: 2_000,
+      maxBuffer: 1024 * 1024
+    }
+  );
+
+  if (result.status !== 0) {
+    return {
+      changedFiles: 0,
+      recentFiles: []
+    };
+  }
+
+  const files = result.stdout
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .map((line) => line.slice(3))
+    .filter((file) => file !== ".runstead" && !file.startsWith(".runstead/"));
+
+  return {
+    changedFiles: files.length,
+    recentFiles: files.slice(0, 3)
+  };
 }
 
 function appendWorkerProcessNotice(output: string, notice: string): string {

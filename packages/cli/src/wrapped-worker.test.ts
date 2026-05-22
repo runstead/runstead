@@ -687,10 +687,12 @@ describe("runWorkerProcess", () => {
         elapsedMs: 65_000,
         stdoutBytes: 5,
         stderrBytes: 7,
-        capturedBytes: 12
+        capturedBytes: 12,
+        workspaceChangedFiles: 2,
+        workspaceRecentFiles: ["src/app.ts", "package.json"]
       })
     ).toBe(
-      "[runstead] wrapped worker still running: codex elapsed=1m5s stdout=5B stderr=7B"
+      "[runstead] wrapped worker still running: codex elapsed=1m5s stdout=5B stderr=7B files=2 recent=src/app.ts,package.json"
     );
   });
 });
