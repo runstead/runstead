@@ -63,13 +63,49 @@ describe("openRunsteadDatabase", () => {
 
       database.close();
 
-      expect(migrations).toHaveLength(1);
+      expect(migrations).toHaveLength(2);
       expect(migrations[0]).toMatchObject({
         version: 1,
         name: "initial_state_schema"
       });
+      expect(migrations[1]).toMatchObject({
+        version: 2,
+        name: "state_query_indexes"
+      });
       expect(migrations[0]?.checksum).toMatch(/^[a-f0-9]{64}$/);
+      expect(migrations[1]?.checksum).toMatch(/^[a-f0-9]{64}$/);
       expect(userVersion.user_version).toBe(RUNSTEAD_SCHEMA_VERSION);
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("creates query indexes for audit and readiness lookups", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-state-"));
+
+    try {
+      const database = openRunsteadDatabase(join(workspace, "state.db"));
+      const rows = database
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'index'")
+        .all() as { name: string }[];
+
+      database.close();
+
+      expect(rows.map((row) => row.name)).toEqual(
+        expect.arrayContaining([
+          "idx_events_type_created_id",
+          "idx_events_aggregate_id",
+          "idx_tasks_goal_status_updated",
+          "idx_tasks_domain_status_updated",
+          "idx_evidence_type_created",
+          "idx_evidence_subject_type_created",
+          "idx_approvals_action_status_updated",
+          "idx_approvals_status_updated",
+          "idx_tool_calls_task_started",
+          "idx_tool_calls_action_status_started",
+          "idx_worker_runs_task_status_started"
+        ])
+      );
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }

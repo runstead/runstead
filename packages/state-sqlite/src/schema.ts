@@ -1,4 +1,4 @@
-export const RUNSTEAD_SCHEMA_VERSION = 1;
+export const RUNSTEAD_SCHEMA_VERSION = 2;
 
 export interface RunsteadSchemaMigration {
   version: number;
@@ -154,12 +154,76 @@ CREATE TABLE IF NOT EXISTS events (
 );
 `;
 
+export const stateQueryIndexesSql = `
+CREATE INDEX IF NOT EXISTS idx_events_type_created_id
+  ON events(type, created_at DESC, id DESC);
+
+CREATE INDEX IF NOT EXISTS idx_events_aggregate_id
+  ON events(aggregate_type, aggregate_id, id ASC);
+
+CREATE INDEX IF NOT EXISTS idx_events_created_id
+  ON events(created_at DESC, id DESC);
+
+CREATE INDEX IF NOT EXISTS idx_tasks_goal_status_updated
+  ON tasks(goal_id, status, updated_at DESC, id ASC);
+
+CREATE INDEX IF NOT EXISTS idx_tasks_domain_status_updated
+  ON tasks(domain, status, updated_at DESC, id ASC);
+
+CREATE INDEX IF NOT EXISTS idx_tasks_type_status_updated
+  ON tasks(type, status, updated_at DESC, id ASC);
+
+CREATE INDEX IF NOT EXISTS idx_tasks_status_updated
+  ON tasks(status, updated_at DESC, id ASC);
+
+CREATE INDEX IF NOT EXISTS idx_evidence_type_created
+  ON evidence(type, created_at DESC, id ASC);
+
+CREATE INDEX IF NOT EXISTS idx_evidence_subject_type_created
+  ON evidence(subject_type, subject_id, type, created_at DESC, id ASC);
+
+CREATE INDEX IF NOT EXISTS idx_policy_decisions_action_created
+  ON policy_decisions(action_id, created_at DESC, id ASC);
+
+CREATE INDEX IF NOT EXISTS idx_policy_decisions_created
+  ON policy_decisions(created_at DESC, id ASC);
+
+CREATE INDEX IF NOT EXISTS idx_approvals_action_status_updated
+  ON approvals(action_id, status, updated_at DESC, id ASC);
+
+CREATE INDEX IF NOT EXISTS idx_approvals_status_updated
+  ON approvals(status, updated_at DESC, id ASC);
+
+CREATE INDEX IF NOT EXISTS idx_approvals_policy_decision
+  ON approvals(policy_decision_id);
+
+CREATE INDEX IF NOT EXISTS idx_tool_calls_task_started
+  ON tool_calls(task_id, started_at DESC, id ASC);
+
+CREATE INDEX IF NOT EXISTS idx_tool_calls_worker_run_started
+  ON tool_calls(worker_run_id, started_at ASC, id ASC);
+
+CREATE INDEX IF NOT EXISTS idx_tool_calls_action_status_started
+  ON tool_calls(action_type, status, started_at DESC, id ASC);
+
+CREATE INDEX IF NOT EXISTS idx_tool_calls_policy_decision
+  ON tool_calls(policy_decision_id);
+
+CREATE INDEX IF NOT EXISTS idx_worker_runs_task_status_started
+  ON worker_runs(task_id, status, started_at DESC, id ASC);
+`;
+
 export const runsteadSchemaMigrations: RunsteadSchemaMigration[] = [
   {
     version: 1,
     name: "initial_state_schema",
     sql: initialSchemaSql
+  },
+  {
+    version: 2,
+    name: "state_query_indexes",
+    sql: stateQueryIndexesSql
   }
 ];
 
-export const createSchemaSql = `${schemaMigrationsTableSql}\n${initialSchemaSql}`;
+export const createSchemaSql = `${schemaMigrationsTableSql}\n${initialSchemaSql}\n${stateQueryIndexesSql}`;
