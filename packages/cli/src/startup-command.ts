@@ -141,6 +141,61 @@ export function registerStartupCommands(program: Command): void {
     );
 
   startup
+    .command("ready")
+    .description("Run or plan the end-to-end startup readiness orchestrator.")
+    .option("--cwd <path>", "Workspace directory")
+    .option(
+      "--stage <stage>",
+      "Stage to assess: mvp, launch, scale, or complete",
+      "launch"
+    )
+    .option(
+      "--target <target>",
+      "Readiness target: local, staging, or production",
+      "local"
+    )
+    .option(
+      "--worker <worker>",
+      "Worker: codex_direct, codex_cli, or claude_code",
+      "codex_cli"
+    )
+    .option("--plan", "Only print the readiness run plan")
+    .option("--resume <run-id>", "Resume an existing startup readiness run")
+    .option("--write-ci", "Generate or update the target repo readiness workflow")
+    .option("--ci", "Write CI summary artifacts for this readiness run")
+    .action(
+      async (options: {
+        cwd?: string;
+        stage: string;
+        target: string;
+        worker: string;
+        plan?: boolean;
+        resume?: string;
+        writeCi?: boolean;
+        ci?: boolean;
+      }) => {
+        const {
+          formatStartupReadyPlan,
+          parseStartupReadyStage,
+          parseStartupReadyTarget,
+          runStartupReady
+        } = await import("./startup-ready.js");
+        const result = await runStartupReady({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          stage: parseStartupReadyStage(options.stage),
+          target: parseStartupReadyTarget(options.target),
+          worker: parseLocalAgentWorker(options.worker),
+          plan: options.plan === true,
+          ...(options.resume === undefined ? {} : { resumeRunId: options.resume }),
+          writeCi: options.writeCi === true,
+          ci: options.ci === true
+        });
+
+        console.log(formatStartupReadyPlan(result));
+      }
+    );
+
+  startup
     .command("onboard")
     .description("Run the short founder onboarding path for an AI-coded MVP repo.")
     .option("--cwd <path>", "Workspace directory")

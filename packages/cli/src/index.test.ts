@@ -441,6 +441,7 @@ describe("cli entrypoint", () => {
     const remediate = startup?.commands.find(
       (command) => command.name() === "remediate"
     );
+    const ready = startup?.commands.find((command) => command.name() === "ready");
     const buildMvp = startup?.commands.find(
       (command) => command.name() === "build-mvp"
     );
@@ -464,6 +465,7 @@ describe("cli entrypoint", () => {
         "launch-check",
         "measurement",
         "onboard",
+        "ready",
         "remediate",
         "scale",
         "scale-check",
@@ -478,6 +480,18 @@ describe("cli entrypoint", () => {
     );
     expect(onboard?.options.map((option) => option.long)).toEqual(
       expect.arrayContaining(["--cwd", "--force", "--profile", "--write-ci"])
+    );
+    expect(ready?.options.map((option) => option.long)).toEqual(
+      expect.arrayContaining([
+        "--ci",
+        "--cwd",
+        "--plan",
+        "--resume",
+        "--stage",
+        "--target",
+        "--worker",
+        "--write-ci"
+      ])
     );
     expect(buildMvp?.options.map((option) => option.long)).toEqual(
       expect.arrayContaining([
