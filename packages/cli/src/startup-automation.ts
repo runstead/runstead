@@ -25,7 +25,7 @@ import {
   listStartupArtifacts,
   type StartupArtifactListItem
 } from "./startup-artifacts.js";
-import { addStartupEvidence } from "./startup-evidence.js";
+import { addStartupEvidence, checkStartupGate } from "./startup-evidence.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -1152,12 +1152,19 @@ export async function generateScaleOpsReport(
   }
   const startupArtifacts = (await listStartupArtifacts({ cwd })).artifacts;
   const supportCategoryCounts = supportCategoryCountsFromArtifacts(startupArtifacts);
+  const scaleGate = await checkStartupGate({
+    cwd,
+    stage: "scale",
+    recordEvent: false,
+    ...(options.now === undefined ? {} : { now: options.now })
+  });
 
   const markdown = formatScaleOpsReport({
     generatedAt,
     period,
     evidence,
-    supportCategoryCounts
+    supportCategoryCounts,
+    blockers: scaleGate.blockers
   });
 
   await mkdir(join(state.root, "reports"), { recursive: true });
@@ -1173,7 +1180,8 @@ export async function generateScaleOpsReport(
       data: {
         period,
         evidence,
-        supportCategoryCounts
+        supportCategoryCounts,
+        blockers: scaleGate.blockers
       }
     })
   ];
@@ -1988,6 +1996,7 @@ function formatScaleOpsReport(input: {
   period: string;
   evidence: StartupEvidenceSummaryRow[];
   supportCategoryCounts: Record<string, number>;
+  blockers: string[];
 }): string {
   const supportEvidence = input.evidence.filter(
     (item) => item.type === "startup_support_triage"
@@ -2012,6 +2021,10 @@ function formatScaleOpsReport(input: {
     "",
     `Generated: ${input.generatedAt}`,
     `Period: ${input.period}`,
+    "",
+    "## Scale Gate Blockers",
+    "",
+    listItems(input.blockers),
     "",
     "## Weekly Ops Evidence",
     "",

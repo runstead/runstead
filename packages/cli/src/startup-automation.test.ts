@@ -703,6 +703,7 @@ describe("startup automation", () => {
       expect(gtmMarkdown).toContain("Startup GTM Artifact Verification");
       expect(gtmMarkdown).toContain("evidence-backed launch readiness");
       expect(reportMarkdown).toContain("Startup Scale Ops Report");
+      expect(reportMarkdown).toContain("## Scale Gate Blockers");
       expect(reportMarkdown).toContain("Weekly Engineering Evidence");
       expect(report.period).toBe("2026-W20");
 
