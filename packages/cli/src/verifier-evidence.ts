@@ -1,7 +1,9 @@
 import { createHash } from "node:crypto";
-import { mkdir, writeFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { promisify } from "node:util";
 
 import {
   createRunsteadId,
@@ -13,6 +15,8 @@ import {
 import { appendEventAndProject, type RunsteadDatabase } from "@runstead/state-sqlite";
 
 import { runShellCommand, type ShellCommandResult } from "./shell-executor.js";
+
+const execFileAsync = promisify(execFile);
 
 export interface CommandVerifierInput {
   name: string;
@@ -37,8 +41,26 @@ export interface CommandVerifierArtifact {
   goalId: string;
   verifier: string;
   command: string;
+  codeState: CommandVerifierCodeState;
   result: ShellCommandResult;
   policy?: JsonObject;
+}
+
+export interface CommandVerifierCodeState {
+  kind: "git_workspace";
+  available: boolean;
+  gitHead?: string;
+  dirty: boolean;
+  statusHash: string;
+  fileSetHash: string;
+  fingerprint: string;
+  changedFiles: CommandVerifierChangedFile[];
+}
+
+export interface CommandVerifierChangedFile {
+  path: string;
+  status: string;
+  hash?: string;
 }
 
 export interface StoreCommandVerifierEvidenceResult {
@@ -54,6 +76,7 @@ export async function storeCommandVerifierEvidence(
   const cwd = resolve(options.cwd ?? process.cwd());
   const runsteadRoot = resolve(options.runsteadRoot);
   const createdAt = (options.now ?? new Date()).toISOString();
+  const codeState = await collectCommandVerifierCodeState(cwd);
   const result = await runShellCommand({
     command: options.command.command,
     cwd,
@@ -67,6 +90,7 @@ export async function storeCommandVerifierEvidence(
     goalId: options.task.goalId,
     verifier: options.command.name,
     command: result.command,
+    codeState,
     result
   };
   const evidenceId = createRunsteadId("ev");
@@ -130,6 +154,7 @@ export async function storeCommandVerifierPolicyEvidence(
   const cwd = resolve(options.cwd ?? process.cwd());
   const runsteadRoot = resolve(options.runsteadRoot);
   const createdAt = (options.now ?? new Date()).toISOString();
+  const codeState = await collectCommandVerifierCodeState(cwd);
   const result: ShellCommandResult = {
     command: options.command.command,
     cwd,
@@ -150,6 +175,7 @@ export async function storeCommandVerifierPolicyEvidence(
     goalId: options.task.goalId,
     verifier: options.command.name,
     command: options.command.command,
+    codeState,
     result,
     policy: {
       policyDecisionId: options.policyDecisionId,
@@ -208,6 +234,124 @@ export async function storeCommandVerifierPolicyEvidence(
   };
 }
 
+export async function collectCommandVerifierCodeState(
+  cwd: string
+): Promise<CommandVerifierCodeState> {
+  const gitHead = await gitOutput(cwd, ["rev-parse", "HEAD"]);
+  const statusOutput = await gitOutput(cwd, [
+    "status",
+    "--porcelain=v1",
+    "-z",
+    "--untracked-files=all"
+  ]);
+
+  if (gitHead === undefined || statusOutput === undefined) {
+    const fallback = sha256(`nogit:${cwd}`);
+
+    return {
+      kind: "git_workspace",
+      available: false,
+      dirty: false,
+      statusHash: fallback,
+      fileSetHash: fallback,
+      fingerprint: fallback,
+      changedFiles: []
+    };
+  }
+
+  const changedFiles = await Promise.all(
+    parseGitPorcelainStatus(statusOutput)
+      .filter((entry) => !isRunsteadInternalPath(entry.path))
+      .map(async (entry) => ({
+        ...entry,
+        ...(await fileHash(cwd, entry.path))
+      }))
+  );
+  const statusHash = sha256(statusOutput);
+  const fileSetHash = sha256(JSON.stringify(changedFiles));
+  const fingerprint = sha256(
+    JSON.stringify({
+      gitHead: gitHead.trim(),
+      statusHash,
+      fileSetHash
+    })
+  );
+
+  return {
+    kind: "git_workspace",
+    available: true,
+    gitHead: gitHead.trim(),
+    dirty: changedFiles.length > 0,
+    statusHash,
+    fileSetHash,
+    fingerprint,
+    changedFiles
+  };
+}
+
+async function gitOutput(
+  cwd: string,
+  args: string[]
+): Promise<string | undefined> {
+  try {
+    const { stdout } = await execFileAsync("git", args, {
+      cwd,
+      encoding: "utf8",
+      maxBuffer: 10 * 1024 * 1024
+    });
+
+    return stdout;
+  } catch {
+    return undefined;
+  }
+}
+
+function parseGitPorcelainStatus(output: string): CommandVerifierChangedFile[] {
+  return output
+    .split("\0")
+    .filter((entry) => entry.length > 0)
+    .flatMap((entry) => {
+      const status = entry.slice(0, 2);
+      const path = entry.slice(3);
+
+      if (path.length === 0) {
+        return [];
+      }
+
+      return [
+        {
+          status,
+          path
+        }
+      ];
+    });
+}
+
+function isRunsteadInternalPath(path: string): boolean {
+  return path === ".runstead" || path.startsWith(".runstead/");
+}
+
+async function fileHash(
+  cwd: string,
+  relativePath: string
+): Promise<{ hash?: string }> {
+  const absolutePath = resolve(cwd, relativePath);
+
+  try {
+    const fileStat = await stat(absolutePath);
+
+    if (!fileStat.isFile()) {
+      return {};
+    }
+
+    return {
+      hash: sha256(await readFile(absolutePath))
+    };
+  } catch {
+    return {};
+  }
+}
+
 function summarizeCommandResult(
   verifierName: string,
   result: ShellCommandResult
@@ -242,7 +386,7 @@ function evidenceEventPayload(
   };
 }
 
-function sha256(contents: string): string {
+function sha256(contents: string | Buffer): string {
   return createHash("sha256").update(contents).digest("hex");
 }
 

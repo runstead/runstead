@@ -254,6 +254,16 @@ describe("generateLaunchReadinessReport", () => {
         `${JSON.stringify(
           {
             schemaVersion: 1,
+            codeState: {
+              kind: "git_workspace",
+              available: true,
+              dirty: false,
+              statusHash: "status",
+              fileSetHash: "files",
+              fingerprint:
+                "0000000000000000000000000000000000000000000000000000000000000000",
+              changedFiles: []
+            },
             result: {
               exitCode: 0,
               timedOut: false,
@@ -407,6 +417,10 @@ describe("generateLaunchReadinessReport", () => {
       expect(json).toContain('"schemaVersion": 1');
       expect(json).toContain('"trustSummary"');
       expect(result.markdown).toContain("Command evidence records: 1");
+      expect(result.markdown).toContain("code_state=stale");
+      expect(result.markdown).toContain(
+        "verifier evidence was recorded against stale code state"
+      );
       expect(result.markdown).toContain("## Trust Summary");
       expect(result.markdown).toContain("Accepted debt register:");
       expect(result.markdown).toContain("ev_wrapped_worker_command_001");

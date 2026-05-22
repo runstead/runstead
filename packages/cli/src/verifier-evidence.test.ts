@@ -1,6 +1,8 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
+import { promisify } from "node:util";
 
 import type { Task } from "@runstead/core";
 import { openRunsteadDatabase } from "@runstead/state-sqlite";
@@ -10,6 +12,8 @@ import {
   storeCommandVerifierEvidence,
   storeCommandVerifierPolicyEvidence
 } from "./verifier-evidence.js";
+
+const execFileAsync = promisify(execFile);
 
 describe("storeCommandVerifierEvidence", () => {
   it("stores command output evidence and appends an event", async () => {
@@ -46,6 +50,7 @@ describe("storeCommandVerifierEvidence", () => {
       const artifact = JSON.parse(await readFile(result.artifactPath, "utf8")) as {
         taskId: string;
         verifier: string;
+        codeState: { available: boolean; fingerprint: string };
         result: { exitCode: number; stdout: string };
       };
       const evidence = database
@@ -83,6 +88,9 @@ describe("storeCommandVerifierEvidence", () => {
       expect(artifact).toMatchObject({
         taskId: task.id,
         verifier: "test",
+        codeState: {
+          available: false
+        },
         result: {
           exitCode: 0,
           stdout: "verifier ok\n"
@@ -109,6 +117,66 @@ describe("storeCommandVerifierEvidence", () => {
         exitCode: 0,
         timedOut: false
       });
+      expect(artifact.codeState.fingerprint).toMatch(/^[a-f0-9]{64}$/);
+    } finally {
+      database.close();
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("binds command evidence to the current git workspace state", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-verifier-git-"));
+    const runsteadRoot = join(workspace, ".runstead");
+    const database = openRunsteadDatabase(join(runsteadRoot, "state.db"));
+    const task = verifierTask();
+
+    try {
+      await git(workspace, "init");
+      await git(workspace, "config", "user.email", "runstead@example.com");
+      await git(workspace, "config", "user.name", "Runstead Test");
+      await writeFile(join(workspace, "tracked.js"), "console.log('old');\n", "utf8");
+      await git(workspace, "add", "tracked.js");
+      await git(workspace, "commit", "-m", "initial");
+      await writeFile(join(workspace, "tracked.js"), "console.log('new');\n", "utf8");
+
+      const result = await storeCommandVerifierEvidence({
+        cwd: workspace,
+        runsteadRoot,
+        database,
+        task,
+        command: {
+          name: "test",
+          command: nodeCommand("process.exit(0);")
+        },
+        now: new Date("2026-05-14T05:04:00.000Z")
+      });
+      const artifact = JSON.parse(await readFile(result.artifactPath, "utf8")) as {
+        codeState: {
+          available: boolean;
+          dirty: boolean;
+          gitHead?: string;
+          statusHash: string;
+          fileSetHash: string;
+          fingerprint: string;
+          changedFiles: { path: string; status: string; hash?: string }[];
+        };
+      };
+
+      expect(artifact.codeState).toMatchObject({
+        available: true,
+        dirty: true
+      });
+      expect(artifact.codeState.gitHead).toMatch(/^[a-f0-9]{40}$/);
+      expect(artifact.codeState.statusHash).toMatch(/^[a-f0-9]{64}$/);
+      expect(artifact.codeState.fileSetHash).toMatch(/^[a-f0-9]{64}$/);
+      expect(artifact.codeState.fingerprint).toMatch(/^[a-f0-9]{64}$/);
+      expect(artifact.codeState.changedFiles).toEqual([
+        {
+          path: "tracked.js",
+          status: " M",
+          hash: expect.stringMatching(/^[a-f0-9]{64}$/)
+        }
+      ]);
     } finally {
       database.close();
       await rm(workspace, { force: true, recursive: true });
@@ -162,6 +230,10 @@ describe("storeCommandVerifierEvidence", () => {
     }
   });
 });
+
+async function git(workspace: string, ...args: string[]): Promise<void> {
+  await execFileAsync("git", args, { cwd: workspace });
+}
 
 function nodeCommand(script: string): string {
   return `${JSON.stringify(process.execPath)} -e ${JSON.stringify(script)}`;

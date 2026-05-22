@@ -20,6 +20,10 @@ import {
   type StartupArtifactListItem
 } from "./startup-artifacts.js";
 import { checkStartupGate } from "./startup-evidence.js";
+import {
+  collectCommandVerifierCodeState,
+  type CommandVerifierCodeState
+} from "./verifier-evidence.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -125,6 +129,7 @@ interface PreviousLaunchReadinessReport {
 interface EvidenceProvenanceArtifact {
   sources?: unknown;
   provenance?: unknown;
+  codeState?: unknown;
 }
 
 interface LaunchReadinessReportData {
@@ -140,6 +145,7 @@ interface LaunchReadinessReportData {
   policyDecisions: PolicyDecisionReportRow[];
   approvals: ApprovalReportRow[];
   structuredArtifacts: StartupArtifactListItem[];
+  currentCodeState: CommandVerifierCodeState;
 }
 
 const STARTUP_DOMAIN = "ai-native-startup";
@@ -172,6 +178,7 @@ export async function generateLaunchReadinessReport(
         ...(options.now === undefined ? {} : { now: options.now })
       }),
       structuredArtifacts: (await listStartupArtifacts({ cwd })).artifacts,
+      currentCodeState: await collectCommandVerifierCodeState(cwd),
       ...readLaunchReadinessData(database, domain)
     };
     const blockers = releaseBlockers(data);
@@ -288,7 +295,11 @@ function readLaunchReadinessData(
   domain: string
 ): Omit<
   LaunchReadinessReportData,
-  "repo" | "protectedPathChanges" | "gate" | "structuredArtifacts"
+  | "repo"
+  | "protectedPathChanges"
+  | "gate"
+  | "structuredArtifacts"
+  | "currentCodeState"
 > {
   const goals = database
     .prepare(
@@ -622,10 +633,11 @@ function verifierStatus(data: LaunchReadinessReportData): string {
 
   return [
     `- Verifier tasks: ${formatTaskCounts(verifierTasks)}`,
+    `- Current code fingerprint: ${formatCurrentCodeFingerprint(data.currentCodeState)}`,
     `- Command evidence records: ${commandEvidence.length}`,
     ...commandEvidence.map(
       (item) =>
-        `- ${item.id}: ${item.summary ?? item.uri} (${item.created_at}; ${commandEvidenceGovernance(item)})`
+        `- ${item.id}: ${item.summary ?? item.uri} (${item.created_at}; ${commandEvidenceGovernance(item)}; ${commandEvidenceCodeState(data, item)})`
     )
   ].join("\n");
 }
@@ -668,16 +680,48 @@ function commandEvidenceGovernance(item: EvidenceReportRow): string {
   return "command verifier evidence";
 }
 
+function formatCurrentCodeFingerprint(codeState: CommandVerifierCodeState): string {
+  return codeState.available
+    ? `${codeState.fingerprint}${codeState.dirty ? " dirty" : " clean"}`
+    : "unavailable";
+}
+
+function commandEvidenceCodeState(
+  data: LaunchReadinessReportData,
+  item: EvidenceReportRow
+): string {
+  const artifact = readEvidenceProvenanceArtifact(item.uri);
+  const codeState = isRecord(artifact?.codeState) ? artifact.codeState : undefined;
+  const fingerprint =
+    codeState === undefined ? undefined : stringValue(codeState.fingerprint);
+
+  if (fingerprint === undefined) {
+    return "code_state=missing";
+  }
+
+  return fingerprint === data.currentCodeState.fingerprint
+    ? "code_state=current"
+    : `code_state=stale current=${data.currentCodeState.fingerprint}`;
+}
+
 function testCoverageGaps(data: LaunchReadinessReportData): string {
   const gaps = [
     ...(data.repo.commands.test.detected ? [] : ["test command is missing"]),
     ...(data.repo.commands.lint.detected ? [] : ["lint command is missing"]),
     ...(data.repo.commands.typecheck.detected ? [] : ["typecheck command is missing"]),
     ...(data.repo.commands.build.detected ? [] : ["build command is missing"]),
+    ...staleCommandEvidenceGaps(data),
     ...data.gate.warnings
   ];
 
   return listOrNone(gaps, (gap) => `- ${gap}`);
+}
+
+function staleCommandEvidenceGaps(data: LaunchReadinessReportData): string[] {
+  return data.evidence
+    .filter((item) => item.type === "command_output")
+    .filter((item) => commandEvidenceCodeState(data, item).startsWith("code_state=stale"))
+    .map((item) => `${item.id}: verifier evidence was recorded against stale code state`);
 }
 
 function dependencyAndSecurityRisk(data: LaunchReadinessReportData): string {
