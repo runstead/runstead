@@ -31,11 +31,7 @@ import {
   prepareStartupRepoOnboarding,
   type StartupRepoOnboardingResult
 } from "./startup-repo-onboarding.js";
-import { listTasks } from "./tasks.js";
-import {
-  runTaskVerifiers,
-  type RunTaskVerifierCommandResult
-} from "./verifier-runner.js";
+import type { RunTaskVerifierCommandResult } from "./verifier-runner.js";
 import type { WorkerProcessRunner } from "./wrapped-worker.js";
 
 export interface StartupFounderFlowOptions {
@@ -62,6 +58,7 @@ export interface StartupBuildMvpOptions extends StartupFounderFlowOptions {
   prompt?: string;
   dependencyPolicy?: string;
   allowedDependencies?: string[];
+  maxAttempts?: number;
   workerRunner?: WorkerProcessRunner;
   onWorkerProgress?: RunLocalAgentTaskOptions["onWorkerProgress"];
   workerProgressIntervalMs?: number;
@@ -75,8 +72,17 @@ export interface StartupBuildMvpResult {
   summary: string;
   dependencyApproval: StartupDependencyApprovalBoundary;
   verifierRun: StartupMvpVerifierRun;
+  attempts: StartupBuildMvpAttempt[];
   gate: StartupGateCheckResult;
   nextCommands: string[];
+}
+
+export interface StartupBuildMvpAttempt {
+  attempt: number;
+  localAgentTaskId: string;
+  status: RunLocalAgentTaskResult["status"];
+  summary: string;
+  verifierRun: StartupMvpVerifierRun;
 }
 
 export type StartupDependencyApprovalPolicy =
@@ -192,13 +198,14 @@ export async function startupBuildMvp(
 ): Promise<StartupBuildMvpResult> {
   const cwd = resolve(options.cwd ?? process.cwd());
   const worker = options.worker ?? "codex_cli";
+  const maxAttempts = normalizeStartupBuildMvpMaxAttempts(options.maxAttempts);
   const dependencyApproval = resolveStartupDependencyApprovalBoundary({
     ...(options.dependencyPolicy === undefined
       ? {}
       : { policy: options.dependencyPolicy }),
     allowedDependencies: options.allowedDependencies ?? []
   });
-  const prompt = await startupBuildMvpPromptWithDependencyBoundary({
+  const basePrompt = await startupBuildMvpPromptWithDependencyBoundary({
     cwd,
     ...(options.prompt === undefined ? {} : { prompt: options.prompt }),
     dependencyApproval
@@ -210,43 +217,72 @@ export async function startupBuildMvp(
     force: false,
     ...(options.now === undefined ? {} : { now: options.now })
   });
-  const created = await createLocalAgentTask({
-    cwd,
-    title: "Build startup MVP",
-    prompt,
-    worker,
-    mode: "repair",
-    checkpoint: true,
-    approvalRequired: dependencyApproval.approvalRequired,
-    verifierCommands: await verifierCommands(cwd, options.now),
-    ...(options.model === undefined ? {} : { model: options.model }),
-    ...(options.now === undefined ? {} : { now: options.now })
-  });
-  const run = await runLocalAgentTask({
-    cwd,
-    taskId: created.task.id,
-    ...(options.workerRunner === undefined
-      ? {}
-      : { workerRunner: options.workerRunner }),
-    ...(options.workerProgressIntervalMs === undefined
-      ? {}
-      : { workerProgressIntervalMs: options.workerProgressIntervalMs }),
-    ...(options.onWorkerProgress === undefined
-      ? {}
-      : { onWorkerProgress: options.onWorkerProgress }),
-    ...(options.now === undefined ? {} : { now: options.now })
-  });
-  const verifierRun =
-    run.status === "completed"
-      ? await runQueuedMvpVerifiers({
-          cwd,
-          goalId: init.goal.id,
-          ...(options.now === undefined ? {} : { now: options.now })
-        })
-      : {
-          status: "skipped" as const,
-          reason: `worker finished with status ${run.status}`
-        };
+  const attempts: StartupBuildMvpAttempt[] = [];
+  let prompt = basePrompt;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const created = await createLocalAgentTask({
+      cwd,
+      title:
+        maxAttempts === 1
+          ? "Build startup MVP"
+          : `Build startup MVP (attempt ${attempt}/${maxAttempts})`,
+      prompt,
+      worker,
+      mode: "repair",
+      checkpoint: true,
+      approvalRequired: dependencyApproval.approvalRequired,
+      verifierCommands: await verifierCommands(cwd, options.now),
+      ...(options.model === undefined ? {} : { model: options.model }),
+      ...(options.now === undefined ? {} : { now: options.now })
+    });
+    const run = await runLocalAgentTask({
+      cwd,
+      taskId: created.task.id,
+      ...(options.workerRunner === undefined
+        ? {}
+        : { workerRunner: options.workerRunner }),
+      ...(options.workerProgressIntervalMs === undefined
+        ? {}
+        : { workerProgressIntervalMs: options.workerProgressIntervalMs }),
+      ...(options.onWorkerProgress === undefined
+        ? {}
+        : { onWorkerProgress: options.onWorkerProgress }),
+      ...(options.now === undefined ? {} : { now: options.now })
+    });
+    const verifierRun = verifierRunFromLocalAgentRun(run);
+    const currentAttempt: StartupBuildMvpAttempt = {
+      attempt,
+      localAgentTaskId: created.task.id,
+      status: run.status,
+      summary: run.summary,
+      verifierRun
+    };
+
+    attempts.push(currentAttempt);
+
+    if (
+      (run.status !== "completed" && verifierRun.status === "skipped") ||
+      startupMvpVerifierRunPassed(verifierRun) ||
+      attempt === maxAttempts
+    ) {
+      break;
+    }
+
+    prompt = startupBuildMvpRetryPrompt({
+      basePrompt,
+      attempt,
+      maxAttempts,
+      verifierRun
+    });
+  }
+
+  const finalAttempt = attempts.at(-1);
+
+  if (finalAttempt === undefined) {
+    throw new Error("Startup MVP build did not run any attempts");
+  }
+
   const gate = await checkStartupGate({
     cwd,
     stage: "mvp",
@@ -256,11 +292,12 @@ export async function startupBuildMvp(
   return {
     root: init.root,
     worker,
-    localAgentTaskId: created.task.id,
-    status: run.status,
-    summary: run.summary,
+    localAgentTaskId: finalAttempt.localAgentTaskId,
+    status: finalAttempt.status,
+    summary: finalAttempt.summary,
     dependencyApproval,
-    verifierRun,
+    verifierRun: finalAttempt.verifierRun,
+    attempts,
     gate,
     nextCommands: [
       "runstead startup launch-check",
@@ -373,6 +410,7 @@ export function formatStartupBuildMvp(result: StartupBuildMvpResult): string {
     `Status: ${result.status}`,
     `Summary: ${result.summary}`,
     `Dependency policy: ${formatStartupDependencyApprovalBoundary(result.dependencyApproval)}`,
+    `Attempts: ${result.attempts.length}`,
     `Verifier run: ${formatStartupMvpVerifierRun(result.verifierRun)}`,
     `MVP gate: ${result.gate.passed ? "passed" : "blocked"}`,
     "",
@@ -485,54 +523,78 @@ async function startupBuildMvpPromptWithDependencyBoundary(input: {
   ].join("\n");
 }
 
-async function runQueuedMvpVerifiers(input: {
-  cwd: string;
-  goalId: string;
-  now?: Date;
-}): Promise<StartupMvpVerifierRun> {
-  const verifierTask = listTasks({
-    cwd: input.cwd,
-    goalId: input.goalId
-  }).tasks.find((task) => task.type === "run_mvp_verifiers");
-
-  if (verifierTask === undefined) {
+function verifierRunFromLocalAgentRun(
+  run: RunLocalAgentTaskResult
+): StartupMvpVerifierRun {
+  if (run.verifierResults === undefined) {
     return {
       status: "skipped",
-      reason: "run_mvp_verifiers task was not found"
+      reason: `worker finished with status ${run.status}`
     };
   }
 
-  if (verifierTask.status !== "queued") {
-    return {
-      status: "skipped",
-      reason: `run_mvp_verifiers task is ${verifierTask.status}`
-    };
-  }
-
-  const result = await runTaskVerifiers({
-    cwd: input.cwd,
-    taskId: verifierTask.id,
-    ...(input.now === undefined ? {} : { now: input.now })
-  });
+  const hasFailure = run.verifierResults.some(
+    (result) => result.exitCode !== 0 || result.timedOut
+  );
 
   return {
-    status: startupMvpVerifierTaskStatus(result.task.status),
-    taskId: result.task.id,
-    commandResults: result.commandResults
+    status: hasFailure ? "failed" : "completed",
+    taskId: run.task.id,
+    commandResults: run.verifierResults
   };
 }
 
-function startupMvpVerifierTaskStatus(status: string): StartupMvpVerifierTaskStatus {
-  if (
-    status === "completed" ||
-    status === "failed" ||
-    status === "blocked" ||
-    status === "waiting_approval"
-  ) {
-    return status;
+function startupMvpVerifierRunPassed(run: StartupMvpVerifierRun): boolean {
+  return (
+    run.status === "completed" &&
+    run.commandResults.every(
+      (result) => result.exitCode === 0 && result.timedOut === false
+    )
+  );
+}
+
+function startupBuildMvpRetryPrompt(input: {
+  basePrompt: string;
+  attempt: number;
+  maxAttempts: number;
+  verifierRun: StartupMvpVerifierRun;
+}): string {
+  return [
+    input.basePrompt,
+    "",
+    `Previous MVP build attempt ${input.attempt}/${input.maxAttempts} did not satisfy the verifier contract.`,
+    "Use the verifier evidence below as the repair target. Do not broaden scope.",
+    "",
+    "Verifier evidence:",
+    ...startupMvpVerifierEvidenceLines(input.verifierRun)
+  ].join("\n");
+}
+
+function startupMvpVerifierEvidenceLines(run: StartupMvpVerifierRun): string[] {
+  if (run.status === "skipped") {
+    return [`- skipped: ${run.reason}`];
   }
 
-  throw new Error(`Unexpected run_mvp_verifiers status after execution: ${status}`);
+  return run.commandResults.map((result) =>
+    [
+      `- ${result.verifier}:`,
+      `exit=${result.exitCode ?? "null"}`,
+      `timed_out=${result.timedOut}`,
+      `evidence=${result.evidenceId}`
+    ].join(" ")
+  );
+}
+
+function normalizeStartupBuildMvpMaxAttempts(value: number | undefined): number {
+  if (value === undefined) {
+    return 2;
+  }
+
+  if (!Number.isInteger(value) || value < 1 || value > 5) {
+    throw new Error("Startup MVP maxAttempts must be an integer between 1 and 5");
+  }
+
+  return value;
 }
 
 function formatStartupMvpVerifierRun(run: StartupMvpVerifierRun): string {

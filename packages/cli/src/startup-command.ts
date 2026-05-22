@@ -163,6 +163,7 @@ export function registerStartupCommands(program: Command): void {
     .option("--resume <run-id>", "Resume an existing startup readiness run")
     .option("--write-ci", "Generate or update the target repo readiness workflow")
     .option("--ci", "Write CI summary artifacts for this readiness run")
+    .option("--max-attempts <count>", "Maximum bounded MVP repair attempts", "2")
     .action(
       async (options: {
         cwd?: string;
@@ -173,6 +174,7 @@ export function registerStartupCommands(program: Command): void {
         resume?: string;
         writeCi?: boolean;
         ci?: boolean;
+        maxAttempts: string;
       }) => {
         const {
           formatStartupReadyPlan,
@@ -189,7 +191,8 @@ export function registerStartupCommands(program: Command): void {
           worker: parseLocalAgentWorker(options.worker),
           ...(options.resume === undefined ? {} : { resumeRunId: options.resume }),
           writeCi: options.writeCi === true,
-          ci: options.ci === true
+          ci: options.ci === true,
+          maxAttempts: parsePositiveInteger(options.maxAttempts, "--max-attempts")
         };
 
         if (options.plan === true) {
@@ -256,6 +259,7 @@ export function registerStartupCommands(program: Command): void {
       collectValues,
       []
     )
+    .option("--max-attempts <count>", "Maximum bounded MVP repair attempts", "2")
     .action(
       async (options: {
         cwd?: string;
@@ -264,6 +268,7 @@ export function registerStartupCommands(program: Command): void {
         prompt?: string;
         dependencyPolicy: string;
         allowDependency: string[];
+        maxAttempts: string;
       }) => {
         const {
           formatStartupDependencyApprovalBoundary,
@@ -289,6 +294,7 @@ export function registerStartupCommands(program: Command): void {
           ...(options.prompt === undefined ? {} : { prompt: options.prompt }),
           dependencyPolicy: dependencyApproval.policy,
           allowedDependencies: dependencyApproval.allowedDependencies,
+          maxAttempts: parsePositiveInteger(options.maxAttempts, "--max-attempts"),
           onWorkerProgress: logWrappedWorkerProgress
         });
 

@@ -486,6 +486,7 @@ describe("cli entrypoint", () => {
         "--ci",
         "--cwd",
         "--plan",
+        "--max-attempts",
         "--resume",
         "--stage",
         "--target",
@@ -498,6 +499,7 @@ describe("cli entrypoint", () => {
         "--allow-dependency",
         "--cwd",
         "--dependency-policy",
+        "--max-attempts",
         "--model",
         "--prompt",
         "--worker"

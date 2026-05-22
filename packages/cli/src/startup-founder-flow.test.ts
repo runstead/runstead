@@ -189,4 +189,72 @@ describe("startup founder flow", () => {
       await rm(workspace, { force: true, recursive: true });
     }
   }, 30_000);
+
+  it("retries MVP repair with verifier evidence when the first attempt fails", async () => {
+    const workspace = join(tmpdir(), `runstead-startup-founder-retry-${process.pid}`);
+    let attempts = 0;
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await mkdir(workspace, { recursive: true });
+      await writeFile(
+        join(workspace, "package.json"),
+        `${JSON.stringify(
+          {
+            name: "retry-mvp-fixture",
+            private: true,
+            scripts: {
+              test: "node test.js",
+              lint: 'node -e "process.exit(0)"',
+              typecheck: 'node -e "process.exit(0)"',
+              build: 'node -e "process.exit(0)"'
+            }
+          },
+          null,
+          2
+        )}\n`,
+        "utf8"
+      );
+      await writeFile(join(workspace, "test.js"), "process.exit(1);\n", "utf8");
+
+      const build = await startupBuildMvp({
+        cwd: workspace,
+        worker: "codex_cli",
+        maxAttempts: 2,
+        workerRunner: async (_command, args, options) => {
+          attempts += 1;
+
+          if (attempts === 2) {
+            expect(args.join("\n")).toContain("Previous MVP build attempt 1/2");
+            expect(args.join("\n")).toContain("test:");
+            await writeFile(join(options.cwd, "test.js"), "process.exit(0);\n", "utf8");
+          }
+
+          return {
+            stdout: JSON.stringify({
+              summary: `attempt ${attempts}`,
+              files_changed: attempts === 2 ? ["test.js"] : [],
+              commands_run: [],
+              risks: [],
+              needs_approval: false,
+              approval_reason: null
+            }),
+            stderr: "",
+            exitCode: 0
+          };
+        }
+      });
+
+      expect(attempts).toBe(2);
+      expect(build.attempts.map((attempt) => attempt.verifierRun.status)).toEqual([
+        "failed",
+        "completed"
+      ]);
+      expect(build.verifierRun.status).toBe("completed");
+      expect(build.localAgentTaskId).toBe(build.attempts[1]?.localAgentTaskId);
+      expect(formatStartupBuildMvp(build)).toContain("Attempts: 2");
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  }, 60_000);
 });

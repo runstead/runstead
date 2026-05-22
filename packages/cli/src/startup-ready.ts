@@ -44,6 +44,7 @@ export interface StartupReadyOptions {
   resumeRunId?: string;
   writeCi?: boolean;
   ci?: boolean;
+  maxAttempts?: number;
   workerRunner?: StartupBuildMvpOptions["workerRunner"];
   now?: Date;
 }
@@ -317,6 +318,7 @@ async function executeStartupReadyRun(
       cwd: run.cwd,
       worker: run.worker,
       dependencyPolicy: "deny-new",
+      maxAttempts: options.maxAttempts ?? 2,
       ...(options.workerRunner === undefined
         ? {}
         : { workerRunner: options.workerRunner }),
