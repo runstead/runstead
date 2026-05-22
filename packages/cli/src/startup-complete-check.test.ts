@@ -243,11 +243,151 @@ describe("generateStartupCompleteProductCheck", () => {
       await rm(workspace, { force: true, recursive: true });
     }
   });
+
+  it("keeps release planning separate from deployment verification", async () => {
+    const workspace = join(
+      tmpdir(),
+      `runstead-complete-check-release-only-${process.pid}`
+    );
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await mkdir(workspace, { recursive: true });
+      await writeFile(
+        join(workspace, "package.json"),
+        `${JSON.stringify(
+          {
+            name: "complete-product-release-only-fixture",
+            private: true,
+            packageManager: "pnpm@11.1.1",
+            scripts: {
+              test: "node test.js",
+              lint: "node lint.js",
+              typecheck: "node typecheck.js",
+              build: "node build.js"
+            }
+          },
+          null,
+          2
+        )}\n`,
+        "utf8"
+      );
+
+      const onboard = await startupOnboard({
+        cwd: workspace,
+        force: true,
+        writeCi: true,
+        now: new Date("2026-05-14T03:00:00.000Z")
+      });
+      const verifierTask = onboard.init.generatedTasks.find(
+        (task) => task.type === "run_mvp_verifiers"
+      );
+
+      if (verifierTask === undefined) {
+        throw new Error("Expected startup init to generate verifier task");
+      }
+
+      const completedVerifierTask = {
+        ...verifierTask,
+        status: "completed" as const,
+        updatedAt: "2026-05-14T03:10:00.000Z"
+      };
+      const database = openRunsteadDatabase(onboard.init.stateDb);
+
+      try {
+        appendEventAndProject(database, {
+          event: {
+            eventId: "evt_complete_check_release_only_verifier_task",
+            type: "task.updated",
+            aggregateType: "task",
+            aggregateId: completedVerifierTask.id,
+            payload: {
+              status: completedVerifierTask.status
+            },
+            createdAt: completedVerifierTask.updatedAt
+          },
+          projection: {
+            type: "task",
+            value: completedVerifierTask
+          }
+        });
+        await storeCommandVerifierEvidence({
+          cwd: workspace,
+          runsteadRoot: onboard.root,
+          database,
+          task: completedVerifierTask,
+          command: {
+            name: "test",
+            command: 'node -e "process.exit(0)"'
+          },
+          now: new Date("2026-05-14T03:11:00.000Z")
+        });
+      } finally {
+        database.close();
+      }
+
+      await generateSecurityBaseline({
+        cwd: workspace,
+        now: new Date("2026-05-14T03:12:00.000Z")
+      });
+      await generateRepoReadinessAudit({
+        cwd: workspace,
+        now: new Date("2026-05-14T03:12:30.000Z")
+      });
+      await recordStartupMetricSnapshot({
+        cwd: workspace,
+        metric: "activation",
+        source: "PostHog",
+        threshold: "0.5",
+        current: "0.7",
+        sources: [
+          {
+            kind: "posthog",
+            uri: "https://posthog.example/project/1/insights/activation",
+            capturedAt: "2026-05-14T03:13:00.000Z",
+            freshnessDays: 7,
+            hash: "sha256:activation"
+          }
+        ],
+        now: new Date("2026-05-14T03:13:00.000Z")
+      });
+      await addLaunchQualityEvidence(workspace, "migration_plan");
+      await addLaunchQualityEvidence(workspace, "rollback_plan");
+      await addLaunchQualityEvidence(workspace, "observability");
+      await addLaunchQualityEvidence(workspace, "release_plan");
+      await generateFounderBottleneckMap({
+        cwd: workspace,
+        bottlenecks: ["Support escalation owner is documented"],
+        owner: "founder",
+        systemOfRecord: "Runstead evidence ledger",
+        status: "handoff-complete",
+        now: new Date("2026-05-14T03:18:00.000Z")
+      });
+
+      const result = await generateStartupCompleteProductCheck({
+        cwd: workspace,
+        now: new Date("2026-05-14T04:00:00.000Z")
+      });
+      const repoCriterion = result.criteria.find(
+        (criterion) => criterion.id === "repo_discovery_and_risk"
+      );
+
+      expect(result.status).toBe("incomplete");
+      expect(repoCriterion).toMatchObject({
+        status: "blocked",
+        missing: ["deployment verification evidence"]
+      });
+      expect(repoCriterion?.evidence).toContain("deployment=missing");
+      expect(result.markdown).toContain("deployment verification evidence");
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
 });
 
 async function addLaunchQualityEvidence(
   workspace: string,
-  type: "migration_plan" | "rollback_plan" | "observability"
+  type: "migration_plan" | "rollback_plan" | "observability" | "release_plan"
 ): Promise<void> {
   await addStartupEvidence({
     cwd: workspace,

@@ -351,6 +351,14 @@ function startupCompleteProductBaseCriteria(input: {
   const missingStartupEvidence = REQUIRED_STARTUP_EVIDENCE.filter(
     (type) => !evidenceTypes.has(type)
   );
+  const repoRiskEvidence = input.evidenceRows.filter((item) =>
+    [
+      "startup_repo_readiness",
+      "startup_security_baseline",
+      "startup_release_plan"
+    ].includes(item.type)
+  );
+  const deploymentVerified = sourceKinds.has("deployment");
   const repoDiscoveryMissing = [
     ...(input.repo.packageManager.detected ? [] : ["package manager"]),
     ...(input.repo.commands.test.detected ? [] : ["test command"]),
@@ -362,9 +370,8 @@ function startupCompleteProductBaseCriteria(input: {
     ...(evidenceTypes.has("startup_security_baseline")
       ? []
       : ["security baseline evidence"]),
-    ...(evidenceTypes.has("startup_release_plan") || sourceKinds.has("deployment")
-      ? []
-      : ["deployment or release-plan evidence"])
+    ...(evidenceTypes.has("startup_release_plan") ? [] : ["release-plan evidence"]),
+    ...(deploymentVerified ? [] : ["deployment verification evidence"])
   ];
   const reviewSurfaceMissing = missingPaths(input.pathState, [
     input.launchReport.reportPath,
@@ -414,15 +421,12 @@ function startupCompleteProductBaseCriteria(input: {
       evidence: [
         `packageManager=${input.repo.packageManager.detected ? input.repo.packageManager.packageManager : "missing"}`,
         `ci=${input.repo.ci.detected ? input.repo.ci.providers.map((provider) => provider.provider).join(",") : "missing"}`,
-        ...input.evidenceRows
-          .filter((item) =>
-            ["startup_repo_readiness", "startup_security_baseline"].includes(item.type)
-          )
-          .map((item) => item.id)
+        `deployment=${deploymentVerified ? "verified" : "missing"}`,
+        ...repoRiskEvidence.map((item) => item.id)
       ],
       missing: repoDiscoveryMissing,
       nextAction:
-        "runstead startup onboard --write-ci && runstead startup launch prepare"
+        "record startup release-plan and deployment source evidence before public traffic"
     }),
     criterion({
       id: "launch_readiness_report",
