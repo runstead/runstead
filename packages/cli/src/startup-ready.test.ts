@@ -106,6 +106,9 @@ describe("startup readiness run model", () => {
         now: new Date("2026-05-22T01:15:00.000Z")
       });
       const persisted = JSON.parse(await readFile(result.path, "utf8")) as unknown;
+      const decisionReport = result.run.reportPaths.find((path) =>
+        path.endsWith(`startup-readiness-run-${result.run.id}.md`)
+      );
 
       expect(result.run.status).toBe("completed");
       expect(result.run.phases.map((phase) => [phase.id, phase.status])).toEqual([
@@ -122,6 +125,13 @@ describe("startup readiness run model", () => {
       expect(result.run.evidenceTiers).toContain("local_command");
       expect(result.run.verdict).toBe("local_launch_ready");
       expect(result.run.verdictBlockers).toEqual([]);
+      expect(decisionReport).toBeDefined();
+      await expect(readFile(decisionReport ?? "", "utf8")).resolves.toContain(
+        "## Can this launch?"
+      );
+      await expect(readFile(decisionReport ?? "", "utf8")).resolves.toContain(
+        "| Local demo | yes | local_launch_ready |"
+      );
       expect(persisted).toEqual(result.run);
     } finally {
       await rm(workspace, { force: true, recursive: true });

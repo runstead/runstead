@@ -145,6 +145,7 @@ export interface StartupReadinessRun {
   phases: StartupReadinessRunPhase[];
   evidenceIds: string[];
   evidenceTiers: StartupReadinessEvidenceTier[];
+  evidenceTypes: string[];
   verdict: StartupReadinessVerdict;
   verdictBlockers: string[];
   reportPaths: string[];
@@ -232,7 +233,11 @@ export async function runStartupReady(
   }
 
   const finalRun = await finalizeRun(run, options.now ?? new Date());
-  const finalPersisted = await writeStartupReadinessRun(finalRun);
+  const reportedRun = await writeStartupReadinessDecisionReport(
+    finalRun,
+    options.now ?? new Date()
+  );
+  const finalPersisted = await writeStartupReadinessRun(reportedRun);
 
   return {
     ...finalPersisted,
@@ -265,6 +270,7 @@ export async function createStartupReadinessRun(
     })),
     evidenceIds: [],
     evidenceTiers: [],
+    evidenceTypes: [],
     verdict: "not_evaluated",
     verdictBlockers: [],
     reportPaths: [],
@@ -336,6 +342,7 @@ export function formatStartupReadinessRun(run: StartupReadinessRun): string {
     `Target: ${run.target}`,
     `Verdict: ${run.verdict}`,
     `Evidence tiers: ${run.evidenceTiers.length === 0 ? "none" : run.evidenceTiers.join(", ")}`,
+    `Evidence types: ${run.evidenceTypes.length === 0 ? "none" : run.evidenceTypes.join(", ")}`,
     `Verdict blockers: ${run.verdictBlockers.length === 0 ? "none" : run.verdictBlockers.join("; ")}`,
     `Git head: ${run.gitHead ?? "unknown"}`,
     `Dirty state: ${run.dirtyState}`
@@ -776,10 +783,266 @@ async function finalizeRun(
     ...run,
     status,
     evidenceTiers,
+    evidenceTypes: recordedEvidence.evidenceTypes,
     verdict: verdict.verdict,
     verdictBlockers: verdict.blockers,
     completedAt: now.toISOString()
   };
+}
+
+async function writeStartupReadinessDecisionReport(
+  run: StartupReadinessRun,
+  now: Date
+): Promise<StartupReadinessRun> {
+  const root = await resolveRunsteadRoot(run.cwd);
+  const reportDir = join(root.root, "reports");
+  const markdownPath = join(reportDir, `startup-readiness-run-${run.id}.md`);
+  const jsonPath = join(reportDir, `startup-readiness-run-${run.id}.json`);
+  const decisions = startupReadinessDecisionMatrix(run);
+  const payload = {
+    schemaVersion: 1,
+    generatedAt: now.toISOString(),
+    run: {
+      id: run.id,
+      cwd: run.cwd,
+      stage: run.stage,
+      target: run.target,
+      status: run.status,
+      verdict: run.verdict,
+      verdictBlockers: run.verdictBlockers,
+      startedAt: run.startedAt,
+      completedAt: run.completedAt,
+      gitHead: run.gitHead,
+      dirtyState: run.dirtyState
+    },
+    decisions,
+    evidence: {
+      ids: run.evidenceIds,
+      tiers: run.evidenceTiers,
+      types: run.evidenceTypes,
+      phaseEvidence: run.phases.map((phase) => ({
+        phase: phase.id,
+        status: phase.status,
+        evidenceIds: phase.evidenceIds,
+        artifacts: phase.artifacts,
+        blockers: phase.blockers
+      }))
+    },
+    reports: unique([...run.reportPaths, markdownPath, jsonPath])
+  };
+
+  await mkdir(reportDir, { recursive: true });
+  await writeFile(jsonPath, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
+  await writeFile(
+    markdownPath,
+    formatStartupReadinessDecisionMarkdown(payload),
+    "utf8"
+  );
+
+  run.reportPaths = unique([...run.reportPaths, markdownPath, jsonPath]);
+  if (hasPhase(run, "launch_report")) {
+    const launchReport = run.phases.find((phase) => phase.id === "launch_report");
+
+    updatePhase(run, "launch_report", {
+      artifacts: unique([...(launchReport?.artifacts ?? []), markdownPath, jsonPath])
+    });
+  }
+  collectRunEvidence(run);
+
+  return run;
+}
+
+function startupReadinessDecisionMatrix(run: StartupReadinessRun): {
+  localDemo: StartupReadinessDecision;
+  privateBeta: StartupReadinessDecision;
+  publicLaunch: StartupReadinessDecision;
+} {
+  return {
+    localDemo: startupReadinessDecision({
+      surface: "local_demo",
+      title: "Local demo",
+      target: "local",
+      run
+    }),
+    privateBeta: startupReadinessDecision({
+      surface: "private_beta",
+      title: "Private beta / staging",
+      target: "staging",
+      run
+    }),
+    publicLaunch: startupReadinessDecision({
+      surface: "public_launch",
+      title: "Public launch",
+      target: "production",
+      run
+    })
+  };
+}
+
+interface StartupReadinessDecision {
+  surface: "local_demo" | "private_beta" | "public_launch";
+  title: string;
+  target: StartupReadyTarget;
+  canLaunch: boolean;
+  verdict: StartupReadinessVerdict;
+  blockers: string[];
+  nextAction: string;
+}
+
+function startupReadinessDecision(input: {
+  surface: StartupReadinessDecision["surface"];
+  title: string;
+  target: StartupReadyTarget;
+  run: StartupReadinessRun;
+}): StartupReadinessDecision {
+  const evaluated = evaluateStartupReadinessVerdict({
+    run: {
+      target: input.target,
+      phases: input.run.phases
+    },
+    evidenceTiers: input.run.evidenceTiers,
+    evidenceTypes: input.run.evidenceTypes
+  });
+
+  return {
+    surface: input.surface,
+    title: input.title,
+    target: input.target,
+    canLaunch: evaluated.blockers.length === 0,
+    verdict: evaluated.verdict,
+    blockers: evaluated.blockers,
+    nextAction:
+      evaluated.blockers.length === 0
+        ? `launch target ${input.target} with recorded evidence`
+        : nextStartupReadinessAction(evaluated.blockers)
+  };
+}
+
+function formatStartupReadinessDecisionMarkdown(input: {
+  generatedAt: string;
+  run: {
+    id: string;
+    cwd: string;
+    stage: StartupReadyStage;
+    target: StartupReadyTarget;
+    status: StartupReadinessRunStatus;
+    verdict: StartupReadinessVerdict;
+    verdictBlockers: string[];
+    startedAt: string;
+    completedAt: string | undefined;
+    gitHead: string | undefined;
+    dirtyState: StartupReadinessDirtyState;
+  };
+  decisions: {
+    localDemo: StartupReadinessDecision;
+    privateBeta: StartupReadinessDecision;
+    publicLaunch: StartupReadinessDecision;
+  };
+  evidence: {
+    ids: string[];
+    tiers: StartupReadinessEvidenceTier[];
+    types: string[];
+    phaseEvidence: {
+      phase: string;
+      status: StartupReadinessPhaseStatus;
+      evidenceIds: string[];
+      artifacts: string[];
+      blockers: string[];
+    }[];
+  };
+  reports: string[];
+}): string {
+  const decisions = [
+    input.decisions.localDemo,
+    input.decisions.privateBeta,
+    input.decisions.publicLaunch
+  ];
+  const blockers = decisions.flatMap((decision) =>
+    decision.blockers.map((blocker) => `${decision.title}: ${blocker}`)
+  );
+
+  return [
+    "# Startup Readiness Decision",
+    "",
+    `Generated: ${input.generatedAt}`,
+    `Run: ${input.run.id}`,
+    `Workspace: ${input.run.cwd}`,
+    `Stage: ${input.run.stage}`,
+    `Requested target: ${input.run.target}`,
+    `Status: ${input.run.status}`,
+    `Verdict: ${input.run.verdict}`,
+    "",
+    "## Can this launch?",
+    "",
+    "| Surface | Answer | Verdict | Next action |",
+    "| --- | --- | --- | --- |",
+    ...decisions.map(
+      (decision) =>
+        `| ${decision.title} | ${decision.canLaunch ? "yes" : "no"} | ${decision.verdict} | ${decision.nextAction} |`
+    ),
+    "",
+    "## Why not?",
+    "",
+    blockers.length === 0
+      ? "- No blockers for local demo, private beta, or public launch."
+      : blockers.map((blocker) => `- ${blocker}`).join("\n"),
+    "",
+    "## Evidence",
+    "",
+    `- Git SHA: ${input.run.gitHead ?? "unknown"}`,
+    `- Dirty state: ${input.run.dirtyState}`,
+    `- Started: ${input.run.startedAt}`,
+    `- Completed: ${input.run.completedAt ?? "not completed"}`,
+    `- Evidence tiers: ${input.evidence.tiers.length === 0 ? "none" : input.evidence.tiers.join(", ")}`,
+    `- Evidence types: ${input.evidence.types.length === 0 ? "none" : input.evidence.types.join(", ")}`,
+    `- Evidence ids: ${input.evidence.ids.length === 0 ? "none" : input.evidence.ids.join(", ")}`,
+    "",
+    "## Phase Evidence",
+    "",
+    "| Phase | Status | Evidence | Artifacts | Blockers |",
+    "| --- | --- | --- | --- | --- |",
+    ...input.evidence.phaseEvidence.map(
+      (phase) =>
+        `| ${phase.phase} | ${phase.status} | ${phase.evidenceIds.length === 0 ? "none" : phase.evidenceIds.join(", ")} | ${phase.artifacts.length === 0 ? "none" : phase.artifacts.join("<br>")} | ${phase.blockers.length === 0 ? "none" : phase.blockers.join("<br>")} |`
+    ),
+    "",
+    "## Reports",
+    "",
+    input.reports.length === 0
+      ? "- none"
+      : input.reports.map((path) => `- ${path}`).join("\n"),
+    ""
+  ].join("\n");
+}
+
+function nextStartupReadinessAction(blockers: string[]): string {
+  const blocker = blockers[0];
+
+  if (blocker === undefined) {
+    return "continue launch readiness";
+  }
+
+  if (blocker.includes("CI")) {
+    return "run startup ready in CI and attach CI summary evidence";
+  }
+
+  if (blocker.includes("deployment")) {
+    return "attach deployment evidence for the requested target";
+  }
+
+  if (blocker.includes("analytics")) {
+    return "record a real-user analytics metric snapshot";
+  }
+
+  if (blocker.includes("rollback")) {
+    return "record rollback-plan evidence";
+  }
+
+  if (blocker.includes("observability")) {
+    return "record observability evidence";
+  }
+
+  return blocker;
 }
 
 export function evaluateStartupReadinessVerdict(input: {
