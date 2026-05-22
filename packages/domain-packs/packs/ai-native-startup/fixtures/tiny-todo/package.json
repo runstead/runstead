@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "dev": "node src/server.js",
     "test": "node --test test/todo.node.js",
     "lint": "node scripts/lint.js",
     "typecheck": "node scripts/typecheck.js",
