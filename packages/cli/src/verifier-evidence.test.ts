@@ -53,6 +53,13 @@ describe("storeCommandVerifierEvidence", () => {
         codeState: { available: boolean; fingerprint: string };
         result: { exitCode: number; stdout: string };
       };
+      const manifest = JSON.parse(
+        await readFile(result.artifactManifestPath, "utf8")
+      ) as {
+        artifactUri: string;
+        sha256: string;
+        metadata: { evidenceId: string; evidenceType: string };
+      };
       const evidence = database
         .prepare(
           `
@@ -110,6 +117,14 @@ describe("storeCommandVerifierEvidence", () => {
         type: "evidence.recorded",
         aggregate_type: "evidence",
         aggregate_id: result.evidence.id
+      });
+      expect(manifest).toMatchObject({
+        artifactUri: result.evidence.uri,
+        sha256: result.evidence.hash,
+        metadata: {
+          evidenceId: result.evidence.id,
+          evidenceType: "command_output"
+        }
       });
       expect(JSON.parse(event.payload_json)).toMatchObject({
         taskId: task.id,

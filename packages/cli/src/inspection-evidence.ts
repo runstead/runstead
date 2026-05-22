@@ -1,7 +1,4 @@
-import { createHash } from "node:crypto";
-import { mkdir, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { pathToFileURL } from "node:url";
 
 import {
   createRunsteadId,
@@ -24,6 +21,7 @@ import {
   type PackageManagerInspection,
   type PackageScriptCommandInspection
 } from "./repo-inspection.js";
+import { writeJsonArtifactFile } from "./artifact-store.js";
 
 export interface RepoInspectionSnapshot {
   schemaVersion: 1;
@@ -52,6 +50,7 @@ export interface StoreRepoInspectionEvidenceResult {
   event: RunsteadEvent;
   snapshot: RepoInspectionSnapshot;
   artifactPath: string;
+  artifactManifestPath: string;
 }
 
 export async function collectRepoInspection(
@@ -103,19 +102,24 @@ export async function storeRepoInspectionEvidence(
   const evidenceId = createRunsteadId("ev");
   const evidenceDir = join(runsteadRoot, "evidence");
   const artifactPath = join(evidenceDir, `repo-inspection-${evidenceId}.json`);
-  const artifactContents = `${JSON.stringify(snapshot, null, 2)}\n`;
-  const hash = sha256(artifactContents);
-
-  await mkdir(evidenceDir, { recursive: true });
-  await writeFile(artifactPath, artifactContents, "utf8");
+  const artifactWrite = await writeJsonArtifactFile({
+    artifactPath,
+    value: snapshot,
+    createdAt,
+    metadata: {
+      evidenceId,
+      evidenceType: "repo_inspection",
+      subject: "repository"
+    }
+  });
 
   const evidence: Evidence = {
     id: evidenceId,
     type: "repo_inspection",
     subjectType: "repository",
     subjectId: snapshot.git.root ?? cwd,
-    uri: pathToFileURL(artifactPath).href,
-    hash,
+    uri: artifactWrite.artifactUri,
+    hash: artifactWrite.sha256,
     summary: summarizeInspection(snapshot),
     createdAt
   };
@@ -140,7 +144,8 @@ export async function storeRepoInspectionEvidence(
     evidence,
     event,
     snapshot,
-    artifactPath
+    artifactPath,
+    artifactManifestPath: artifactWrite.manifestPath
   };
 }
 
@@ -187,8 +192,4 @@ function summarizeInspection(snapshot: RepoInspectionSnapshot): string {
     `build:${buildCommand}`,
     `ci:${ciProviders}`
   ].join(", ");
-}
-
-function sha256(contents: string): string {
-  return createHash("sha256").update(contents).digest("hex");
 }

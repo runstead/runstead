@@ -1,8 +1,7 @@
 import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
-import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 
 import {
@@ -14,6 +13,7 @@ import {
 } from "@runstead/core";
 import { appendEventAndProject, type RunsteadDatabase } from "@runstead/state-sqlite";
 
+import { writeJsonArtifactFile } from "./artifact-store.js";
 import { runShellCommand, type ShellCommandResult } from "./shell-executor.js";
 
 const execFileAsync = promisify(execFile);
@@ -68,6 +68,7 @@ export interface StoreCommandVerifierEvidenceResult {
   event: RunsteadEvent;
   artifact: CommandVerifierArtifact;
   artifactPath: string;
+  artifactManifestPath: string;
 }
 
 export async function storeCommandVerifierEvidence(
@@ -97,14 +98,23 @@ export async function storeCommandVerifierEvidence(
   const evidenceDir = join(runsteadRoot, "evidence");
   const artifactName = sanitizeArtifactName(options.command.name);
   const artifactPath = join(evidenceDir, `verifier-${artifactName}-${evidenceId}.json`);
-  const artifactContents = `${JSON.stringify(artifact, null, 2)}\n`;
+  const artifactWrite = await writeJsonArtifactFile({
+    artifactPath,
+    value: artifact,
+    createdAt,
+    metadata: {
+      evidenceId,
+      evidenceType: "command_output",
+      subject: "command_verifier"
+    }
+  });
   const evidence: Evidence = {
     id: evidenceId,
     type: "command_output",
     subjectType: "task",
     subjectId: options.task.id,
-    uri: pathToFileURL(artifactPath).href,
-    hash: sha256(artifactContents),
+    uri: artifactWrite.artifactUri,
+    hash: artifactWrite.sha256,
     summary: summarizeCommandResult(options.command.name, result),
     createdAt
   };
@@ -117,8 +127,6 @@ export async function storeCommandVerifierEvidence(
     createdAt
   };
 
-  await mkdir(evidenceDir, { recursive: true });
-  await writeFile(artifactPath, artifactContents, "utf8");
   appendEventAndProject(options.database, {
     event,
     projection: {
@@ -131,7 +139,8 @@ export async function storeCommandVerifierEvidence(
     evidence,
     event,
     artifact,
-    artifactPath
+    artifactPath,
+    artifactManifestPath: artifactWrite.manifestPath
   };
 }
 
@@ -191,14 +200,23 @@ export async function storeCommandVerifierPolicyEvidence(
     evidenceDir,
     `verifier-${artifactName}-${options.decision}-${evidenceId}.json`
   );
-  const artifactContents = `${JSON.stringify(artifact, null, 2)}\n`;
+  const artifactWrite = await writeJsonArtifactFile({
+    artifactPath,
+    value: artifact,
+    createdAt,
+    metadata: {
+      evidenceId,
+      evidenceType: "policy_decision",
+      subject: "command_verifier_policy"
+    }
+  });
   const evidence: Evidence = {
     id: evidenceId,
     type: "policy_decision",
     subjectType: "task",
     subjectId: options.task.id,
-    uri: pathToFileURL(artifactPath).href,
-    hash: sha256(artifactContents),
+    uri: artifactWrite.artifactUri,
+    hash: artifactWrite.sha256,
     summary: `${options.command.name}: ${options.decision} by policy`,
     createdAt
   };
@@ -216,8 +234,6 @@ export async function storeCommandVerifierPolicyEvidence(
     createdAt
   };
 
-  await mkdir(evidenceDir, { recursive: true });
-  await writeFile(artifactPath, artifactContents, "utf8");
   appendEventAndProject(options.database, {
     event,
     projection: {
@@ -230,7 +246,8 @@ export async function storeCommandVerifierPolicyEvidence(
     evidence,
     event,
     artifact,
-    artifactPath
+    artifactPath,
+    artifactManifestPath: artifactWrite.manifestPath
   };
 }
 

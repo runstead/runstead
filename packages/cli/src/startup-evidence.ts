@@ -1,8 +1,6 @@
-import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { mkdir, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 
 import {
   createRunsteadId,
@@ -12,6 +10,7 @@ import {
 } from "@runstead/core";
 import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sqlite";
 
+import { writeJsonArtifactFile } from "./artifact-store.js";
 import { requireRunsteadStateDb } from "./runstead-root.js";
 
 export const STARTUP_EVIDENCE_TYPES = [
@@ -88,6 +87,7 @@ export interface AddStartupEvidenceResult {
   event: RunsteadEvent;
   artifact: StartupEvidenceArtifact;
   artifactPath: string;
+  artifactManifestPath: string;
 }
 
 export interface AddStartupHypothesisOptions {
@@ -314,17 +314,26 @@ export async function addStartupEvidence(
     ...(remediation === undefined ? {} : { remediation }),
     ...(options.content === undefined ? {} : { content: options.content })
   };
-  const artifactContents = `${JSON.stringify(artifact, null, 2)}\n`;
   const evidenceDir = join(resolvedState.root, "evidence");
   const artifactPath = join(evidenceDir, `startup-${evidenceType}-${evidenceId}.json`);
+  const artifactWrite = await writeJsonArtifactFile({
+    artifactPath,
+    value: artifact,
+    createdAt,
+    metadata: {
+      evidenceId,
+      evidenceType: `startup_${evidenceType}`,
+      subject: "startup_evidence"
+    }
+  });
   const subject = evidenceSubject(artifact);
   const evidence: Evidence = {
     id: evidenceId,
     type: `startup_${evidenceType}`,
     subjectType: subject.subjectType,
     subjectId: subject.subjectId,
-    uri: pathToFileURL(artifactPath).href,
-    hash: sha256(artifactContents),
+    uri: artifactWrite.artifactUri,
+    hash: artifactWrite.sha256,
     summary: options.summary,
     createdAt
   };
@@ -339,8 +348,6 @@ export async function addStartupEvidence(
   const database = openRunsteadDatabase(resolvedState.stateDb);
 
   try {
-    await mkdir(evidenceDir, { recursive: true });
-    await writeFile(artifactPath, artifactContents, "utf8");
     appendEventAndProject(database, {
       event,
       projection: {
@@ -358,7 +365,8 @@ export async function addStartupEvidence(
     evidence,
     event,
     artifact,
-    artifactPath
+    artifactPath,
+    artifactManifestPath: artifactWrite.manifestPath
   };
 }
 
@@ -1697,8 +1705,4 @@ function listOrNone<T>(items: T[], formatter: (item: T) => string): string {
   }
 
   return items.map(formatter).join("\n");
-}
-
-function sha256(contents: string): string {
-  return createHash("sha256").update(contents).digest("hex");
 }

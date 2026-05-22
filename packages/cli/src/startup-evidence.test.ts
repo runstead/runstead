@@ -74,6 +74,13 @@ describe("startup evidence ledger", () => {
       const customerArtifact = JSON.parse(
         await readFile(customerEvidence.artifactPath, "utf8")
       ) as StartupEvidenceArtifact;
+      const customerManifest = JSON.parse(
+        await readFile(customerEvidence.artifactManifestPath, "utf8")
+      ) as {
+        artifactUri: string;
+        sha256: string;
+        metadata: { evidenceId: string; evidenceType: string };
+      };
 
       expect(customerArtifact).toMatchObject({
         evidenceType: "customer_interview",
@@ -106,6 +113,14 @@ describe("startup evidence ledger", () => {
           owner: "founder",
           task: "Attach customer interview source",
           acceptanceCriteria: "Interview source is linked and fresh"
+        }
+      });
+      expect(customerManifest).toMatchObject({
+        artifactUri: customerEvidence.evidence.uri,
+        sha256: customerEvidence.evidence.hash,
+        metadata: {
+          evidenceId: customerEvidence.evidence.id,
+          evidenceType: "startup_customer_interview"
         }
       });
       expect(blockedGate.passed).toBe(false);

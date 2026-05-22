@@ -40,6 +40,13 @@ describe("storeRepoInspectionEvidence", () => {
         commands: { test: { command?: string }; lint: { command?: string } };
         ci: { providers: { provider: string }[] };
       };
+      const manifest = JSON.parse(
+        await readFile(result.artifactManifestPath, "utf8")
+      ) as {
+        artifactUri: string;
+        sha256: string;
+        metadata: { evidenceId: string; evidenceType: string };
+      };
       const evidence = database
         .prepare(
           `
@@ -92,6 +99,14 @@ describe("storeRepoInspectionEvidence", () => {
         type: "evidence.recorded",
         aggregate_type: "evidence",
         aggregate_id: result.evidence.id
+      });
+      expect(manifest).toMatchObject({
+        artifactUri: result.evidence.uri,
+        sha256: result.evidence.hash,
+        metadata: {
+          evidenceId: result.evidence.id,
+          evidenceType: "repo_inspection"
+        }
       });
     } finally {
       database.close();
