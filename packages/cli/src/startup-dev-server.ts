@@ -1,5 +1,5 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { createServer } from "node:net";
+import { createConnection, createServer } from "node:net";
 import { readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
@@ -52,7 +52,7 @@ export async function startStartupDevServer(
       fetchImpl: options.fetchImpl ?? fetch
     });
   } catch (error) {
-    await stopStartupDevServerProcess(child);
+    await stopStartupDevServerProcess(child, port);
     throw error;
   }
 
@@ -63,7 +63,7 @@ export async function startStartupDevServer(
     port,
     managed: true,
     ...(child.pid === undefined ? {} : { pid: child.pid }),
-    stop: () => stopStartupDevServerProcess(child)
+    stop: () => stopStartupDevServerProcess(child, port)
   };
 }
 
@@ -150,23 +150,70 @@ async function findAvailablePort(): Promise<number> {
 }
 
 async function stopStartupDevServerProcess(
-  child: ChildProcessWithoutNullStreams
+  child: ChildProcessWithoutNullStreams,
+  port: number
 ): Promise<void> {
-  if (child.exitCode !== null || child.signalCode !== null) {
-    return;
+  if (child.exitCode === null && child.signalCode === null) {
+    await new Promise<void>((resolveStop) => {
+      const timeout = setTimeout(() => {
+        signalStartupDevServerProcess(child, "SIGKILL");
+        resolveStop();
+      }, 3_000);
+
+      child.once("exit", () => {
+        clearTimeout(timeout);
+        resolveStop();
+      });
+      signalStartupDevServerProcess(child, "SIGTERM");
+    });
   }
 
-  await new Promise<void>((resolveStop) => {
-    const timeout = setTimeout(() => {
-      signalStartupDevServerProcess(child, "SIGKILL");
-      resolveStop();
-    }, 3_000);
+  try {
+    await waitForPortToClose(port, 3_000);
+    return;
+  } catch (error) {
+    signalStartupDevServerProcess(child, "SIGKILL");
 
-    child.once("exit", () => {
-      clearTimeout(timeout);
-      resolveStop();
-    });
-    signalStartupDevServerProcess(child, "SIGTERM");
+    try {
+      await waitForPortToClose(port, 1_000);
+    } catch {
+      throw error;
+    }
+  }
+}
+
+async function waitForPortToClose(port: number, timeoutMs: number): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+
+  while (Date.now() < deadline) {
+    if (!(await canConnectToPort(port))) {
+      return;
+    }
+
+    await sleep(100);
+  }
+
+  throw new Error(`Timed out waiting for dev server port ${port} to close`);
+}
+
+function canConnectToPort(port: number): Promise<boolean> {
+  return new Promise((resolveConnected) => {
+    const socket = createConnection({ host: "127.0.0.1", port });
+    let settled = false;
+
+    const settle = (connected: boolean) => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      socket.destroy();
+      resolveConnected(connected);
+    };
+
+    socket.once("connect", () => settle(true));
+    socket.once("error", () => settle(false));
+    socket.setTimeout(250, () => settle(false));
   });
 }
 

@@ -1,3 +1,4 @@
+import { createConnection } from "node:net";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -64,9 +65,44 @@ describe("startup dev server lifecycle", () => {
         await server.stop();
       }
 
-      await expect(fetch(server.url)).rejects.toThrow();
+      await expect(waitForPortToClose(server.port)).resolves.toBeUndefined();
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }
   });
 });
+
+async function waitForPortToClose(port: number): Promise<void> {
+  const deadline = Date.now() + 5_000;
+
+  while (Date.now() < deadline) {
+    if (!(await canConnectToPort(port))) {
+      return;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+
+  throw new Error(`Timed out waiting for port ${port} to close`);
+}
+
+function canConnectToPort(port: number): Promise<boolean> {
+  return new Promise((resolveConnected) => {
+    const socket = createConnection({ host: "127.0.0.1", port });
+    let settled = false;
+
+    const settle = (connected: boolean) => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      socket.destroy();
+      resolveConnected(connected);
+    };
+
+    socket.once("connect", () => settle(true));
+    socket.once("error", () => settle(false));
+    socket.setTimeout(250, () => settle(false));
+  });
+}
