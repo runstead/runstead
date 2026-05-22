@@ -616,13 +616,21 @@ async function verifierCommands(cwd: string, now?: Date) {
 
   return [
     commandVerifier("test", inspection.commands.test.command, `${packageManager} test`),
-    commandVerifier("lint", inspection.commands.lint.command, `${packageManager} run lint`),
+    commandVerifier(
+      "lint",
+      inspection.commands.lint.command,
+      `${packageManager} run lint`
+    ),
     commandVerifier(
       "typecheck",
       inspection.commands.typecheck.command,
       `${packageManager} run typecheck`
     ),
-    commandVerifier("build", inspection.commands.build.command, `${packageManager} run build`)
+    commandVerifier(
+      "build",
+      inspection.commands.build.command,
+      `${packageManager} run build`
+    )
   ];
 }
 

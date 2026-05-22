@@ -1,10 +1,14 @@
 name: ci
 
 on:
+  workflow_dispatch:
   pull_request:
   push:
     branches:
       - main
+
+permissions:
+  contents: read
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
@@ -14,6 +18,10 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      CI: true
+      DO_NOT_TRACK: "1"
+      TURBO_TELEMETRY_DISABLED: "1"
 
     steps:
       - name: Checkout
@@ -47,3 +55,20 @@ jobs:
 
       - name: Build
         run: pnpm run build
+
+      - name: Package smoke
+        run: |
+          pnpm --filter @runstead/core pack --dry-run
+          pnpm --filter @runstead/domain-packs pack --dry-run
+          pnpm --filter @runstead/skills pack --dry-run
+          pnpm --filter @runstead/state-sqlite pack --dry-run
+          pnpm --filter @runstead/cli pack --dry-run
+
+      - name: CLI smoke
+        run: |
+          node packages/cli/dist/index.js --version
+          node packages/cli/dist/index.js --help
+          node packages/cli/dist/index.js startup --help
+          node packages/cli/dist/index.js startup build-mvp --help
+          node packages/cli/dist/index.js startup complete-check --help
+          node packages/cli/dist/index.js agent run --help

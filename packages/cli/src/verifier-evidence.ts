@@ -289,10 +289,7 @@ export async function collectCommandVerifierCodeState(
   };
 }
 
-async function gitOutput(
-  cwd: string,
-  args: string[]
-): Promise<string | undefined> {
+async function gitOutput(cwd: string, args: string[]): Promise<string | undefined> {
   try {
     const { stdout } = await execFileAsync("git", args, {
       cwd,
@@ -331,10 +328,7 @@ function isRunsteadInternalPath(path: string): boolean {
   return path === ".runstead" || path.startsWith(".runstead/");
 }
 
-async function fileHash(
-  cwd: string,
-  relativePath: string
-): Promise<{ hash?: string }> {
+async function fileHash(cwd: string, relativePath: string): Promise<{ hash?: string }> {
   const absolutePath = resolve(cwd, relativePath);
 
   try {

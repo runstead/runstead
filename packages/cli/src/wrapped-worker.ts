@@ -656,16 +656,12 @@ function workerWorkspaceProgress(cwd: string): {
   changedFiles: number;
   recentFiles: string[];
 } {
-  const result = spawnSync(
-    "git",
-    ["status", "--short", "--untracked-files=all"],
-    {
-      cwd,
-      encoding: "utf8",
-      timeout: 2_000,
-      maxBuffer: 1024 * 1024
-    }
-  );
+  const result = spawnSync("git", ["status", "--short", "--untracked-files=all"], {
+    cwd,
+    encoding: "utf8",
+    timeout: 2_000,
+    maxBuffer: 1024 * 1024
+  });
 
   if (result.status !== 0) {
     return {

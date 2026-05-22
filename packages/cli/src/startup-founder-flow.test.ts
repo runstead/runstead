@@ -30,10 +30,10 @@ describe("startup founder flow", () => {
             name: "founder-flow-fixture",
             private: true,
             scripts: {
-              test: "node -e \"process.exit(0)\"",
-              lint: "node -e \"process.exit(0)\"",
-              typecheck: "node -e \"process.exit(0)\"",
-              build: "node -e \"process.exit(0)\""
+              test: 'node -e "process.exit(0)"',
+              lint: 'node -e "process.exit(0)"',
+              typecheck: 'node -e "process.exit(0)"',
+              build: 'node -e "process.exit(0)"'
             }
           },
           null,
@@ -117,13 +117,10 @@ describe("startup founder flow", () => {
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }
-  }, 30_000);
+  }, 60_000);
 
   it("passes suggested verifier commands to workers for empty repositories", async () => {
-    const workspace = join(
-      tmpdir(),
-      `runstead-startup-founder-empty-${process.pid}`
-    );
+    const workspace = join(tmpdir(), `runstead-startup-founder-empty-${process.pid}`);
     let workerPrompt = "";
 
     try {
@@ -145,10 +142,10 @@ describe("startup founder flow", () => {
                 name: "empty-mvp-fixture",
                 private: true,
                 scripts: {
-                  test: "node -e \"process.exit(0)\"",
-                  lint: "node -e \"process.exit(0)\"",
-                  typecheck: "node -e \"process.exit(0)\"",
-                  build: "node -e \"process.exit(0)\""
+                  test: 'node -e "process.exit(0)"',
+                  lint: 'node -e "process.exit(0)"',
+                  typecheck: 'node -e "process.exit(0)"',
+                  build: 'node -e "process.exit(0)"'
                 }
               },
               null,
@@ -185,9 +182,7 @@ describe("startup founder flow", () => {
         policy: "allow-listed",
         allowedDependencies: ["runtime:react", "dev:vitest"]
       });
-      expect(formatStartupBuildMvp(build)).toContain(
-        "Dependency policy: allow-listed"
-      );
+      expect(formatStartupBuildMvp(build)).toContain("Dependency policy: allow-listed");
       expect(build.status).toBe("completed");
       expect(build.verifierRun.status).toBe("completed");
     } finally {

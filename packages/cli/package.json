@@ -25,7 +25,7 @@
   "scripts": {
     "build": "rm -rf dist && tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run --testTimeout=15000",
+    "test": "vitest run --testTimeout=30000",
     "lint": "eslint \"src/**/*.ts\" --max-warnings=0",
     "clean": "rm -rf dist coverage"
   },

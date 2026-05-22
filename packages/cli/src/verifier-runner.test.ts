@@ -425,10 +425,10 @@ describe("runTaskVerifiers", () => {
           {
             private: true,
             scripts: {
-              test: "node -e \"process.exit(0)\"",
-              lint: "node -e \"process.exit(0)\"",
-              typecheck: "node -e \"process.exit(0)\"",
-              build: "node -e \"process.exit(0)\""
+              test: 'node -e "process.exit(0)"',
+              lint: 'node -e "process.exit(0)"',
+              typecheck: 'node -e "process.exit(0)"',
+              build: 'node -e "process.exit(0)"'
             }
           },
           null,

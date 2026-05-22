@@ -403,9 +403,7 @@ async function verifierCommandsFromTask(input: {
     discoveredVerifierCommand("lint", inspection.commands.lint.command),
     discoveredVerifierCommand("typecheck", inspection.commands.typecheck.command),
     discoveredVerifierCommand("build", inspection.commands.build.command)
-  ].filter(
-    (command): command is CommandVerifierInput => command !== undefined
-  );
+  ].filter((command): command is CommandVerifierInput => command !== undefined);
 }
 
 function configuredVerifierCommandsFromTask(task: Task): CommandVerifierInput[] {

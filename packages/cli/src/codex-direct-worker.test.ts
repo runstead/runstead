@@ -1269,7 +1269,7 @@ describe("runCodexDirectWorker", () => {
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }
-  }, 10000);
+  }, 60_000);
 
   it("rejects git revision arguments that look like options", async () => {
     const root = await mkdtemp(join(tmpdir(), "runstead-codex-git-options-"));

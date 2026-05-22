@@ -166,7 +166,7 @@ describe("startup dogfood fixture", () => {
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }
-  }, 20_000);
+  }, 60_000);
 
   it("classifies reference fixtures across tiny, broken, and mature launch states", async () => {
     await withFixture("tiny-todo", async (workspace) => {

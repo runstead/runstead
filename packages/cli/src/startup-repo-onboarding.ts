@@ -97,7 +97,7 @@ export async function prepareStartupRepoOnboarding(
     },
     firstCommitCommands: [
       "git add .",
-      "git commit -m \"chore: onboard Runstead startup readiness\"",
+      'git commit -m "chore: onboard Runstead startup readiness"',
       "git push"
     ]
   };
@@ -150,14 +150,26 @@ function startupVerifierContract(input: {
   commands: Awaited<ReturnType<typeof collectRepoInspection>>["commands"];
 }): StartupVerifierCommand[] {
   return [
-    verifierCommand("test", input.commands.test.command, `${input.packageManager} test`),
-    verifierCommand("lint", input.commands.lint.command, `${input.packageManager} run lint`),
+    verifierCommand(
+      "test",
+      input.commands.test.command,
+      `${input.packageManager} test`
+    ),
+    verifierCommand(
+      "lint",
+      input.commands.lint.command,
+      `${input.packageManager} run lint`
+    ),
     verifierCommand(
       "typecheck",
       input.commands.typecheck.command,
       `${input.packageManager} run typecheck`
     ),
-    verifierCommand("build", input.commands.build.command, `${input.packageManager} run build`)
+    verifierCommand(
+      "build",
+      input.commands.build.command,
+      `${input.packageManager} run build`
+    )
   ];
 }
 
@@ -200,7 +212,10 @@ async function ensureRunsteadGitignore(
     };
   }
 
-  const next = contents.trimEnd().length === 0 ? ".runstead/\n" : `${contents.trimEnd()}\n.runstead/\n`;
+  const next =
+    contents.trimEnd().length === 0
+      ? ".runstead/\n"
+      : `${contents.trimEnd()}\n.runstead/\n`;
 
   await writeFile(path, next, "utf8");
 
