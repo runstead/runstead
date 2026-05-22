@@ -985,6 +985,50 @@ export function registerStartupCommands(program: Command): void {
     );
 
   startupLaunch
+    .command("ui-test-scaffold")
+    .description("Generate a project DOM/UI smoke test scaffold for MVP flows.")
+    .option("--cwd <path>", "Workspace directory")
+    .option("--url <url>", "Default UI URL for the generated smoke test")
+    .option("--test-path <path>", "Test file path to write")
+    .option("--flow <name>", "Critical user flow name")
+    .option(
+      "--expect-text <text>",
+      "Text expected in the rendered UI",
+      collectValues,
+      []
+    )
+    .option("--actor <id>", "RBAC subject for UI test scaffold writes", "local-admin")
+    .action(
+      async (options: {
+        cwd?: string;
+        url?: string;
+        testPath?: string;
+        flow?: string;
+        expectText: string[];
+        actor: string;
+      }) => {
+        await requireRbacPermission({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          actor: options.actor,
+          permission: "evidence.write",
+          action: "generate startup UI test scaffold"
+        });
+
+        const { formatStartupUiTestScaffold, generateStartupUiTestScaffold } =
+          await import("./startup-ui-test-scaffold.js");
+        const result = await generateStartupUiTestScaffold({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          ...(options.url === undefined ? {} : { url: options.url }),
+          ...(options.testPath === undefined ? {} : { testPath: options.testPath }),
+          ...(options.flow === undefined ? {} : { flow: options.flow }),
+          expectText: options.expectText
+        });
+
+        console.log(formatStartupUiTestScaffold(result));
+      }
+    );
+
+  startupLaunch
     .command("bottleneck-map")
     .description("Generate founder bottleneck audit evidence.")
     .option("--cwd <path>", "Workspace directory")

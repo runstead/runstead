@@ -398,6 +398,9 @@ describe("cli entrypoint", () => {
     const launchUiValidate = launch?.commands.find(
       (command) => command.name() === "ui-validate"
     );
+    const launchUiTestScaffold = launch?.commands.find(
+      (command) => command.name() === "ui-test-scaffold"
+    );
     const launchBottleneckMap = launch?.commands.find(
       (command) => command.name() === "bottleneck-map"
     );
@@ -551,6 +554,16 @@ describe("cli entrypoint", () => {
         "--screenshot",
         "--url",
         "--viewport"
+      ])
+    );
+    expect(launchUiTestScaffold?.options.map((option) => option.long)).toEqual(
+      expect.arrayContaining([
+        "--actor",
+        "--cwd",
+        "--expect-text",
+        "--flow",
+        "--test-path",
+        "--url"
       ])
     );
     expect(launchBottleneckMap?.options.map((option) => option.long)).toEqual(
