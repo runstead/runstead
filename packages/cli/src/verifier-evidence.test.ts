@@ -174,9 +174,10 @@ describe("storeCommandVerifierEvidence", () => {
         {
           path: "tracked.js",
           status: " M",
-          hash: expect.stringMatching(/^[a-f0-9]{64}$/)
+          hash: artifact.codeState.changedFiles[0]?.hash
         }
       ]);
+      expect(artifact.codeState.changedFiles[0]?.hash).toMatch(/^[a-f0-9]{64}$/);
     } finally {
       database.close();
       await rm(workspace, { force: true, recursive: true });

@@ -144,9 +144,9 @@ describe("startup UI validation evidence", () => {
       expect(content.originalScreenshot).toBe(screenshotPath);
       expect(storedPath).toContain(join(".runstead", "evidence", "assets"));
       expect(artifact.sources[0]).toMatchObject({
-        uri: content.screenshot,
-        hash: expect.stringMatching(/^sha256:[a-f0-9]{64}$/)
+        uri: content.screenshot
       });
+      expect(artifact.sources[0]?.hash).toMatch(/^sha256:[a-f0-9]{64}$/);
       await expect(readFile(storedPath, "utf8")).resolves.toBe("fake screenshot bytes");
     } finally {
       await rm(workspace, { force: true, recursive: true });
@@ -226,9 +226,9 @@ describe("startup UI validation evidence", () => {
       ]);
       expect(artifact.sources[0]).toMatchObject({
         kind: "browser_ui",
-        uri: executed.domArtifact,
-        hash: expect.stringMatching(/^sha256:[a-f0-9]{64}$/)
+        uri: executed.domArtifact
       });
+      expect(artifact.sources[0]?.hash).toMatch(/^sha256:[a-f0-9]{64}$/);
       await expect(
         readFile(fileURLToPath(executed.domArtifact), "utf8")
       ).resolves.toContain("Todo MVP");

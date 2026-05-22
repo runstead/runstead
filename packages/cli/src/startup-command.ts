@@ -1006,8 +1006,11 @@ export function registerStartupCommands(program: Command): void {
 
         console.log(`Recorded UI validation evidence: ${result.evidence.evidence.id}`);
         console.log(`Failed: ${result.failed ? "yes" : "no"}`);
-        if ("domArtifact" in result) {
-          console.log(`Executed DOM artifact: ${result.domArtifact}`);
+        const executedDomArtifact =
+          "domArtifact" in result ? String(result.domArtifact) : undefined;
+
+        if (executedDomArtifact !== undefined) {
+          console.log(`Executed DOM artifact: ${executedDomArtifact}`);
         }
         console.log(`Artifact: ${result.evidence.artifactPath}`);
       }
