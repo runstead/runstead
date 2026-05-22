@@ -37,6 +37,7 @@ export async function startStartupDevServer(
   const child = spawn(command, {
     cwd,
     shell: true,
+    detached: process.platform !== "win32",
     env: {
       ...process.env,
       PORT: String(port)
@@ -151,13 +152,13 @@ async function findAvailablePort(): Promise<number> {
 async function stopStartupDevServerProcess(
   child: ChildProcessWithoutNullStreams
 ): Promise<void> {
-  if (child.exitCode !== null || child.killed) {
+  if (child.exitCode !== null || child.signalCode !== null) {
     return;
   }
 
   await new Promise<void>((resolveStop) => {
     const timeout = setTimeout(() => {
-      child.kill("SIGKILL");
+      signalStartupDevServerProcess(child, "SIGKILL");
       resolveStop();
     }, 3_000);
 
@@ -165,8 +166,32 @@ async function stopStartupDevServerProcess(
       clearTimeout(timeout);
       resolveStop();
     });
-    child.kill("SIGTERM");
+    signalStartupDevServerProcess(child, "SIGTERM");
   });
+}
+
+function signalStartupDevServerProcess(
+  child: ChildProcessWithoutNullStreams,
+  signal: NodeJS.Signals
+): void {
+  if (child.pid === undefined) {
+    return;
+  }
+
+  try {
+    if (process.platform === "win32") {
+      child.kill(signal);
+      return;
+    }
+
+    process.kill(-child.pid, signal);
+  } catch (error) {
+    if (isSystemError(error) && error.code === "ESRCH") {
+      return;
+    }
+
+    throw error;
+  }
 }
 
 function packageManagerCommand(value: unknown): string {
@@ -195,4 +220,8 @@ function sleep(ms: number): Promise<void> {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isSystemError(error: unknown): error is NodeJS.ErrnoException {
+  return error instanceof Error && "code" in error;
 }
