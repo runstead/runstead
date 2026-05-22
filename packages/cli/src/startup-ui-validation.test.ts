@@ -1,4 +1,4 @@
-import { readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -10,7 +10,10 @@ import { createGoal } from "./goals.js";
 import { createProgram } from "./index.js";
 import { initRunstead } from "./init.js";
 import { checkStartupGate } from "./startup-evidence.js";
-import { recordStartupUiValidation } from "./startup-ui-validation.js";
+import {
+  executeStartupUiValidation,
+  recordStartupUiValidation
+} from "./startup-ui-validation.js";
 
 describe("startup UI validation evidence", () => {
   it("records UI validation artifacts and blocks launch on failed checks", async () => {
@@ -46,7 +49,11 @@ describe("startup UI validation evidence", () => {
       });
       const artifact = JSON.parse(
         await readFile(recorded.evidence.artifactPath, "utf8")
-      ) as { evidenceType: string; sources: { kind: string; uri: string }[]; content: string };
+      ) as {
+        evidenceType: string;
+        sources: { kind: string; uri: string }[];
+        content: string;
+      };
       const content = JSON.parse(artifact.content) as Record<string, unknown>;
       const gate = await checkStartupGate({
         cwd: workspace,
@@ -140,9 +147,91 @@ describe("startup UI validation evidence", () => {
         uri: content.screenshot,
         hash: expect.stringMatching(/^sha256:[a-f0-9]{64}$/)
       });
-      await expect(readFile(storedPath, "utf8")).resolves.toBe(
-        "fake screenshot bytes"
+      await expect(readFile(storedPath, "utf8")).resolves.toBe("fake screenshot bytes");
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("executes DOM smoke validation through a managed dev server", async () => {
+    const workspace = join(tmpdir(), `runstead-startup-ui-execute-${process.pid}`);
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await mkdir(workspace, { recursive: true });
+      await initRunstead({ cwd: workspace });
+      await writeFile(
+        join(workspace, "server.mjs"),
+        [
+          "import http from 'node:http';",
+          "const html = '<!doctype html><html><head><title>Todo MVP</title></head><body><main><h1>Todo MVP</h1><button>Add todo</button></main></body></html>';",
+          "const server = http.createServer((_request, response) => {",
+          "  response.writeHead(200, { 'content-type': 'text/html' });",
+          "  response.end(html);",
+          "});",
+          "server.listen(Number(process.env.PORT), '127.0.0.1');",
+          "process.on('SIGTERM', () => server.close(() => process.exit(0)));"
+        ].join("\n"),
+        "utf8"
       );
+
+      const executed = await executeStartupUiValidation({
+        cwd: workspace,
+        viewport: "desktop",
+        serverCommand: "node server.mjs",
+        timeoutMs: 5_000,
+        criticalFlow: "load todo app",
+        expectText: ["Todo MVP", "Add todo"],
+        now: new Date("2026-05-14T04:00:00.000Z")
+      });
+      const artifact = JSON.parse(
+        await readFile(executed.evidence.artifactPath, "utf8")
+      ) as {
+        content: string;
+        sources: { kind: string; uri: string; hash?: string }[];
+      };
+      const content = JSON.parse(artifact.content) as {
+        domStatus: string;
+        accessibilityStatus: string;
+        responsiveStatus: string;
+        criticalFlowStatus: string;
+        domArtifact: string;
+        execution: {
+          runner: string;
+          responseStatus: number;
+          expectedText: { text: string; found: boolean }[];
+          server: { command: string; managed: boolean };
+        };
+      };
+
+      expect(executed.failed).toBe(false);
+      expect(executed.execution.server).toMatchObject({
+        managed: true,
+        command: "node server.mjs"
+      });
+      expect(content).toMatchObject({
+        domStatus: "pass",
+        accessibilityStatus: "pass",
+        responsiveStatus: "pass",
+        criticalFlowStatus: "pass",
+        domArtifact: executed.domArtifact,
+        execution: {
+          runner: "http_dom_smoke",
+          responseStatus: 200
+        }
+      });
+      expect(content.execution.expectedText).toEqual([
+        { text: "Todo MVP", found: true },
+        { text: "Add todo", found: true }
+      ]);
+      expect(artifact.sources[0]).toMatchObject({
+        kind: "browser_ui",
+        uri: executed.domArtifact,
+        hash: expect.stringMatching(/^sha256:[a-f0-9]{64}$/)
+      });
+      await expect(
+        readFile(fileURLToPath(executed.domArtifact), "utf8")
+      ).resolves.toContain("Todo MVP");
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }

@@ -849,8 +849,21 @@ export function registerStartupCommands(program: Command): void {
       "Record screenshot, DOM, accessibility, responsive, and flow UI validation evidence."
     )
     .option("--cwd <path>", "Workspace directory")
-    .requiredOption("--url <url>", "Validated local or deployed URL")
+    .option("--url <url>", "Validated local or deployed URL")
     .requiredOption("--viewport <viewport>", "Viewport label or dimensions")
+    .option(
+      "--execute",
+      "Run an automated DOM/UI validation smoke before recording evidence"
+    )
+    .option("--server-command <command>", "Command used to start a local dev server")
+    .option("--server-port <port>", "Preferred local dev server port")
+    .option("--execute-timeout-ms <ms>", "Dev server startup timeout in milliseconds")
+    .option(
+      "--expect-text <text>",
+      "Text that must appear in the executed DOM",
+      collectValues,
+      []
+    )
     .option("--screenshot <ref>", "Screenshot artifact URI or path")
     .option("--dom <status>", "DOM smoke status: pass, fail, or not_run", "not_run")
     .option(
@@ -880,8 +893,13 @@ export function registerStartupCommands(program: Command): void {
     .action(
       async (options: {
         cwd?: string;
-        url: string;
+        url?: string;
         viewport: string;
+        execute?: boolean;
+        serverCommand?: string;
+        serverPort?: string;
+        executeTimeoutMs?: string;
+        expectText: string[];
         screenshot?: string;
         dom: string;
         accessibility: string;
@@ -904,27 +922,64 @@ export function registerStartupCommands(program: Command): void {
           action: "record startup UI validation"
         });
 
-        const { parseStartupUiValidationStatus, recordStartupUiValidation } =
-          await import("./startup-ui-validation.js");
-        const result = await recordStartupUiValidation({
-          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-          url: options.url,
-          viewport: options.viewport,
-          ...(options.screenshot === undefined
-            ? {}
-            : { screenshot: options.screenshot }),
-          domStatus: parseStartupUiValidationStatus(options.dom),
-          accessibilityStatus: parseStartupUiValidationStatus(options.accessibility),
-          responsiveStatus: parseStartupUiValidationStatus(options.responsive),
-          ...(options.flow === undefined ? {} : { criticalFlow: options.flow }),
-          criticalFlowStatus: parseStartupUiValidationStatus(options.flowStatus),
-          sourceRefs: options.source,
-          ...evidenceSourceDetails(options),
-          ...(options.goal === undefined ? {} : { goalId: options.goal })
-        });
+        const {
+          executeStartupUiValidation,
+          parseStartupUiValidationStatus,
+          recordStartupUiValidation
+        } = await import("./startup-ui-validation.js");
+        const result =
+          options.execute === true
+            ? await executeStartupUiValidation({
+                ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+                ...(options.url === undefined ? {} : { url: options.url }),
+                viewport: options.viewport,
+                ...(options.flow === undefined ? {} : { criticalFlow: options.flow }),
+                expectText: options.expectText,
+                ...(options.serverCommand === undefined
+                  ? {}
+                  : { serverCommand: options.serverCommand }),
+                ...(options.serverPort === undefined
+                  ? {}
+                  : {
+                      serverPort: parsePositiveInteger(
+                        options.serverPort,
+                        "--server-port"
+                      )
+                    }),
+                ...(options.executeTimeoutMs === undefined
+                  ? {}
+                  : {
+                      timeoutMs: parsePositiveInteger(
+                        options.executeTimeoutMs,
+                        "--execute-timeout-ms"
+                      )
+                    }),
+                ...(options.goal === undefined ? {} : { goalId: options.goal })
+              })
+            : await recordStartupUiValidation({
+                ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+                url: requireUiValidationUrl(options.url),
+                viewport: options.viewport,
+                ...(options.screenshot === undefined
+                  ? {}
+                  : { screenshot: options.screenshot }),
+                domStatus: parseStartupUiValidationStatus(options.dom),
+                accessibilityStatus: parseStartupUiValidationStatus(
+                  options.accessibility
+                ),
+                responsiveStatus: parseStartupUiValidationStatus(options.responsive),
+                ...(options.flow === undefined ? {} : { criticalFlow: options.flow }),
+                criticalFlowStatus: parseStartupUiValidationStatus(options.flowStatus),
+                sourceRefs: options.source,
+                ...evidenceSourceDetails(options),
+                ...(options.goal === undefined ? {} : { goalId: options.goal })
+              });
 
         console.log(`Recorded UI validation evidence: ${result.evidence.evidence.id}`);
         console.log(`Failed: ${result.failed ? "yes" : "no"}`);
+        if ("domArtifact" in result) {
+          console.log(`Executed DOM artifact: ${result.domArtifact}`);
+        }
         console.log(`Artifact: ${result.evidence.artifactPath}`);
       }
     );
@@ -2159,6 +2214,14 @@ function parsePositiveInteger(value: string, optionName: string): number {
   }
 
   return parsed;
+}
+
+function requireUiValidationUrl(value: string | undefined): string {
+  if (value !== undefined && value.trim().length > 0) {
+    return value;
+  }
+
+  throw new Error("--url is required unless --execute starts a dev server");
 }
 
 async function requireRbacPermission(options: {

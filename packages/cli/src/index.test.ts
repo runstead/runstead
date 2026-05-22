@@ -432,7 +432,9 @@ describe("cli entrypoint", () => {
     const remediate = startup?.commands.find(
       (command) => command.name() === "remediate"
     );
-    const buildMvp = startup?.commands.find((command) => command.name() === "build-mvp");
+    const buildMvp = startup?.commands.find(
+      (command) => command.name() === "build-mvp"
+    );
     const evidenceAdd = evidence?.commands.find((command) => command.name() === "add");
     const gate = startup?.commands.find((command) => command.name() === "gate");
     const gateCheck = gate?.commands.find((command) => command.name() === "check");
@@ -539,8 +541,13 @@ describe("cli entrypoint", () => {
         "--actor",
         "--cwd",
         "--dom",
+        "--execute",
+        "--execute-timeout-ms",
+        "--expect-text",
         "--flow",
         "--responsive",
+        "--server-command",
+        "--server-port",
         "--screenshot",
         "--url",
         "--viewport"
