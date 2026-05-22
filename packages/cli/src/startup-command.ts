@@ -1093,6 +1093,35 @@ export function registerStartupCommands(program: Command): void {
     .description("Generate startup ops handoff artifacts.");
 
   startupScale
+    .command("starter-pack")
+    .description("Generate a starter pack for scale-stage operating evidence.")
+    .option("--cwd <path>", "Workspace directory")
+    .option("--owner <id>", "Starter pack owner")
+    .option("--actor <id>", "RBAC subject for scale starter generation", "local-admin")
+    .action(async (options: { cwd?: string; owner?: string; actor: string }) => {
+      await requireRbacPermission({
+        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+        actor: options.actor,
+        permission: "evidence.write",
+        action: "generate startup scale starter pack"
+      });
+
+      const { generateScaleStarterPack } = await import("./startup-automation.js");
+      const result = await generateScaleStarterPack({
+        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+        ...(options.owner === undefined ? {} : { owner: options.owner })
+      });
+
+      console.log(`Generated scale starter evidence: ${result.evidenceIds[0]}`);
+      console.log(`Scale-ready: ${result.scaleReady ? "yes" : "no"}`);
+      console.log(`Blockers: ${result.blockers.length}`);
+      for (const file of result.files) {
+        console.log(`Wrote scale starter file: ${file}`);
+      }
+      logStructuredFiles(result.structuredFiles);
+    });
+
+  startupScale
     .command("workflow-registry")
     .description("Generate workflow registry and delegation policy evidence.")
     .option("--cwd <path>", "Workspace directory")
@@ -1697,7 +1726,7 @@ export function registerStartupCommands(program: Command): void {
     .option("--cwd <path>", "Workspace directory")
     .requiredOption(
       "--type <type>",
-      "Evidence type: customer_interview, competitor, metric, metric_snapshot, measurement_framework, agent_context, repo_readiness, security_baseline, migration_plan, rollback_plan, release_plan, ui_validation, hypothesis, problem_hypothesis, user_hypothesis, solution_hypothesis, disconfirming, support_triage, founder_bottleneck, workflow_registry, delegation_policy, institutional_memory, memory_retrieval, ops_schedule, ops_report, integration_map, ops_sop, gtm_artifact, decision, acceptable_debt, false_positive, observability, remediation_failure, team_collaboration, or complete_product_check"
+      "Evidence type: customer_interview, competitor, metric, metric_snapshot, measurement_framework, agent_context, repo_readiness, security_baseline, migration_plan, rollback_plan, release_plan, ui_validation, hypothesis, problem_hypothesis, user_hypothesis, solution_hypothesis, disconfirming, support_triage, founder_bottleneck, workflow_registry, delegation_policy, institutional_memory, memory_retrieval, ops_schedule, ops_report, integration_map, ops_sop, gtm_artifact, scale_starter_pack, decision, acceptable_debt, false_positive, observability, remediation_failure, team_collaboration, or complete_product_check"
     )
     .requiredOption("--summary <text>", "Evidence summary")
     .option("--source <ref>", "Evidence source reference", collectValues, [])

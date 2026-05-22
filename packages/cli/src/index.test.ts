@@ -405,6 +405,9 @@ describe("cli entrypoint", () => {
       (command) => command.name() === "bottleneck-map"
     );
     const scale = startup?.commands.find((command) => command.name() === "scale");
+    const scaleStarterPack = scale?.commands.find(
+      (command) => command.name() === "starter-pack"
+    );
     const scaleWorkflowRegistry = scale?.commands.find(
       (command) => command.name() === "workflow-registry"
     );
@@ -583,6 +586,9 @@ describe("cli entrypoint", () => {
         "--delegation-rule",
         "--workflow"
       ])
+    );
+    expect(scaleStarterPack?.options.map((option) => option.long)).toEqual(
+      expect.arrayContaining(["--actor", "--cwd", "--owner"])
     );
     expect(scaleMemoryCapture?.options.map((option) => option.long)).toEqual(
       expect.arrayContaining(["--actor", "--cwd", "--knowledge", "--scope", "--source"])

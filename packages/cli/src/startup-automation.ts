@@ -297,6 +297,23 @@ export interface VerifyGtmArtifactsResult {
   claims: string[];
 }
 
+export interface GenerateScaleStarterPackOptions {
+  cwd?: string;
+  owner?: string;
+  now?: Date;
+}
+
+export interface GenerateScaleStarterPackResult {
+  root: string;
+  stateDb: string;
+  files: string[];
+  structuredFiles: string[];
+  evidenceIds: string[];
+  scaleReady: false;
+  blockers: string[];
+  nextCommands: string[];
+}
+
 interface StartupStructuredArtifact {
   schemaVersion: typeof STARTUP_STRUCTURED_ARTIFACT_SCHEMA_VERSION;
   schema: typeof STARTUP_STRUCTURED_ARTIFACT_SCHEMA;
@@ -1205,6 +1222,171 @@ export async function generateScaleOpsReport(
   };
 }
 
+export async function generateScaleStarterPack(
+  options: GenerateScaleStarterPackOptions = {}
+): Promise<GenerateScaleStarterPackResult> {
+  const cwd = resolve(options.cwd ?? process.cwd());
+  const state = await requireRunsteadStateDb(cwd);
+  const now = options.now ?? new Date();
+  const generatedAt = now.toISOString();
+  const owner = options.owner ?? "founder";
+  const workflow = await generateWorkflowRegistry({
+    cwd,
+    workflows: [
+      "Weekly evidence-backed scale readiness review",
+      "Support triage and escalation",
+      "Launch metric review and anomaly follow-up",
+      "GTM claim review before external publishing"
+    ],
+    delegationRules: [
+      "Agents may draft scale artifacts; founder approval is required before external publishing.",
+      "Support automation may classify requests; high-severity incidents require owner review.",
+      "Metric interpretation must cite source class, freshness, and evidence id."
+    ],
+    approvalBoundaries: [
+      "external publishing",
+      "billing or pricing changes",
+      "high-severity customer support closure"
+    ],
+    allowedAgents: ["codex_cli", "codex_direct"],
+    constrainedTaskTypes: [
+      "startup_scale_report",
+      "support_triage",
+      "gtm_artifact_review"
+    ],
+    now
+  });
+  const support = await recordSupportTriage({
+    cwd,
+    request: "Scale starter support triage template",
+    outcome:
+      "Route onboarding friction, product defects, billing issues, and security incidents to named owners before scale delegation.",
+    customer: "starter-template",
+    severity: "medium",
+    category: "scale_readiness",
+    sourceRefs: workflow.files,
+    now
+  });
+  const schedule = await scheduleScaleReport({
+    cwd,
+    cadence: "weekly",
+    owner,
+    nextRunAt: generatedAt.slice(0, 10),
+    periodTemplate: "YYYY-WW",
+    now
+  });
+  const sops = await generateOpsSops({
+    cwd,
+    owner,
+    workflow: "scale readiness operations",
+    sops: [
+      "Generate the startup scale report every week and review every blocker.",
+      "Check support categories for repeated onboarding friction before delegation.",
+      "Refresh metric snapshots and confirm source class before GTM claims are reused.",
+      "Escalate billing, privacy, security, and external publishing changes for approval."
+    ],
+    now
+  });
+  const gtm = await verifyGtmArtifacts({
+    cwd,
+    claims: [
+      "Public launch copy is backed by current product evidence.",
+      "Scale claims are not published until workflow, support, SOP, and metrics evidence are current."
+    ],
+    evidenceRefs: [...workflow.evidenceIds, support.evidenceId, sops.evidenceId],
+    productState: "scale starter pack generated; scale-ready status is not granted",
+    now
+  });
+  const scaleGate = await checkStartupGate({
+    cwd,
+    stage: "scale",
+    recordEvent: false,
+    now
+  });
+  const files = [
+    ...workflow.files,
+    ...support.files,
+    ...schedule.files,
+    ...sops.files,
+    ...gtm.files
+  ];
+  const structuredFiles = [
+    ...workflow.structuredFiles,
+    ...support.structuredFiles,
+    ...schedule.structuredFiles,
+    ...sops.structuredFiles,
+    ...gtm.structuredFiles
+  ];
+  const evidenceIds = [
+    ...workflow.evidenceIds,
+    support.evidenceId,
+    schedule.evidenceId,
+    sops.evidenceId,
+    gtm.evidenceId
+  ];
+  const nextCommands = [
+    "runstead startup scale-check",
+    "runstead startup scale report",
+    "runstead startup remediate --stage scale --execute --worker codex_cli"
+  ];
+  const summaryPath = join(state.root, "startup", "scale-starter-pack.md");
+  const markdown = formatScaleStarterPack({
+    generatedAt,
+    owner,
+    files,
+    evidenceIds,
+    blockers: scaleGate.blockers,
+    nextCommands
+  });
+
+  await mkdir(join(state.root, "startup"), { recursive: true });
+  await writeFile(summaryPath, markdown, "utf8");
+  const structuredPath = await writeStartupStructuredArtifact({
+    kind: "startup_scale_starter_pack",
+    generatedAt,
+    markdownPath: summaryPath,
+    data: {
+      owner,
+      files: [summaryPath, ...files],
+      evidenceIds,
+      blockers: scaleGate.blockers,
+      scaleReady: false,
+      nextCommands
+    }
+  });
+  const starterEvidence = await addStartupEvidence({
+    cwd,
+    type: "scale_starter_pack",
+    summary: "Scale starter pack generated; scale-ready status is not granted",
+    sourceRefs: [summaryPath, structuredPath, ...files],
+    content: JSON.stringify(
+      {
+        markdown,
+        owner,
+        files: [summaryPath, ...files],
+        evidenceIds,
+        blockers: scaleGate.blockers,
+        scaleReady: false,
+        nextCommands
+      },
+      null,
+      2
+    ),
+    now
+  });
+
+  return {
+    root: state.root,
+    stateDb: state.stateDb,
+    files: [summaryPath, ...files],
+    structuredFiles: [structuredPath, ...structuredFiles],
+    evidenceIds: [starterEvidence.evidence.id, ...evidenceIds],
+    scaleReady: false,
+    blockers: scaleGate.blockers,
+    nextCommands
+  };
+}
+
 export async function scheduleScaleReport(
   options: ScheduleScaleReportOptions = {}
 ): Promise<ScheduleScaleReportResult> {
@@ -2053,6 +2235,48 @@ function formatScaleOpsReport(input: {
       "Missing evidence should become the next scale-stage task.",
       "This report should be regenerated before weekly planning."
     ]),
+    ""
+  ].join("\n");
+}
+
+function formatScaleStarterPack(input: {
+  generatedAt: string;
+  owner: string;
+  files: string[];
+  evidenceIds: string[];
+  blockers: string[];
+  nextCommands: string[];
+}): string {
+  return [
+    "# Startup Scale Starter Pack",
+    "",
+    `Generated: ${input.generatedAt}`,
+    `Owner: ${input.owner}`,
+    "Scale-ready: false",
+    "",
+    "## Starter Artifacts",
+    "",
+    listItems(input.files),
+    "",
+    "## Evidence",
+    "",
+    listItems(input.evidenceIds),
+    "",
+    "## Current Scale Gate Blockers",
+    "",
+    listItems(input.blockers),
+    "",
+    "## Starter Pack Boundary",
+    "",
+    listItems([
+      "This pack creates operating templates and evidence surfaces only.",
+      "It does not mark the product scale-ready.",
+      "Run the scale gate after real workflow, support, SOP, metric, and GTM evidence is current."
+    ]),
+    "",
+    "## Next Commands",
+    "",
+    listItems(input.nextCommands),
     ""
   ].join("\n");
 }

@@ -13,6 +13,7 @@ import {
   generateOpsSops,
   generateSecurityBaseline,
   generateScaleOpsReport,
+  generateScaleStarterPack,
   generateStartupContext,
   generateWorkflowRegistry,
   initStartup,
@@ -728,6 +729,75 @@ describe("startup automation", () => {
           "startup_ops_report",
           "startup_ops_sop"
         ]);
+      } finally {
+        database.close();
+      }
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("generates a scale starter pack without granting scale-ready status", async () => {
+    const workspace = join(tmpdir(), `runstead-startup-scale-starter-${process.pid}`);
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await initStartup({
+        cwd: workspace,
+        stage: "scale",
+        now: new Date("2026-05-14T10:00:00.000Z")
+      });
+
+      const result = await generateScaleStarterPack({
+        cwd: workspace,
+        owner: "founder",
+        now: new Date("2026-05-14T10:30:00.000Z")
+      });
+      const summary = await readFile(result.files[0] ?? "", "utf8");
+      const database = openRunsteadDatabase(result.stateDb);
+
+      try {
+        const evidenceTypes = (
+          database
+            .prepare(
+              `
+              SELECT DISTINCT type
+              FROM evidence
+              WHERE id IN (${result.evidenceIds.map(() => "?").join(",")})
+              ORDER BY type ASC
+            `
+            )
+            .all(...result.evidenceIds) as { type: string }[]
+        ).map((row) => row.type);
+
+        expect(result.scaleReady).toBe(false);
+        expect(result.files.map((file) => file.split("/").at(-1))).toEqual(
+          expect.arrayContaining([
+            "scale-starter-pack.md",
+            "workflow-registry.md",
+            "delegation-policy.md",
+            "scale-report-schedule.md",
+            "ops-sops.md",
+            "gtm-artifacts.md"
+          ])
+        );
+        expect(result.structuredFiles.map((file) => file.split("/").at(-1))).toEqual(
+          expect.arrayContaining(["scale-starter-pack.json"])
+        );
+        expect(evidenceTypes).toEqual(
+          expect.arrayContaining([
+            "startup_scale_starter_pack",
+            "startup_workflow_registry",
+            "startup_delegation_policy",
+            "startup_support_triage",
+            "startup_ops_schedule",
+            "startup_ops_sop",
+            "startup_gtm_artifact"
+          ])
+        );
+        expect(summary).toContain("Scale-ready: false");
+        expect(summary).toContain("This pack creates operating templates");
+        expect(result.nextCommands).toContain("runstead startup scale-check");
       } finally {
         database.close();
       }

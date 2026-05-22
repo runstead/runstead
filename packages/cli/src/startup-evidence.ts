@@ -43,6 +43,7 @@ export const STARTUP_EVIDENCE_TYPES = [
   "integration_map",
   "ops_sop",
   "gtm_artifact",
+  "scale_starter_pack",
   "decision",
   "acceptable_debt",
   "false_positive",
