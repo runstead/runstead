@@ -133,6 +133,8 @@ describe("startup founder flow", () => {
       const build = await startupBuildMvp({
         cwd: workspace,
         worker: "codex_cli",
+        dependencyPolicy: "allow-listed",
+        allowedDependencies: ["runtime:react", "dev:vitest"],
         now: new Date("2026-05-14T04:00:00.000Z"),
         workerRunner: async (_command, args, options) => {
           workerPrompt = args.join("\n");
@@ -174,6 +176,18 @@ describe("startup founder flow", () => {
       expect(workerPrompt).toContain("lint: npm run lint");
       expect(workerPrompt).toContain("typecheck: npm run typecheck");
       expect(workerPrompt).toContain("build: npm run build");
+      expect(workerPrompt).toContain("Dependency approval policy: allow-listed.");
+      expect(workerPrompt).toContain(
+        "Allowed dependency additions: runtime:react, dev:vitest."
+      );
+      expect(workerPrompt).toContain("dependencies outside allowed list");
+      expect(build.dependencyApproval).toMatchObject({
+        policy: "allow-listed",
+        allowedDependencies: ["runtime:react", "dev:vitest"]
+      });
+      expect(formatStartupBuildMvp(build)).toContain(
+        "Dependency policy: allow-listed"
+      );
       expect(build.status).toBe("completed");
       expect(build.verifierRun.status).toBe("completed");
     } finally {

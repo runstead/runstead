@@ -60,6 +60,8 @@ export interface StartupBuildMvpOptions extends StartupFounderFlowOptions {
   worker?: LocalAgentWorkerKind;
   model?: string;
   prompt?: string;
+  dependencyPolicy?: string;
+  allowedDependencies?: string[];
   workerRunner?: WorkerProcessRunner;
   onWorkerProgress?: RunLocalAgentTaskOptions["onWorkerProgress"];
   workerProgressIntervalMs?: number;
@@ -71,9 +73,22 @@ export interface StartupBuildMvpResult {
   localAgentTaskId: string;
   status: RunLocalAgentTaskResult["status"];
   summary: string;
+  dependencyApproval: StartupDependencyApprovalBoundary;
   verifierRun: StartupMvpVerifierRun;
   gate: StartupGateCheckResult;
   nextCommands: string[];
+}
+
+export type StartupDependencyApprovalPolicy =
+  | "approval-required"
+  | "allow-listed"
+  | "deny-new";
+
+export interface StartupDependencyApprovalBoundary {
+  policy: StartupDependencyApprovalPolicy;
+  allowedDependencies: string[];
+  approvalRequired: string[];
+  workerInstruction: string;
 }
 
 export interface StartupLaunchCheckResult {
@@ -177,6 +192,17 @@ export async function startupBuildMvp(
 ): Promise<StartupBuildMvpResult> {
   const cwd = resolve(options.cwd ?? process.cwd());
   const worker = options.worker ?? "codex_cli";
+  const dependencyApproval = resolveStartupDependencyApprovalBoundary({
+    ...(options.dependencyPolicy === undefined
+      ? {}
+      : { policy: options.dependencyPolicy }),
+    allowedDependencies: options.allowedDependencies ?? []
+  });
+  const prompt = await startupBuildMvpPromptWithDependencyBoundary({
+    cwd,
+    ...(options.prompt === undefined ? {} : { prompt: options.prompt }),
+    dependencyApproval
+  });
   const init = await initStartup({
     cwd,
     stage: "mvp",
@@ -187,10 +213,11 @@ export async function startupBuildMvp(
   const created = await createLocalAgentTask({
     cwd,
     title: "Build startup MVP",
-    prompt: options.prompt ?? (await defaultBuildMvpPrompt(cwd)),
+    prompt,
     worker,
     mode: "repair",
     checkpoint: true,
+    approvalRequired: dependencyApproval.approvalRequired,
     verifierCommands: await verifierCommands(cwd, options.now),
     ...(options.model === undefined ? {} : { model: options.model }),
     ...(options.now === undefined ? {} : { now: options.now })
@@ -232,6 +259,7 @@ export async function startupBuildMvp(
     localAgentTaskId: created.task.id,
     status: run.status,
     summary: run.summary,
+    dependencyApproval,
     verifierRun,
     gate,
     nextCommands: [
@@ -344,6 +372,7 @@ export function formatStartupBuildMvp(result: StartupBuildMvpResult): string {
     `Task: ${result.localAgentTaskId}`,
     `Status: ${result.status}`,
     `Summary: ${result.summary}`,
+    `Dependency policy: ${formatStartupDependencyApprovalBoundary(result.dependencyApproval)}`,
     `Verifier run: ${formatStartupMvpVerifierRun(result.verifierRun)}`,
     `MVP gate: ${result.gate.passed ? "passed" : "blocked"}`,
     "",
@@ -360,6 +389,100 @@ export function formatStartupWorkerGovernanceNotice(
   }
 
   return `Worker governance: ${worker} uses Runstead's Level 1 process wrapper path; worker launch, sandbox, checkpoints, diff scope, and post-run verifiers are governed, but worker-internal tool calls are not hard-proxied. Use codex_direct when every model tool call must pass through Runstead policy and audit.`;
+}
+
+export function resolveStartupDependencyApprovalBoundary(input: {
+  policy?: string;
+  allowedDependencies?: string[];
+}): StartupDependencyApprovalBoundary {
+  const policy = parseStartupDependencyApprovalPolicy(
+    input.policy ?? "approval-required"
+  );
+  const allowedDependencies = dedupeNonEmpty(input.allowedDependencies ?? []);
+
+  if (policy === "allow-listed" && allowedDependencies.length === 0) {
+    throw new Error(
+      "--dependency-policy allow-listed requires at least one --allow-dependency value"
+    );
+  }
+
+  if (policy === "approval-required") {
+    return {
+      policy,
+      allowedDependencies,
+      approvalRequired: [
+        "dependency additions or upgrades",
+        "package manager changes",
+        "external writes"
+      ],
+      workerInstruction:
+        "Dependency approval policy: approval-required. Do not install, add, remove, or upgrade dependencies unless the founder explicitly grants approval in this run. If a dependency would improve the MVP, return needs_approval=true with the package name, dependency class, and reason."
+    };
+  }
+
+  if (policy === "allow-listed") {
+    return {
+      policy,
+      allowedDependencies,
+      approvalRequired: [
+        "dependencies outside allowed list",
+        "package manager changes outside allowed list",
+        "external writes"
+      ],
+      workerInstruction: [
+        "Dependency approval policy: allow-listed.",
+        `Allowed dependency additions: ${allowedDependencies.join(", ")}.`,
+        "Do not install, add, remove, or upgrade any dependency outside this list unless approval is granted. If another dependency is needed, return needs_approval=true with the package name, dependency class, and reason."
+      ].join(" ")
+    };
+  }
+
+  return {
+    policy,
+    allowedDependencies: [],
+    approvalRequired: ["all dependency additions or upgrades", "external writes"],
+    workerInstruction:
+      "Dependency approval policy: deny-new. Do not install, add, remove, or upgrade dependencies in this run. If the MVP cannot be completed without a dependency change, return needs_approval=true with the package name, dependency class, and reason."
+  };
+}
+
+export function formatStartupDependencyApprovalBoundary(
+  boundary: StartupDependencyApprovalBoundary
+): string {
+  return [
+    boundary.policy,
+    `allowed=${boundary.allowedDependencies.length === 0 ? "none" : boundary.allowedDependencies.join(",")}`,
+    `approval_required=${boundary.approvalRequired.join(", ")}`
+  ].join("; ");
+}
+
+function parseStartupDependencyApprovalPolicy(
+  value: string
+): StartupDependencyApprovalPolicy {
+  if (
+    value === "approval-required" ||
+    value === "allow-listed" ||
+    value === "deny-new"
+  ) {
+    return value;
+  }
+
+  throw new Error(
+    `Unsupported dependency policy ${value}. Expected approval-required, allow-listed, or deny-new.`
+  );
+}
+
+async function startupBuildMvpPromptWithDependencyBoundary(input: {
+  cwd: string;
+  prompt?: string;
+  dependencyApproval: StartupDependencyApprovalBoundary;
+}): Promise<string> {
+  return [
+    input.prompt ?? (await defaultBuildMvpPrompt(input.cwd)),
+    "",
+    "Dependency approval boundary:",
+    input.dependencyApproval.workerInstruction
+  ].join("\n");
 }
 
 async function runQueuedMvpVerifiers(input: {
@@ -531,6 +654,10 @@ function formatGeneratedStep<T>(step: StartupGeneratedStep<T>): string {
 
 function listItems(items: string[]): string {
   return items.length === 0 ? "- none" : items.map((item) => `- ${item}`).join("\n");
+}
+
+function dedupeNonEmpty(values: string[]): string[] {
+  return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
 }
 
 async function writeStartupOnboardingFiles(input: {

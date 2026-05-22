@@ -82,6 +82,7 @@ export interface CreateLocalAgentTaskOptions {
   mode?: LocalAgentMode;
   allowedPaths?: string[];
   deniedPaths?: string[];
+  approvalRequired?: string[];
   verifierCommands?: CommandVerifierInput[];
   maxTurns?: number;
   maxToolCalls?: number;
@@ -658,6 +659,7 @@ async function runLocalAgentWorker(options: {
       workerRuntimeDir: join(options.root, "worker-profiles"),
       allowedScope: localAgentAllowedScope(options.task),
       deniedActions: localAgentDeniedActions(options.task),
+      approvalRequired: localAgentApprovalRequired(options.task),
       verifierContract: verifierCommandsFromLocalAgentTask(options.task).map(
         (command) => `${command.name}: ${command.command}`
       ),
@@ -1129,6 +1131,9 @@ function localAgentTaskInput(input: {
     ...(input.options.deniedPaths === undefined
       ? {}
       : { deniedPaths: input.options.deniedPaths }),
+    ...(input.options.approvalRequired === undefined
+      ? {}
+      : { approvalRequired: input.options.approvalRequired }),
     ...(input.options.verifierCommands === undefined
       ? {}
       : { commands: input.options.verifierCommands }),
@@ -1175,13 +1180,17 @@ function localAgentModePromptRules(task: Task): string[] {
   const mode = localAgentTaskMode(task);
   const allowedPaths = localAgentTaskStringArray(task, "allowedPaths");
   const deniedPaths = localAgentTaskStringArray(task, "deniedPaths");
+  const approvalRequired = localAgentApprovalRequired(task);
   const pathRules = [
     ...(allowedPaths.length === 0
       ? []
       : [`- Stay within allowed paths: ${allowedPaths.join(", ")}`]),
     ...(deniedPaths.length === 0
       ? []
-      : [`- Do not change denied paths: ${deniedPaths.join(", ")}`])
+      : [`- Do not change denied paths: ${deniedPaths.join(", ")}`]),
+    ...(approvalRequired.length === 0
+      ? []
+      : [`- Request approval before: ${approvalRequired.join(", ")}`])
   ];
 
   if (mode === "read-only") {
@@ -1224,6 +1233,12 @@ function localAgentDeniedActions(task: Task): string[] {
   return denied.length === 0
     ? ["access secrets", "push or publish without approval"]
     : denied;
+}
+
+function localAgentApprovalRequired(task: Task): string[] {
+  const explicit = localAgentTaskStringArray(task, "approvalRequired");
+
+  return explicit.length === 0 ? ["dependency changes", "external writes"] : explicit;
 }
 
 async function createLocalAgentCheckpointIfNeeded(options: {

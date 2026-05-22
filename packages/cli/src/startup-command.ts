@@ -182,27 +182,51 @@ export function registerStartupCommands(program: Command): void {
     )
     .option("--model <model>", "Model override for worker execution")
     .option("--prompt <text>", "Override the default MVP build prompt")
+    .option(
+      "--dependency-policy <policy>",
+      "Dependency policy: approval-required, allow-listed, or deny-new",
+      "approval-required"
+    )
+    .option(
+      "--allow-dependency <name>",
+      "Allowed dependency package or class when --dependency-policy allow-listed",
+      collectValues,
+      []
+    )
     .action(
       async (options: {
         cwd?: string;
         worker: string;
         model?: string;
         prompt?: string;
+        dependencyPolicy: string;
+        allowDependency: string[];
       }) => {
         const {
+          formatStartupDependencyApprovalBoundary,
           formatStartupBuildMvp,
           formatStartupWorkerGovernanceNotice,
+          resolveStartupDependencyApprovalBoundary,
           startupBuildMvp
         } =
           await import("./startup-founder-flow.js");
         const worker = parseLocalAgentWorker(options.worker);
+        const dependencyApproval = resolveStartupDependencyApprovalBoundary({
+          policy: options.dependencyPolicy,
+          allowedDependencies: options.allowDependency
+        });
 
         console.log(formatStartupWorkerGovernanceNotice(worker));
+        console.log(
+          `Dependency policy: ${formatStartupDependencyApprovalBoundary(dependencyApproval)}`
+        );
         const result = await startupBuildMvp({
           ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
           worker,
           ...(options.model === undefined ? {} : { model: options.model }),
           ...(options.prompt === undefined ? {} : { prompt: options.prompt }),
+          dependencyPolicy: dependencyApproval.policy,
+          allowedDependencies: dependencyApproval.allowedDependencies,
           onWorkerProgress: logWrappedWorkerProgress
         });
 
