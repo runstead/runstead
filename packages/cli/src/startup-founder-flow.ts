@@ -352,6 +352,16 @@ export function formatStartupBuildMvp(result: StartupBuildMvpResult): string {
   ].join("\n");
 }
 
+export function formatStartupWorkerGovernanceNotice(
+  worker: LocalAgentWorkerKind
+): string {
+  if (worker === "codex_direct") {
+    return "Worker governance: codex_direct uses Runstead's Level 2 native tool proxy path; model tool calls are governed inside Runstead.";
+  }
+
+  return `Worker governance: ${worker} uses Runstead's Level 1 process wrapper path; worker launch, sandbox, checkpoints, diff scope, and post-run verifiers are governed, but worker-internal tool calls are not hard-proxied. Use codex_direct when every model tool call must pass through Runstead policy and audit.`;
+}
+
 async function runQueuedMvpVerifiers(input: {
   cwd: string;
   goalId: string;

@@ -189,11 +189,18 @@ export function registerStartupCommands(program: Command): void {
         model?: string;
         prompt?: string;
       }) => {
-        const { formatStartupBuildMvp, startupBuildMvp } =
+        const {
+          formatStartupBuildMvp,
+          formatStartupWorkerGovernanceNotice,
+          startupBuildMvp
+        } =
           await import("./startup-founder-flow.js");
+        const worker = parseLocalAgentWorker(options.worker);
+
+        console.log(formatStartupWorkerGovernanceNotice(worker));
         const result = await startupBuildMvp({
           ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-          worker: parseLocalAgentWorker(options.worker),
+          worker,
           ...(options.model === undefined ? {} : { model: options.model }),
           ...(options.prompt === undefined ? {} : { prompt: options.prompt }),
           onWorkerProgress: logWrappedWorkerProgress

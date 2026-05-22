@@ -9,6 +9,7 @@ import {
   formatStartupLaunchCheck,
   formatStartupOnboard,
   formatStartupScaleCheck,
+  formatStartupWorkerGovernanceNotice,
   startupBuildMvp,
   startupLaunchCheck,
   startupOnboard,
@@ -105,6 +106,12 @@ describe("startup founder flow", () => {
       expect(formatStartupOnboard(onboard)).toContain("Onboarding files:");
       expect(formatStartupBuildMvp(build)).toContain("Startup build MVP");
       expect(formatStartupBuildMvp(build)).toContain("Verifier run: completed");
+      expect(formatStartupWorkerGovernanceNotice("codex_cli")).toContain(
+        "Level 1 process wrapper"
+      );
+      expect(formatStartupWorkerGovernanceNotice("codex_direct")).toContain(
+        "Level 2 native tool proxy"
+      );
       expect(formatStartupLaunchCheck(launch)).toContain("Startup launch check");
       expect(formatStartupScaleCheck(scale)).toContain("Startup scale check");
     } finally {
