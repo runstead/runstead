@@ -53,7 +53,8 @@ describe("startup readiness run model", () => {
         "verifiers",
         "ui_smoke",
         "launch_audit",
-        "launch_report"
+        "launch_report",
+        "complete_check"
       ]);
       expect(loaded.run).toEqual(run);
     } finally {
@@ -387,6 +388,9 @@ describe("startup readiness run model", () => {
         now: new Date("2026-05-22T01:30:00.000Z")
       });
       const uiPhase = result.run.phases.find((phase) => phase.id === "ui_smoke");
+      const completePhase = result.run.phases.find(
+        (phase) => phase.id === "complete_check"
+      );
 
       expect(uiPhase).toMatchObject({
         status: "passed",
@@ -396,6 +400,13 @@ describe("startup readiness run model", () => {
       expect(uiPhase?.artifacts).toEqual(
         expect.arrayContaining([
           join(workspace, ".runstead", "startup", "ui-smoke.yaml")
+        ])
+      );
+      expect(completePhase).toBeDefined();
+      expect(completePhase?.artifacts).toEqual(
+        expect.arrayContaining([
+          join(workspace, ".runstead", "reports", "startup-complete-product-check.md"),
+          join(workspace, ".runstead", "reports", "startup-complete-product-check.json")
         ])
       );
     } finally {

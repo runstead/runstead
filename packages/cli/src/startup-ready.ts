@@ -1691,9 +1691,15 @@ function completePlanBlockers(evidenceTypes: Set<string>): string[] {
 
 function phaseIncludedForStage(id: string, stage: StartupReadyStage): boolean {
   const mvp = new Set(["onboard", "context", "measurement", "build_mvp", "verifiers"]);
-  const launch = new Set([...mvp, "ui_smoke", "launch_audit", "launch_report"]);
+  const launch = new Set([
+    ...mvp,
+    "ui_smoke",
+    "launch_audit",
+    "launch_report",
+    "complete_check"
+  ]);
   const scale = new Set([...launch]);
-  const complete = new Set([...launch, "complete_check"]);
+  const complete = new Set([...launch]);
 
   if (stage === "mvp") {
     return mvp.has(id);
