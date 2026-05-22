@@ -90,6 +90,62 @@ describe("exportAuditLog", () => {
     }
   });
 
+  it("pushes export filters into SQL before parsing payload JSON", async () => {
+    const workspace = join(tmpdir(), `runstead-audit-export-sql-${process.pid}`);
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await initRunstead({ cwd: workspace });
+      const created = await createGoal({
+        cwd: workspace,
+        domain: "repo-maintenance",
+        now: new Date("2026-05-14T07:45:00.000Z")
+      });
+      const database = openRunsteadDatabase(join(workspace, ".runstead", "state.db"));
+
+      try {
+        database
+          .prepare(
+            `
+            INSERT INTO events (
+              event_id,
+              type,
+              aggregate_type,
+              aggregate_id,
+              payload_json,
+              created_at
+            ) VALUES (?, ?, ?, ?, ?, ?)
+          `
+          )
+          .run(
+            "evt_invalid_unmatched_payload",
+            "task.completed",
+            "task",
+            "task_unmatched",
+            "{not-json",
+            "2026-05-14T07:46:00.000Z"
+          );
+      } finally {
+        database.close();
+      }
+
+      const result = await exportAuditLog({
+        cwd: workspace,
+        types: ["goal.created"],
+        aggregateType: "goal",
+        aggregateId: created.goal.id
+      });
+
+      expect(result.entries).toHaveLength(1);
+      expect(result.entries[0]).toMatchObject({
+        type: "goal.created",
+        aggregateId: created.goal.id
+      });
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
   it("formats filtered events as a replayable timeline", async () => {
     const workspace = join(tmpdir(), `runstead-audit-timeline-${process.pid}`);
 

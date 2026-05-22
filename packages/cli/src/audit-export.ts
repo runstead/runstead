@@ -63,9 +63,7 @@ export async function exportAuditLog(
   const database = openRunsteadDatabase(stateDb);
 
   try {
-    const entries = readAuditEntries(database).filter((entry) =>
-      matchesAuditFilters(entry, options)
-    );
+    const entries = readAuditEntries(database, options);
     const contents =
       entries.length === 0
         ? ""
@@ -113,21 +111,26 @@ export function formatAuditTimeline(entries: AuditLogEntry[]): string {
 export async function replayAuditLifecycle(
   options: ReplayAuditLifecycleOptions
 ): Promise<ReplayAuditLifecycleResult> {
-  const audit = await exportAuditLog({
-    ...(options.cwd === undefined ? {} : { cwd: options.cwd })
-  });
-  const { entries, relatedIds } = collectAuditLifecycleEntries(
-    audit.entries,
-    options.taskId
-  );
+  const cwd = resolve(options.cwd ?? process.cwd());
+  const resolvedState = requireRunsteadStateDbSync(cwd);
+  const database = openRunsteadDatabase(resolvedState.stateDb);
 
-  return {
-    root: audit.root,
-    stateDb: audit.stateDb,
-    taskId: options.taskId,
-    relatedIds,
-    entries
-  };
+  try {
+    const { entries, relatedIds } = collectAuditLifecycleEntriesFromDatabase(
+      database,
+      options.taskId
+    );
+
+    return {
+      root: resolvedState.root,
+      stateDb: resolvedState.stateDb,
+      taskId: options.taskId,
+      relatedIds,
+      entries
+    };
+  } finally {
+    database.close();
+  }
 }
 
 export function formatAuditReplay(result: ReplayAuditLifecycleResult): string {
@@ -142,23 +145,30 @@ export function formatAuditReplay(result: ReplayAuditLifecycleResult): string {
   ].join("\n");
 }
 
-function collectAuditLifecycleEntries(
-  entries: AuditLogEntry[],
+function collectAuditLifecycleEntriesFromDatabase(
+  database: ReturnType<typeof openRunsteadDatabase>,
   taskId: string
 ): { entries: AuditLogEntry[]; relatedIds: string[] } {
   const relatedIds = new Set<string>([taskId]);
   const selectedIds = new Set<number>();
+  const selectedEntries = new Map<number, AuditLogEntry>();
   let changed = true;
 
   while (changed) {
     changed = false;
+    const entries = readAuditEntriesReferencingIds(
+      database,
+      relatedIds,
+      selectedIds
+    );
 
     for (const entry of entries) {
-      if (selectedIds.has(entry.id) || !entryReferencesAnyId(entry, relatedIds)) {
+      if (!entryReferencesAnyId(entry, relatedIds)) {
         continue;
       }
 
       selectedIds.add(entry.id);
+      selectedEntries.set(entry.id, entry);
       changed = true;
       relatedIds.add(entry.aggregateId);
 
@@ -169,7 +179,7 @@ function collectAuditLifecycleEntries(
   }
 
   return {
-    entries: entries.filter((entry) => selectedIds.has(entry.id)),
+    entries: [...selectedEntries.values()].sort((left, right) => left.id - right.id),
     relatedIds: [...relatedIds].sort()
   };
 }
@@ -216,18 +226,85 @@ function isReferenceIdKey(key: string): boolean {
   return key === "id" || key.endsWith("Id") || key.endsWith("Ids");
 }
 
-function readAuditEntries(database: ReturnType<typeof openRunsteadDatabase>) {
+function readAuditEntries(
+  database: ReturnType<typeof openRunsteadDatabase>,
+  options: ExportAuditLogOptions = {}
+): AuditLogEntry[] {
+  const clauses: string[] = [];
+  const params: string[] = [];
+
+  if (options.types !== undefined && options.types.length > 0) {
+    clauses.push(`type IN (${options.types.map(() => "?").join(", ")})`);
+    params.push(...options.types);
+  }
+
+  if (options.aggregateType !== undefined) {
+    clauses.push("aggregate_type = ?");
+    params.push(options.aggregateType);
+  }
+
+  if (options.aggregateId !== undefined) {
+    clauses.push("aggregate_id = ?");
+    params.push(options.aggregateId);
+  }
+
+  const where = clauses.length === 0 ? "" : `WHERE ${clauses.join(" AND ")}`;
   const rows = database
     .prepare(
       `
       SELECT id, event_id, type, aggregate_type, aggregate_id, payload_json,
              created_at
       FROM events
+      ${where}
       ORDER BY id ASC
     `
     )
-    .all() as unknown as AuditEventRow[];
+    .all(...params) as unknown as AuditEventRow[];
 
+  return auditRowsToEntries(rows);
+}
+
+function readAuditEntriesReferencingIds(
+  database: ReturnType<typeof openRunsteadDatabase>,
+  ids: Set<string>,
+  selectedIds: Set<number>
+): AuditLogEntry[] {
+  const referenceIds = [...ids];
+
+  if (referenceIds.length === 0) {
+    return [];
+  }
+
+  const excludedIds = [...selectedIds];
+  const excludedClause =
+    excludedIds.length === 0
+      ? ""
+      : `id NOT IN (${excludedIds.map(() => "?").join(", ")}) AND`;
+  const aggregateClause = `aggregate_id IN (${referenceIds.map(() => "?").join(", ")})`;
+  const payloadClauses = referenceIds
+    .map(() => "payload_json LIKE ? ESCAPE '\\'")
+    .join(" OR ");
+  const params = [
+    ...excludedIds,
+    ...referenceIds,
+    ...referenceIds.map((id) => `%${escapeSqlLike(id)}%`)
+  ];
+  const rows = database
+    .prepare(
+      `
+      SELECT id, event_id, type, aggregate_type, aggregate_id, payload_json,
+             created_at
+      FROM events
+      WHERE ${excludedClause} (${aggregateClause} OR ${payloadClauses})
+      ORDER BY id ASC
+    `
+    )
+    .all(...params) as unknown as AuditEventRow[];
+
+  return auditRowsToEntries(rows);
+}
+
+function auditRowsToEntries(rows: AuditEventRow[]): AuditLogEntry[] {
   return rows.map((row) => ({
     id: row.id,
     eventId: row.event_id,
@@ -239,30 +316,8 @@ function readAuditEntries(database: ReturnType<typeof openRunsteadDatabase>) {
   }));
 }
 
-function matchesAuditFilters(
-  entry: AuditLogEntry,
-  options: ExportAuditLogOptions
-): boolean {
-  if (
-    options.types !== undefined &&
-    options.types.length > 0 &&
-    !options.types.includes(entry.type)
-  ) {
-    return false;
-  }
-
-  if (
-    options.aggregateType !== undefined &&
-    entry.aggregateType !== options.aggregateType
-  ) {
-    return false;
-  }
-
-  if (options.aggregateId !== undefined && entry.aggregateId !== options.aggregateId) {
-    return false;
-  }
-
-  return true;
+function escapeSqlLike(value: string): string {
+  return value.replaceAll("\\", "\\\\").replaceAll("%", "\\%").replaceAll("_", "\\_");
 }
 
 function auditPayloadSummary(payload: unknown): string {
