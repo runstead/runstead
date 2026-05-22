@@ -112,7 +112,10 @@ describe("startup readiness run model", () => {
         ["build_mvp", "passed"],
         ["verifiers", "passed"]
       ]);
-      expect(result.run.evidenceIds.length).toBeGreaterThanOrEqual(2);
+      expect(
+        result.run.phases.find((phase) => phase.id === "verifiers")?.evidenceIds
+      ).toHaveLength(4);
+      expect(result.run.evidenceIds.length).toBeGreaterThanOrEqual(6);
       expect(persisted).toEqual(result.run);
     } finally {
       await rm(workspace, { force: true, recursive: true });

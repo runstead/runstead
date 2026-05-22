@@ -423,6 +423,7 @@ function verifierPhaseUpdate(
 
   return {
     status: run.status === "completed" ? "passed" : "blocked",
+    evidenceIds: run.commandResults.map((result) => result.evidenceId),
     blockers: failed.map((result) => `${result.verifier} verifier failed`),
     nextAction:
       failed.length === 0
