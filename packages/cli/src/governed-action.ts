@@ -7,6 +7,7 @@ import type {
   WorkerRun
 } from "@runstead/core";
 import {
+  assertRunsteadDatabasePath,
   appendEventsAndProjects,
   type AppendEventAndProjectInput,
   type RunsteadDatabase
@@ -74,6 +75,8 @@ export class ToolActionApprovalRequiredError extends Error {
 export async function runGovernedToolAction<T>(
   options: RunGovernedToolActionOptions<T>
 ): Promise<RunGovernedToolActionResult<T>> {
+  assertRunsteadDatabasePath(options.database, options.stateDb);
+
   const preflight = preflightToolAction({
     policy: options.policy,
     action: options.action

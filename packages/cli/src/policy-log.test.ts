@@ -152,4 +152,58 @@ describe("recordPolicyDecision", () => {
       await rm(workspace, { force: true, recursive: true });
     }
   });
+
+  it("can write through a caller-owned state database and rejects drift", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-policy-owned-db-"));
+    const stateDb = join(workspace, ".runstead", "state.db");
+    const otherStateDb = join(workspace, ".runstead", "other.db");
+    const policy = createExternalWriteApprovalPolicy();
+    const action = {
+      actionId: "act_external_write_owned_db",
+      actionType: "github.pr.create",
+      context: {
+        sideEffects: ["github_pr_create"]
+      }
+    };
+    const result = evaluatePolicy({ policy, action });
+
+    try {
+      const database = openRunsteadDatabase(stateDb);
+
+      try {
+        const recorded = recordPolicyDecision({
+          database,
+          stateDb,
+          policyId: policy.id,
+          action,
+          result,
+          now: new Date("2026-05-14T03:09:00.000Z")
+        });
+
+        expect(recorded.stateDb).toBe(stateDb);
+        expect(
+          database
+            .prepare("SELECT COUNT(*) AS count FROM policy_decisions")
+            .get()
+        ).toEqual({ count: 1 });
+        expect(() =>
+          recordPolicyDecision({
+            database,
+            stateDb: otherStateDb,
+            policyId: policy.id,
+            action: {
+              ...action,
+              actionId: "act_external_write_wrong_db"
+            },
+            result,
+            now: new Date("2026-05-14T03:10:00.000Z")
+          })
+        ).toThrow("Runstead database mismatch");
+      } finally {
+        database.close();
+      }
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
 });

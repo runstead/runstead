@@ -17,6 +17,53 @@ import { loadPolicyProfileFromFile } from "./policy-loader.js";
 import { startWorkerRun } from "./runtime-audit.js";
 
 describe("runGovernedToolAction", () => {
+  it("rejects a database handle that does not match the declared stateDb", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-governed-db-"));
+    const otherWorkspace = await mkdtemp(join(tmpdir(), "runstead-governed-db-other-"));
+
+    try {
+      const initialized = await initRunstead({ cwd: workspace });
+      const otherInitialized = await initRunstead({ cwd: otherWorkspace });
+      const task = await firstGeneratedTask(workspace);
+      const policy = await loadPolicyProfileFromFile(
+        join(initialized.root, "policies", "repo-maintenance.yaml")
+      );
+      const database = openRunsteadDatabase(otherInitialized.stateDb);
+
+      try {
+        await expect(
+          runGovernedToolAction({
+            cwd: workspace,
+            stateDb: initialized.stateDb,
+            database,
+            policy,
+            task,
+            workerRun: {
+              id: "wrun_wrong_db",
+              taskId: task.id,
+              workerType: "test_worker",
+              status: "running",
+              enforcementLevel: "policy_enforced",
+              startedAt: "2026-05-14T11:50:00.000Z"
+            },
+            action: {
+              actionId: "act_wrong_db",
+              actionType: "git.diff"
+            },
+            requestedBy: "test",
+            now: new Date("2026-05-14T11:50:01.000Z"),
+            run: () => Promise.resolve({ value: "ok" })
+          })
+        ).rejects.toThrow("Runstead database mismatch");
+      } finally {
+        database.close();
+      }
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+      await rm(otherWorkspace, { force: true, recursive: true });
+    }
+  });
+
   it("records policy and tool call audit for allowed actions", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "runstead-governed-action-"));
 

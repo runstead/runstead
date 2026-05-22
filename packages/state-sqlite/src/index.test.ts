@@ -6,10 +6,12 @@ import { describe, expect, it } from "vitest";
 
 import {
   RUNSTEAD_SCHEMA_VERSION,
+  assertRunsteadDatabasePath,
   appendEventAndProject,
   appendEventsAndProjects,
   formatRunsteadSchemaValidation,
   openRunsteadDatabase,
+  readRunsteadDatabasePath,
   validateRunsteadDatabaseSchema
 } from "./index.js";
 
@@ -142,6 +144,28 @@ describe("openRunsteadDatabase", () => {
       expect(formatRunsteadSchemaValidation(validation)).toContain(
         "sqlite user_version 1, expected 2"
       );
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("reports and verifies the backing SQLite file identity", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-state-"));
+
+    try {
+      const stateDb = join(workspace, "state.db");
+      const otherStateDb = join(workspace, "other.db");
+      const database = openRunsteadDatabase(stateDb);
+
+      try {
+        expect(readRunsteadDatabasePath(database)).toMatch(/state\.db$/);
+        expect(() => assertRunsteadDatabasePath(database, stateDb)).not.toThrow();
+        expect(() => assertRunsteadDatabasePath(database, otherStateDb)).toThrow(
+          "Runstead database mismatch"
+        );
+      } finally {
+        database.close();
+      }
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }

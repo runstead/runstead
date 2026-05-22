@@ -7,23 +7,35 @@ import {
   type RunsteadEvent
 } from "@runstead/core";
 import {
+  assertRunsteadDatabasePath,
   appendEventAndProject,
   openRunsteadDatabase,
-  type AppendEventAndProjectInput
+  type AppendEventAndProjectInput,
+  type RunsteadDatabase
 } from "@runstead/state-sqlite";
 
 import type { ActionEnvelope, PolicyEvaluationResult } from "./policy.js";
 import { requireRunsteadStateDbSync } from "./runstead-root.js";
 
-export interface RecordPolicyDecisionOptions {
-  cwd?: string;
-  stateDb?: string;
+interface RecordPolicyDecisionBaseOptions {
   policyId: string;
   policyFingerprint?: string;
   action: ActionEnvelope;
   result: PolicyEvaluationResult;
   now?: Date;
 }
+
+export type RecordPolicyDecisionOptions =
+  | (RecordPolicyDecisionBaseOptions & {
+      cwd?: string;
+      stateDb?: string;
+      database?: never;
+    })
+  | (RecordPolicyDecisionBaseOptions & {
+      cwd?: string;
+      stateDb: string;
+      database: RunsteadDatabase;
+    });
 
 export interface RecordPolicyDecisionResult {
   decision: PolicyDecisionRecord;
@@ -38,7 +50,7 @@ export interface PolicyDecisionTransition {
 }
 
 export function createPolicyDecisionTransition(
-  options: Omit<RecordPolicyDecisionOptions, "cwd" | "stateDb">
+  options: RecordPolicyDecisionBaseOptions
 ): PolicyDecisionTransition {
   const createdAt = (options.now ?? new Date()).toISOString();
   const decision: PolicyDecisionRecord = {
@@ -84,9 +96,21 @@ export function createPolicyDecisionTransition(
 export function recordPolicyDecision(
   options: RecordPolicyDecisionOptions
 ): RecordPolicyDecisionResult {
+  const transition = createPolicyDecisionTransition(options);
+
+  if (options.database !== undefined) {
+    assertRunsteadDatabasePath(options.database, options.stateDb);
+    appendEventAndProject(options.database, transition.entry);
+
+    return {
+      decision: transition.decision,
+      event: transition.event,
+      stateDb: options.stateDb
+    };
+  }
+
   const cwd = resolve(options.cwd ?? process.cwd());
   const stateDb = options.stateDb ?? requireRunsteadStateDbSync(cwd).stateDb;
-  const transition = createPolicyDecisionTransition(options);
   const database = openRunsteadDatabase(stateDb);
 
   try {
