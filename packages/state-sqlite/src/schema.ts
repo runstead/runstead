@@ -1,4 +1,21 @@
-export const createSchemaSql = `
+export const RUNSTEAD_SCHEMA_VERSION = 1;
+
+export interface RunsteadSchemaMigration {
+  version: number;
+  name: string;
+  sql: string;
+}
+
+export const schemaMigrationsTableSql = `
+CREATE TABLE IF NOT EXISTS schema_migrations (
+  version INTEGER PRIMARY KEY,
+  name TEXT NOT NULL,
+  checksum TEXT NOT NULL,
+  applied_at TEXT NOT NULL
+);
+`;
+
+export const initialSchemaSql = `
 CREATE TABLE IF NOT EXISTS goals (
   id TEXT PRIMARY KEY,
   domain TEXT NOT NULL,
@@ -136,3 +153,13 @@ CREATE TABLE IF NOT EXISTS events (
   created_at TEXT NOT NULL
 );
 `;
+
+export const runsteadSchemaMigrations: RunsteadSchemaMigration[] = [
+  {
+    version: 1,
+    name: "initial_state_schema",
+    sql: initialSchemaSql
+  }
+];
+
+export const createSchemaSql = `${schemaMigrationsTableSql}\n${initialSchemaSql}`;

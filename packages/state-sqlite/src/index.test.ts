@@ -4,7 +4,11 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { appendEventAndProject, openRunsteadDatabase } from "./index.js";
+import {
+  RUNSTEAD_SCHEMA_VERSION,
+  appendEventAndProject,
+  openRunsteadDatabase
+} from "./index.js";
 
 describe("openRunsteadDatabase", () => {
   it("creates the v0 state tables", async () => {
@@ -29,9 +33,42 @@ describe("openRunsteadDatabase", () => {
           "tool_calls",
           "memory_records",
           "repositories",
-          "events"
+          "events",
+          "schema_migrations"
         ])
       );
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("records schema migrations and SQLite user_version", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-state-"));
+
+    try {
+      const database = openRunsteadDatabase(join(workspace, "state.db"));
+      const migrations = database
+        .prepare(
+          `
+          SELECT version, name, checksum
+          FROM schema_migrations
+          ORDER BY version ASC
+        `
+        )
+        .all() as { version: number; name: string; checksum: string }[];
+      const userVersion = database.prepare("PRAGMA user_version").get() as {
+        user_version: number;
+      };
+
+      database.close();
+
+      expect(migrations).toHaveLength(1);
+      expect(migrations[0]).toMatchObject({
+        version: 1,
+        name: "initial_state_schema"
+      });
+      expect(migrations[0]?.checksum).toMatch(/^[a-f0-9]{64}$/);
+      expect(userVersion.user_version).toBe(RUNSTEAD_SCHEMA_VERSION);
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }
