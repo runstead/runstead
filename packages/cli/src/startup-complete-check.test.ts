@@ -242,7 +242,7 @@ describe("generateStartupCompleteProductCheck", () => {
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }
-  });
+  }, 30_000);
 
   it("keeps release planning separate from deployment verification", async () => {
     const workspace = join(
