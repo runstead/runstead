@@ -76,7 +76,7 @@ export async function prepareStartupRepoOnboarding(
         })
       : {
           changed: false,
-          skippedReason: "pass --write-ci to generate GitHub Actions verifier workflow"
+          skippedReason: "pass --write-ci to generate GitHub Actions readiness workflow"
         };
 
   return {
@@ -251,19 +251,37 @@ async function ensureStartupCi(input: {
 }
 
 function startupCiYaml(verifierContract: StartupVerifierCommand[]): string {
+  const verifierCommands = verifierContract.map(
+    (item) => `# detected ${item.name}: ${item.command}`
+  );
+
   return [
-    "name: Runstead Startup Verifiers",
+    "name: Runstead Startup Readiness",
     "",
     "on:",
     "  push:",
     "  pull_request:",
     "",
+    "permissions:",
+    "  contents: read",
+    "  pull-requests: write",
+    "",
     "jobs:",
-    "  verify:",
+    "  readiness:",
     "    runs-on: ubuntu-latest",
     "    steps:",
     "      - uses: actions/checkout@v4",
-    ...verifierContract.map((item) => `      - run: ${item.command}`),
+    "      - name: Run startup readiness",
+    "        run: runstead startup ready --stage launch --target local --ci",
+    "      - name: Upload Runstead readiness artifacts",
+    "        uses: actions/upload-artifact@v4",
+    "        if: always()",
+    "        with:",
+    "          name: runstead-startup-readiness",
+    "          path: |",
+    "            .runstead/reports/startup-readiness-run-*",
+    "            .runstead/reports/runstead-startup-ci-summary.*",
+    ...verifierCommands.map((command) => `    ${command}`),
     ""
   ].join("\n");
 }

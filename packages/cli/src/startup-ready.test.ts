@@ -90,6 +90,7 @@ describe("startup readiness run model", () => {
         stage: "mvp",
         target: "local",
         worker: "codex_cli",
+        ci: true,
         workerRunner: () =>
           Promise.resolve({
             stdout: JSON.stringify({
@@ -123,8 +124,15 @@ describe("startup readiness run model", () => {
       ).toHaveLength(4);
       expect(result.run.evidenceIds.length).toBeGreaterThanOrEqual(6);
       expect(result.run.evidenceTiers).toContain("local_command");
+      expect(result.run.evidenceTiers).toContain("ci_verified");
       expect(result.run.verdict).toBe("local_launch_ready");
       expect(result.run.verdictBlockers).toEqual([]);
+      expect(result.run.reportPaths).toEqual(
+        expect.arrayContaining([
+          join(workspace, ".runstead", "reports", "runstead-startup-ci-summary.md"),
+          join(workspace, ".runstead", "reports", "runstead-startup-ci-summary.json")
+        ])
+      );
       expect(decisionReport).toBeDefined();
       await expect(readFile(decisionReport ?? "", "utf8")).resolves.toContain(
         "## Can this launch?"

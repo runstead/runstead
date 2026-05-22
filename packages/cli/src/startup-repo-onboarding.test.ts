@@ -42,8 +42,10 @@ describe("startup repo onboarding", () => {
         { name: "typecheck", command: "npm run typecheck", detected: false },
         { name: "build", command: "npm run build", detected: false }
       ]);
-      expect(ci).toContain("name: Runstead Startup Verifiers");
-      expect(ci).toContain("npm run build");
+      expect(ci).toContain("name: Runstead Startup Readiness");
+      expect(ci).toContain("runstead startup ready --stage launch --target local --ci");
+      expect(ci).toContain(".runstead/reports/runstead-startup-ci-summary.*");
+      expect(ci).toContain("# detected build: npm run build");
       expect(formatted).toContain("Empty repo: yes");
       expect(formatted).toContain("First commit commands:");
     } finally {

@@ -10,6 +10,7 @@ import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import { collectRepoInspection } from "./inspection-evidence.js";
 import type { LocalAgentWorkerKind } from "./local-agent.js";
 import { requireRunsteadStateDb, resolveRunsteadRoot } from "./runstead-root.js";
+import { generateStartupCiSummary } from "./startup-ci-integration.js";
 import { detectStartupDevServerCommand } from "./startup-dev-server.js";
 import {
   startupBuildMvp,
@@ -232,11 +233,21 @@ export async function runStartupReady(
     throw error;
   }
 
-  const finalRun = await finalizeRun(run, options.now ?? new Date());
-  const reportedRun = await writeStartupReadinessDecisionReport(
+  const finalRun = await finalizeRun(run, options.now ?? new Date(), {
+    extraEvidenceTiers: options.ci === true ? ["ci_verified"] : []
+  });
+  let reportedRun = await writeStartupReadinessDecisionReport(
     finalRun,
     options.now ?? new Date()
   );
+
+  if (options.ci === true) {
+    reportedRun = await writeStartupReadinessCiOutputs(
+      reportedRun,
+      options.now ?? new Date()
+    );
+  }
+
   const finalPersisted = await writeStartupReadinessRun(reportedRun);
 
   return {
@@ -760,12 +771,14 @@ function verifierPhaseUpdate(
 
 async function finalizeRun(
   run: StartupReadinessRun,
-  now: Date
+  now: Date,
+  options: { extraEvidenceTiers?: StartupReadinessEvidenceTier[] } = {}
 ): Promise<StartupReadinessRun> {
   const recordedEvidence = await collectRecordedStartupReadinessEvidence(run.cwd);
   const evidenceTiers = uniqueEvidenceTiers([
     ...inferPhaseEvidenceTiers(run),
-    ...recordedEvidence.evidenceTiers
+    ...recordedEvidence.evidenceTiers,
+    ...(options.extraEvidenceTiers ?? [])
   ]);
   const verdict = evaluateStartupReadinessVerdict({
     run,
@@ -850,6 +863,59 @@ async function writeStartupReadinessDecisionReport(
   collectRunEvidence(run);
 
   return run;
+}
+
+async function writeStartupReadinessCiOutputs(
+  run: StartupReadinessRun,
+  now: Date
+): Promise<StartupReadinessRun> {
+  const ci = await generateStartupCiSummary({
+    cwd: run.cwd,
+    stage: startupReadyStageToGateStage(run.stage),
+    checkName: "Runstead Startup Readiness",
+    now
+  });
+
+  run.reportPaths = unique([...run.reportPaths, ci.markdownPath, ci.jsonPath]);
+  if (!run.evidenceTiers.includes("ci_verified")) {
+    run.evidenceTiers = [...run.evidenceTiers, "ci_verified"];
+  }
+
+  const reportPhaseId = hasPhase(run, "launch_report")
+    ? "launch_report"
+    : hasPhase(run, "complete_check")
+      ? "complete_check"
+      : undefined;
+
+  if (reportPhaseId !== undefined) {
+    const reportPhase = run.phases.find((phase) => phase.id === reportPhaseId);
+
+    updatePhase(run, reportPhaseId, {
+      artifacts: unique([
+        ...(reportPhase?.artifacts ?? []),
+        ci.markdownPath,
+        ci.jsonPath
+      ])
+    });
+  }
+
+  collectRunEvidence(run);
+
+  return run;
+}
+
+function startupReadyStageToGateStage(
+  stage: StartupReadyStage
+): "mvp" | "launch" | "scale" {
+  if (stage === "mvp") {
+    return "mvp";
+  }
+
+  if (stage === "scale") {
+    return "scale";
+  }
+
+  return "launch";
 }
 
 function startupReadinessDecisionMatrix(run: StartupReadinessRun): {
