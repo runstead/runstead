@@ -734,7 +734,7 @@ function parseStartupReadyUiSmokeConfig(
     throw new Error(`UI smoke config must be a YAML object: ${path}`);
   }
 
-  const server = isRecord(parsed.server) ? parsed.server : undefined;
+  const server = startupReadyUiSmokeServerObject(parsed);
   const checks = Array.isArray(parsed.checks) ? parsed.checks : [];
 
   if (server === undefined) {
@@ -742,8 +742,8 @@ function parseStartupReadyUiSmokeConfig(
   }
 
   const command = stringValue(server.command);
-  const port = numberValue(server.port);
   const url = stringValue(server.url);
+  const port = numberValue(server.port) ?? portFromUrl(url);
   const timeoutMs = numberValue(server.timeoutMs);
 
   if (command === undefined || port === undefined) {
@@ -770,6 +770,29 @@ function parseStartupReadyUiSmokeConfig(
   };
 }
 
+function startupReadyUiSmokeServerObject(
+  parsed: Record<string, unknown>
+): Record<string, unknown> | undefined {
+  if (isRecord(parsed.server)) {
+    return parsed.server;
+  }
+
+  const startup = isRecord(parsed.startup) ? parsed.startup : undefined;
+
+  if (startup === undefined) {
+    return undefined;
+  }
+
+  const readyWhen = isRecord(startup.readyWhen) ? startup.readyWhen : undefined;
+
+  return {
+    command: startup.run,
+    url: readyWhen?.url,
+    port: readyWhen?.port,
+    timeoutMs: startup.timeoutMs ?? readyWhen?.timeoutMs
+  };
+}
+
 function parseStartupReadyUiSmokeCheck(
   input: unknown,
   index: number,
@@ -780,10 +803,15 @@ function parseStartupReadyUiSmokeCheck(
   }
 
   const name = stringValue(input.name) ?? `check-${index + 1}`;
-  const expectText = arrayOfStrings(input.expectText);
-  const url = stringValue(input.url);
+  const legacyRequest = isRecord(input.request) ? input.request : undefined;
+  const legacyExpect = isRecord(input.expect) ? input.expect : undefined;
+  const expectText = [
+    ...arrayOfStrings(input.expectText),
+    ...arrayOfStrings(legacyExpect?.bodyContains)
+  ];
+  const url = stringValue(input.url) ?? stringValue(legacyRequest?.url);
   const viewport = stringValue(input.viewport);
-  const flow = stringValue(input.flow);
+  const flow = stringValue(input.flow) ?? stringValue(input.description);
   const timeoutMs = numberValue(input.timeoutMs);
 
   return {
@@ -794,6 +822,32 @@ function parseStartupReadyUiSmokeCheck(
     ...(flow === undefined ? {} : { flow }),
     ...(timeoutMs === undefined ? {} : { timeoutMs })
   };
+}
+
+function portFromUrl(url: string | undefined): number | undefined {
+  if (url === undefined) {
+    return undefined;
+  }
+
+  try {
+    const parsed = new URL(url);
+
+    if (parsed.port.length > 0) {
+      return Number(parsed.port);
+    }
+
+    if (parsed.protocol === "http:") {
+      return 80;
+    }
+
+    if (parsed.protocol === "https:") {
+      return 443;
+    }
+
+    return undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function verifierPhaseUpdate(

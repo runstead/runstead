@@ -446,6 +446,103 @@ describe("startup readiness run model", () => {
       await rm(workspace, { force: true, recursive: true });
     }
   }, 60_000);
+
+  it("accepts legacy agent-generated UI smoke config shape", async () => {
+    const workspace = join(tmpdir(), `runstead-startup-ready-legacy-ui-${process.pid}`);
+    const port = await availablePort();
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await mkdir(join(workspace, ".runstead", "startup"), { recursive: true });
+      await writeFile(
+        join(workspace, "package.json"),
+        `${JSON.stringify(
+          {
+            name: "startup-ready-legacy-ui-fixture",
+            private: true,
+            scripts: {
+              test: 'node -e "process.exit(0)"',
+              lint: 'node -e "process.exit(0)"',
+              typecheck: 'node -e "process.exit(0)"',
+              build: 'node -e "process.exit(0)"'
+            }
+          },
+          null,
+          2
+        )}\n`,
+        "utf8"
+      );
+      await writeFile(
+        join(workspace, "server.mjs"),
+        [
+          "import http from 'node:http';",
+          "const html = '<!doctype html><html><body><main><h1>Todo app</h1><button>Clear completed</button></main></body></html>';",
+          "const server = http.createServer((_request, response) => {",
+          "  response.writeHead(200, { 'content-type': 'text/html' });",
+          "  response.end(html);",
+          "});",
+          "server.listen(Number(process.env.PORT), '127.0.0.1');",
+          "process.on('SIGTERM', () => server.close(() => process.exit(0)));"
+        ].join("\n"),
+        "utf8"
+      );
+      await writeFile(
+        join(workspace, ".runstead", "startup", "ui-smoke.yaml"),
+        [
+          "version: 1",
+          "name: todo-ui-smoke",
+          "startup:",
+          "  run: node server.mjs",
+          "  readyWhen:",
+          `    url: http://127.0.0.1:${port}`,
+          "    status: 200",
+          "checks:",
+          "  - name: todo-text-visible",
+          "    request:",
+          `      url: http://127.0.0.1:${port}`,
+          "      method: GET",
+          "    expect:",
+          "      status: 200",
+          "      bodyContains:",
+          "        - Todo app",
+          "        - Clear completed",
+          ""
+        ].join("\n"),
+        "utf8"
+      );
+
+      const result = await runStartupReady({
+        cwd: workspace,
+        stage: "launch",
+        target: "local",
+        worker: "codex_cli",
+        maxAttempts: 1,
+        workerRunner: () =>
+          Promise.resolve({
+            stdout: JSON.stringify({
+              summary: "built launch fixture",
+              files_changed: [],
+              commands_run: [],
+              risks: [],
+              needs_approval: false,
+              approval_reason: null
+            }),
+            stderr: "",
+            exitCode: 0
+          }),
+        now: new Date("2026-05-22T01:35:00.000Z")
+      });
+      const uiPhase = result.run.phases.find((phase) => phase.id === "ui_smoke");
+
+      expect(uiPhase).toMatchObject({
+        status: "passed",
+        blockers: []
+      });
+      expect(uiPhase?.evidenceIds).toHaveLength(1);
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  }, 60_000);
 });
 
 function availablePort(): Promise<number> {

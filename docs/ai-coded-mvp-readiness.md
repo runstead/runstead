@@ -102,6 +102,11 @@ If the file is missing but a `dev`, `start`, or `preview` script exists,
 Runstead creates a default config. If no server command can be found, the UI
 phase becomes a blocker rather than a silent skip.
 
+For compatibility with older agent-generated configs, Runstead also accepts the
+legacy `startup.run` / `startup.readyWhen.url` shape and
+`checks[].expect.bodyContains`. New configs should use `server` and
+`expectText`.
+
 ## Evidence Tiers
 
 Runstead separates local evidence from launch-grade evidence:
