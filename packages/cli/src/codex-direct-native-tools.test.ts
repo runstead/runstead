@@ -6,11 +6,53 @@ import { describe, expect, it } from "vitest";
 
 import {
   applyWorkspacePatch,
+  inferWorkspacePatchTouchedFiles,
   readManyWorkspaceFiles,
   searchWorkspaceText
 } from "./codex-direct-native-tools.js";
 
 describe("codex direct native tools", () => {
+  it("infers touched files from unified diffs, replacements, and codex patch syntax", () => {
+    expect(
+      inferWorkspacePatchTouchedFiles({
+        patch: [
+          "diff --git a/src/old.ts b/src/new.ts",
+          "--- a/src/old.ts",
+          "+++ b/src/new.ts",
+          "@@ -1 +1 @@",
+          "-old",
+          "+new"
+        ].join("\n")
+      })
+    ).toEqual(["src/old.ts", "src/new.ts"]);
+
+    expect(
+      inferWorkspacePatchTouchedFiles({
+        replacements: [
+          { path: "./src/app.ts", search: "old", replace: "new" },
+          { path: "src/app.ts", search: "again", replace: "done" }
+        ]
+      })
+    ).toEqual(["src/app.ts"]);
+
+    expect(
+      inferWorkspacePatchTouchedFiles({
+        patch: [
+          "*** Begin Patch",
+          "*** Add File: package.json",
+          "+{}",
+          "*** Update File: src/app.js",
+          "@@",
+          "-old",
+          "+new",
+          "*** Move to: src/main.js",
+          "*** Delete File: src/old.js",
+          "*** End Patch"
+        ].join("\n")
+      })
+    ).toEqual(["package.json", "src/app.js", "src/main.js", "src/old.js"]);
+  });
+
   it("reports symlink escapes for multi-file reads and rejects structured patches", async () => {
     const root = await mkdtemp(join(tmpdir(), "runstead-native-tools-"));
 

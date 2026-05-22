@@ -353,6 +353,25 @@ export async function applyWorkspacePatch(
   throw new Error("apply_patch requires patch or replacements");
 }
 
+export function inferWorkspacePatchTouchedFiles(
+  options: ApplyWorkspacePatchOptions
+): string[] {
+  if (options.replacements !== undefined) {
+    return uniqueStrings(
+      options.replacements.map((replacement) => normalizePath(replacement.path))
+    );
+  }
+
+  if (options.patch !== undefined) {
+    return uniqueStrings([
+      ...parseUnifiedDiffTouchedFiles(options.patch),
+      ...parseCodexApplyPatchTouchedFiles(options.patch)
+    ]);
+  }
+
+  return [];
+}
+
 export async function inspectWorkspacePath(
   cwd: string,
   options: WorkspaceFileInfoOptions
@@ -1027,6 +1046,29 @@ function parseUnifiedDiffTouchedFiles(patch: string): string[] {
           paths.push(normalized);
         }
       }
+    }
+  }
+
+  return uniqueStrings(paths);
+}
+
+function parseCodexApplyPatchTouchedFiles(patch: string): string[] {
+  const paths: string[] = [];
+
+  for (const line of patch.split(/\r?\n/)) {
+    const fileMatch = line.match(
+      /^\*\*\* (?:Add|Update|Delete) File:\s*(?<path>.+?)\s*$/
+    );
+
+    if (fileMatch?.groups?.path !== undefined) {
+      paths.push(normalizePath(fileMatch.groups.path));
+      continue;
+    }
+
+    const moveMatch = line.match(/^\*\*\* Move to:\s*(?<path>.+?)\s*$/);
+
+    if (moveMatch?.groups?.path !== undefined) {
+      paths.push(normalizePath(moveMatch.groups.path));
     }
   }
 

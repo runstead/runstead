@@ -28,6 +28,7 @@ import {
 } from "./filesystem-proxy.js";
 import {
   applyWorkspacePatch,
+  inferWorkspacePatchTouchedFiles,
   inspectWorkspacePath,
   inspectPackageScripts,
   listWorkspaceFiles,
@@ -2270,17 +2271,14 @@ function optionalReplacementArray(value: unknown):
 
 function codexDirectPatchFilesTouched(input: {
   patch?: string;
-  replacements?: { path: string }[];
+  replacements?: {
+    path: string;
+    search: string;
+    replace: string;
+    replaceAll?: boolean;
+  }[];
 }): string[] {
-  if (input.replacements !== undefined) {
-    return [...new Set(input.replacements.map((replacement) => replacement.path))];
-  }
-
-  if (input.patch !== undefined) {
-    return [...new Set(parseCodexDirectPatchPaths(input.patch))];
-  }
-
-  return [];
+  return inferWorkspacePatchTouchedFiles(input);
 }
 
 async function resolveVerifierCommand(
@@ -2543,34 +2541,6 @@ function declaredVerifierCommands(task: Task): CommandVerifierInput[] {
 
 function previewText(value: string): string {
   return value.length <= 500 ? value : `${value.slice(0, 500)}...`;
-}
-
-function parseCodexDirectPatchPaths(patch: string): string[] {
-  return patch
-    .split(/\r?\n/)
-    .flatMap((line) => {
-      if (line.startsWith("+++ ")) {
-        return [normalizeCodexDirectDiffPath(line.slice(4).trim(), "b/")];
-      }
-
-      if (line.startsWith("--- ")) {
-        return [normalizeCodexDirectDiffPath(line.slice(4).trim(), "a/")];
-      }
-
-      return [];
-    })
-    .filter((path): path is string => path !== undefined);
-}
-
-function normalizeCodexDirectDiffPath(
-  path: string,
-  prefix: "a/" | "b/"
-): string | undefined {
-  if (path === "/dev/null") {
-    return undefined;
-  }
-
-  return path.startsWith(prefix) ? path.slice(prefix.length) : path;
 }
 
 function optionalPositiveInteger(value: unknown): number | undefined {
