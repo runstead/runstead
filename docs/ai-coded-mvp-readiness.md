@@ -70,6 +70,12 @@ It also writes reports under `.runstead/reports/`, including:
 - `startup-complete-product-check.md`
 - CI summary files when `--ci` is used
 
+The CI summary separates Runstead's local release gate from remote GitHub
+Actions state. When a GitHub `origin` and `HEAD` are available, Runstead queries
+the GitHub Actions API for the current commit. If the repo is private,
+unauthenticated, or no run exists yet, the remote state is recorded as `unknown`
+or `not_configured` instead of being treated as passed.
+
 The final surface answers:
 
 - Can this local demo launch?
