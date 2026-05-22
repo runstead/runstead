@@ -1,11 +1,31 @@
-import { resolve } from "node:path";
+import { randomUUID } from "node:crypto";
+import { execFile } from "node:child_process";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { join, resolve } from "node:path";
+import { promisify } from "node:util";
 
 import { collectRepoInspection } from "./inspection-evidence.js";
 import type { LocalAgentWorkerKind } from "./local-agent.js";
 import { resolveRunsteadRoot } from "./runstead-root.js";
 
+const execFileAsync = promisify(execFile);
+
 export type StartupReadyStage = "mvp" | "launch" | "scale" | "complete";
 export type StartupReadyTarget = "local" | "staging" | "production";
+export type StartupReadinessRunStatus =
+  | "planned"
+  | "running"
+  | "completed"
+  | "blocked"
+  | "failed";
+export type StartupReadinessPhaseStatus =
+  | "pending"
+  | "running"
+  | "passed"
+  | "blocked"
+  | "failed"
+  | "skipped";
+export type StartupReadinessDirtyState = "clean" | "dirty" | "unknown";
 
 export interface StartupReadyOptions {
   cwd?: string;
@@ -34,6 +54,38 @@ export interface StartupReadyPlanPhase {
   status: "pending" | "blocked" | "skipped";
   blockers: string[];
   nextAction?: string;
+}
+
+export interface StartupReadinessRun {
+  schemaVersion: 1;
+  id: string;
+  cwd: string;
+  stage: StartupReadyStage;
+  target: StartupReadyTarget;
+  worker: LocalAgentWorkerKind;
+  status: StartupReadinessRunStatus;
+  phases: StartupReadinessRunPhase[];
+  evidenceIds: string[];
+  reportPaths: string[];
+  startedAt: string;
+  completedAt?: string;
+  gitHead?: string;
+  dirtyState: StartupReadinessDirtyState;
+}
+
+export interface StartupReadinessRunPhase {
+  id: string;
+  title: string;
+  status: StartupReadinessPhaseStatus;
+  evidenceIds: string[];
+  artifacts: string[];
+  blockers: string[];
+  nextAction?: string;
+}
+
+export interface PersistedStartupReadinessRun {
+  run: StartupReadinessRun;
+  path: string;
 }
 
 export async function planStartupReady(
@@ -81,6 +133,70 @@ export async function runStartupReady(
   return planStartupReady(options);
 }
 
+export async function createStartupReadinessRun(
+  options: StartupReadyOptions = {}
+): Promise<PersistedStartupReadinessRun> {
+  const plan = await planStartupReady(options);
+  const startedAt = (options.now ?? new Date()).toISOString();
+  const git = await inspectGitState(plan.cwd);
+  const run: StartupReadinessRun = {
+    schemaVersion: 1,
+    id: `run_${randomUUID().replaceAll("-", "")}`,
+    cwd: plan.cwd,
+    stage: plan.stage,
+    target: plan.target,
+    worker: plan.worker,
+    status: "planned",
+    phases: plan.phases.map((phase) => ({
+      id: phase.id,
+      title: phase.title,
+      status: phase.status,
+      evidenceIds: [],
+      artifacts: [],
+      blockers: phase.blockers,
+      ...(phase.nextAction === undefined ? {} : { nextAction: phase.nextAction })
+    })),
+    evidenceIds: [],
+    reportPaths: [],
+    startedAt,
+    ...(git.head === undefined ? {} : { gitHead: git.head }),
+    dirtyState: git.dirtyState
+  };
+
+  return writeStartupReadinessRun(run);
+}
+
+export async function readStartupReadinessRun(input: {
+  cwd?: string;
+  runId: string;
+}): Promise<PersistedStartupReadinessRun> {
+  const cwd = resolve(input.cwd ?? process.cwd());
+  const root = await resolveRunsteadRoot(cwd);
+  const path = join(startupReadinessRunsDir(root.root), `${input.runId}.json`);
+  const parsed = JSON.parse(await readFile(path, "utf8")) as StartupReadinessRun;
+
+  return {
+    run: parsed,
+    path
+  };
+}
+
+export async function writeStartupReadinessRun(
+  run: StartupReadinessRun
+): Promise<PersistedStartupReadinessRun> {
+  const root = await resolveRunsteadRoot(run.cwd);
+  const dir = startupReadinessRunsDir(root.root);
+  const path = join(dir, `${run.id}.json`);
+
+  await mkdir(dir, { recursive: true });
+  await writeFile(path, `${JSON.stringify(run, null, 2)}\n`, "utf8");
+
+  return {
+    run,
+    path
+  };
+}
+
 export function formatStartupReadyPlan(plan: StartupReadyPlan): string {
   return [
     "Startup readiness plan",
@@ -95,6 +211,21 @@ export function formatStartupReadyPlan(plan: StartupReadyPlan): string {
       (phase, index) =>
         `${index + 1}. ${phase.title}: ${phase.status}${phase.blockers.length === 0 ? "" : ` (${phase.blockers.join("; ")})`}`
     )
+  ].join("\n");
+}
+
+export function formatStartupReadinessRun(run: StartupReadinessRun): string {
+  return [
+    `Runstead startup readiness run: ${run.id}`,
+    "",
+    ...run.phases.map(
+      (phase, index) => `${index + 1}. ${phase.title.padEnd(28)} ${phase.status}`
+    ),
+    "",
+    `Status: ${run.status}`,
+    `Target: ${run.target}`,
+    `Git head: ${run.gitHead ?? "unknown"}`,
+    `Dirty state: ${run.dirtyState}`
   ].join("\n");
 }
 
@@ -162,4 +293,36 @@ function phaseIncludedForStage(id: string, stage: StartupReadyStage): boolean {
   }
 
   return complete.has(id);
+}
+
+function startupReadinessRunsDir(root: string): string {
+  return join(root, "startup", "readiness-runs");
+}
+
+async function inspectGitState(
+  cwd: string
+): Promise<{ head?: string; dirtyState: StartupReadinessDirtyState }> {
+  try {
+    const [head, status] = await Promise.all([
+      execFileAsync("git", ["rev-parse", "--verify", "HEAD"], {
+        cwd,
+        encoding: "utf8",
+        timeout: 5_000
+      }),
+      execFileAsync("git", ["status", "--short"], {
+        cwd,
+        encoding: "utf8",
+        timeout: 5_000
+      })
+    ]);
+
+    return {
+      head: head.stdout.trim(),
+      dirtyState: status.stdout.trim().length === 0 ? "clean" : "dirty"
+    };
+  } catch {
+    return {
+      dirtyState: "unknown"
+    };
+  }
 }
