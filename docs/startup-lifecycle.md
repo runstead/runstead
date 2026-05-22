@@ -75,21 +75,20 @@ the first product surface.
 ## Current CLI Shape
 
 The startup workflow is now exposed through `runstead startup` aliases. The
-short founder path is:
+short founder path is the readiness orchestrator:
 
 ```sh
-runstead startup onboard --cwd /path/to/mvp --write-ci
-runstead startup build-mvp --cwd /path/to/mvp --worker codex_cli
-runstead startup gate check --cwd /path/to/mvp --stage mvp
-runstead startup launch-check --cwd /path/to/mvp
-runstead startup complete-check --cwd /path/to/mvp --print
+runstead startup ready --cwd /path/to/mvp --stage launch --worker codex_cli --target local
+runstead startup ready --cwd /path/to/mvp --stage launch --target production --plan
+runstead startup ready --cwd /path/to/mvp --resume <run-id>
 ```
 
 `codex_cli` is the recommended default worker for the founder-facing path.
 `codex_direct` is the strict-governance path when each model tool call must go
 through Runstead-native policy and audit.
 
-The artifact-first command surface remains available for precise evidence work:
+The artifact-first command surface remains available for precise evidence work
+before rerunning `startup ready`:
 
 ```sh
 runstead startup hypothesis add --cwd /path/to/mvp --kind problem --statement "..."
@@ -124,7 +123,8 @@ runstead startup gate check --cwd /path/to/mvp --stage scale
 ```
 
 See [ai-coded-mvp-readiness.md](ai-coded-mvp-readiness.md) for the complete
-runbook.
+runbook and [startup-ready-golden-path.md](startup-ready-golden-path.md) for the
+todo fixture dogfood path.
 
 ## Scope Discipline
 

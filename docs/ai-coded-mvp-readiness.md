@@ -1,327 +1,160 @@
 # AI-Coded MVP Readiness Runbook
 
-This runbook is the practical end-to-end path for using Runstead with an
-AI-coded MVP. It is intentionally evidence-first: the goal is not merely to make
-an agent write code, but to prove what is ready, what is missing, and what risk
-remains.
+Runstead's startup path is centered on one orchestrated readiness run. The goal
+is not to make an agent "finish"; it is to leave behind evidence, measurement,
+verifier output, UI smoke, reports, and a target-aware launch verdict.
 
-## 1. Onboard The Repository
+## Golden Command
 
-Run this in an empty or existing product repository:
-
-```bash
-runstead startup onboard \
-  --cwd /path/to/mvp \
-  --write-ci
-```
-
-Expected output:
-
-- `.runstead/` control-plane state
-- startup domain pack
-- agent context files such as `AGENTS.md`, `CLAUDE.md`, and `CODEX.md`
-- `MEASUREMENT.md` and structured measurement framework
-- GitHub Actions verifier workflow when `--write-ci` is used
-
-## 2. Build Or Repair The MVP
-
-Default to `codex_cli`:
+Use this as the default founder-facing path:
 
 ```bash
-runstead startup build-mvp \
+runstead startup ready \
   --cwd /path/to/mvp \
+  --stage launch \
   --worker codex_cli \
-  --dependency-policy deny-new \
-  --prompt "Build the MVP and satisfy test, lint, typecheck, and build."
+  --target local
 ```
 
-Use `deny-new` for a baseline MVP when the user wants a local-first,
-dependency-free or dependency-stable implementation.
+The run performs these phases:
 
-Use `codex_direct` only when strict tool-call governance is needed:
+1. onboard repository and initialize Runstead state
+2. generate agent context
+3. generate the measurement framework
+4. run bounded MVP build/repair with the selected worker
+5. discover and run `test`, `lint`, `typecheck`, and `build`
+6. read or create `.runstead/startup/ui-smoke.yaml` and execute UI smoke
+7. generate repo readiness and security audit evidence
+8. generate launch readiness and decision reports
+9. run the complete-product check
+
+Use `--plan` before a costly run:
 
 ```bash
-runstead agent run \
-  --cwd /path/to/mvp \
-  --worker codex_direct \
-  --mode repair \
-  --max-turns 40 \
-  --max-tool-calls 100 \
-  --max-failed-tool-calls 8 \
-  --denied ".git/**" \
-  --denied ".runstead/**" \
-  --verifier "test=npm test" \
-  --verifier "lint=npm run lint" \
-  --verifier "typecheck=npm run typecheck" \
-  --verifier "build=npm run build" \
-  "Repair the repository contract without adding dependencies."
+runstead startup ready --cwd /path/to/mvp --stage launch --target production --plan
 ```
 
-## 3. Verify The Product Contract
-
-Run the product's local contract directly:
+Use `--resume` after interruption:
 
 ```bash
-npm test
-npm run lint
-npm run typecheck
-npm run build
+runstead startup ready --cwd /path/to/mvp --resume <run-id>
 ```
 
-Attach the same result to the Runstead verifier task:
+## Outputs
+
+The run persists a `StartupReadinessRun` under:
+
+```text
+.runstead/startup/readiness-runs/<run-id>.json
+```
+
+It also writes reports under `.runstead/reports/`, including:
+
+- `startup-readiness-run-<run-id>.md`
+- `startup-readiness-run-<run-id>.json`
+- `launch-readiness-ai-native-startup.md`
+- `startup-complete-product-check.md`
+- CI summary files when `--ci` is used
+
+The final surface answers:
+
+- Can this local demo launch?
+- Can this private beta or staging target launch?
+- Can this public launch ship?
+- What evidence or phase is blocking the requested target?
+- Which evidence ids, source artifacts, timestamps, git SHA, and command output
+  support the verdict?
+
+## UI Smoke
+
+`startup ready` looks for:
+
+```text
+.runstead/startup/ui-smoke.yaml
+```
+
+Example:
+
+```yaml
+schemaVersion: 1
+server:
+  command: npm run dev
+  port: 3000
+  url: http://127.0.0.1:3000
+  timeoutMs: 20000
+checks:
+  - name: home
+    url: http://127.0.0.1:3000
+    viewport: desktop
+    expectText:
+      - Dashboard
+      - Add task
+    flow: primary activation flow
+```
+
+If the file is missing but a `dev`, `start`, or `preview` script exists,
+Runstead creates a default config. If no server command can be found, the UI
+phase becomes a blocker rather than a silent skip.
+
+## Evidence Tiers
+
+Runstead separates local evidence from launch-grade evidence:
+
+- `synthetic_smoke`
+- `local_manual`
+- `local_command`
+- `ci_verified`
+- `staging_deployment`
+- `production_deployment`
+- `real_user_analytics`
+- `support_ticket`
+- `security_scan`
+
+`--target local` can return `local_launch_ready` from local command and UI
+evidence. `--target staging` additionally requires CI and staging deployment
+evidence. `--target production` requires production deployment, real analytics,
+support or feedback triage, security evidence, rollback, and observability
+evidence.
+
+## CI Integration
+
+Generate the workflow in the product repo:
 
 ```bash
-runstead task list --cwd /path/to/mvp
-runstead verifier run <run_mvp_verifiers-task-id> --cwd /path/to/mvp
+runstead startup ready --cwd /path/to/mvp --write-ci
 ```
 
-The direct command output is useful for local confidence. The Runstead verifier
-record is useful for gate and report confidence.
-
-## 4. Record MVP Hypotheses And Validation
-
-Runstead expects the MVP gate to know what the product is trying to prove:
+The generated workflow runs:
 
 ```bash
-runstead startup hypothesis add \
-  --cwd /path/to/mvp \
-  --kind problem \
-  --statement "..." \
-  --status validated \
-  --source "..."
-
-runstead startup hypothesis add \
-  --cwd /path/to/mvp \
-  --kind user \
-  --statement "..." \
-  --status validated \
-  --source "..."
-
-runstead startup hypothesis add \
-  --cwd /path/to/mvp \
-  --kind solution \
-  --statement "..." \
-  --status validated \
-  --source "..."
+runstead startup ready --stage launch --target local --ci
 ```
 
-Also record disconfirming evidence. For a local example, this may be a manual
-risk note. For a real launch, it should include customer or market evidence.
+CI mode writes:
+
+- markdown summary
+- JSON artifact
+- GitHub Check summary payload
+- PR comment body
+
+## Manual Evidence Escape Hatches
+
+The one-command run is the product path. The lower-level commands are still
+available when a team needs to attach stronger evidence before rerunning
+readiness:
 
 ```bash
-runstead startup evidence add \
-  --cwd /path/to/mvp \
-  --type disconfirming \
-  --summary "..." \
-  --source-kind manual \
-  --gate mvp
+runstead startup hypothesis add --cwd /path/to/mvp --kind problem --statement "..."
+runstead startup hypothesis add --cwd /path/to/mvp --kind user --statement "..."
+runstead startup hypothesis add --cwd /path/to/mvp --kind solution --statement "..."
+runstead startup measurement snapshot --cwd /path/to/mvp --metric activation --threshold 1 --current 1
+runstead startup evidence add --cwd /path/to/mvp --type rollback_plan --summary "..." --source docs/rollback-plan.md --gate launch
+runstead startup evidence add --cwd /path/to/mvp --type observability --summary "..." --source docs/observability.md --gate launch
+runstead startup source record --cwd /path/to/mvp --connector deployment --source-uri https://staging.example.com --summary "Staging deployment smoke passed" --status pass
 ```
 
-Check the MVP gate:
+After stronger evidence is recorded, rerun the same gate:
 
 ```bash
-runstead startup gate check --cwd /path/to/mvp --stage mvp
+runstead startup ready --cwd /path/to/mvp --stage launch --target production
 ```
-
-## 5. Record UI Evidence
-
-Use Runstead's built-in DOM/UI validation for a local or deployed URL:
-
-```bash
-runstead startup launch ui-validate \
-  --cwd /path/to/mvp \
-  --execute \
-  --server-command "npm run dev" \
-  --server-port 3000 \
-  --url http://127.0.0.1:3000 \
-  --expect-text "..." \
-  --flow "primary activation flow" \
-  --flow-status pass
-```
-
-For interactive products, also run a real browser smoke outside Runstead when
-needed. Then record the result as metric or deployment evidence.
-
-## 6. Record Measurement Evidence
-
-When no production analytics exists yet, use a low-confidence synthetic smoke
-metric and say so:
-
-```bash
-runstead startup measurement snapshot \
-  --cwd /path/to/mvp \
-  --metric activation_flow_completion \
-  --source "local browser smoke" \
-  --source-uri http://127.0.0.1:3000 \
-  --source-kind browser_ui \
-  --source-class synthetic_smoke \
-  --confidence 0.55 \
-  --threshold 1 \
-  --current 1 \
-  --unit flow \
-  --window local-smoke \
-  --cohort local-founder-qa \
-  --trend flat \
-  --false-positive "Synthetic smoke is not real-user demand evidence."
-```
-
-Before public launch, replace this with real analytics or source evidence when
-possible.
-
-## 7. Prepare Launch Evidence
-
-Generate repo and security readiness:
-
-```bash
-runstead startup launch audit --cwd /path/to/mvp
-runstead startup launch security-baseline --cwd /path/to/mvp
-runstead startup launch git-summary --cwd /path/to/mvp
-```
-
-Record required launch plans with owner, task, and acceptance criteria:
-
-```bash
-runstead startup evidence add \
-  --cwd /path/to/mvp \
-  --type migration_plan \
-  --summary "..." \
-  --source docs/migration-plan.md \
-  --source-kind manual \
-  --gate launch \
-  --owner founder \
-  --remediation-task "..." \
-  --acceptance-criteria "..."
-
-runstead startup evidence add \
-  --cwd /path/to/mvp \
-  --type rollback_plan \
-  --summary "..." \
-  --source docs/rollback-plan.md \
-  --source-kind manual \
-  --gate launch \
-  --owner founder \
-  --remediation-task "..." \
-  --acceptance-criteria "..."
-
-runstead startup evidence add \
-  --cwd /path/to/mvp \
-  --type observability \
-  --summary "..." \
-  --source docs/observability.md \
-  --source-kind manual \
-  --gate launch \
-  --owner founder \
-  --remediation-task "..." \
-  --acceptance-criteria "..."
-```
-
-Record release and deployment evidence:
-
-```bash
-runstead startup evidence add \
-  --cwd /path/to/mvp \
-  --type release_plan \
-  --summary "..." \
-  --source docs/release-plan.md \
-  --source-kind manual \
-  --gate launch \
-  --owner founder \
-  --remediation-task "..." \
-  --acceptance-criteria "..."
-
-runstead startup source record \
-  --cwd /path/to/mvp \
-  --connector deployment \
-  --source-uri http://127.0.0.1:3000 \
-  --summary "Local preview deployment smoke passed." \
-  --status pass \
-  --trust medium \
-  --payload '{"environment":"local-preview","production":false}'
-```
-
-Local preview deployment evidence can satisfy the local complete-check mechanics,
-but it should be labeled as non-production.
-
-## 8. Prepare Scale Evidence
-
-For scale readiness, generate or record the operating artifacts:
-
-```bash
-runstead startup launch bottleneck-map \
-  --cwd /path/to/mvp \
-  --bottleneck "..." \
-  --owner founder \
-  --system-of-record "..." \
-  --handoff-due 2026-06-05
-
-runstead startup scale workflow-registry \
-  --cwd /path/to/mvp \
-  --workflow "Weekly verifier and browser smoke before release" \
-  --delegation-rule "..." \
-  --approval-boundary "..."
-
-runstead startup scale memory-capture \
-  --cwd /path/to/mvp \
-  --knowledge "..." \
-  --source README.md
-
-runstead startup scale integration-map \
-  --cwd /path/to/mvp \
-  --integration "..."
-
-runstead startup scale sop-generate \
-  --cwd /path/to/mvp \
-  --owner founder \
-  --workflow "..." \
-  --sop "..."
-
-runstead startup launch support-triage \
-  --cwd /path/to/mvp \
-  --request "..." \
-  --outcome "..."
-
-runstead startup scale gtm-verify \
-  --cwd /path/to/mvp \
-  --claim "..." \
-  --evidence README.md \
-  --product-state "..."
-
-runstead startup scale schedule-report \
-  --cwd /path/to/mvp \
-  --cadence weekly \
-  --owner founder \
-  --next-run 2026-05-29
-
-runstead startup scale report \
-  --cwd /path/to/mvp \
-  --period 2026-W21
-```
-
-## 9. Final Gates And Reports
-
-Run the checks in this order:
-
-```bash
-runstead startup gate check --cwd /path/to/mvp --stage mvp
-runstead startup launch-check --cwd /path/to/mvp
-runstead startup gate check --cwd /path/to/mvp --stage scale
-runstead startup launch report --cwd /path/to/mvp --print
-runstead startup complete-check --cwd /path/to/mvp --print
-```
-
-The complete check should be treated as the final local review surface. A
-`complete` result means Runstead has enough local evidence to accept the current
-state. It does not mean the product has real production users, production
-analytics, or production deployment proof unless those sources were recorded.
-
-## 10. Real Launch Upgrade Path
-
-Before a real public launch, replace local/synthetic evidence with:
-
-- pushed commits and remote CI run evidence
-- real deployment URL evidence
-- production health and security header evidence
-- analytics or database-backed activation metrics
-- support issue or feedback evidence
-- customer interview or real validation evidence
-- explicit accepted-debt records for anything intentionally deferred

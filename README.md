@@ -56,77 +56,57 @@ guide.
 
 ## Quick Start: AI-Coded MVP
 
-Initialize an empty or existing MVP repository:
+Run the end-to-end readiness path in an empty or existing MVP repository:
 
 ```bash
-runstead startup onboard \
+runstead startup ready \
   --cwd /path/to/mvp \
-  --write-ci
-```
-
-Build or repair the MVP with the recommended default worker:
-
-```bash
-runstead startup build-mvp \
-  --cwd /path/to/mvp \
+  --stage launch \
   --worker codex_cli \
-  --dependency-policy deny-new \
-  --prompt "Build a polished local-first MVP and satisfy npm test, lint, typecheck, and build."
+  --target local
 ```
 
-Run the MVP verifier task if you need to reattach current command evidence:
+This initializes Runstead if needed, generates context and measurement
+artifacts, runs the bounded MVP build/repair loop, discovers and runs verifier
+commands, executes UI smoke when a dev server is available, writes launch and
+complete-check reports, and returns a target-aware verdict such as
+`local_launch_ready` or explicit blockers.
+
+Preview the same run without executing the worker:
 
 ```bash
-runstead task list --cwd /path/to/mvp
-runstead verifier run <run_mvp_verifiers-task-id> --cwd /path/to/mvp
-```
-
-Record UI evidence from a local preview:
-
-```bash
-runstead startup launch ui-validate \
+runstead startup ready \
   --cwd /path/to/mvp \
-  --execute \
-  --server-command "npm run dev" \
-  --server-port 3000 \
-  --url http://127.0.0.1:3000 \
-  --expect-text "Dashboard" \
-  --flow "primary activation flow" \
-  --flow-status pass
+  --stage launch \
+  --worker codex_cli \
+  --target local \
+  --plan
 ```
 
-Record a synthetic launch metric when no real user analytics exists yet:
+Generate the repo-local CI workflow and CI summary artifacts:
 
 ```bash
-runstead startup measurement snapshot \
-  --cwd /path/to/mvp \
-  --metric activation_flow_completion \
-  --source "local browser smoke" \
-  --source-uri http://127.0.0.1:3000 \
-  --source-kind browser_ui \
-  --source-class synthetic_smoke \
-  --confidence 0.55 \
-  --threshold 1 \
-  --current 1 \
-  --unit flow \
-  --window local-smoke \
-  --cohort local-founder-qa \
-  --trend flat \
-  --false-positive "Synthetic smoke is not real-user demand evidence."
+runstead startup ready --cwd /path/to/mvp --write-ci
+runstead startup ready --cwd /path/to/mvp --stage launch --target local --ci
 ```
 
-Check gates and generate reports:
+If the run is interrupted, resume the same readiness run:
 
 ```bash
-runstead startup gate check --cwd /path/to/mvp --stage mvp
-runstead startup launch-check --cwd /path/to/mvp
-runstead startup gate check --cwd /path/to/mvp --stage scale
-runstead startup launch report --cwd /path/to/mvp --print
-runstead startup complete-check --cwd /path/to/mvp --print
+runstead startup ready --cwd /path/to/mvp --resume <run-id>
+```
+
+For a repo-local example, run the todo golden path fixture:
+
+```bash
+cp -R packages/domain-packs/packs/ai-native-startup/fixtures/tiny-todo /tmp/todo
+runstead startup ready --cwd /tmp/todo --stage launch --worker codex_cli --target local
 ```
 
 See [docs/ai-coded-mvp-readiness.md](docs/ai-coded-mvp-readiness.md) for the
-full MVP-to-launch runbook.
+full MVP-to-launch runbook and
+[docs/startup-ready-golden-path.md](docs/startup-ready-golden-path.md) for the
+todo fixture walkthrough.
 
 ## Strict Mode: Codex Direct
 
