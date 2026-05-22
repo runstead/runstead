@@ -11,6 +11,7 @@ import {
 } from "@runstead/core";
 import {
   appendEventAndProject,
+  appendEventsAndProjects,
   openRunsteadDatabase,
   type RunsteadDatabase
 } from "@runstead/state-sqlite";
@@ -67,12 +68,13 @@ import {
   type ActionEnvelope,
   type PolicyProfile
 } from "./policy.js";
-import { recordPolicyDecision } from "./policy-log.js";
+import { createPolicyDecisionTransition } from "./policy-log.js";
 import { requireRunsteadRootSync } from "./runstead-root.js";
 import {
+  createFinishToolCallTransition,
+  createStartToolCallTransition,
   finishToolCall,
   finishWorkerRun,
-  startToolCall,
   startWorkerRun
 } from "./runtime-audit.js";
 import { claimTask, listTasks } from "./tasks.js";
@@ -2144,16 +2146,13 @@ async function runPublishCoveredToolAction<T>(options: {
     policy: options.policy,
     action: options.action
   });
-  const toolCall = startToolCall({
-    database: options.database,
+  const startedToolCall = createStartToolCallTransition({
     workerRun: options.workerRun,
     task: options.task,
     action: preflight.action,
     ...(options.now === undefined ? {} : { now: options.now })
   });
-  const recordedPolicy = recordPolicyDecision({
-    cwd: options.cwd,
-    stateDb: options.stateDb,
+  const recordedPolicy = createPolicyDecisionTransition({
     policyId: options.policy.id,
     policyFingerprint: fingerprintPolicyProfile(options.policy),
     action: preflight.action,
@@ -2162,9 +2161,8 @@ async function runPublishCoveredToolAction<T>(options: {
   });
 
   if (preflight.status === "denied") {
-    const deniedToolCall = finishToolCall({
-      database: options.database,
-      toolCall,
+    const deniedToolCall = createFinishToolCallTransition({
+      toolCall: startedToolCall.toolCall,
       status: "denied",
       policyDecisionId: recordedPolicy.decision.id,
       output: {
@@ -2176,19 +2174,29 @@ async function runPublishCoveredToolAction<T>(options: {
       },
       ...(options.now === undefined ? {} : { now: options.now })
     });
+    appendEventsAndProjects(options.database, [
+      startedToolCall.entry,
+      recordedPolicy.entry,
+      deniedToolCall.entry
+    ]);
 
     throw new ToolActionDeniedError(
       `${preflight.action.actionType} denied by policy: ${preflight.policyResult.reason}`,
-      deniedToolCall,
+      deniedToolCall.toolCall,
       recordedPolicy.decision
     );
   }
+
+  appendEventsAndProjects(options.database, [
+    startedToolCall.entry,
+    recordedPolicy.entry
+  ]);
 
   try {
     const executed = await options.run();
     finishToolCall({
       database: options.database,
-      toolCall,
+      toolCall: startedToolCall.toolCall,
       status: "completed",
       policyDecisionId: recordedPolicy.decision.id,
       output: {
@@ -2204,7 +2212,7 @@ async function runPublishCoveredToolAction<T>(options: {
   } catch (error) {
     finishToolCall({
       database: options.database,
-      toolCall,
+      toolCall: startedToolCall.toolCall,
       status: "failed",
       policyDecisionId: recordedPolicy.decision.id,
       output: {

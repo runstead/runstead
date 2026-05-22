@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import {
   RUNSTEAD_SCHEMA_VERSION,
   appendEventAndProject,
+  appendEventsAndProjects,
   openRunsteadDatabase
 } from "./index.js";
 
@@ -121,6 +122,144 @@ describe("appendEventAndProject", () => {
         status: "active",
         scope_json: JSON.stringify({ repositories: ["local"] })
       });
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("appends multiple event/projection pairs in one transaction", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-state-"));
+
+    try {
+      const database = openRunsteadDatabase(join(workspace, "state.db"));
+
+      appendEventsAndProjects(database, [
+        {
+          event: {
+            eventId: "evt_batch_goal_created_001",
+            type: "goal.created",
+            aggregateType: "goal",
+            aggregateId: "goal_batch_001",
+            payload: { title: "Batch state updates" },
+            createdAt: "2026-05-14T03:00:00.000Z"
+          },
+          projection: {
+            type: "goal",
+            value: {
+              id: "goal_batch_001",
+              domain: "repo-maintenance",
+              title: "Batch state updates",
+              status: "active",
+              priority: "medium",
+              scope: {},
+              createdAt: "2026-05-14T03:00:00.000Z",
+              updatedAt: "2026-05-14T03:00:00.000Z"
+            }
+          }
+        },
+        {
+          event: {
+            eventId: "evt_batch_task_created_001",
+            type: "task.created",
+            aggregateType: "task",
+            aggregateId: "task_batch_001",
+            payload: { goalId: "goal_batch_001" },
+            createdAt: "2026-05-14T03:00:01.000Z"
+          },
+          projection: {
+            type: "task",
+            value: {
+              id: "task_batch_001",
+              goalId: "goal_batch_001",
+              domain: "repo-maintenance",
+              type: "run_local_verifiers",
+              status: "queued",
+              priority: "medium",
+              attempt: 0,
+              maxAttempts: 1,
+              input: {},
+              verifiers: ["command:test"],
+              createdAt: "2026-05-14T03:00:01.000Z",
+              updatedAt: "2026-05-14T03:00:01.000Z"
+            }
+          }
+        }
+      ]);
+
+      const eventCount = database
+        .prepare("SELECT COUNT(*) AS count FROM events")
+        .get() as { count: number };
+      const task = database
+        .prepare("SELECT id, status FROM tasks WHERE id = ?")
+        .get("task_batch_001") as { id: string; status: string };
+
+      database.close();
+
+      expect(eventCount.count).toBe(2);
+      expect(task).toEqual({
+        id: "task_batch_001",
+        status: "queued"
+      });
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("rolls back all entries when a batched append fails", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-state-"));
+
+    try {
+      const database = openRunsteadDatabase(join(workspace, "state.db"));
+
+      expect(() =>
+        appendEventsAndProjects(database, [
+          {
+            event: {
+              eventId: "evt_batch_duplicate_001",
+              type: "goal.created",
+              aggregateType: "goal",
+              aggregateId: "goal_rolled_back_001",
+              payload: { title: "Should roll back" },
+              createdAt: "2026-05-14T03:01:00.000Z"
+            },
+            projection: {
+              type: "goal",
+              value: {
+                id: "goal_rolled_back_001",
+                domain: "repo-maintenance",
+                title: "Should roll back",
+                status: "active",
+                priority: "medium",
+                scope: {},
+                createdAt: "2026-05-14T03:01:00.000Z",
+                updatedAt: "2026-05-14T03:01:00.000Z"
+              }
+            }
+          },
+          {
+            event: {
+              eventId: "evt_batch_duplicate_001",
+              type: "task.created",
+              aggregateType: "task",
+              aggregateId: "task_duplicate_001",
+              payload: { goalId: "goal_rolled_back_001" },
+              createdAt: "2026-05-14T03:01:01.000Z"
+            }
+          }
+        ])
+      ).toThrow();
+
+      const eventCount = database
+        .prepare("SELECT COUNT(*) AS count FROM events")
+        .get() as { count: number };
+      const goalCount = database
+        .prepare("SELECT COUNT(*) AS count FROM goals")
+        .get() as { count: number };
+
+      database.close();
+
+      expect(eventCount.count).toBe(0);
+      expect(goalCount.count).toBe(0);
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }

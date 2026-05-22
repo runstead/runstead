@@ -6,7 +6,11 @@ import {
   type PolicyDecisionRecord,
   type RunsteadEvent
 } from "@runstead/core";
-import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sqlite";
+import {
+  appendEventAndProject,
+  openRunsteadDatabase,
+  type AppendEventAndProjectInput
+} from "@runstead/state-sqlite";
 
 import type { ActionEnvelope, PolicyEvaluationResult } from "./policy.js";
 import { requireRunsteadStateDbSync } from "./runstead-root.js";
@@ -27,11 +31,15 @@ export interface RecordPolicyDecisionResult {
   stateDb: string;
 }
 
-export function recordPolicyDecision(
-  options: RecordPolicyDecisionOptions
-): RecordPolicyDecisionResult {
-  const cwd = resolve(options.cwd ?? process.cwd());
-  const stateDb = options.stateDb ?? requireRunsteadStateDbSync(cwd).stateDb;
+export interface PolicyDecisionTransition {
+  decision: PolicyDecisionRecord;
+  event: RunsteadEvent;
+  entry: AppendEventAndProjectInput;
+}
+
+export function createPolicyDecisionTransition(
+  options: Omit<RecordPolicyDecisionOptions, "cwd" | "stateDb">
+): PolicyDecisionTransition {
   const createdAt = (options.now ?? new Date()).toISOString();
   const decision: PolicyDecisionRecord = {
     id: createRunsteadId("poldec"),
@@ -59,23 +67,37 @@ export function recordPolicyDecision(
     payload: policyDecisionEventPayload(decision),
     createdAt
   };
-  const database = openRunsteadDatabase(stateDb);
 
-  try {
-    appendEventAndProject(database, {
+  return {
+    decision,
+    event,
+    entry: {
       event,
       projection: {
         type: "policyDecision",
         value: decision
       }
-    });
+    }
+  };
+}
+
+export function recordPolicyDecision(
+  options: RecordPolicyDecisionOptions
+): RecordPolicyDecisionResult {
+  const cwd = resolve(options.cwd ?? process.cwd());
+  const stateDb = options.stateDb ?? requireRunsteadStateDbSync(cwd).stateDb;
+  const transition = createPolicyDecisionTransition(options);
+  const database = openRunsteadDatabase(stateDb);
+
+  try {
+    appendEventAndProject(database, transition.entry);
   } finally {
     database.close();
   }
 
   return {
-    decision,
-    event,
+    decision: transition.decision,
+    event: transition.event,
     stateDb
   };
 }

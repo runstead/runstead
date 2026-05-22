@@ -6,20 +6,28 @@ import type {
   ToolCall,
   WorkerRun
 } from "@runstead/core";
-import type { RunsteadDatabase } from "@runstead/state-sqlite";
+import {
+  appendEventsAndProjects,
+  type AppendEventAndProjectInput,
+  type RunsteadDatabase
+} from "@runstead/state-sqlite";
 
 import {
-  expireApprovalGrant,
-  findApprovedApprovalForAction,
-  requestApproval
+  createApprovalExpirationTransition,
+  createApprovalRequestTransition,
+  findApprovedApprovalForAction
 } from "./approvals.js";
 import {
   fingerprintPolicyProfile,
   type ActionEnvelope,
   type PolicyProfile
 } from "./policy.js";
-import { recordPolicyDecision } from "./policy-log.js";
-import { finishToolCall, startToolCall } from "./runtime-audit.js";
+import { createPolicyDecisionTransition } from "./policy-log.js";
+import {
+  createFinishToolCallTransition,
+  createStartToolCallTransition,
+  finishToolCall
+} from "./runtime-audit.js";
 import { preflightToolAction } from "./tool-proxy.js";
 
 export interface RunGovernedToolActionOptions<T> {
@@ -70,16 +78,13 @@ export async function runGovernedToolAction<T>(
     policy: options.policy,
     action: options.action
   });
-  const toolCall = startToolCall({
-    database: options.database,
+  const startedToolCall = createStartToolCallTransition({
     workerRun: options.workerRun,
     task: options.task,
     action: preflight.action,
     ...(options.now === undefined ? {} : { now: options.now })
   });
-  const recordedPolicy = recordPolicyDecision({
-    cwd: options.cwd,
-    stateDb: options.stateDb,
+  const recordedPolicy = createPolicyDecisionTransition({
     policyId: options.policy.id,
     policyFingerprint: fingerprintPolicyProfile(options.policy),
     action: preflight.action,
@@ -88,9 +93,8 @@ export async function runGovernedToolAction<T>(
   });
 
   if (preflight.status === "denied") {
-    const deniedToolCall = finishToolCall({
-      database: options.database,
-      toolCall,
+    const deniedToolCall = createFinishToolCallTransition({
+      toolCall: startedToolCall.toolCall,
       status: "denied",
       policyDecisionId: recordedPolicy.decision.id,
       output: {
@@ -99,10 +103,15 @@ export async function runGovernedToolAction<T>(
       },
       ...(options.now === undefined ? {} : { now: options.now })
     });
+    appendEventsAndProjects(options.database, [
+      startedToolCall.entry,
+      recordedPolicy.entry,
+      deniedToolCall.entry
+    ]);
 
     throw new ToolActionDeniedError(
       `${preflight.action.actionType} denied by policy: ${preflight.policyResult.reason}`,
-      deniedToolCall,
+      deniedToolCall.toolCall,
       recordedPolicy.decision
     );
   }
@@ -117,30 +126,34 @@ export async function runGovernedToolAction<T>(
       : undefined;
 
   if (preflight.status === "approval_required" && approvedGrant === undefined) {
-    const approval = requestApproval({
-      database: options.database,
+    const approval = createApprovalRequestTransition({
       policyDecision: recordedPolicy.decision,
       requestedBy: options.requestedBy,
       ...(options.now === undefined ? {} : { now: options.now })
     });
-    const approvalToolCall = finishToolCall({
-      database: options.database,
-      toolCall,
+    const approvalToolCall = createFinishToolCallTransition({
+      toolCall: startedToolCall.toolCall,
       status: "approval_required",
       policyDecisionId: recordedPolicy.decision.id,
       output: {
-        approvalId: approval.id,
+        approvalId: approval.approval.id,
         decision: preflight.policyResult.decision,
         reason: preflight.policyResult.reason
       },
       ...(options.now === undefined ? {} : { now: options.now })
     });
+    appendEventsAndProjects(options.database, [
+      startedToolCall.entry,
+      recordedPolicy.entry,
+      approval.entry,
+      approvalToolCall.entry
+    ]);
 
     throw new ToolActionApprovalRequiredError(
       `${preflight.action.actionType} requires approval: ${preflight.policyResult.reason}`,
-      approvalToolCall,
+      approvalToolCall.toolCall,
       recordedPolicy.decision,
-      approval
+      approval.approval
     );
   }
 
@@ -152,19 +165,27 @@ export async function runGovernedToolAction<T>(
           approvalGrant: "used"
         };
 
+  const initialEntries: AppendEventAndProjectInput[] = [
+    startedToolCall.entry,
+    recordedPolicy.entry
+  ];
+
   if (approvedGrant !== undefined) {
-    expireApprovalGrant({
+    const expiredGrant = createApprovalExpirationTransition({
       database: options.database,
       approval: approvedGrant,
       ...(options.now === undefined ? {} : { now: options.now })
     });
+    initialEntries.push(expiredGrant.entry);
   }
+
+  appendEventsAndProjects(options.database, initialEntries);
 
   try {
     const executed = await options.run();
     const completedToolCall = finishToolCall({
       database: options.database,
-      toolCall,
+      toolCall: startedToolCall.toolCall,
       status: "completed",
       policyDecisionId: recordedPolicy.decision.id,
       output: {
@@ -183,7 +204,7 @@ export async function runGovernedToolAction<T>(
   } catch (error) {
     finishToolCall({
       database: options.database,
-      toolCall,
+      toolCall: startedToolCall.toolCall,
       status: "failed",
       policyDecisionId: recordedPolicy.decision.id,
       output: {

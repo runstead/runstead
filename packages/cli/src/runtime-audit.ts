@@ -8,7 +8,11 @@ import {
   type WorkerRun,
   type WorkerRunStatus
 } from "@runstead/core";
-import { appendEventAndProject, type RunsteadDatabase } from "@runstead/state-sqlite";
+import {
+  appendEventAndProject,
+  type AppendEventAndProjectInput,
+  type RunsteadDatabase
+} from "@runstead/state-sqlite";
 
 import type { ActionEnvelope } from "./policy.js";
 
@@ -44,6 +48,12 @@ export interface FinishToolCallOptions {
   policyDecisionId?: string;
   output?: JsonObject;
   now?: Date;
+}
+
+export interface ToolCallTransition {
+  toolCall: ToolCall;
+  event: RunsteadEvent;
+  entry: AppendEventAndProjectInput;
 }
 
 export function startWorkerRun(options: StartWorkerRunOptions): WorkerRun {
@@ -116,7 +126,9 @@ export function finishWorkerRun(options: FinishWorkerRunOptions): WorkerRun {
   return workerRun;
 }
 
-export function startToolCall(options: StartToolCallOptions): ToolCall {
+export function createStartToolCallTransition(
+  options: Omit<StartToolCallOptions, "database">
+): ToolCallTransition {
   const startedAt = (options.now ?? new Date()).toISOString();
   const toolCall: ToolCall = {
     id: createRunsteadId("tool"),
@@ -130,30 +142,44 @@ export function startToolCall(options: StartToolCallOptions): ToolCall {
     startedAt
   };
 
-  appendEventAndProject(options.database, {
-    event: runtimeEvent(
-      "tool_call.requested",
-      "tool_call",
-      toolCall.id,
-      {
-        toolCallId: toolCall.id,
-        workerRunId: toolCall.workerRunId,
-        taskId: toolCall.taskId,
-        actionId: options.action.actionId,
-        actionType: toolCall.actionType
-      },
-      startedAt
-    ),
-    projection: {
-      type: "toolCall",
-      value: toolCall
-    }
-  });
+  const event = runtimeEvent(
+    "tool_call.requested",
+    "tool_call",
+    toolCall.id,
+    {
+      toolCallId: toolCall.id,
+      workerRunId: toolCall.workerRunId,
+      taskId: toolCall.taskId,
+      actionId: options.action.actionId,
+      actionType: toolCall.actionType
+    },
+    startedAt
+  );
 
-  return toolCall;
+  return {
+    toolCall,
+    event,
+    entry: {
+      event,
+      projection: {
+        type: "toolCall",
+        value: toolCall
+      }
+    }
+  };
 }
 
-export function finishToolCall(options: FinishToolCallOptions): ToolCall {
+export function startToolCall(options: StartToolCallOptions): ToolCall {
+  const transition = createStartToolCallTransition(options);
+
+  appendEventAndProject(options.database, transition.entry);
+
+  return transition.toolCall;
+}
+
+export function createFinishToolCallTransition(
+  options: Omit<FinishToolCallOptions, "database">
+): ToolCallTransition {
   const endedAt = (options.now ?? new Date()).toISOString();
   const toolCall: ToolCall = {
     ...options.toolCall,
@@ -165,31 +191,43 @@ export function finishToolCall(options: FinishToolCallOptions): ToolCall {
     endedAt
   };
 
-  appendEventAndProject(options.database, {
-    event: runtimeEvent(
-      `tool_call.${options.status}`,
-      "tool_call",
-      toolCall.id,
-      {
-        toolCallId: toolCall.id,
-        workerRunId: toolCall.workerRunId,
-        taskId: toolCall.taskId,
-        actionType: toolCall.actionType,
-        status: toolCall.status,
-        ...(toolCall.policyDecisionId === undefined
-          ? {}
-          : { policyDecisionId: toolCall.policyDecisionId }),
-        ...(toolCall.output === undefined ? {} : { output: toolCall.output })
-      },
-      endedAt
-    ),
-    projection: {
-      type: "toolCall",
-      value: toolCall
-    }
-  });
+  const event = runtimeEvent(
+    `tool_call.${options.status}`,
+    "tool_call",
+    toolCall.id,
+    {
+      toolCallId: toolCall.id,
+      workerRunId: toolCall.workerRunId,
+      taskId: toolCall.taskId,
+      actionType: toolCall.actionType,
+      status: toolCall.status,
+      ...(toolCall.policyDecisionId === undefined
+        ? {}
+        : { policyDecisionId: toolCall.policyDecisionId }),
+      ...(toolCall.output === undefined ? {} : { output: toolCall.output })
+    },
+    endedAt
+  );
 
-  return toolCall;
+  return {
+    toolCall,
+    event,
+    entry: {
+      event,
+      projection: {
+        type: "toolCall",
+        value: toolCall
+      }
+    }
+  };
+}
+
+export function finishToolCall(options: FinishToolCallOptions): ToolCall {
+  const transition = createFinishToolCallTransition(options);
+
+  appendEventAndProject(options.database, transition.entry);
+
+  return transition.toolCall;
 }
 
 function runtimeEvent(

@@ -45,15 +45,27 @@ export function appendEventAndProject(
   database: RunsteadDatabase,
   input: AppendEventAndProjectInput
 ): void {
-  const event = RunsteadEventSchema.parse(input.event);
+  appendEventsAndProjects(database, [input]);
+}
+
+export function appendEventsAndProjects(
+  database: RunsteadDatabase,
+  inputs: AppendEventAndProjectInput[]
+): void {
+  const entries = inputs.map((input) => ({
+    event: RunsteadEventSchema.parse(input.event),
+    projection: input.projection
+  }));
 
   database.exec("BEGIN IMMEDIATE");
 
   try {
-    insertEvent(database, event);
+    for (const entry of entries) {
+      insertEvent(database, entry.event);
 
-    if (input.projection !== undefined) {
-      upsertProjection(database, input.projection);
+      if (entry.projection !== undefined) {
+        upsertProjection(database, entry.projection);
+      }
     }
 
     database.exec("COMMIT");
