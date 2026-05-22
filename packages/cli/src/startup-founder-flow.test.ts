@@ -111,4 +111,66 @@ describe("startup founder flow", () => {
       await rm(workspace, { force: true, recursive: true });
     }
   }, 30_000);
+
+  it("passes suggested verifier commands to workers for empty repositories", async () => {
+    const workspace = join(
+      tmpdir(),
+      `runstead-startup-founder-empty-${process.pid}`
+    );
+    let workerPrompt = "";
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await mkdir(workspace, { recursive: true });
+
+      const build = await startupBuildMvp({
+        cwd: workspace,
+        worker: "codex_cli",
+        now: new Date("2026-05-14T04:00:00.000Z"),
+        workerRunner: async (_command, args, options) => {
+          workerPrompt = args.join("\n");
+          await writeFile(
+            join(options.cwd, "package.json"),
+            `${JSON.stringify(
+              {
+                name: "empty-mvp-fixture",
+                private: true,
+                scripts: {
+                  test: "node -e \"process.exit(0)\"",
+                  lint: "node -e \"process.exit(0)\"",
+                  typecheck: "node -e \"process.exit(0)\"",
+                  build: "node -e \"process.exit(0)\""
+                }
+              },
+              null,
+              2
+            )}\n`,
+            "utf8"
+          );
+
+          return {
+            stdout: JSON.stringify({
+              summary: "built empty MVP fixture",
+              files_changed: ["package.json"],
+              commands_run: [],
+              risks: [],
+              needs_approval: false,
+              approval_reason: null
+            }),
+            stderr: "",
+            exitCode: 0
+          };
+        }
+      });
+
+      expect(workerPrompt).toContain("test: npm test");
+      expect(workerPrompt).toContain("lint: npm run lint");
+      expect(workerPrompt).toContain("typecheck: npm run typecheck");
+      expect(workerPrompt).toContain("build: npm run build");
+      expect(build.status).toBe("completed");
+      expect(build.verifierRun.status).toBe("completed");
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  }, 30_000);
 });

@@ -479,20 +479,29 @@ async function verifierCommands(cwd: string, now?: Date) {
     cwd,
     (now ?? new Date()).toISOString()
   );
+  const packageManager = inspection.packageManager.packageManager ?? "npm";
 
   return [
-    commandVerifier("test", inspection.commands.test.command),
-    commandVerifier("lint", inspection.commands.lint.command),
-    commandVerifier("typecheck", inspection.commands.typecheck.command),
-    commandVerifier("build", inspection.commands.build.command)
-  ].filter((item): item is { name: string; command: string } => item !== undefined);
+    commandVerifier("test", inspection.commands.test.command, `${packageManager} test`),
+    commandVerifier("lint", inspection.commands.lint.command, `${packageManager} run lint`),
+    commandVerifier(
+      "typecheck",
+      inspection.commands.typecheck.command,
+      `${packageManager} run typecheck`
+    ),
+    commandVerifier("build", inspection.commands.build.command, `${packageManager} run build`)
+  ];
 }
 
 function commandVerifier(
   name: string,
-  command: string | undefined
-): { name: string; command: string } | undefined {
-  return command === undefined ? undefined : { name, command };
+  command: string | undefined,
+  fallbackCommand: string
+): { name: string; command: string } {
+  return {
+    name,
+    command: command ?? fallbackCommand
+  };
 }
 
 function verifierContractLines(
