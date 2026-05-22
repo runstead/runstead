@@ -83,6 +83,9 @@ importers:
       '@runstead/domain-packs':
         specifier: workspace:*
         version: link:../domain-packs
+      '@runstead/governance':
+        specifier: workspace:*
+        version: link:../governance
       '@runstead/skills':
         specifier: workspace:*
         version: link:../skills
@@ -113,6 +116,8 @@ importers:
       zod:
         specifier: 'catalog:'
         version: 4.4.3
+
+  packages/governance: {}
 
   packages/skills:
     dependencies:
