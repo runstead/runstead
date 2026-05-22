@@ -82,9 +82,13 @@ describe("initRunstead", () => {
       expect(teamPolicy).toContain("team_policy_repo_maintenance_v1");
       expect(database.isFile()).toBe(true);
       expect(daemonDir.isDirectory()).toBe(true);
-      expect(evidenceFiles).toEqual([
-        expect.stringMatching(/^repo-inspection-ev_[a-f0-9]+\.json$/)
-      ]);
+      expect(evidenceFiles).toEqual(
+        expect.arrayContaining([
+          expect.stringMatching(/^repo-inspection-ev_[a-f0-9]+\.json$/),
+          expect.stringMatching(/^repo-inspection-ev_[a-f0-9]+\.json\.manifest\.json$/)
+        ])
+      );
+      expect(evidenceFiles).toHaveLength(2);
       await expect(access(join(result.root, "events.jsonl"))).rejects.toThrow();
     } finally {
       await rm(workspace, { force: true, recursive: true });
