@@ -1,112 +1,245 @@
 # Runstead
 
-Runstead is the control plane for governed AI-native execution, starting with
-repo maintenance and launch-ready software delivery.
+Runstead is the control plane for AI-coded products that need evidence,
+measurement, gates, and audit trails before they are treated as ready.
 
-Give Runstead durable goals, budgets, policies, and acceptance criteria.
-Runstead turns them into tasks, dispatches worker agents, guards actions with
-policy, verifies outputs with evidence, records audit logs, and resumes after
-failures.
+Coding agents execute. Runstead governs the work around them: goals, policies,
+checkpoints, dependency boundaries, verifiers, launch evidence, stage gates,
+reports, and resume paths.
 
-Runstead provides **Level 1 wrapped execution** for external coding agents: it
-gates worker launch, checkpoints the workspace, verifies results, and audits
-side effects. It also provides a native `codex_direct` local agent path where
-Runstead proxies model tool calls through governed filesystem, shell, git, and
-evidence actions.
+The current product focus is **AI-coded MVP / startup launch readiness**:
 
-The first supported product path is **repo-maintenance**: create a long-running
-goal, run governed local verifiers, capture evidence, request approvals for
-unknown actions, and export an audit trail. That wedge keeps Runstead focused on
-real governed execution while the product surface expands toward AI-coded MVP and
-launch-readiness workflows.
+> Help teams move agent-built products from MVP to launch to scale with evidence
+> and gates, not just "the agent finished."
+
+## What Runstead Does
+
+Runstead turns agent work into reviewable execution records:
+
+- initializes startup/repo readiness workspaces
+- generates agent context and measurement frameworks
+- runs Codex or Claude workers inside governed tasks
+- checkpoints the workspace before edits
+- enforces policy and approval boundaries
+- runs test, lint, typecheck, build, UI, and launch verifiers
+- records command output, browser/UI, deployment, analytics, support, security,
+  and decision evidence
+- checks MVP, launch, scale, and complete-product gates
+- produces markdown/JSON reports, dashboards, diagnostics, and audit trails
+
+Runstead is not a replacement for Codex CLI, Claude Code, CI, deployment
+platforms, or analytics. It is the control plane that makes their output
+bounded, evidenced, auditable, and resumable.
+
+## Recommended Default
+
+Use **Runstead + `codex_cli`** as the default local product-building workflow.
+
+`codex_cli` is the practical path for most users today: it keeps the normal
+Codex CLI runtime, login session, MCP servers, plugins, and local ecosystem.
+Runstead wraps that worker with checkpoints, policy, dependency boundaries,
+verifier evidence, stage gates, and launch reports.
+
+Use **Runstead + `codex_direct`** when you need strict governance: every exposed
+model tool call is routed through Runstead-native policy and audit before it
+executes. This is stronger but heavier; it may require explicit approval rules,
+larger turn budgets, and narrower repair tasks.
+
+| Mode           | Best for                                                         | Governance                                                                                                 | Tradeoff                                                 |
+| -------------- | ---------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
+| `codex_cli`    | Default MVP build, normal local coding, practical speed          | Level 1 wrapped worker: gated launch, checkpoint, post-run verifier evidence, audit                        | Worker-internal tool calls are not hard-proxied          |
+| `codex_direct` | Strict audit, protected workspaces, compliance-sensitive changes | Level 2 native proxy: filesystem, shell, git, verifier, and evidence tool calls go through Runstead policy | Heavier approval/policy setup and smaller tool ecosystem |
+| `claude_code`  | Teams standardized on Claude Code CLI                            | Level 1 wrapped worker                                                                                     | Same wrapped-worker boundary as `codex_cli`              |
+
+See [docs/worker-selection.md](docs/worker-selection.md) for the full decision
+guide.
+
+## Quick Start: AI-Coded MVP
+
+Initialize an empty or existing MVP repository:
 
 ```bash
-runstead init --create-default-goal
-runstead run --once
-runstead status
-runstead audit export
-runstead report weekly --print
+runstead startup onboard \
+  --cwd /path/to/mvp \
+  --write-ci
 ```
 
-## Recommended local practice
-
-For real local coding work today, start with **Runstead + `codex_cli`**. Codex
-CLI owns the coding-agent runtime, login session, MCP servers, plugins, and
-interactive ecosystem. Runstead owns the repo-maintenance control plane around
-that worker: task records, policy, approval, checkpoints, verifier evidence,
-diff-scope checks, audit, resume, and reports.
+Build or repair the MVP with the recommended default worker:
 
 ```bash
-codex login
+runstead startup build-mvp \
+  --cwd /path/to/mvp \
+  --worker codex_cli \
+  --dependency-policy deny-new \
+  --prompt "Build a polished local-first MVP and satisfy npm test, lint, typecheck, and build."
+```
+
+Run the MVP verifier task if you need to reattach current command evidence:
+
+```bash
+runstead task list --cwd /path/to/mvp
+runstead verifier run <run_mvp_verifiers-task-id> --cwd /path/to/mvp
+```
+
+Record UI evidence from a local preview:
+
+```bash
+runstead startup launch ui-validate \
+  --cwd /path/to/mvp \
+  --execute \
+  --server-command "npm run dev" \
+  --server-port 3000 \
+  --url http://127.0.0.1:3000 \
+  --expect-text "Dashboard" \
+  --flow "primary activation flow" \
+  --flow-status pass
+```
+
+Record a synthetic launch metric when no real user analytics exists yet:
+
+```bash
+runstead startup measurement snapshot \
+  --cwd /path/to/mvp \
+  --metric activation_flow_completion \
+  --source "local browser smoke" \
+  --source-uri http://127.0.0.1:3000 \
+  --source-kind browser_ui \
+  --source-class synthetic_smoke \
+  --confidence 0.55 \
+  --threshold 1 \
+  --current 1 \
+  --unit flow \
+  --window local-smoke \
+  --cohort local-founder-qa \
+  --trend flat \
+  --false-positive "Synthetic smoke is not real-user demand evidence."
+```
+
+Check gates and generate reports:
+
+```bash
+runstead startup gate check --cwd /path/to/mvp --stage mvp
+runstead startup launch-check --cwd /path/to/mvp
+runstead startup gate check --cwd /path/to/mvp --stage scale
+runstead startup launch report --cwd /path/to/mvp --print
+runstead startup complete-check --cwd /path/to/mvp --print
+```
+
+See [docs/ai-coded-mvp-readiness.md](docs/ai-coded-mvp-readiness.md) for the
+full MVP-to-launch runbook.
+
+## Strict Mode: Codex Direct
+
+Use `codex_direct` when you need each model tool call to be governed:
+
+```bash
+runstead agent run \
+  --cwd /path/to/mvp \
+  --worker codex_direct \
+  --mode repair \
+  --max-turns 40 \
+  --max-tool-calls 100 \
+  --max-failed-tool-calls 8 \
+  --denied ".git/**" \
+  --denied ".runstead/**" \
+  --verifier "test=npm test" \
+  --verifier "lint=npm run lint" \
+  --verifier "typecheck=npm run typecheck" \
+  --verifier "build=npm run build" \
+  "Repair the MVP contract without adding dependencies."
+```
+
+If policy requires approval, decide the request and resume the same task:
+
+```bash
+runstead approval list --cwd /path/to/mvp
+runstead approval show <approval-id> --cwd /path/to/mvp
+runstead approval approve <approval-id> --cwd /path/to/mvp
+runstead agent resume <task-id> --cwd /path/to/mvp
+```
+
+For an edit-heavy local MVP run, configure policy deliberately. Keep protected
+paths denied, keep dependency and external writes approval-gated, and allow
+ordinary workspace source edits only when the repo is trusted and verifier
+evidence is required afterward.
+
+See [docs/codex-direct.md](docs/codex-direct.md) for architecture and
+[docs/worker-selection.md](docs/worker-selection.md) for when to use strict
+mode.
+
+## Repo Maintenance And CI Repair
+
+Runstead still supports the original repo-maintenance control loop.
+
+Initialize a repository:
+
+```bash
 runstead init --cwd /path/to/repo --profile trusted-local --create-default-goal
-runstead doctor --cwd /path/to/repo --codex --worker codex_cli --model gpt-5.5
+runstead doctor --cwd /path/to/repo --codex --worker codex_cli
 ```
 
-Run an inspected local task through Codex CLI:
+Run an inspected local task:
 
 ```bash
 runstead agent run \
   --cwd /path/to/repo \
   --worker codex_cli \
-  --model gpt-5.5 \
   --mode read-only \
   "Inspect this repo and summarize the main test commands."
 ```
 
-Run an edit task with Runstead verifier evidence:
+Run a scoped edit with verifier evidence:
 
 ```bash
 runstead agent run \
   --cwd /path/to/repo \
   --worker codex_cli \
-  --model gpt-5.5 \
   --mode edit \
   --allowed "src/**" \
   --verifier "test=pnpm test" \
   "Fix the failing test with the smallest reasonable change."
 ```
 
-Use the same worker for governed CI repair orchestration:
+Repair a CI failure through the governed branch/verifier/PR loop:
 
 ```bash
 runstead repair-ci <github-actions-run-id> \
   --cwd /path/to/repo \
   --worker codex_cli \
-  --model gpt-5.5 \
   --allowed "src/**" \
   --verifier "test=pnpm test"
 ```
 
-After a run, inspect the Runstead-side record:
+Inspect the Runstead record:
 
 ```bash
 runstead agent report <task-id> --cwd /path/to/repo
 runstead audit replay <task-id> --cwd /path/to/repo
+runstead audit export --cwd /path/to/repo
 ```
 
-Choose **Runstead + `codex_direct`** when the task requires hard-proxied
-Runstead tool calls. `codex_direct` runs the model loop inside Runstead, so
-filesystem, shell, git, verifier, and evidence actions pass through Runstead
-policy and audit before they execute. That gives stronger governance, but it
-does not yet inherit the full Codex CLI MCP/plugin ecosystem.
+## Evidence And Gates
 
-Choose **Runstead + `claude_code`** when the repo or developer workflow already
-standardizes on Claude Code CLI. It follows the same Level 1 wrapped-worker
-model as `codex_cli`.
+Runstead treats readiness as evidence-backed state:
 
-Use `runstead init --profile trusted-local --create-default-goal` on a trusted
-local workstation when you want CI repair to start the built-in wrapped coding
-workers without the first approval prompt while still requiring approval for
-dependency changes and publishing.
+- **MVP gate**: hypotheses, validation/disconfirming evidence, verifier
+  results, and agent context.
+- **Launch gate**: metric snapshot, repo audit, security baseline, UI evidence,
+  migration plan, rollback plan, observability, release/deployment evidence,
+  and owner-backed remediation records.
+- **Scale gate**: workflow registry, delegation policy, institutional memory,
+  support triage, recurring reports, SOPs, GTM verification, and integration
+  depth.
+- **Complete product check**: launch report, CI gate, dashboard, diagnostics,
+  remediation loop, evidence/event truth, and deployment/release proof.
 
-Use `runstead agent providers` to list model providers available to
-`codex_direct`. The Codex Direct provider uses `runstead codex login`;
-OpenAI-compatible, Anthropic, Gemini, and local providers use `model.provider`,
-`model.name`, `model.baseUrl`, and API key environment variables.
+Synthetic smoke evidence is useful but low-confidence by design. Real user
+analytics, production deployment checks, support records, and CI runs should
+replace synthetic evidence before a real public launch.
 
-## Setup
+## Setup For This Monorepo
 
-This repository is a pnpm workspace monorepo targeting Node.js 24 LTS.
+This repository is a pnpm workspace targeting Node.js 24 LTS.
 
 ```bash
 nvm use
@@ -117,6 +250,15 @@ pnpm test
 pnpm build
 ```
 
+Useful development commands:
+
+```bash
+pnpm --filter @runstead/cli test
+pnpm --filter @runstead/cli lint
+pnpm --filter @runstead/cli build
+pnpm format:check
+```
+
 ## Packages
 
 - `@runstead/cli`: command-line interface
@@ -125,30 +267,18 @@ pnpm build
 - `@runstead/domain-packs`: built-in domain packs
 - `@runstead/testkit`: test helpers and fixture utilities
 
-## First domain pack
+## Documentation
 
-`repo-maintenance`
-
-- Keep CI green
-- Run deterministic verifiers
-- Store evidence
-- Audit state transitions
-- Resume after crashes
-
-Other domain packs, memory, skill packaging, dashboard, GitHub App mode, RBAC,
-webhooks, and team-policy overlays are available as experimental surfaces while
-the repo-maintenance control loop remains the primary MVP.
-
-## Startup Execution Direction
-
-Runstead does not replace Codex, Claude Code, or other coding agents. Those
-workers execute. Runstead owns the goal, policy, verifier, evidence, checkpoint,
-audit, and resume layer around that execution.
-
-The founder-facing product path is **AI-coded MVP readiness**: keep agent-built
-products verifiable, auditable, and launch-ready before they accumulate opaque
-technical debt or ship without a measurement framework.
-
-See [docs/product-positioning.md](docs/product-positioning.md) and
-[docs/startup-lifecycle.md](docs/startup-lifecycle.md) for the startup control
-plane roadmap.
+- [docs/ai-coded-mvp-readiness.md](docs/ai-coded-mvp-readiness.md): practical
+  MVP-to-launch runbook
+- [docs/worker-selection.md](docs/worker-selection.md): `codex_cli` vs
+  `codex_direct` decision guide
+- [docs/product-positioning.md](docs/product-positioning.md): product stance
+  and boundaries
+- [docs/startup-lifecycle.md](docs/startup-lifecycle.md): stage model and
+  startup pack shape
+- [docs/codex-direct.md](docs/codex-direct.md): native worker architecture and
+  strict governance notes
+- [docs/policy.md](docs/policy.md): policy and approval model
+- [docs/verifier.md](docs/verifier.md): verifier evidence model
+- [docs/domain-packs.md](docs/domain-packs.md): domain pack structure

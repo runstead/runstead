@@ -72,57 +72,59 @@ into a generic operations tool too early. The `ai-native-startup` pack exposes
 this as the `scale-ops` template so the artifacts are defined without making ops
 the first product surface.
 
-## Recommended CLI Shape
+## Current CLI Shape
 
-The short-term CLI should stay artifact-first:
-
-```sh
-runstead domain install ai-native-startup
-runstead goal create ai-native-startup --template build-mvp
-runstead run --once
-runstead report launch-readiness --domain ai-native-startup
-```
-
-Startup aliases can make the founder workflow easier once the domain pack is
-stable:
+The startup workflow is now exposed through `runstead startup` aliases. The
+short founder path is:
 
 ```sh
-runstead startup init --stage mvp
-runstead startup context generate
-runstead startup evidence add --type customer_interview
-runstead startup gate check --stage launch
-runstead startup report launch-readiness
+runstead startup onboard --cwd /path/to/mvp --write-ci
+runstead startup build-mvp --cwd /path/to/mvp --worker codex_cli
+runstead startup gate check --cwd /path/to/mvp --stage mvp
+runstead startup launch-check --cwd /path/to/mvp
+runstead startup complete-check --cwd /path/to/mvp --print
 ```
 
-The first implemented startup commands are narrower and artifact-first:
+`codex_cli` is the recommended default worker for the founder-facing path.
+`codex_direct` is the strict-governance path when each model tool call must go
+through Runstead-native policy and audit.
+
+The artifact-first command surface remains available for precise evidence work:
 
 ```sh
-runstead startup init --stage mvp
-runstead startup hypothesis add --kind problem --statement "..."
-runstead startup hypothesis add --kind user --statement "..."
-runstead startup hypothesis add --kind solution --statement "..."
-runstead startup evidence add --type disconfirming --summary "..."
-runstead startup gate check --stage mvp
-runstead startup context generate --force
-runstead startup measurement generate --force
-runstead startup launch audit
-runstead startup launch security-baseline
-runstead startup launch support-triage --request "..." --outcome "..."
-runstead startup launch bottleneck-map --bottleneck "..."
-runstead startup evidence add --type customer_interview --summary "..."
-runstead startup evidence add --type measurement_framework --summary "..."
-runstead startup evidence add --type migration_plan --summary "..."
-runstead startup evidence add --type rollback_plan --summary "..."
-runstead startup evidence add --type observability --summary "..."
-runstead startup gate check --stage launch
-runstead startup scale workflow-registry --workflow "..."
-runstead startup scale memory-capture --knowledge "..."
-runstead startup scale integration-map --integration "..."
-runstead startup scale sop-generate --sop "..."
-runstead startup scale gtm-verify --claim "..."
-runstead startup scale report --period 2026-W20
-runstead startup gate check --stage scale
+runstead startup hypothesis add --cwd /path/to/mvp --kind problem --statement "..."
+runstead startup hypothesis add --cwd /path/to/mvp --kind user --statement "..."
+runstead startup hypothesis add --cwd /path/to/mvp --kind solution --statement "..."
+runstead startup evidence add --cwd /path/to/mvp --type disconfirming --summary "..."
+runstead startup measurement snapshot --cwd /path/to/mvp --metric activation_flow_completion --threshold 1 --current 1
+runstead startup launch ui-validate --cwd /path/to/mvp --execute --url http://127.0.0.1:3000
+runstead startup launch audit --cwd /path/to/mvp
+runstead startup launch security-baseline --cwd /path/to/mvp
+runstead startup launch git-summary --cwd /path/to/mvp
+runstead startup evidence add --cwd /path/to/mvp --type migration_plan --summary "..." --owner founder --remediation-task "..." --acceptance-criteria "..."
+runstead startup evidence add --cwd /path/to/mvp --type rollback_plan --summary "..." --owner founder --remediation-task "..." --acceptance-criteria "..."
+runstead startup evidence add --cwd /path/to/mvp --type observability --summary "..." --owner founder --remediation-task "..." --acceptance-criteria "..."
+runstead startup source record --cwd /path/to/mvp --connector deployment --source-uri http://127.0.0.1:3000 --summary "..." --status pass
+runstead startup gate check --cwd /path/to/mvp --stage launch
 ```
+
+The scale path records operating evidence rather than implying real scale:
+
+```sh
+runstead startup launch bottleneck-map --cwd /path/to/mvp --bottleneck "..."
+runstead startup scale workflow-registry --cwd /path/to/mvp --workflow "..."
+runstead startup scale memory-capture --cwd /path/to/mvp --knowledge "..."
+runstead startup scale integration-map --cwd /path/to/mvp --integration "..."
+runstead startup scale sop-generate --cwd /path/to/mvp --sop "..."
+runstead startup launch support-triage --cwd /path/to/mvp --request "..." --outcome "..."
+runstead startup scale gtm-verify --cwd /path/to/mvp --claim "..."
+runstead startup scale schedule-report --cwd /path/to/mvp --owner founder --next-run 2026-05-29
+runstead startup scale report --cwd /path/to/mvp --period 2026-W21
+runstead startup gate check --cwd /path/to/mvp --stage scale
+```
+
+See [ai-coded-mvp-readiness.md](ai-coded-mvp-readiness.md) for the complete
+runbook.
 
 ## Scope Discipline
 

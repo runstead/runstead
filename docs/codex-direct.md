@@ -13,6 +13,27 @@ the existing `codex_cli` wrapped worker:
 The boundary is intentional. `codex_direct` should not be added to
 `wrapped-worker.ts`; that module is for external process wrappers.
 
+## Practical Status
+
+`codex_direct` is the strict-governance worker, not the recommended default
+founder workflow. Use `codex_cli` for ordinary MVP builds and use
+`codex_direct` when the audit requirement is stronger than the UX cost.
+
+Current practical guidance:
+
+- use narrow edit or repair prompts
+- give repair tasks enough `--max-turns` and `--max-tool-calls`
+- deny `.git/**` and `.runstead/**` for model-controlled edits
+- keep `.env`, secrets, production infra, dependency changes, pushes, and PRs
+  approval-gated
+- configure trusted local source-file writes deliberately when an edit-heavy
+  task should not stop on every normal workspace file write
+- require verifier evidence for every edit or repair task
+
+If policy requires approval, approve the request and resume the same task.
+Broad "build the whole product" prompts can exhaust the direct worker's turn
+budget; a narrower repair task usually produces a cleaner evidence trail.
+
 ## Architecture
 
 ```text
