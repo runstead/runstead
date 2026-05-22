@@ -31,6 +31,11 @@ import {
   prepareStartupRepoOnboarding,
   type StartupRepoOnboardingResult
 } from "./startup-repo-onboarding.js";
+import { listTasks } from "./tasks.js";
+import {
+  runTaskVerifiers,
+  type RunTaskVerifierCommandResult
+} from "./verifier-runner.js";
 import type { WorkerProcessRunner } from "./wrapped-worker.js";
 
 export interface StartupFounderFlowOptions {
@@ -66,6 +71,7 @@ export interface StartupBuildMvpResult {
   localAgentTaskId: string;
   status: RunLocalAgentTaskResult["status"];
   summary: string;
+  verifierRun: StartupMvpVerifierRun;
   gate: StartupGateCheckResult;
   nextCommands: string[];
 }
@@ -93,6 +99,23 @@ export interface StartupGeneratedStep<T> {
   result?: T;
   reason?: string;
 }
+
+export type StartupMvpVerifierRun =
+  | {
+      status: StartupMvpVerifierTaskStatus;
+      taskId: string;
+      commandResults: RunTaskVerifierCommandResult[];
+    }
+  | {
+      status: "skipped";
+      reason: string;
+    };
+
+type StartupMvpVerifierTaskStatus =
+  | "completed"
+  | "failed"
+  | "blocked"
+  | "waiting_approval";
 
 export async function startupOnboard(
   options: StartupFounderFlowOptions = {}
@@ -186,6 +209,17 @@ export async function startupBuildMvp(
       : { onWorkerProgress: options.onWorkerProgress }),
     ...(options.now === undefined ? {} : { now: options.now })
   });
+  const verifierRun =
+    run.status === "completed"
+      ? await runQueuedMvpVerifiers({
+          cwd,
+          goalId: init.goal.id,
+          ...(options.now === undefined ? {} : { now: options.now })
+        })
+      : {
+          status: "skipped" as const,
+          reason: `worker finished with status ${run.status}`
+        };
   const gate = await checkStartupGate({
     cwd,
     stage: "mvp",
@@ -198,6 +232,7 @@ export async function startupBuildMvp(
     localAgentTaskId: created.task.id,
     status: run.status,
     summary: run.summary,
+    verifierRun,
     gate,
     nextCommands: [
       "runstead startup launch-check",
@@ -309,11 +344,74 @@ export function formatStartupBuildMvp(result: StartupBuildMvpResult): string {
     `Task: ${result.localAgentTaskId}`,
     `Status: ${result.status}`,
     `Summary: ${result.summary}`,
+    `Verifier run: ${formatStartupMvpVerifierRun(result.verifierRun)}`,
     `MVP gate: ${result.gate.passed ? "passed" : "blocked"}`,
     "",
     "Next commands:",
     listItems(result.nextCommands)
   ].join("\n");
+}
+
+async function runQueuedMvpVerifiers(input: {
+  cwd: string;
+  goalId: string;
+  now?: Date;
+}): Promise<StartupMvpVerifierRun> {
+  const verifierTask = listTasks({
+    cwd: input.cwd,
+    goalId: input.goalId
+  }).tasks.find((task) => task.type === "run_mvp_verifiers");
+
+  if (verifierTask === undefined) {
+    return {
+      status: "skipped",
+      reason: "run_mvp_verifiers task was not found"
+    };
+  }
+
+  if (verifierTask.status !== "queued") {
+    return {
+      status: "skipped",
+      reason: `run_mvp_verifiers task is ${verifierTask.status}`
+    };
+  }
+
+  const result = await runTaskVerifiers({
+    cwd: input.cwd,
+    taskId: verifierTask.id,
+    ...(input.now === undefined ? {} : { now: input.now })
+  });
+
+  return {
+    status: startupMvpVerifierTaskStatus(result.task.status),
+    taskId: result.task.id,
+    commandResults: result.commandResults
+  };
+}
+
+function startupMvpVerifierTaskStatus(status: string): StartupMvpVerifierTaskStatus {
+  if (
+    status === "completed" ||
+    status === "failed" ||
+    status === "blocked" ||
+    status === "waiting_approval"
+  ) {
+    return status;
+  }
+
+  throw new Error(`Unexpected run_mvp_verifiers status after execution: ${status}`);
+}
+
+function formatStartupMvpVerifierRun(run: StartupMvpVerifierRun): string {
+  if (run.status === "skipped") {
+    return `skipped (${run.reason})`;
+  }
+
+  const passed = run.commandResults.filter(
+    (result) => result.exitCode === 0 && result.timedOut === false
+  ).length;
+
+  return `${run.status} (${passed}/${run.commandResults.length} commands passed, task=${run.taskId})`;
 }
 
 export function formatStartupLaunchCheck(result: StartupLaunchCheckResult): string {

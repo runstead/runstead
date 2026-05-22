@@ -27,7 +27,13 @@ describe("startup founder flow", () => {
         `${JSON.stringify(
           {
             name: "founder-flow-fixture",
-            private: true
+            private: true,
+            scripts: {
+              test: "node -e \"process.exit(0)\"",
+              lint: "node -e \"process.exit(0)\"",
+              typecheck: "node -e \"process.exit(0)\"",
+              build: "node -e \"process.exit(0)\""
+            }
           },
           null,
           2
@@ -90,6 +96,7 @@ describe("startup founder flow", () => {
       expect(onboardAgain.context.status).toBe("skipped");
       expect(onboardAgain.measurement.status).toBe("skipped");
       expect(build.status).toBe("completed");
+      expect(build.verifierRun.status).toBe("completed");
       expect(build.gate.passed).toBe(false);
       expect(launch.status).toBe("blocked");
       expect(launch.reportPath).toContain("launch-readiness-ai-native-startup.md");
@@ -97,6 +104,7 @@ describe("startup founder flow", () => {
       expect(formatStartupOnboard(onboard)).toContain("Startup onboard");
       expect(formatStartupOnboard(onboard)).toContain("Onboarding files:");
       expect(formatStartupBuildMvp(build)).toContain("Startup build MVP");
+      expect(formatStartupBuildMvp(build)).toContain("Verifier run: completed");
       expect(formatStartupLaunchCheck(launch)).toContain("Startup launch check");
       expect(formatStartupScaleCheck(scale)).toContain("Startup scale check");
     } finally {
