@@ -3,10 +3,12 @@ import { execFile } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
+import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 
 import { collectRepoInspection } from "./inspection-evidence.js";
 import type { LocalAgentWorkerKind } from "./local-agent.js";
 import { resolveRunsteadRoot } from "./runstead-root.js";
+import { detectStartupDevServerCommand } from "./startup-dev-server.js";
 import {
   startupBuildMvp,
   startupLaunchCheck,
@@ -15,8 +17,10 @@ import {
   type StartupBuildMvpOptions
 } from "./startup-founder-flow.js";
 import { generateStartupCompleteProductCheck } from "./startup-complete-check.js";
+import { executeStartupUiValidation } from "./startup-ui-validation.js";
 
 const execFileAsync = promisify(execFile);
+const DEFAULT_UI_SMOKE_TIMEOUT_MS = 20_000;
 
 export type StartupReadyStage = "mvp" | "launch" | "scale" | "complete";
 export type StartupReadyTarget = "local" | "staging" | "production";
@@ -64,6 +68,46 @@ export interface StartupReadyPlanPhase {
   status: "pending" | "blocked" | "skipped";
   blockers: string[];
   nextAction?: string;
+}
+
+export interface StartupReadyUiSmokeConfig {
+  schemaVersion: 1;
+  server: StartupReadyUiSmokeServerConfig;
+  checks: StartupReadyUiSmokeCheckConfig[];
+}
+
+export interface StartupReadyUiSmokeServerConfig {
+  command: string;
+  port: number;
+  url?: string;
+  timeoutMs?: number;
+}
+
+export interface StartupReadyUiSmokeCheckConfig {
+  name: string;
+  url?: string;
+  viewport?: string;
+  expectText: string[];
+  flow?: string;
+  timeoutMs?: number;
+}
+
+export interface StartupReadyUiSmokeRunResult {
+  status: "passed" | "blocked";
+  configPath: string;
+  configStatus: "generated" | "loaded" | "blocked";
+  checks: StartupReadyUiSmokeCheckResult[];
+  evidenceIds: string[];
+  artifacts: string[];
+  blockers: string[];
+}
+
+export interface StartupReadyUiSmokeCheckResult {
+  name: string;
+  status: "passed" | "failed";
+  evidenceId?: string;
+  artifact?: string;
+  blockers: string[];
 }
 
 export interface StartupReadinessRun {
@@ -341,6 +385,28 @@ async function executeStartupReadyRun(
     await writeStartupReadinessRun(run);
   }
 
+  if (hasPhase(run, "ui_smoke")) {
+    updatePhase(run, "ui_smoke", { status: "running" });
+    await writeStartupReadinessRun(run);
+    const uiSmoke = await executeStartupReadyUiSmoke({
+      cwd: run.cwd,
+      ...(options.now === undefined ? {} : { now: options.now })
+    });
+
+    updatePhase(run, "ui_smoke", {
+      status: uiSmoke.status,
+      evidenceIds: uiSmoke.evidenceIds,
+      artifacts: uiSmoke.artifacts,
+      blockers: uiSmoke.blockers,
+      nextAction:
+        uiSmoke.status === "passed"
+          ? "continue launch readiness"
+          : "fix UI smoke config or product flow and rerun startup ready"
+    });
+    collectRunEvidence(run);
+    await writeStartupReadinessRun(run);
+  }
+
   if (hasPhase(run, "launch_audit") || hasPhase(run, "launch_report")) {
     updatePhase(run, "launch_audit", { status: "running" });
     updatePhase(run, "launch_report", { status: "running" });
@@ -404,6 +470,226 @@ async function executeStartupReadyRun(
     collectRunEvidence(run);
     await writeStartupReadinessRun(run);
   }
+}
+
+export async function executeStartupReadyUiSmoke(input: {
+  cwd?: string;
+  now?: Date;
+}): Promise<StartupReadyUiSmokeRunResult> {
+  const cwd = resolve(input.cwd ?? process.cwd());
+  const loaded = await loadOrCreateStartupReadyUiSmokeConfig(cwd);
+
+  if (loaded.config === undefined) {
+    return {
+      status: "blocked",
+      configPath: loaded.path,
+      configStatus: "blocked",
+      checks: [],
+      evidenceIds: [],
+      artifacts: [],
+      blockers: [loaded.blocker ?? "UI smoke config is missing"]
+    };
+  }
+
+  const checks: StartupReadyUiSmokeCheckResult[] = [];
+
+  for (const check of loaded.config.checks) {
+    try {
+      const url = check.url ?? loaded.config.server.url;
+      const result = await executeStartupUiValidation({
+        cwd,
+        viewport: check.viewport ?? "desktop",
+        serverCommand: loaded.config.server.command,
+        serverPort: loaded.config.server.port,
+        timeoutMs:
+          check.timeoutMs ??
+          loaded.config.server.timeoutMs ??
+          DEFAULT_UI_SMOKE_TIMEOUT_MS,
+        expectText: check.expectText,
+        ...(url === undefined ? {} : { url }),
+        ...(check.flow === undefined ? {} : { criticalFlow: check.flow }),
+        ...(input.now === undefined ? {} : { now: input.now })
+      });
+
+      checks.push({
+        name: check.name,
+        status: result.failed ? "failed" : "passed",
+        evidenceId: result.evidence.evidence.id,
+        artifact: result.domArtifact,
+        blockers: result.failed ? [`UI smoke check failed: ${check.name}`] : []
+      });
+    } catch (error) {
+      checks.push({
+        name: check.name,
+        status: "failed",
+        blockers: [`UI smoke check failed: ${check.name}: ${errorMessage(error)}`]
+      });
+    }
+  }
+
+  const blockers = checks.flatMap((check) => check.blockers);
+  const evidenceIds = checks
+    .map((check) => check.evidenceId)
+    .filter((id): id is string => id !== undefined);
+  const artifacts = [
+    loaded.path,
+    ...checks
+      .map((check) => check.artifact)
+      .filter((artifact): artifact is string => artifact !== undefined)
+  ];
+
+  return {
+    status: blockers.length === 0 ? "passed" : "blocked",
+    configPath: loaded.path,
+    configStatus: loaded.status,
+    checks,
+    evidenceIds,
+    artifacts,
+    blockers
+  };
+}
+
+async function loadOrCreateStartupReadyUiSmokeConfig(cwd: string): Promise<
+  | {
+      path: string;
+      status: "loaded" | "generated";
+      config: StartupReadyUiSmokeConfig;
+    }
+  | {
+      path: string;
+      status: "blocked";
+      blocker: string;
+      config?: undefined;
+    }
+> {
+  const root = await resolveRunsteadRoot(cwd);
+  const path = startupReadyUiSmokePath(root.root);
+  const existing = await readOptionalTextFile(path);
+
+  if (existing.trim().length > 0) {
+    return {
+      path,
+      status: "loaded",
+      config: parseStartupReadyUiSmokeConfig(existing, path)
+    };
+  }
+
+  try {
+    const command = await detectStartupDevServerCommand(cwd);
+    const config = defaultStartupReadyUiSmokeConfig(command);
+
+    await mkdir(join(root.root, "startup"), { recursive: true });
+    await writeFile(path, stringifyStartupReadyUiSmokeConfig(config), "utf8");
+
+    return {
+      path,
+      status: "generated",
+      config
+    };
+  } catch (error) {
+    return {
+      path,
+      status: "blocked",
+      blocker: errorMessage(error)
+    };
+  }
+}
+
+function defaultStartupReadyUiSmokeConfig(command: string): StartupReadyUiSmokeConfig {
+  return {
+    schemaVersion: 1,
+    server: {
+      command,
+      port: 3000,
+      url: "http://127.0.0.1:3000",
+      timeoutMs: DEFAULT_UI_SMOKE_TIMEOUT_MS
+    },
+    checks: [
+      {
+        name: "home",
+        url: "http://127.0.0.1:3000",
+        viewport: "desktop",
+        expectText: [],
+        flow: "load the primary product route"
+      }
+    ]
+  };
+}
+
+function stringifyStartupReadyUiSmokeConfig(config: StartupReadyUiSmokeConfig): string {
+  return stringifyYaml(config, { lineWidth: 0 });
+}
+
+function parseStartupReadyUiSmokeConfig(
+  contents: string,
+  path: string
+): StartupReadyUiSmokeConfig {
+  const parsed = parseYaml(contents) as unknown;
+
+  if (!isRecord(parsed)) {
+    throw new Error(`UI smoke config must be a YAML object: ${path}`);
+  }
+
+  const server = isRecord(parsed.server) ? parsed.server : undefined;
+  const checks = Array.isArray(parsed.checks) ? parsed.checks : [];
+
+  if (server === undefined) {
+    throw new Error(`UI smoke config is missing server settings: ${path}`);
+  }
+
+  const command = stringValue(server.command);
+  const port = numberValue(server.port);
+  const url = stringValue(server.url);
+  const timeoutMs = numberValue(server.timeoutMs);
+
+  if (command === undefined || port === undefined) {
+    throw new Error(
+      `UI smoke config server.command and server.port are required: ${path}`
+    );
+  }
+
+  if (checks.length === 0) {
+    throw new Error(`UI smoke config requires at least one check: ${path}`);
+  }
+
+  return {
+    schemaVersion: 1,
+    server: {
+      command,
+      port,
+      ...(url === undefined ? {} : { url }),
+      ...(timeoutMs === undefined ? {} : { timeoutMs })
+    },
+    checks: checks.map((check, index) =>
+      parseStartupReadyUiSmokeCheck(check, index, path)
+    )
+  };
+}
+
+function parseStartupReadyUiSmokeCheck(
+  input: unknown,
+  index: number,
+  path: string
+): StartupReadyUiSmokeCheckConfig {
+  if (!isRecord(input)) {
+    throw new Error(`UI smoke check ${index + 1} must be an object: ${path}`);
+  }
+
+  const name = stringValue(input.name) ?? `check-${index + 1}`;
+  const expectText = arrayOfStrings(input.expectText);
+  const url = stringValue(input.url);
+  const viewport = stringValue(input.viewport);
+  const flow = stringValue(input.flow);
+  const timeoutMs = numberValue(input.timeoutMs);
+
+  return {
+    name,
+    ...(url === undefined ? {} : { url }),
+    ...(viewport === undefined ? {} : { viewport }),
+    expectText,
+    ...(flow === undefined ? {} : { flow }),
+    ...(timeoutMs === undefined ? {} : { timeoutMs })
+  };
 }
 
 function verifierPhaseUpdate(
@@ -552,8 +838,20 @@ function phaseIncludedForStage(id: string, stage: StartupReadyStage): boolean {
   return complete.has(id);
 }
 
+function startupReadyUiSmokePath(root: string): string {
+  return join(root, "startup", "ui-smoke.yaml");
+}
+
 function startupReadinessRunsDir(root: string): string {
   return join(root, "startup", "readiness-runs");
+}
+
+async function readOptionalTextFile(path: string): Promise<string> {
+  try {
+    return await readFile(path, "utf8");
+  } catch {
+    return "";
+  }
 }
 
 async function inspectGitState(
@@ -582,4 +880,41 @@ async function inspectGitState(
       dirtyState: "unknown"
     };
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function stringValue(value: unknown): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+
+  const trimmed = value.trim();
+
+  return trimmed.length === 0 ? undefined : trimmed;
+}
+
+function numberValue(value: unknown): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return undefined;
+  }
+
+  return value;
+}
+
+function arrayOfStrings(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .filter((item): item is string => typeof item === "string")
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0);
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }

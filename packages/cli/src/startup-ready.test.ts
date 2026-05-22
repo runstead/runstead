@@ -1,4 +1,5 @@
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -121,4 +122,123 @@ describe("startup readiness run model", () => {
       await rm(workspace, { force: true, recursive: true });
     }
   }, 60_000);
+
+  it("loads UI smoke config and executes the launch UI phase", async () => {
+    const workspace = join(tmpdir(), `runstead-startup-ready-ui-${process.pid}`);
+    const port = await availablePort();
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await mkdir(join(workspace, ".runstead", "startup"), { recursive: true });
+      await writeFile(
+        join(workspace, "package.json"),
+        `${JSON.stringify(
+          {
+            name: "startup-ready-ui-fixture",
+            private: true,
+            scripts: {
+              test: 'node -e "process.exit(0)"',
+              lint: 'node -e "process.exit(0)"',
+              typecheck: 'node -e "process.exit(0)"',
+              build: 'node -e "process.exit(0)"'
+            }
+          },
+          null,
+          2
+        )}\n`,
+        "utf8"
+      );
+      await writeFile(
+        join(workspace, "server.mjs"),
+        [
+          "import http from 'node:http';",
+          "const html = '<!doctype html><html><body><main><h1>Todo MVP</h1><button>Add todo</button></main></body></html>';",
+          "const server = http.createServer((_request, response) => {",
+          "  response.writeHead(200, { 'content-type': 'text/html' });",
+          "  response.end(html);",
+          "});",
+          "server.listen(Number(process.env.PORT), '127.0.0.1');",
+          "process.on('SIGTERM', () => server.close(() => process.exit(0)));"
+        ].join("\n"),
+        "utf8"
+      );
+      await writeFile(
+        join(workspace, ".runstead", "startup", "ui-smoke.yaml"),
+        [
+          "schemaVersion: 1",
+          "server:",
+          "  command: node server.mjs",
+          `  port: ${port}`,
+          `  url: http://127.0.0.1:${port}`,
+          "  timeoutMs: 5000",
+          "checks:",
+          "  - name: home",
+          `    url: http://127.0.0.1:${port}`,
+          "    viewport: desktop",
+          "    expectText:",
+          "      - Todo MVP",
+          "      - Add todo",
+          "    flow: load todo app",
+          ""
+        ].join("\n"),
+        "utf8"
+      );
+
+      const result = await runStartupReady({
+        cwd: workspace,
+        stage: "launch",
+        target: "local",
+        worker: "codex_cli",
+        maxAttempts: 1,
+        workerRunner: () =>
+          Promise.resolve({
+            stdout: JSON.stringify({
+              summary: "built launch fixture",
+              files_changed: [],
+              commands_run: [],
+              risks: [],
+              needs_approval: false,
+              approval_reason: null
+            }),
+            stderr: "",
+            exitCode: 0
+          }),
+        now: new Date("2026-05-22T01:30:00.000Z")
+      });
+      const uiPhase = result.run.phases.find((phase) => phase.id === "ui_smoke");
+
+      expect(uiPhase).toMatchObject({
+        status: "passed",
+        blockers: []
+      });
+      expect(uiPhase?.evidenceIds).toHaveLength(1);
+      expect(uiPhase?.artifacts).toEqual(
+        expect.arrayContaining([
+          join(workspace, ".runstead", "startup", "ui-smoke.yaml")
+        ])
+      );
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  }, 60_000);
 });
+
+function availablePort(): Promise<number> {
+  return new Promise((resolvePort, reject) => {
+    const server = createServer();
+
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address();
+
+      server.close(() => {
+        if (typeof address === "object" && address !== null) {
+          resolvePort(address.port);
+          return;
+        }
+
+        reject(new Error("Failed to allocate test port"));
+      });
+    });
+  });
+}
