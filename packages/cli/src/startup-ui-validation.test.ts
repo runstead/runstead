@@ -1,6 +1,7 @@
-import { readFile, rm } from "node:fs/promises";
+import { readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { describe, expect, it, vi } from "vitest";
 
@@ -95,6 +96,53 @@ describe("startup UI validation evidence", () => {
       );
       expect(cliOutput).toContain("Recorded UI validation evidence:");
       expect(cliOutput).toContain("Failed: no");
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("copies local screenshot evidence into the Runstead asset store", async () => {
+    const workspace = join(tmpdir(), `runstead-startup-ui-assets-${process.pid}`);
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await initRunstead({ cwd: workspace });
+      const screenshotPath = join(workspace, "mobile-home.png");
+
+      await writeFile(screenshotPath, "fake screenshot bytes", "utf8");
+
+      const recorded = await recordStartupUiValidation({
+        cwd: workspace,
+        url: "http://localhost:3000",
+        viewport: "390x844",
+        screenshot: screenshotPath,
+        domStatus: "pass",
+        accessibilityStatus: "pass",
+        responsiveStatus: "pass",
+        criticalFlowStatus: "pass",
+        now: new Date("2026-05-14T03:30:00.000Z")
+      });
+      const artifact = JSON.parse(
+        await readFile(recorded.evidence.artifactPath, "utf8")
+      ) as {
+        sources: { uri: string; hash?: string }[];
+        content: string;
+      };
+      const content = JSON.parse(artifact.content) as {
+        screenshot: string;
+        originalScreenshot: string;
+      };
+      const storedPath = fileURLToPath(content.screenshot);
+
+      expect(content.originalScreenshot).toBe(screenshotPath);
+      expect(storedPath).toContain(join(".runstead", "evidence", "assets"));
+      expect(artifact.sources[0]).toMatchObject({
+        uri: content.screenshot,
+        hash: expect.stringMatching(/^sha256:[a-f0-9]{64}$/)
+      });
+      await expect(readFile(storedPath, "utf8")).resolves.toBe(
+        "fake screenshot bytes"
+      );
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }
