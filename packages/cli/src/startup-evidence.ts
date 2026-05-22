@@ -26,6 +26,7 @@ export const STARTUP_EVIDENCE_TYPES = [
   "migration_plan",
   "rollback_plan",
   "release_plan",
+  "launch_git_path",
   "ui_validation",
   "hypothesis",
   "problem_hypothesis",

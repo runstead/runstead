@@ -844,6 +844,35 @@ export function registerStartupCommands(program: Command): void {
     );
 
   startupLaunch
+    .command("git-summary")
+    .description("Generate first commit, push, PR, and GitHub Actions launch guidance.")
+    .option("--cwd <path>", "Workspace directory")
+    .option("--remote <name>", "Git remote to inspect", "origin")
+    .option("--actor <id>", "RBAC subject for Git/GitHub launch summary", "local-admin")
+    .action(async (options: { cwd?: string; remote: string; actor: string }) => {
+      await requireRbacPermission({
+        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+        actor: options.actor,
+        permission: "evidence.write",
+        action: "generate Git/GitHub launch summary"
+      });
+
+      const { generateStartupLaunchGitSummary } =
+        await import("./startup-launch-git.js");
+      const result = await generateStartupLaunchGitSummary({
+        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+        remote: options.remote
+      });
+
+      console.log(`Generated Git/GitHub launch evidence: ${result.evidenceId}`);
+      console.log(`Report: ${result.markdownPath}`);
+      console.log("Next commands:");
+      for (const command of result.nextCommands) {
+        console.log(`- ${command}`);
+      }
+    });
+
+  startupLaunch
     .command("ui-validate")
     .description(
       "Record screenshot, DOM, accessibility, responsive, and flow UI validation evidence."
@@ -1726,7 +1755,7 @@ export function registerStartupCommands(program: Command): void {
     .option("--cwd <path>", "Workspace directory")
     .requiredOption(
       "--type <type>",
-      "Evidence type: customer_interview, competitor, metric, metric_snapshot, measurement_framework, agent_context, repo_readiness, security_baseline, migration_plan, rollback_plan, release_plan, ui_validation, hypothesis, problem_hypothesis, user_hypothesis, solution_hypothesis, disconfirming, support_triage, founder_bottleneck, workflow_registry, delegation_policy, institutional_memory, memory_retrieval, ops_schedule, ops_report, integration_map, ops_sop, gtm_artifact, scale_starter_pack, decision, acceptable_debt, false_positive, observability, remediation_failure, team_collaboration, or complete_product_check"
+      "Evidence type: customer_interview, competitor, metric, metric_snapshot, measurement_framework, agent_context, repo_readiness, security_baseline, migration_plan, rollback_plan, release_plan, launch_git_path, ui_validation, hypothesis, problem_hypothesis, user_hypothesis, solution_hypothesis, disconfirming, support_triage, founder_bottleneck, workflow_registry, delegation_policy, institutional_memory, memory_retrieval, ops_schedule, ops_report, integration_map, ops_sop, gtm_artifact, scale_starter_pack, decision, acceptable_debt, false_positive, observability, remediation_failure, team_collaboration, or complete_product_check"
     )
     .requiredOption("--summary <text>", "Evidence summary")
     .option("--source <ref>", "Evidence source reference", collectValues, [])

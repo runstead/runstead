@@ -395,6 +395,9 @@ describe("cli entrypoint", () => {
     const launchSupportTriage = launch?.commands.find(
       (command) => command.name() === "support-triage"
     );
+    const launchGitSummary = launch?.commands.find(
+      (command) => command.name() === "git-summary"
+    );
     const launchUiValidate = launch?.commands.find(
       (command) => command.name() === "ui-validate"
     );
@@ -540,6 +543,9 @@ describe("cli entrypoint", () => {
         "--severity",
         "--source"
       ])
+    );
+    expect(launchGitSummary?.options.map((option) => option.long)).toEqual(
+      expect.arrayContaining(["--actor", "--cwd", "--remote"])
     );
     expect(launchUiValidate?.options.map((option) => option.long)).toEqual(
       expect.arrayContaining([
