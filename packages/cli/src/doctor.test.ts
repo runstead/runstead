@@ -1,6 +1,7 @@
 import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 
 import { openRunsteadDatabase } from "@runstead/state-sqlite";
 import { describe, expect, it } from "vitest";
@@ -173,6 +174,39 @@ describe("doctorRunstead", () => {
         status: "fail",
         message: "missing tables: tool_calls"
       });
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("fails when state migrations are stale", async () => {
+    const workspace = join(tmpdir(), `runstead-doctor-state-version-${process.pid}`);
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await mkdir(workspace, { recursive: true });
+      const initialized = await initRunstead({ cwd: workspace });
+      const database = new DatabaseSync(initialized.stateDb);
+
+      try {
+        database.exec("DELETE FROM schema_migrations WHERE version = 2");
+        database.exec("PRAGMA user_version = 1");
+      } finally {
+        database.close();
+      }
+
+      const result = await doctorRunstead({ cwd: workspace });
+
+      expect(result.ok).toBe(false);
+      expect(result.checks.find((check) => check.id === "state-db")).toMatchObject({
+        status: "fail"
+      });
+      expect(
+        result.checks.find((check) => check.id === "state-db")?.message
+      ).toContain("missing migrations: 2");
+      expect(
+        result.checks.find((check) => check.id === "state-db")?.message
+      ).toContain("sqlite user_version 1, expected 2");
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }

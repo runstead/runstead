@@ -1,6 +1,7 @@
 import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 
 import { openRunsteadDatabase } from "@runstead/state-sqlite";
 import { describe, expect, it } from "vitest";
@@ -115,6 +116,29 @@ describe("migrateRunsteadState", () => {
 
       try {
         database.exec("DROP TABLE tool_calls");
+      } finally {
+        database.close();
+      }
+
+      await expect(migrateRunsteadState({ cwd: workspace })).rejects.toThrow(
+        "Migration source is not a complete Runstead state: state-db"
+      );
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("rejects legacy sources with stale state migrations", async () => {
+    const workspace = join(tmpdir(), `runstead-migrate-stale-${process.pid}`);
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await createLegacyTeamState(workspace);
+      const database = new DatabaseSync(join(workspace, ".team", "state.db"));
+
+      try {
+        database.exec("DELETE FROM schema_migrations WHERE version = 2");
+        database.exec("PRAGMA user_version = 1");
       } finally {
         database.close();
       }

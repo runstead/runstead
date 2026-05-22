@@ -4,6 +4,8 @@ import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
 import {
+  REQUIRED_STATE_INDEXES,
+  REQUIRED_STATE_TABLES,
   RUNSTEAD_SCHEMA_VERSION,
   createSchemaSql,
   runsteadSchemaMigrations,
@@ -90,7 +92,14 @@ export function migrateRunsteadDatabase(database: RunsteadDatabase): void {
 }
 
 export * from "./projections.js";
-export { RUNSTEAD_SCHEMA_VERSION, createSchemaSql };
+export * from "./schema-validation.js";
+export {
+  REQUIRED_STATE_INDEXES,
+  REQUIRED_STATE_TABLES,
+  RUNSTEAD_SCHEMA_VERSION,
+  createSchemaSql,
+  runsteadSchemaMigrations
+};
 
 interface AppliedMigrationRow {
   version: number;

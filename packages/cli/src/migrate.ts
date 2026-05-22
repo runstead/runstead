@@ -3,9 +3,12 @@ import { access, cp, rm, stat } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
 import { validateDomainPackDir } from "@runstead/domain-packs";
+import {
+  formatRunsteadSchemaValidation,
+  validateRunsteadDatabaseSchema
+} from "@runstead/state-sqlite";
 
 import { loadPolicyProfileFromFile } from "./policy-loader.js";
-import { missingRequiredStateTables } from "./state-schema.js";
 
 export interface MigrateRunsteadOptions {
   cwd?: string;
@@ -283,16 +286,21 @@ async function checkStateDatabase(path: string): Promise<MigrationValidationChec
     const database = new DatabaseSync(path, { readOnly: true });
 
     try {
-      const rows = database
-        .prepare("SELECT name FROM sqlite_master WHERE type = 'table'")
-        .all() as { name: string }[];
-      const missing = missingRequiredStateTables(rows.map((row) => row.name));
+      const validation = validateRunsteadDatabaseSchema(database);
 
-      if (missing.length > 0) {
-        return fail("state-db", "state.db", `missing tables: ${missing.join(", ")}`);
+      if (!validation.ok) {
+        return fail(
+          "state-db",
+          "state.db",
+          formatRunsteadSchemaValidation(validation)
+        );
       }
 
-      return pass("state-db", "state.db", path);
+      return pass(
+        "state-db",
+        "state.db",
+        `${formatRunsteadSchemaValidation(validation)}: ${path}`
+      );
     } finally {
       database.close();
     }

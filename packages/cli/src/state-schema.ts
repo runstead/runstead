@@ -1,15 +1,6 @@
-export const REQUIRED_STATE_TABLES = [
-  "goals",
-  "tasks",
-  "evidence",
-  "policy_decisions",
-  "approvals",
-  "worker_runs",
-  "tool_calls",
-  "memory_records",
-  "repositories",
-  "events"
-];
+import { REQUIRED_STATE_TABLES } from "@runstead/state-sqlite";
+
+export { REQUIRED_STATE_TABLES };
 
 export function missingRequiredStateTables(tableNames: Iterable<string>): string[] {
   const existing = new Set(tableNames);

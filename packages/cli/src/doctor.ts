@@ -6,6 +6,10 @@ import {
   validateDomainPackDir,
   verifyDomainPackManifest
 } from "@runstead/domain-packs";
+import {
+  formatRunsteadSchemaValidation,
+  validateRunsteadDatabaseSchema
+} from "@runstead/state-sqlite";
 
 import { getCodexAuthStatus, type CodexAuthStatus } from "./codex-auth.js";
 import { resolveCodexModel, type ResolveCodexModelResult } from "./codex-model.js";
@@ -13,7 +17,6 @@ import { resolveModelProvider, type ResolvedModelProvider } from "./model-provid
 import { loadPolicyProfileFromFile } from "./policy-loader.js";
 import { evaluatePolicy } from "./policy.js";
 import { resolveRunsteadRoot } from "./runstead-root.js";
-import { missingRequiredStateTables } from "./state-schema.js";
 import {
   runWorkerProcess,
   workerCommand,
@@ -830,16 +833,21 @@ async function checkStateDatabase(path: string): Promise<DoctorCheck> {
     const database = new DatabaseSync(path, { readOnly: true });
 
     try {
-      const rows = database
-        .prepare("SELECT name FROM sqlite_master WHERE type = 'table'")
-        .all() as { name: string }[];
-      const missing = missingRequiredStateTables(rows.map((row) => row.name));
+      const validation = validateRunsteadDatabaseSchema(database);
 
-      if (missing.length > 0) {
-        return fail("state-db", "state.db", `missing tables: ${missing.join(", ")}`);
+      if (!validation.ok) {
+        return fail(
+          "state-db",
+          "state.db",
+          formatRunsteadSchemaValidation(validation)
+        );
       }
 
-      return pass("state-db", "state.db", path);
+      return pass(
+        "state-db",
+        "state.db",
+        `${formatRunsteadSchemaValidation(validation)}: ${path}`
+      );
     } finally {
       database.close();
     }

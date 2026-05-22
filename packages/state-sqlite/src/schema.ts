@@ -1,5 +1,41 @@
 export const RUNSTEAD_SCHEMA_VERSION = 2;
 
+export const REQUIRED_STATE_TABLES = [
+  "goals",
+  "tasks",
+  "evidence",
+  "policy_decisions",
+  "approvals",
+  "worker_runs",
+  "tool_calls",
+  "memory_records",
+  "repositories",
+  "events",
+  "schema_migrations"
+];
+
+export const REQUIRED_STATE_INDEXES = [
+  "idx_events_type_created_id",
+  "idx_events_aggregate_id",
+  "idx_events_created_id",
+  "idx_tasks_goal_status_updated",
+  "idx_tasks_domain_status_updated",
+  "idx_tasks_type_status_updated",
+  "idx_tasks_status_updated",
+  "idx_evidence_type_created",
+  "idx_evidence_subject_type_created",
+  "idx_policy_decisions_action_created",
+  "idx_policy_decisions_created",
+  "idx_approvals_action_status_updated",
+  "idx_approvals_status_updated",
+  "idx_approvals_policy_decision",
+  "idx_tool_calls_task_started",
+  "idx_tool_calls_worker_run_started",
+  "idx_tool_calls_action_status_started",
+  "idx_tool_calls_policy_decision",
+  "idx_worker_runs_task_status_started"
+];
+
 export interface RunsteadSchemaMigration {
   version: number;
   name: string;

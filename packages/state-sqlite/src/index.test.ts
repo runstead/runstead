@@ -8,7 +8,9 @@ import {
   RUNSTEAD_SCHEMA_VERSION,
   appendEventAndProject,
   appendEventsAndProjects,
-  openRunsteadDatabase
+  formatRunsteadSchemaValidation,
+  openRunsteadDatabase,
+  validateRunsteadDatabaseSchema
 } from "./index.js";
 
 describe("openRunsteadDatabase", () => {
@@ -105,6 +107,40 @@ describe("openRunsteadDatabase", () => {
           "idx_tool_calls_action_status_started",
           "idx_worker_runs_task_status_started"
         ])
+      );
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("validates migration records, user_version, and required indexes", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-state-"));
+
+    try {
+      const database = openRunsteadDatabase(join(workspace, "state.db"));
+      let validation = validateRunsteadDatabaseSchema(database);
+
+      expect(validation.ok).toBe(true);
+      expect(formatRunsteadSchemaValidation(validation)).toBe(
+        `schema version ${RUNSTEAD_SCHEMA_VERSION}`
+      );
+
+      database.exec("DELETE FROM schema_migrations WHERE version = 2");
+      database.exec("PRAGMA user_version = 1");
+      database.exec("DROP INDEX idx_events_type_created_id");
+      validation = validateRunsteadDatabaseSchema(database);
+
+      database.close();
+
+      expect(validation.ok).toBe(false);
+      expect(formatRunsteadSchemaValidation(validation)).toContain(
+        "missing migrations: 2"
+      );
+      expect(formatRunsteadSchemaValidation(validation)).toContain(
+        "missing indexes: idx_events_type_created_id"
+      );
+      expect(formatRunsteadSchemaValidation(validation)).toContain(
+        "sqlite user_version 1, expected 2"
       );
     } finally {
       await rm(workspace, { force: true, recursive: true });
