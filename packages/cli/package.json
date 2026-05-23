@@ -33,6 +33,7 @@
     "@runstead/core": "workspace:*",
     "@runstead/domain-packs": "workspace:*",
     "@runstead/governance": "workspace:*",
+    "@runstead/runtime": "workspace:*",
     "@runstead/skills": "workspace:*",
     "@runstead/state-sqlite": "workspace:*",
     "commander": "catalog:",

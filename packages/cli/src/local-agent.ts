@@ -10,6 +10,14 @@ import {
   type WorkerRun
 } from "@runstead/core";
 import {
+  runtimeExecutionSemantics,
+  runtimeFinalTaskStatus,
+  runtimeTaskResultStatus,
+  runtimeWorkerRunStatusFromTaskStatus,
+  type RuntimeVerifierOutcome,
+  type RuntimeWorkerOutcome
+} from "@runstead/runtime";
+import {
   appendEventAndProject,
   openRunsteadDatabase,
   type RunsteadDatabase
@@ -1353,69 +1361,30 @@ function localAgentFinalTaskStatus(
   workerResult: LocalAgentWorkerResult,
   verifierResult?: RunTaskVerifiersResult
 ): Task["status"] {
-  if (isCodexDirectLocalAgentWorkerResult(workerResult)) {
-    if (
-      workerResult.status === "failed" &&
-      workerResult.budget !== undefined &&
-      localAgentVerifiersPassed(verifierResult)
-    ) {
-      return "completed";
-    }
+  const worker = localAgentWorkerOutcome(workerResult);
+  const verifier = localAgentVerifierOutcome(verifierResult);
 
-    if (workerResult.status !== "completed") {
-      return localAgentTaskStatus(workerResult.status);
-    }
-
-    return verifierResult?.task.status ?? "completed";
-  }
-
-  if (workerResult.exitCode !== 0) {
-    return "failed";
-  }
-
-  return verifierResult?.task.status ?? "completed";
+  return verifier === undefined
+    ? runtimeFinalTaskStatus({ worker })
+    : runtimeFinalTaskStatus({ worker, verifier });
 }
 
 function localAgentResultStatus(
   status: Task["status"],
   workerResult?: LocalAgentWorkerResult
 ): RunLocalAgentTaskResult["status"] {
-  switch (status) {
-    case "completed":
-      if (
-        workerResult !== undefined &&
-        isCodexDirectLocalAgentWorkerResult(workerResult) &&
-        workerResult.status === "failed" &&
-        workerResult.budget !== undefined
-      ) {
-        return "completed_with_warnings";
-      }
-
-      return "completed";
-    case "waiting_approval":
-      return "waiting_approval";
-    case "blocked":
-      return "blocked";
-    case "failed":
-      return "failed";
-    default:
-      return "failed";
-  }
+  return runtimeTaskResultStatus({
+    taskStatus: status,
+    ...(workerResult === undefined
+      ? {}
+      : { worker: localAgentWorkerOutcome(workerResult) })
+  });
 }
 
 function localAgentWorkerRunStatus(
   status: Task["status"]
 ): "completed" | "waiting_approval" | "blocked" | "failed" {
-  switch (status) {
-    case "completed":
-      return "completed";
-    case "waiting_approval":
-      return "waiting_approval";
-    case "blocked":
-      return "blocked";
-    default:
-      return "failed";
-  }
+  return runtimeWorkerRunStatusFromTaskStatus(status);
 }
 
 function localAgentFinalSummary(
@@ -1455,60 +1424,43 @@ function localAgentExecutionSemantics(input: {
   workerResult: LocalAgentWorkerResult;
   verifierResult?: RunTaskVerifiersResult;
 }): JsonObject {
+  const worker = localAgentWorkerOutcome(input.workerResult);
+  const verifier = localAgentVerifierOutcome(input.verifierResult);
+
+  return verifier === undefined
+    ? runtimeExecutionSemantics({ worker })
+    : runtimeExecutionSemantics({ worker, verifier });
+}
+
+function localAgentWorkerOutcome(
+  workerResult: LocalAgentWorkerResult
+): RuntimeWorkerOutcome {
+  if (!isCodexDirectLocalAgentWorkerResult(workerResult)) {
+    return {
+      kind: "wrapped",
+      exitCode: workerResult.exitCode
+    };
+  }
+
   return {
-    implementation: localAgentImplementationStatus(input),
-    verification: localAgentVerificationStatus(input.verifierResult),
-    agentCompletion: localAgentCompletionStatus(input.workerResult)
+    kind: "governed",
+    status: workerResult.status,
+    toolCalls: workerResult.toolCalls,
+    ...(workerResult.budget === undefined ? {} : { budgetExhausted: true })
   };
 }
 
-function localAgentImplementationStatus(input: {
-  workerResult: LocalAgentWorkerResult;
-  verifierResult?: RunTaskVerifiersResult;
-}): "applied" | "not_applied" {
-  if (localAgentVerifiersPassed(input.verifierResult)) {
-    return "applied";
-  }
-
-  if (isCodexDirectLocalAgentWorkerResult(input.workerResult)) {
-    return input.workerResult.status === "completed" && input.workerResult.toolCalls > 0
-      ? "applied"
-      : "not_applied";
-  }
-
-  return input.workerResult.exitCode === 0 ? "applied" : "not_applied";
-}
-
-function localAgentVerificationStatus(
+function localAgentVerifierOutcome(
   verifierResult: RunTaskVerifiersResult | undefined
-): "passed" | "failed" | "skipped" {
+): RuntimeVerifierOutcome | undefined {
   if (verifierResult === undefined) {
-    return "skipped";
+    return undefined;
   }
 
-  return localAgentVerifiersPassed(verifierResult) ? "passed" : "failed";
-}
-
-function localAgentCompletionStatus(
-  workerResult: LocalAgentWorkerResult
-): "completed" | "budget_exhausted" | "approval_waiting" | "blocked" | "failed" {
-  if (!isCodexDirectLocalAgentWorkerResult(workerResult)) {
-    return workerResult.exitCode === 0 ? "completed" : "failed";
-  }
-
-  if (workerResult.status === "completed") {
-    return "completed";
-  }
-
-  if (workerResult.status === "waiting_approval") {
-    return "approval_waiting";
-  }
-
-  if (workerResult.status === "blocked") {
-    return "blocked";
-  }
-
-  return workerResult.budget === undefined ? "failed" : "budget_exhausted";
+  return {
+    status: localAgentVerifiersPassed(verifierResult) ? "passed" : "failed",
+    taskStatus: verifierResult.task.status
+  };
 }
 
 function finalizeLocalAgentTask(input: {
@@ -1889,21 +1841,6 @@ function localAgentFailureFromError(
       ...(checkpoint === undefined ? {} : { checkpointId: checkpoint.id })
     }
   };
-}
-
-function localAgentTaskStatus(
-  status: CodexDirectWorkerResult["status"]
-): Task["status"] {
-  switch (status) {
-    case "completed":
-      return "completed";
-    case "waiting_approval":
-      return "waiting_approval";
-    case "blocked":
-      return "blocked";
-    case "failed":
-      return "failed";
-  }
 }
 
 function isCodexDirectLocalAgentWorkerResult(

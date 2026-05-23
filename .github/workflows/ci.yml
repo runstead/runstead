@@ -61,6 +61,7 @@ jobs:
           pnpm --filter @runstead/core pack --dry-run
           pnpm --filter @runstead/domain-packs pack --dry-run
           pnpm --filter @runstead/skills pack --dry-run
+          pnpm --filter @runstead/runtime pack --dry-run
           pnpm --filter @runstead/state-sqlite pack --dry-run
           pnpm --filter @runstead/cli pack --dry-run
 
