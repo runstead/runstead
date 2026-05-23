@@ -680,6 +680,22 @@ describe("runCodexDirectWorker", () => {
             };
             riskSummary: string;
             canonicalSignature: string;
+            pendingPatch: {
+              mode: string;
+              filesTouched: string[];
+              diffHash: string;
+              dependencyImpact: {
+                kind: string;
+                files: string[];
+              };
+              riskSummary: string;
+              canonicalSignature: string;
+              replacements?: {
+                path: string;
+                search: string;
+                replace: string;
+              }[];
+            };
           };
         };
 
@@ -705,6 +721,21 @@ describe("runCodexDirectWorker", () => {
         expect(action.context.riskSummary).toContain(
           "no dependency file impact"
         );
+        expect(action.context.pendingPatch).toMatchObject({
+          mode: "replacements",
+          filesTouched: ["src/message.txt"],
+          diffHash: action.context.diffHash,
+          dependencyImpact: action.context.dependencyImpact,
+          riskSummary: action.context.riskSummary,
+          canonicalSignature: action.context.canonicalSignature,
+          replacements: [
+            {
+              path: "src/message.txt",
+              search: "before",
+              replace: "after"
+            }
+          ]
+        });
       } finally {
         database.close();
       }

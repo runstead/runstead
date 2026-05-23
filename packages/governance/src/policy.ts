@@ -28,6 +28,24 @@ export interface ActionContext {
   };
   riskSummary?: string;
   canonicalSignature?: string;
+  pendingPatch?: {
+    mode: "unified_diff" | "replacements";
+    filesTouched: string[];
+    diffHash: string;
+    dependencyImpact: {
+      kind: string;
+      files: string[];
+    };
+    riskSummary: string;
+    canonicalSignature: string;
+    patch?: string;
+    replacements?: {
+      path: string;
+      search: string;
+      replace: string;
+      replaceAll?: boolean;
+    }[];
+  };
   networkDomains?: string[];
   secretsRequested?: string[];
   sideEffects?: string[];

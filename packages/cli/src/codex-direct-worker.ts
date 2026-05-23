@@ -1359,6 +1359,14 @@ async function runGovernedApplyPatch(
       cwd: options.cwd,
       filesTouched,
       approvalMetadata,
+      pendingPatch: codexDirectPendingPatchPayload({
+        filesTouched,
+        approvalMetadata,
+        ...(options.patch === undefined ? {} : { patch: options.patch }),
+        ...(options.replacements === undefined
+          ? {}
+          : { replacements: options.replacements })
+      }),
       stableParts: [options.cwd, options.patch, options.replacements ?? []]
     }),
     run: async () => {
@@ -2048,6 +2056,7 @@ function filesystemPatchAction(input: {
   cwd: string;
   filesTouched: string[];
   approvalMetadata: CodexDirectPatchApprovalMetadata;
+  pendingPatch: CodexDirectPendingPatchPayload;
   stableParts: unknown[];
 }): ActionEnvelope {
   return {
@@ -2064,6 +2073,7 @@ function filesystemPatchAction(input: {
       dependencyImpact: input.approvalMetadata.dependencyImpact,
       riskSummary: input.approvalMetadata.riskSummary,
       canonicalSignature: input.approvalMetadata.canonicalSignature,
+      pendingPatch: input.pendingPatch,
       sideEffects: ["write_workspace"]
     }
   };
@@ -2314,6 +2324,18 @@ interface CodexDirectPatchApprovalMetadata {
   canonicalSignature: string;
 }
 
+interface CodexDirectPendingPatchPayload extends CodexDirectPatchApprovalMetadata {
+  mode: "unified_diff" | "replacements";
+  filesTouched: string[];
+  patch?: string;
+  replacements?: {
+    path: string;
+    search: string;
+    replace: string;
+    replaceAll?: boolean;
+  }[];
+}
+
 function codexDirectPatchApprovalMetadata(input: {
   cwd: string;
   filesTouched: string[];
@@ -2357,6 +2379,31 @@ function codexDirectPatchApprovalMetadata(input: {
     dependencyImpact,
     riskSummary,
     canonicalSignature
+  };
+}
+
+function codexDirectPendingPatchPayload(input: {
+  filesTouched: string[];
+  approvalMetadata: CodexDirectPatchApprovalMetadata;
+  patch?: string;
+  replacements?: {
+    path: string;
+    search: string;
+    replace: string;
+    replaceAll?: boolean;
+  }[];
+}): CodexDirectPendingPatchPayload {
+  return {
+    mode: input.patch === undefined ? "replacements" : "unified_diff",
+    filesTouched: input.filesTouched,
+    diffHash: input.approvalMetadata.diffHash,
+    dependencyImpact: input.approvalMetadata.dependencyImpact,
+    riskSummary: input.approvalMetadata.riskSummary,
+    canonicalSignature: input.approvalMetadata.canonicalSignature,
+    ...(input.patch === undefined ? {} : { patch: input.patch }),
+    ...(input.replacements === undefined
+      ? {}
+      : { replacements: input.replacements })
   };
 }
 
