@@ -13,6 +13,7 @@ import {
   type StartupGateCheckResult,
   type StartupGateStage
 } from "./startup-evidence.js";
+import { getStartupStatus } from "./startup-status.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -97,7 +98,14 @@ export async function generateStartupCiSummary(
     stage,
     now: new Date(checkedAt)
   });
-  const effectiveGate = effectiveStartupCiGate(gate, options.readiness);
+  const readiness =
+    options.readiness ??
+    (await readLatestStartupCiReadiness({
+      cwd,
+      domain,
+      now: new Date(checkedAt)
+    }));
+  const effectiveGate = effectiveStartupCiGate(gate, readiness);
   const checkRun = startupCheckRunSummary({
     gate: effectiveGate,
     checkName: options.checkName ?? "Runstead Startup Gate"
@@ -143,9 +151,7 @@ export async function generateStartupCiSummary(
       findings: effectiveGate.findings,
       diff: effectiveGate.diff,
       eventId: effectiveGate.event.eventId,
-      ...(options.readiness === undefined
-        ? {}
-        : { readinessVerdict: options.readiness.verdict })
+      ...(readiness === undefined ? {} : { readinessVerdict: readiness.verdict })
     }
   };
   const event: RunsteadEvent = {
@@ -195,6 +201,21 @@ function effectiveStartupCiGate(
     return gate;
   }
 
+  if (readinessVerdictReady(readiness.verdict) && readiness.blockers.length === 0) {
+    return {
+      ...gate,
+      passed: true,
+      blockers: [],
+      warnings: uniqueStrings([
+        ...gate.warnings,
+        ...gate.blockers.map(
+          (blocker) =>
+            `startup readiness verdict ${readiness.verdict} superseded gate blocker: ${blocker}`
+        )
+      ])
+    };
+  }
+
   const blockers = uniqueStrings([...gate.blockers, ...readiness.blockers]);
 
   return {
@@ -202,6 +223,37 @@ function effectiveStartupCiGate(
     passed: blockers.length === 0,
     blockers
   };
+}
+
+async function readLatestStartupCiReadiness(input: {
+  cwd: string;
+  domain: string;
+  now: Date;
+}): Promise<{ verdict: string; blockers: string[] } | undefined> {
+  try {
+    const status = await getStartupStatus({
+      cwd: input.cwd,
+      domain: input.domain,
+      now: input.now
+    });
+
+    return status.readiness === undefined
+      ? undefined
+      : {
+          verdict: status.readiness.verdict,
+          blockers: status.readiness.blockers
+        };
+  } catch {
+    return undefined;
+  }
+}
+
+function readinessVerdictReady(verdict: string): boolean {
+  return [
+    "local_launch_ready",
+    "staging_launch_ready",
+    "public_launch_ready"
+  ].includes(verdict);
 }
 
 export function formatStartupCiSummary(result: GenerateStartupCiSummaryResult): string {

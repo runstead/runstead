@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { readFile, rm } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -216,6 +216,67 @@ describe("startup CI integration", () => {
         readinessVerdict: "local_launch_blocked",
         blockers: expect.arrayContaining(["Launch report is blocked"])
       });
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("uses the latest startup ready verdict for standalone CI summaries", async () => {
+    const workspace = join(tmpdir(), `runstead-startup-ci-ready-${process.pid}`);
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      const initialized = await initRunstead({ cwd: workspace });
+      await installDomainPack({
+        cwd: workspace,
+        ref: "ai-native-startup",
+        now: new Date("2026-05-14T01:00:00.000Z")
+      });
+      await mkdir(join(initialized.root, "startup", "readiness-runs"), {
+        recursive: true
+      });
+      await writeFile(
+        join(initialized.root, "startup", "readiness-runs", "run_ready.json"),
+        `${JSON.stringify(
+          {
+            id: "run_ready",
+            target: "local",
+            verdict: "local_launch_ready",
+            verdictBlockers: [],
+            completedAt: "2026-05-14T01:08:00.000Z"
+          },
+          null,
+          2
+        )}\n`,
+        "utf8"
+      );
+
+      const result = await generateStartupCiSummary({
+        cwd: workspace,
+        stage: "launch",
+        now: new Date("2026-05-14T01:10:00.000Z")
+      });
+      const json = JSON.parse(await readFile(result.jsonPath, "utf8")) as {
+        gate: {
+          blockers: string[];
+        };
+        effectiveGate: {
+          readinessVerdict?: string;
+          blockers: string[];
+          warnings: string[];
+        };
+      };
+
+      expect(json.gate.blockers.length).toBeGreaterThan(0);
+      expect(result.checkRun.conclusion).toBe("success");
+      expect(result.releaseGate.status).toBe("allow_release");
+      expect(json.effectiveGate).toMatchObject({
+        readinessVerdict: "local_launch_ready",
+        blockers: []
+      });
+      expect(json.effectiveGate.warnings.join("\n")).toContain(
+        "superseded gate blocker"
+      );
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }
