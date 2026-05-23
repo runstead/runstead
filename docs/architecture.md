@@ -32,5 +32,14 @@ live outside the CLI. Policy and risk primitives have moved into
 mapping have moved into `@runstead/runtime`, along with backend contracts for
 event append concurrency, lock managers, artifact stores, local `RUNSTEAD_HOME`
 layout, and standard tool-call adapter primitives for Codex Responses and
-OpenAI-compatible chat completion shapes. The remaining extraction boundary is
-the local runner implementation currently hosted by the CLI.
+OpenAI-compatible chat completion shapes. Runtime also defines the team control
+plane contracts that a future shared backend must satisfy: organization scope,
+registered runners, distributed leases with fencing tokens, append-only audit
+sinks, and non-local identity/RBAC/secret boundaries. The remaining extraction
+boundary is the local runner implementation currently hosted by the CLI.
+
+The current shipped backend remains local/CI-oriented: SQLite state, local
+artifacts, and a manager lock under `.runstead`. A team or organization
+deployment should use the runtime team-control-plane assessment as an
+integration contract, not as evidence that the local SQLite backend has become a
+multi-user service.

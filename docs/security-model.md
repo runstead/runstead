@@ -109,6 +109,22 @@ The state DB records:
 Local filesystem permissions, backups, and access control for the host machine
 remain the operator's responsibility.
 
+## Team Control Plane Boundary
+
+Runstead's current production-ready shape is still local workstations and CI
+jobs. A team-level deployment needs a different backend contract:
+
+- shared transactional storage instead of local SQLite
+- registered runners with heartbeat and lease ownership
+- distributed leases with fencing tokens
+- append-only or hash-chain audit export
+- organization identity, RBAC, tenant isolation, and central secret boundaries
+
+`@runstead/runtime` exposes `assessTeamControlPlaneReadiness` so integrations can
+check those capabilities explicitly. A local `.runstead/state.db` can be good
+audit evidence for one workspace, but it must not be presented as an
+organization-wide, multi-tenant security boundary.
+
 ## What Runstead Does Not Defend Against
 
 Runstead does not defend against:
