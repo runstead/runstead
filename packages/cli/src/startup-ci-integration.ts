@@ -57,10 +57,14 @@ export interface StartupGitHubActionsRemoteStatus {
   status: "passed" | "failed" | "pending" | "not_configured" | "unknown";
   repository?: string;
   headSha?: string;
+  workflowRunId?: string;
   workflowName?: string;
   workflowRunUrl?: string;
   runStatus?: string;
   conclusion?: string;
+  failedJobName?: string;
+  failedJobLogUrl?: string;
+  failedJobLogExcerpt?: string;
   reason?: string;
 }
 
@@ -107,22 +111,23 @@ export async function generateStartupCiSummary(
       now: new Date(checkedAt)
     }));
   const effectiveGate = effectiveStartupCiGate(gate, readiness);
-  const checkRun = startupCheckRunSummary({
-    gate: effectiveGate,
-    checkName: options.checkName ?? "Runstead Startup Gate"
-  });
   const remoteActions = await inspectGitHubActionsRemoteStatus({
     cwd,
     ...(options.fetch === undefined ? {} : { fetch: options.fetch })
   });
+  const finalGate = mergeRemoteActionsIntoStartupGate(effectiveGate, remoteActions);
+  const checkRun = startupCheckRunSummary({
+    gate: finalGate,
+    checkName: options.checkName ?? "Runstead Startup Gate"
+  });
   const releaseGate: StartupReleaseGateSummary = {
-    status: effectiveGate.passed ? "allow_release" : "block_release",
+    status: finalGate.passed ? "allow_release" : "block_release",
     requiredArtifact: "runstead-startup-ci-summary.json",
     branchProtectionHint:
-      "Configure CI to fail this step when conclusion is failure, then require the check in branch protection."
+      "Configure CI to fail this step when conclusion is failure, require the check in branch protection, and treat failed remote GitHub Actions as release blockers."
   };
   const prComment = formatStartupPrComment({
-    gate: effectiveGate,
+    gate: finalGate,
     checkRun,
     remoteActions,
     releaseGate
@@ -146,12 +151,12 @@ export async function generateStartupCiSummary(
       eventId: gate.event.eventId
     },
     effectiveGate: {
-      passed: effectiveGate.passed,
-      blockers: effectiveGate.blockers,
-      warnings: effectiveGate.warnings,
-      findings: effectiveGate.findings,
-      diff: effectiveGate.diff,
-      eventId: effectiveGate.event.eventId,
+      passed: finalGate.passed,
+      blockers: finalGate.blockers,
+      warnings: finalGate.warnings,
+      findings: finalGate.findings,
+      diff: finalGate.diff,
+      eventId: finalGate.event.eventId,
       ...(readiness === undefined ? {} : { readinessVerdict: readiness.verdict })
     }
   };
@@ -178,7 +183,7 @@ export async function generateStartupCiSummary(
     root: resolvedState.root,
     stateDb: resolvedState.stateDb,
     stage,
-    gate: effectiveGate,
+    gate: finalGate,
     markdownPath,
     jsonPath,
     checkRun,
@@ -187,6 +192,54 @@ export async function generateStartupCiSummary(
     releaseGate,
     event
   };
+}
+
+function mergeRemoteActionsIntoStartupGate(
+  gate: StartupGateCheckResult,
+  remoteActions: StartupGitHubActionsRemoteStatus
+): StartupGateCheckResult {
+  const remoteBlockers = remoteActionsReleaseBlockers(remoteActions);
+  const remoteWarnings = remoteActionsReleaseWarnings(remoteActions);
+  const blockers = uniqueStrings([...gate.blockers, ...remoteBlockers]);
+
+  return {
+    ...gate,
+    passed: blockers.length === 0,
+    blockers,
+    warnings: uniqueStrings([...gate.warnings, ...remoteWarnings])
+  };
+}
+
+function remoteActionsReleaseBlockers(
+  remoteActions: StartupGitHubActionsRemoteStatus
+): string[] {
+  if (remoteActions.status === "failed") {
+    return [
+      `remote GitHub Actions failed for HEAD${remoteActions.workflowName === undefined ? "" : ` (${remoteActions.workflowName})`}`
+    ];
+  }
+
+  if (remoteActions.status === "pending") {
+    return [
+      `remote GitHub Actions are still pending for HEAD${remoteActions.workflowName === undefined ? "" : ` (${remoteActions.workflowName})`}`
+    ];
+  }
+
+  return [];
+}
+
+function remoteActionsReleaseWarnings(
+  remoteActions: StartupGitHubActionsRemoteStatus
+): string[] {
+  if (remoteActions.status === "not_configured") {
+    return [`remote GitHub Actions status is not configured: ${remoteActions.reason}`];
+  }
+
+  if (remoteActions.status === "unknown") {
+    return [`remote GitHub Actions status is unknown: ${remoteActions.reason}`];
+  }
+
+  return [];
 }
 
 function effectiveStartupCiGate(
@@ -305,6 +358,20 @@ function formatStartupPrComment(input: {
       ? "- none"
       : input.gate.warnings.map((warning) => `- ${warning}`).join("\n"),
     "",
+    "### Remote Failure Log",
+    input.remoteActions.failedJobLogExcerpt === undefined
+      ? "- none"
+      : [
+          `- Job: ${input.remoteActions.failedJobName ?? "unknown"}`,
+          ...(input.remoteActions.failedJobLogUrl === undefined
+            ? []
+            : [`- Log source: ${input.remoteActions.failedJobLogUrl}`]),
+          "",
+          "```text",
+          input.remoteActions.failedJobLogExcerpt,
+          "```"
+        ].join("\n"),
+    "",
     "### Branch Protection",
     input.releaseGate.branchProtectionHint
   ].join("\n");
@@ -387,21 +454,33 @@ async function inspectGitHubActionsRemoteStatus(input: {
     const conclusion = stringValue(run.conclusion);
     const workflowRunUrl = stringValue(run.html_url);
     const workflowName = stringValue(run.name);
+    const workflowRunId = stringIdValue(run.id);
     const status =
       runStatus === "completed"
         ? conclusion === "success"
           ? "passed"
           : "failed"
         : "pending";
+    const failedJob =
+      status === "failed" && workflowRunId !== undefined
+        ? await fetchFailedGitHubActionsJobLog({
+            fetcher,
+            owner: repository.repository.owner,
+            repo: repository.repository.repo,
+            workflowRunId
+          })
+        : undefined;
 
     return {
       status,
       repository: `${repository.repository.owner}/${repository.repository.repo}`,
       headSha,
+      ...(workflowRunId === undefined ? {} : { workflowRunId }),
       ...(workflowName === undefined ? {} : { workflowName }),
       ...(workflowRunUrl === undefined ? {} : { workflowRunUrl }),
       ...(runStatus === undefined ? {} : { runStatus }),
-      ...(conclusion === undefined ? {} : { conclusion })
+      ...(conclusion === undefined ? {} : { conclusion }),
+      ...(failedJob === undefined ? {} : failedJob)
     };
   } catch (error) {
     return {
@@ -411,6 +490,100 @@ async function inspectGitHubActionsRemoteStatus(input: {
       reason: error instanceof Error ? error.message : String(error)
     };
   }
+}
+
+async function fetchFailedGitHubActionsJobLog(input: {
+  fetcher: FetchLike;
+  owner: string;
+  repo: string;
+  workflowRunId: string;
+}): Promise<
+  | Pick<
+      StartupGitHubActionsRemoteStatus,
+      "failedJobName" | "failedJobLogUrl" | "failedJobLogExcerpt"
+    >
+  | undefined
+> {
+  const jobsUrl = new URL(
+    `https://api.github.com/repos/${input.owner}/${input.repo}/actions/runs/${input.workflowRunId}/jobs`
+  );
+  jobsUrl.searchParams.set("filter", "latest");
+  jobsUrl.searchParams.set("per_page", "100");
+
+  try {
+    const jobsResponse = await input.fetcher(jobsUrl.toString(), {
+      headers: githubActionsHeaders(),
+      signal: AbortSignal.timeout(10_000)
+    });
+
+    if (!jobsResponse.ok) {
+      return undefined;
+    }
+
+    const body = await jobsResponse.json();
+    const job = firstFailedGitHubJob(body);
+
+    if (job === undefined) {
+      return undefined;
+    }
+
+    const jobId = stringIdValue(job.id);
+
+    if (jobId === undefined) {
+      return undefined;
+    }
+
+    const logUrl = `https://api.github.com/repos/${input.owner}/${input.repo}/actions/jobs/${jobId}/logs`;
+    const logResponse = await input.fetcher(logUrl, {
+      headers: githubActionsHeaders(),
+      signal: AbortSignal.timeout(10_000)
+    });
+
+    if (!logResponse.ok || logResponse.text === undefined) {
+      return {
+        failedJobName: stringValue(job.name) ?? jobId,
+        failedJobLogUrl: logUrl
+      };
+    }
+
+    const log = await logResponse.text();
+
+    return {
+      failedJobName: stringValue(job.name) ?? jobId,
+      failedJobLogUrl: logUrl,
+      failedJobLogExcerpt: failedLogExcerpt(log)
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+function firstFailedGitHubJob(body: unknown): Record<string, unknown> | undefined {
+  if (!isRecord(body) || !Array.isArray(body.jobs)) {
+    return undefined;
+  }
+
+  return body.jobs.filter(isRecord).find((job) => {
+    const conclusion = stringValue(job.conclusion);
+
+    return (
+      conclusion !== undefined &&
+      !["success", "skipped", "neutral"].includes(conclusion)
+    );
+  });
+}
+
+function failedLogExcerpt(log: string): string {
+  const lines = log
+    .split(/\r?\n/)
+    .map((line) => line.trimEnd())
+    .filter((line) => line.trim().length > 0);
+  const failureIndex = lines.findIndex((line) =>
+    /(^|\s)(error|failed|failure|exception|timed out|exit code)(\s|:|$)/i.test(line)
+  );
+  const start = failureIndex < 0 ? Math.max(0, lines.length - 20) : Math.max(0, failureIndex - 8);
+
+  return lines.slice(start, start + 24).join("\n").slice(0, 4_000);
 }
 
 async function readGitHead(cwd: string): Promise<string | undefined> {
@@ -454,8 +627,10 @@ function formatRemoteActionsStatus(status: StartupGitHubActionsRemoteStatus): st
     status.status,
     status.repository === undefined ? undefined : `repo=${status.repository}`,
     status.headSha === undefined ? undefined : `head=${status.headSha.slice(0, 12)}`,
+    status.workflowRunId === undefined ? undefined : `run=${status.workflowRunId}`,
     status.workflowName === undefined ? undefined : `workflow=${status.workflowName}`,
     status.conclusion === undefined ? undefined : `conclusion=${status.conclusion}`,
+    status.failedJobName === undefined ? undefined : `failed_job=${status.failedJobName}`,
     status.reason === undefined ? undefined : `reason=${status.reason}`
   ]
     .filter((part): part is string => part !== undefined)
@@ -470,6 +645,18 @@ function stringValue(value: unknown): string | undefined {
   return typeof value === "string" && value.trim().length > 0
     ? value.trim()
     : undefined;
+}
+
+function stringIdValue(value: unknown): string | undefined {
+  if (typeof value === "string" && value.trim().length > 0) {
+    return value.trim();
+  }
+
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return String(value);
+  }
+
+  return undefined;
 }
 
 function uniqueStrings(values: string[]): string[] {
