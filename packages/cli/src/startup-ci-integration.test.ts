@@ -173,4 +173,51 @@ describe("startup CI integration", () => {
       await rm(workspace, { force: true, recursive: true });
     }
   });
+
+  it("blocks the CI summary when startup ready has verdict blockers", async () => {
+    const workspace = join(tmpdir(), `runstead-startup-ci-ready-blocked-${process.pid}`);
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await initRunstead({ cwd: workspace });
+      await installDomainPack({
+        cwd: workspace,
+        ref: "ai-native-startup",
+        now: new Date("2026-05-14T01:00:00.000Z")
+      });
+
+      const result = await generateStartupCiSummary({
+        cwd: workspace,
+        stage: "launch",
+        readiness: {
+          verdict: "local_launch_blocked",
+          blockers: ["Launch report is blocked"]
+        },
+        now: new Date("2026-05-14T01:10:00.000Z")
+      });
+      const json = JSON.parse(await readFile(result.jsonPath, "utf8")) as {
+        checkRun: {
+          conclusion: string;
+          summary: string;
+        };
+        releaseGate: {
+          status: string;
+        };
+        effectiveGate: {
+          readinessVerdict?: string;
+          blockers: string[];
+        };
+      };
+
+      expect(result.checkRun.conclusion).toBe("failure");
+      expect(result.releaseGate.status).toBe("block_release");
+      expect(result.gate.blockers).toContain("Launch report is blocked");
+      expect(json.effectiveGate).toMatchObject({
+        readinessVerdict: "local_launch_blocked",
+        blockers: expect.arrayContaining(["Launch report is blocked"])
+      });
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
 });

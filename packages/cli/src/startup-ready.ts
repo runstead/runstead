@@ -1355,6 +1355,10 @@ async function writeStartupReadinessCiOutputs(
     cwd: run.cwd,
     stage: startupReadyStageToGateStage(run.stage),
     checkName: "Runstead Startup Readiness",
+    readiness: {
+      verdict: run.verdict,
+      blockers: run.verdictBlockers
+    },
     now
   });
 

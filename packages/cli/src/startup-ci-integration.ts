@@ -22,6 +22,10 @@ export interface GenerateStartupCiSummaryOptions {
   stage?: StartupGateStage;
   checkName?: string;
   outputDir?: string;
+  readiness?: {
+    verdict: string;
+    blockers: string[];
+  };
   fetch?: FetchLike;
   now?: Date;
 }
@@ -93,8 +97,9 @@ export async function generateStartupCiSummary(
     stage,
     now: new Date(checkedAt)
   });
+  const effectiveGate = effectiveStartupCiGate(gate, options.readiness);
   const checkRun = startupCheckRunSummary({
-    gate,
+    gate: effectiveGate,
     checkName: options.checkName ?? "Runstead Startup Gate"
   });
   const remoteActions = await inspectGitHubActionsRemoteStatus({
@@ -102,13 +107,13 @@ export async function generateStartupCiSummary(
     ...(options.fetch === undefined ? {} : { fetch: options.fetch })
   });
   const releaseGate: StartupReleaseGateSummary = {
-    status: gate.passed ? "allow_release" : "block_release",
+    status: effectiveGate.passed ? "allow_release" : "block_release",
     requiredArtifact: "runstead-startup-ci-summary.json",
     branchProtectionHint:
       "Configure CI to fail this step when conclusion is failure, then require the check in branch protection."
   };
   const prComment = formatStartupPrComment({
-    gate,
+    gate: effectiveGate,
     checkRun,
     remoteActions,
     releaseGate
@@ -130,6 +135,17 @@ export async function generateStartupCiSummary(
       findings: gate.findings,
       diff: gate.diff,
       eventId: gate.event.eventId
+    },
+    effectiveGate: {
+      passed: effectiveGate.passed,
+      blockers: effectiveGate.blockers,
+      warnings: effectiveGate.warnings,
+      findings: effectiveGate.findings,
+      diff: effectiveGate.diff,
+      eventId: effectiveGate.event.eventId,
+      ...(options.readiness === undefined
+        ? {}
+        : { readinessVerdict: options.readiness.verdict })
     }
   };
   const event: RunsteadEvent = {
@@ -155,7 +171,7 @@ export async function generateStartupCiSummary(
     root: resolvedState.root,
     stateDb: resolvedState.stateDb,
     stage,
-    gate,
+    gate: effectiveGate,
     markdownPath,
     jsonPath,
     checkRun,
@@ -163,6 +179,28 @@ export async function generateStartupCiSummary(
     prComment,
     releaseGate,
     event
+  };
+}
+
+function effectiveStartupCiGate(
+  gate: StartupGateCheckResult,
+  readiness:
+    | {
+        verdict: string;
+        blockers: string[];
+      }
+    | undefined
+): StartupGateCheckResult {
+  if (readiness === undefined) {
+    return gate;
+  }
+
+  const blockers = uniqueStrings([...gate.blockers, ...readiness.blockers]);
+
+  return {
+    ...gate,
+    passed: blockers.length === 0,
+    blockers
   };
 }
 
@@ -387,4 +425,8 @@ function stringValue(value: unknown): string | undefined {
   return typeof value === "string" && value.trim().length > 0
     ? value.trim()
     : undefined;
+}
+
+function uniqueStrings(values: string[]): string[] {
+  return [...new Set(values)];
 }
