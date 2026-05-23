@@ -347,10 +347,7 @@ function latestStartupReport(root: string): { latestReportPath?: string } {
 async function latestStartupRun(
   root: string
 ): Promise<{ latestRun?: DashboardStartupRun }> {
-  const dirs = [
-    join(root, "startup", "readiness-runs"),
-    join(root, "startup", "runs")
-  ];
+  const dirs = [join(root, "startup", "readiness-runs"), join(root, "startup", "runs")];
   const runs = (
     await Promise.all(
       dirs.map(async (dir) => {
@@ -426,9 +423,9 @@ function startupRunSortTime(run: DashboardStartupRun): string {
   return run.completedAt ?? run.startedAt ?? "";
 }
 
-function latestStartupAgentPatch(
-  database: RunsteadDatabase
-): { agentPatch?: DashboardStartupAgentPatch } {
+function latestStartupAgentPatch(database: RunsteadDatabase): {
+  agentPatch?: DashboardStartupAgentPatch;
+} {
   const row = database
     .prepare(
       `
@@ -956,8 +953,7 @@ function dashboardEventPayload(
                   verdict: snapshot.startup.latestRun.verdict,
                   status: snapshot.startup.latestRun.status,
                   timeline: snapshot.startup.latestRun.timeline.length,
-                  uiSmokeArtifacts:
-                    snapshot.startup.latestRun.uiSmokeArtifacts.length
+                  uiSmokeArtifacts: snapshot.startup.latestRun.uiSmokeArtifacts.length
                 }
               }),
           staleEvidence: snapshot.startup.staleEvidence.length,
@@ -1070,7 +1066,9 @@ function escapeHtml(value: string): string {
     .replaceAll('"', "&quot;");
 }
 
-function parseJsonRecord(value: string | null | undefined): Record<string, unknown> | undefined {
+function parseJsonRecord(
+  value: string | null | undefined
+): Record<string, unknown> | undefined {
   if (value === null || value === undefined) {
     return undefined;
   }
@@ -1095,7 +1093,9 @@ function stringField(value: unknown): string | undefined {
 }
 
 function stringArrayField(value: unknown): string[] {
-  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string")
+    : [];
 }
 
 interface RepositoryRow {

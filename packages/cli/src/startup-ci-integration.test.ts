@@ -143,16 +143,17 @@ describe("startup CI integration", () => {
           return Promise.resolve({
             ok: true,
             status: 200,
-            json: () => Promise.resolve({
-              workflow_runs: [
-                {
-                  name: "CI",
-                  status: "completed",
-                  conclusion: "success",
-                  html_url: "https://github.com/acme/widgets/actions/runs/123"
-                }
-              ]
-            })
+            json: () =>
+              Promise.resolve({
+                workflow_runs: [
+                  {
+                    name: "CI",
+                    status: "completed",
+                    conclusion: "success",
+                    html_url: "https://github.com/acme/widgets/actions/runs/123"
+                  }
+                ]
+              })
           });
         },
         now: new Date("2026-05-14T01:10:00.000Z")
@@ -220,17 +221,18 @@ describe("startup CI integration", () => {
             return Promise.resolve({
               ok: true,
               status: 200,
-              json: () => Promise.resolve({
-                workflow_runs: [
-                  {
-                    id: 123,
-                    name: "CI",
-                    status: "completed",
-                    conclusion: "failure",
-                    html_url: "https://github.com/acme/widgets/actions/runs/123"
-                  }
-                ]
-              })
+              json: () =>
+                Promise.resolve({
+                  workflow_runs: [
+                    {
+                      id: 123,
+                      name: "CI",
+                      status: "completed",
+                      conclusion: "failure",
+                      html_url: "https://github.com/acme/widgets/actions/runs/123"
+                    }
+                  ]
+                })
             });
           }
 
@@ -238,15 +240,16 @@ describe("startup CI integration", () => {
             return Promise.resolve({
               ok: true,
               status: 200,
-              json: () => Promise.resolve({
-                jobs: [
-                  {
-                    id: 456,
-                    name: "test",
-                    conclusion: "failure"
-                  }
-                ]
-              })
+              json: () =>
+                Promise.resolve({
+                  jobs: [
+                    {
+                      id: 456,
+                      name: "test",
+                      conclusion: "failure"
+                    }
+                  ]
+                })
             });
           }
 
@@ -256,12 +259,14 @@ describe("startup CI integration", () => {
               status: 200,
               json: () => Promise.resolve({}),
               text: () =>
-                Promise.resolve([
-                  "setup",
-                  "npm test",
-                  "Error: expected true to equal false",
-                  "Process completed with exit code 1"
-                ].join("\n"))
+                Promise.resolve(
+                  [
+                    "setup",
+                    "npm test",
+                    "Error: expected true to equal false",
+                    "Process completed with exit code 1"
+                  ].join("\n")
+                )
             });
           }
 
@@ -313,7 +318,10 @@ describe("startup CI integration", () => {
   });
 
   it("blocks the CI summary when startup ready has verdict blockers", async () => {
-    const workspace = join(tmpdir(), `runstead-startup-ci-ready-blocked-${process.pid}`);
+    const workspace = join(
+      tmpdir(),
+      `runstead-startup-ci-ready-blocked-${process.pid}`
+    );
 
     try {
       await rm(workspace, { force: true, recursive: true });

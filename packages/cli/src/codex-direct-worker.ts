@@ -376,8 +376,7 @@ export async function runCodexDirectPendingPatchResume(
       workerRun,
       status: "completed",
       exitCode: 0,
-      summary:
-        "Applied approved pending patch without regenerating model output.",
+      summary: "Applied approved pending patch without regenerating model output.",
       toolCalls: 1,
       failedToolCalls: 0,
       warnings: [
@@ -2623,9 +2622,7 @@ function codexDirectPendingPatchPayload(input: {
     riskSummary: input.approvalMetadata.riskSummary,
     canonicalSignature: input.approvalMetadata.canonicalSignature,
     ...(input.patch === undefined ? {} : { patch: input.patch }),
-    ...(input.replacements === undefined
-      ? {}
-      : { replacements: input.replacements })
+    ...(input.replacements === undefined ? {} : { replacements: input.replacements })
   };
 }
 
@@ -2778,8 +2775,7 @@ function replacementArray(
     return undefined;
   }
 
-  const replacements: NonNullable<CodexDirectPendingPatchPayload["replacements"]> =
-    [];
+  const replacements: NonNullable<CodexDirectPendingPatchPayload["replacements"]> = [];
 
   for (const item of value) {
     if (

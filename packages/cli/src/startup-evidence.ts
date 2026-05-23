@@ -643,7 +643,8 @@ function gateWarnings(input: {
     ...(hasCompletedTask(input.tasks, "run_mvp_verifiers") || hasVerifierEvidence
       ? []
       : ["run_mvp_verifiers has not completed"]),
-    ...(hasVerifierEvidence || hasStructuredMetricEvidence(input.evidence, input.artifacts)
+    ...(hasVerifierEvidence ||
+    hasStructuredMetricEvidence(input.evidence, input.artifacts)
       ? []
       : ["no verifier or metric evidence is recorded"]),
     ...staleEvidenceSourceWarnings(input.evidence, input.artifacts, input.checkedAt)
@@ -1166,9 +1167,7 @@ function latestUiValidationsByTarget(
 ): StartupGateEvidenceRow[] {
   const latestByTarget = new Map<string, StartupGateEvidenceRow>();
 
-  for (const item of evidence.filter(
-    (row) => row.type === "startup_ui_validation"
-  )) {
+  for (const item of evidence.filter((row) => row.type === "startup_ui_validation")) {
     const target = uiValidationTarget(item, artifacts.get(item.id));
     const current = latestByTarget.get(target);
 

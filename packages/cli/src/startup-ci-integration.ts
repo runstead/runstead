@@ -581,9 +581,13 @@ function failedLogExcerpt(log: string): string {
   const failureIndex = lines.findIndex((line) =>
     /(^|\s)(error|failed|failure|exception|timed out|exit code)(\s|:|$)/i.test(line)
   );
-  const start = failureIndex < 0 ? Math.max(0, lines.length - 20) : Math.max(0, failureIndex - 8);
+  const start =
+    failureIndex < 0 ? Math.max(0, lines.length - 20) : Math.max(0, failureIndex - 8);
 
-  return lines.slice(start, start + 24).join("\n").slice(0, 4_000);
+  return lines
+    .slice(start, start + 24)
+    .join("\n")
+    .slice(0, 4_000);
 }
 
 async function readGitHead(cwd: string): Promise<string | undefined> {
@@ -630,7 +634,9 @@ function formatRemoteActionsStatus(status: StartupGitHubActionsRemoteStatus): st
     status.workflowRunId === undefined ? undefined : `run=${status.workflowRunId}`,
     status.workflowName === undefined ? undefined : `workflow=${status.workflowName}`,
     status.conclusion === undefined ? undefined : `conclusion=${status.conclusion}`,
-    status.failedJobName === undefined ? undefined : `failed_job=${status.failedJobName}`,
+    status.failedJobName === undefined
+      ? undefined
+      : `failed_job=${status.failedJobName}`,
     status.reason === undefined ? undefined : `reason=${status.reason}`
   ]
     .filter((part): part is string => part !== undefined)

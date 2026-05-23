@@ -1301,15 +1301,11 @@ describe("local agent task primitives", () => {
       expect(resumed.status).toBe("completed");
       expect(resumed.summary).toContain("Applied approved pending patch");
       expect(resumed.task.attempt).toBe(1);
-      await expect(readFile(join(workspace, "docs", "notes.txt"), "utf8")).resolves.toBe(
-        "after\n"
-      );
+      await expect(
+        readFile(join(workspace, "docs", "notes.txt"), "utf8")
+      ).resolves.toBe("after\n");
       expect(
-        countTaskToolCalls(
-          created.stateDb,
-          created.task.id,
-          "model.inference.request"
-        )
+        countTaskToolCalls(created.stateDb, created.task.id, "model.inference.request")
       ).toBe(modelCallsBefore);
       expect(resumed.audit.toolCalls).toEqual(
         expect.arrayContaining([
@@ -1446,7 +1442,9 @@ function patchDocsTransport(): CodexDirectTransport {
 function rejectingTransport(): CodexDirectTransport {
   return {
     createResponse() {
-      throw new Error("model transport must not be used for approved pending patch resume");
+      throw new Error(
+        "model transport must not be used for approved pending patch resume"
+      );
     }
   };
 }
@@ -1475,7 +1473,10 @@ function countTaskToolCalls(
   }
 }
 
-function readApprovalAction(stateDb: string, approvalId: string): {
+function readApprovalAction(
+  stateDb: string,
+  approvalId: string
+): {
   context: {
     pendingPatch?: unknown;
   };

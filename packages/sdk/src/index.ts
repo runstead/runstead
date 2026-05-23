@@ -3,14 +3,9 @@ import { z } from "zod";
 import type { ReadinessEvidenceTier, ReadinessTarget } from "@runstead/runtime";
 
 const EXTENSION_ID_PATTERN = /^[a-z][a-z0-9-]*$/;
-const SEMVER_PATTERN =
-  /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
+const SEMVER_PATTERN = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
 
-export const RunsteadReadinessTargetSchema = z.enum([
-  "local",
-  "staging",
-  "production"
-]);
+export const RunsteadReadinessTargetSchema = z.enum(["local", "staging", "production"]);
 
 export const RunsteadEvidenceTierSchema = z.enum([
   "synthetic_smoke",
@@ -36,11 +31,9 @@ export const RunsteadReadinessFacetSchema = z.object({
   title: z.string().min(1),
   description: z.string().min(1),
   fields: z.array(RunsteadFacetFieldSchema).default([]),
-  appliesToTargets: z.array(RunsteadReadinessTargetSchema).default([
-    "local",
-    "staging",
-    "production"
-  ]),
+  appliesToTargets: z
+    .array(RunsteadReadinessTargetSchema)
+    .default(["local", "staging", "production"]),
   requiredEvidenceTiers: z.array(RunsteadEvidenceTierSchema).default([]),
   requiredEvidenceTypes: z.array(z.string().min(1)).default([]),
   blockers: z.array(z.string().min(1)).default([])
@@ -86,7 +79,11 @@ export const RunsteadExtensionManifestSchema = z
     gates: z.array(RunsteadGateSchema).default([])
   })
   .superRefine((manifest, context) => {
-    addDuplicateIdIssues(context, "facets", manifest.facets.map((facet) => facet.name));
+    addDuplicateIdIssues(
+      context,
+      "facets",
+      manifest.facets.map((facet) => facet.name)
+    );
     addDuplicateIdIssues(
       context,
       "collectors",
@@ -97,21 +94,21 @@ export const RunsteadExtensionManifestSchema = z
       "verifiers",
       manifest.verifiers.map((verifier) => verifier.id)
     );
-    addDuplicateIdIssues(context, "gates", manifest.gates.map((gate) => gate.id));
+    addDuplicateIdIssues(
+      context,
+      "gates",
+      manifest.gates.map((gate) => gate.id)
+    );
   });
 
 export type RunsteadReadinessTarget = ReadinessTarget;
 export type RunsteadEvidenceTier = ReadinessEvidenceTier;
 export type RunsteadFacetField = z.infer<typeof RunsteadFacetFieldSchema>;
 export type RunsteadReadinessFacet = z.infer<typeof RunsteadReadinessFacetSchema>;
-export type RunsteadEvidenceCollector = z.infer<
-  typeof RunsteadEvidenceCollectorSchema
->;
+export type RunsteadEvidenceCollector = z.infer<typeof RunsteadEvidenceCollectorSchema>;
 export type RunsteadVerifier = z.infer<typeof RunsteadVerifierSchema>;
 export type RunsteadGate = z.infer<typeof RunsteadGateSchema>;
-export type RunsteadExtensionManifest = z.infer<
-  typeof RunsteadExtensionManifestSchema
->;
+export type RunsteadExtensionManifest = z.infer<typeof RunsteadExtensionManifestSchema>;
 
 export type RunsteadExtensionValidationResult =
   | {

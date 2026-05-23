@@ -193,7 +193,9 @@ describe("buildDashboard", () => {
             evidenceIds: ["ev_ui_dashboard"],
             evidenceTiers: ["synthetic_smoke", "local_command"],
             evidenceTypes: ["startup_ui_validation", "command_output"],
-            reportPaths: [join(root, "reports", "startup-readiness-run-run_dashboard_ready.md")],
+            reportPaths: [
+              join(root, "reports", "startup-readiness-run-run_dashboard_ready.md")
+            ],
             startedAt: "2026-05-14T05:35:00.000Z",
             completedAt: "2026-05-14T05:45:00.000Z",
             dirtyState: "clean",

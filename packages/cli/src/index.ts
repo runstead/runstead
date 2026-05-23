@@ -2064,9 +2064,7 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
         action: "inspect approvals"
       });
 
-      const { approvalActionMetadata, showApproval } = await import(
-        "./approvals.js"
-      );
+      const { approvalActionMetadata, showApproval } = await import("./approvals.js");
       const result = showApproval({ ...options, id });
       const metadata = approvalActionMetadata(result.policyDecision);
 
@@ -2111,9 +2109,7 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
         );
         console.log(`Risk class: ${metadata.riskClass ?? "unknown"}`);
         console.log(`Diff hash: ${metadata.diffHash ?? "unknown"}`);
-        console.log(
-          `Canonical signature: ${metadata.canonicalSignature ?? "unknown"}`
-        );
+        console.log(`Canonical signature: ${metadata.canonicalSignature ?? "unknown"}`);
         console.log(`Grant reuse: ${approvalGrantReuseSummary(metadata)}`);
         console.log(`Risk summary: ${metadata.riskSummary ?? "unknown"}`);
         console.log(
@@ -2155,7 +2151,9 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
         console.log(`Grant reuse: ${approvalGrantReuseSummary(metadata)}`);
         if (shown.task !== undefined) {
           console.log(`Resume: runstead agent resume ${shown.task.id}`);
-          console.log(`Resume by approval: runstead agent resume ${result.approval.id}`);
+          console.log(
+            `Resume by approval: runstead agent resume ${result.approval.id}`
+          );
         }
       }
     );
@@ -2165,7 +2163,11 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     .description("Approve a pending approval request and resume its local agent task.")
     .argument("<id>", "Approval id")
     .option("--cwd <path>", "Workspace directory")
-    .option("--actor <id>", "RBAC subject for approval and task execution", "local-admin")
+    .option(
+      "--actor <id>",
+      "RBAC subject for approval and task execution",
+      "local-admin"
+    )
     .option("--decided-by <id>", "Approver id")
     .action(
       async (
@@ -2197,7 +2199,9 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
         console.log(`Grant reuse: ${approvalGrantReuseSummary(metadata)}`);
 
         if (shown.task === undefined) {
-          console.log("Resume: skipped; no local agent task is associated with this approval.");
+          console.log(
+            "Resume: skipped; no local agent task is associated with this approval."
+          );
           return;
         }
 

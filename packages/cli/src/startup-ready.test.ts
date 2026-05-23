@@ -181,10 +181,10 @@ describe("startup readiness run model", () => {
       expect(formatStartupReadinessRun(result.run)).toContain(
         "local_launch_ready covers local demo and local operator validation only"
       );
+      expect(formatStartupReadinessRun(result.run)).toContain("Guided readiness flow:");
       expect(formatStartupReadinessRun(result.run)).toContain(
-        "Guided readiness flow:"
+        "Next target after local"
       );
-      expect(formatStartupReadinessRun(result.run)).toContain("Next target after local");
       expect(formatStartupReadinessRun(result.run)).toContain("Evidence summary:");
       expect(result.run.reportPaths).toEqual(
         expect.arrayContaining([
@@ -834,9 +834,7 @@ describe("startup readiness run model", () => {
         ])
       );
       expect(
-        steps[0]?.type === "fill"
-          ? steps[0].selectors?.indexOf("#todo-input")
-          : -1
+        steps[0]?.type === "fill" ? steps[0].selectors?.indexOf("#todo-input") : -1
       ).toBeLessThan(
         steps[0]?.type === "fill"
           ? (steps[0].selectors?.indexOf("input[placeholder*='todo' i]") ?? -1)

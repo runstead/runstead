@@ -149,9 +149,7 @@ export function formatStartupStatus(result: StartupStatusResult): string {
     `Current stage: ${result.currentStage}`,
     ...(result.readiness === undefined
       ? []
-      : [
-          `Readiness verdict: ${result.readiness.verdict} (${result.readiness.runId})`
-        ]),
+      : [`Readiness verdict: ${result.readiness.verdict} (${result.readiness.runId})`]),
     `Evidence: ${result.evidence.total} record${result.evidence.total === 1 ? "" : "s"}`,
     ...(result.evidence.latest === undefined
       ? []

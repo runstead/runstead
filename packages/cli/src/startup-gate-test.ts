@@ -97,11 +97,13 @@ export interface StartupGateFixture {
   description?: string | undefined;
   input: StartupGateFixtureInput;
   expect: StartupGateFixtureExpectedDecision & {
-    targetReadiness?: {
-      local?: StartupGateFixtureExpectedDecision | undefined;
-      staging?: StartupGateFixtureExpectedDecision | undefined;
-      production?: StartupGateFixtureExpectedDecision | undefined;
-    } | undefined;
+    targetReadiness?:
+      | {
+          local?: StartupGateFixtureExpectedDecision | undefined;
+          staging?: StartupGateFixtureExpectedDecision | undefined;
+          production?: StartupGateFixtureExpectedDecision | undefined;
+        }
+      | undefined;
   };
 }
 

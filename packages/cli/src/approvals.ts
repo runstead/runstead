@@ -743,7 +743,9 @@ function approvedApprovalGrantMatch(
   return undefined;
 }
 
-function approvalActionCanonicalSignature(actionJson: string | null): string | undefined {
+function approvalActionCanonicalSignature(
+  actionJson: string | null
+): string | undefined {
   if (actionJson === null) {
     return undefined;
   }

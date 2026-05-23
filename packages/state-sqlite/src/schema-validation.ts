@@ -54,9 +54,7 @@ export function validateRunsteadDatabaseSchema(
     .filter((migration) => {
       const expectedChecksum = expectedChecksums.get(migration.version);
 
-      return (
-        expectedChecksum !== undefined && expectedChecksum !== migration.checksum
-      );
+      return expectedChecksum !== undefined && expectedChecksum !== migration.checksum;
     })
     .map((migration) => migration.version);
   const userVersion = readUserVersion(database);

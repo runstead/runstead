@@ -71,8 +71,7 @@ describe("@runstead/runtime control-plane contracts", () => {
                   (request.now ?? new Date(0)).getTime() + ttlMs
                 ).toISOString(),
                 release: () => Promise.resolve(undefined),
-                renew: () =>
-                  Promise.reject(new Error("test lease renewal stops here"))
+                renew: () => Promise.reject(new Error("test lease renewal stops here"))
               })
           })
       },
@@ -81,9 +80,7 @@ describe("@runstead/runtime control-plane contracts", () => {
           Promise.resolve({
             uri: `${layout.artifactBaseUri}/${artifact.path}`,
             contentType: artifact.contentType,
-            ...(artifact.metadata === undefined
-              ? {}
-              : { metadata: artifact.metadata })
+            ...(artifact.metadata === undefined ? {} : { metadata: artifact.metadata })
           }),
         read: () => Promise.resolve(new Uint8Array())
       }

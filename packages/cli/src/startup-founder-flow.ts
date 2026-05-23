@@ -375,7 +375,9 @@ export async function startupLaunchCheck(
   });
   const readinessBlockers =
     target === "local"
-      ? readiness.blockers.filter((blocker) => blocker !== "CI configuration is missing")
+      ? readiness.blockers.filter(
+          (blocker) => blocker !== "CI configuration is missing"
+        )
       : readiness.blockers;
   const report = await generateLaunchReadinessReport({
     cwd,
@@ -472,8 +474,9 @@ export function formatStartupBuildMvp(result: StartupBuildMvpResult): string {
 
 export function formatStartupWorkerGovernanceNotice(
   worker: LocalAgentWorkerKind,
-  profile: ResolvedStartupWorkerGovernanceProfile =
-    worker === "codex_direct" ? "governed" : "readiness"
+  profile: ResolvedStartupWorkerGovernanceProfile = worker === "codex_direct"
+    ? "governed"
+    : "readiness"
 ): string {
   if (worker === "codex_direct") {
     return `Worker governance: ${profile} profile; codex_direct uses Runstead's Level 2 native tool proxy path; model tool calls are governed inside Runstead.`;
@@ -519,10 +522,7 @@ function resolveStartupWorkerGovernanceProfile(input: {
   target?: "local" | "staging" | "production";
   governanceProfile?: StartupWorkerGovernanceProfile;
 }): ResolvedStartupWorkerGovernanceProfile {
-  if (
-    input.governanceProfile !== undefined &&
-    input.governanceProfile !== "auto"
-  ) {
+  if (input.governanceProfile !== undefined && input.governanceProfile !== "auto") {
     return input.governanceProfile;
   }
 

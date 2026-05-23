@@ -540,10 +540,7 @@ describe("startup UI validation evidence", () => {
   });
 
   it("records browser infrastructure failure tier after retry is exhausted", async () => {
-    const workspace = join(
-      tmpdir(),
-      `runstead-startup-ui-retry-fail-${process.pid}`
-    );
+    const workspace = join(tmpdir(), `runstead-startup-ui-retry-fail-${process.pid}`);
     let attempts = 0;
 
     try {

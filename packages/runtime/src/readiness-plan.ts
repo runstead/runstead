@@ -146,11 +146,9 @@ export function evaluateCompiledReadinessPlan(
 }
 
 export function readinessVerdictReady(verdict: string): boolean {
-  return [
-    "local_launch_ready",
-    "staging_launch_ready",
-    "public_launch_ready"
-  ].includes(verdict);
+  return ["local_launch_ready", "staging_launch_ready", "public_launch_ready"].includes(
+    verdict
+  );
 }
 
 export function readinessVerdictForTarget(

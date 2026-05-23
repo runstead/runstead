@@ -721,9 +721,7 @@ describe("runCodexDirectWorker", () => {
         });
         expect(action.context.diffHash).toMatch(/^[a-f0-9]{64}$/);
         expect(action.context.canonicalSignature).toMatch(/^[a-f0-9]{64}$/);
-        expect(action.context.riskSummary).toContain(
-          "no dependency file impact"
-        );
+        expect(action.context.riskSummary).toContain("no dependency file impact");
         expect(action.context.pendingPatch).toMatchObject({
           mode: "replacements",
           filesTouched: ["src/message.txt"],

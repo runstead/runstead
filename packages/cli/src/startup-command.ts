@@ -2183,7 +2183,9 @@ export function registerStartupCommands(program: Command): void {
 
   startupGate
     .command("test")
-    .description("Replay startup gate fixture files against the readiness verdict engine.")
+    .description(
+      "Replay startup gate fixture files against the readiness verdict engine."
+    )
     .argument("<fixture>", "Startup gate fixture file or directory")
     .option("--json", "Print JSON output")
     .action(async (fixture: string, options: { json?: boolean }) => {

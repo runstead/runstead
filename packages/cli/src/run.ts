@@ -354,8 +354,7 @@ export function pickNextQueuedTask(cwd = process.cwd()): Task | undefined {
 
 function isStartupInternalTask(task: Task): boolean {
   return (
-    task.domain === "ai-native-startup" &&
-    STARTUP_INTERNAL_TASK_TYPES.has(task.type)
+    task.domain === "ai-native-startup" && STARTUP_INTERNAL_TASK_TYPES.has(task.type)
   );
 }
 

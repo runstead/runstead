@@ -836,11 +836,7 @@ async function checkStateDatabase(path: string): Promise<DoctorCheck> {
       const validation = validateRunsteadDatabaseSchema(database);
 
       if (!validation.ok) {
-        return fail(
-          "state-db",
-          "state.db",
-          formatRunsteadSchemaValidation(validation)
-        );
+        return fail("state-db", "state.db", formatRunsteadSchemaValidation(validation));
       }
 
       return pass(

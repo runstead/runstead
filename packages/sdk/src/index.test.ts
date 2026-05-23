@@ -74,10 +74,7 @@ describe("Runstead SDK extension contracts", () => {
       id: "posthog-activation",
       safeForWrappedWorkers: false
     });
-    expect(extensionReadinessTargets(extension)).toEqual([
-      "staging",
-      "production"
-    ]);
+    expect(extensionReadinessTargets(extension)).toEqual(["staging", "production"]);
   });
 
   it("reports validation issues without throwing", () => {

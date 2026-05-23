@@ -201,12 +201,12 @@ describe("doctorRunstead", () => {
       expect(result.checks.find((check) => check.id === "state-db")).toMatchObject({
         status: "fail"
       });
-      expect(
-        result.checks.find((check) => check.id === "state-db")?.message
-      ).toContain("missing migrations: 2");
-      expect(
-        result.checks.find((check) => check.id === "state-db")?.message
-      ).toContain("sqlite user_version 1, expected 2");
+      expect(result.checks.find((check) => check.id === "state-db")?.message).toContain(
+        "missing migrations: 2"
+      );
+      expect(result.checks.find((check) => check.id === "state-db")?.message).toContain(
+        "sqlite user_version 1, expected 2"
+      );
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }

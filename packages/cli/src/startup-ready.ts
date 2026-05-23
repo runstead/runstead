@@ -2664,8 +2664,7 @@ function startupReadyGuidedStepForPhase(
   phase: StartupReadinessRunPhase,
   index: number
 ): StartupReadyGuidedStep {
-  const blocker =
-    phase.blockers[0] ?? `${phase.title} has not completed successfully`;
+  const blocker = phase.blockers[0] ?? `${phase.title} has not completed successfully`;
 
   return startupReadyGuidedStepForBlocker({
     id: `${phase.id}_${index + 1}`,
@@ -2709,9 +2708,7 @@ function startupReadyGuidedStepForBlocker(input: {
   };
 }
 
-function startupReadyGuidedResolution(
-  blocker: string
-): StartupReadyGuidedResolution {
+function startupReadyGuidedResolution(blocker: string): StartupReadyGuidedResolution {
   const lower = blocker.toLowerCase();
 
   if (
@@ -2812,9 +2809,7 @@ function startupReadyGuidedCommand(input: {
   return undefined;
 }
 
-function formatStartupReadyGuidedFlowLines(
-  steps: StartupReadyGuidedStep[]
-): string[] {
+function formatStartupReadyGuidedFlowLines(steps: StartupReadyGuidedStep[]): string[] {
   return steps.map((step) => {
     const command = step.command === undefined ? "" : ` command: ${step.command};`;
 
@@ -3175,8 +3170,7 @@ async function inspectStartupReadyDocs(
         .map((item) => item.path),
       stale: context
         .filter(
-          (item): item is { path: string; stale: boolean } =>
-            item?.stale === true
+          (item): item is { path: string; stale: boolean } => item?.stale === true
         )
         .map((item) => item.path)
     },
@@ -3418,7 +3412,9 @@ function targetOperationalEvidencePlanBlockers(
     ...(evidenceTiers.has("support_ticket")
       ? []
       : ["support or feedback triage evidence is missing"]),
-    ...(evidenceTiers.has("security_scan") ? [] : ["security scan evidence is missing"]),
+    ...(evidenceTiers.has("security_scan")
+      ? []
+      : ["security scan evidence is missing"]),
     ...(evidenceTypes.has("startup_rollback_drill")
       ? []
       : ["rollback-drill evidence is missing"]),

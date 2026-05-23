@@ -289,11 +289,7 @@ async function checkStateDatabase(path: string): Promise<MigrationValidationChec
       const validation = validateRunsteadDatabaseSchema(database);
 
       if (!validation.ok) {
-        return fail(
-          "state-db",
-          "state.db",
-          formatRunsteadSchemaValidation(validation)
-        );
+        return fail("state-db", "state.db", formatRunsteadSchemaValidation(validation));
       }
 
       return pass(

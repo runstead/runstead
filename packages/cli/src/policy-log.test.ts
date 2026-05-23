@@ -182,9 +182,7 @@ describe("recordPolicyDecision", () => {
 
         expect(recorded.stateDb).toBe(stateDb);
         expect(
-          database
-            .prepare("SELECT COUNT(*) AS count FROM policy_decisions")
-            .get()
+          database.prepare("SELECT COUNT(*) AS count FROM policy_decisions").get()
         ).toEqual({ count: 1 });
         expect(() =>
           recordPolicyDecision({

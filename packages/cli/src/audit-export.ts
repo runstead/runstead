@@ -156,11 +156,7 @@ function collectAuditLifecycleEntriesFromDatabase(
 
   while (changed) {
     changed = false;
-    const entries = readAuditEntriesReferencingIds(
-      database,
-      relatedIds,
-      selectedIds
-    );
+    const entries = readAuditEntriesReferencingIds(database, relatedIds, selectedIds);
 
     for (const entry of entries) {
       if (!entryReferencesAnyId(entry, relatedIds)) {

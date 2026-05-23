@@ -82,10 +82,7 @@ describe("startup status", () => {
   });
 
   it("uses the latest startup ready verdict to avoid stale gate status conflicts", async () => {
-    const workspace = join(
-      tmpdir(),
-      `runstead-startup-status-ready-${process.pid}`
-    );
+    const workspace = join(tmpdir(), `runstead-startup-status-ready-${process.pid}`);
 
     try {
       await rm(workspace, { force: true, recursive: true });
