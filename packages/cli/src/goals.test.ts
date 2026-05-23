@@ -223,14 +223,20 @@ describe("createGoal", () => {
         now: new Date("2026-05-14T01:21:00.000Z")
       });
 
+      const expectedRecurringTasks = [
+        "scan_sources",
+        "summarize_findings",
+        "triage_source_conflicts",
+        "prepare_digest_release"
+      ];
+
       expect(result.goal.scope).toMatchObject({
         templateId: "weekly-research-digest",
-        recurringTasks: ["scan_sources", "summarize_findings"]
+        recurringTasks: expectedRecurringTasks
       });
-      expect(result.generatedTasks.map((task) => task.type)).toEqual([
-        "scan_sources",
-        "summarize_findings"
-      ]);
+      expect(result.generatedTasks.map((task) => task.type)).toEqual(
+        expectedRecurringTasks
+      );
       expect(result.generatedTasks[0]).toMatchObject({
         domain: "research-monitor",
         priority: "medium",

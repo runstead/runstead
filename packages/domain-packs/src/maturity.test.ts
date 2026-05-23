@@ -32,10 +32,26 @@ describe("assessDomainPackMaturity", () => {
       "fixture-coverage"
     ]);
     expect(report).toContain("Status: passed");
-    expect(report).toContain("Repo type templates cover multiple startup surfaces");
+    expect(report).toContain("Repo type templates cover multiple domain surfaces");
   });
 
-  it("flags starter packs that lack launch-readiness maturity metadata", async () => {
+  it("passes the research-monitor pack maturity gate", async () => {
+    const packRoot = fileURLToPath(
+      new URL("../packs/research-monitor", import.meta.url)
+    );
+
+    const result = await assessDomainPackMaturity(packRoot);
+    const report = formatDomainPackMaturityResult(result);
+
+    expect(result.passed).toBe(true);
+    expect(result.score).toBe(1);
+    expect(report).toContain("Status: passed");
+    expect(report).toContain("gate-thresholds");
+    expect(report).toContain("scan");
+    expect(report).toContain("publish");
+  });
+
+  it("flags starter packs that lack domain maturity metadata", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "runstead-domain-maturity-"));
 
     try {

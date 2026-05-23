@@ -126,18 +126,35 @@ describe("validateDomainPackDir", () => {
     expect(result.valid).toBe(true);
     expect(result.issues).toEqual([]);
     expect(result.domain?.id).toBe("research-monitor");
+    expect(result.domain?.schemaVersion).toBe(1);
+    expect(result.domain?.repoTemplates?.map((template) => template.id)).toEqual([
+      "literature-watch",
+      "market-intel",
+      "policy-regulatory"
+    ]);
+    expect(Object.keys(result.domain?.gateThresholds ?? {})).toEqual([
+      "scan",
+      "digest",
+      "publish"
+    ]);
     expect(result.goalTemplates.map((template) => template.id)).toEqual([
       "weekly-research-digest"
     ]);
     expect(result.taskTypes.map((taskType) => taskType.id)).toEqual([
       "scan_sources",
-      "summarize_findings"
+      "summarize_findings",
+      "triage_source_conflicts",
+      "prepare_digest_release"
     ]);
     expect(result.fixtures.map((fixture) => fixture.id)).toEqual([
-      "weekly-research-digest-smoke"
+      "weekly-research-digest-smoke",
+      "conflicting-sources-regression",
+      "publish-gate-review"
     ]);
     expect(result.evals.map((evaluation) => evaluation.id)).toEqual([
-      "weekly-research-digest-smoke"
+      "weekly-research-digest-smoke",
+      "conflicting-sources-regression",
+      "publish-gate-review"
     ]);
   });
 

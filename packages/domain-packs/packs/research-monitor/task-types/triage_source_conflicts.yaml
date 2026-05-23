@@ -1,0 +1,17 @@
+id: triage_source_conflicts
+domain: research-monitor
+description: Compare conflicting source claims and record confidence, uncertainty, and follow-up needs.
+
+default_priority: high
+max_attempts: 1
+
+verifiers:
+  required:
+    - contradiction_check:completed
+    - citation:source_linked
+    - claim:confidence_recorded
+
+worker_routing:
+  preferred: codex_cli
+  fallback:
+    - shell

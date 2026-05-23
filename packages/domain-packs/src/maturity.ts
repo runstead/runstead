@@ -18,7 +18,7 @@ export interface DomainPackMaturityResult {
 }
 
 const DEFAULT_REQUIRED_SCORE = 0.85;
-const REQUIRED_STARTUP_STAGES = ["mvp", "launch", "scale"];
+const MINIMUM_GATE_THRESHOLD_COUNT = 3;
 
 export async function assessDomainPackMaturity(
   root: string,
@@ -50,17 +50,17 @@ export async function assessDomainPackMaturity(
     }),
     maturityCheck({
       id: "repo-templates",
-      label: "Repo type templates cover multiple startup surfaces",
+      label: "Repo type templates cover multiple domain surfaces",
       passed: (domain?.repoTemplates?.length ?? 0) >= 3,
       score: 15,
       evidence: domain?.repoTemplates?.map((template) => template.id) ?? []
     }),
     maturityCheck({
       id: "gate-thresholds",
-      label: "Configurable MVP, launch, and scale gate thresholds exist",
-      passed: REQUIRED_STARTUP_STAGES.every(
-        (stage) => domain?.gateThresholds?.[stage] !== undefined
-      ),
+      label: "Configurable gate thresholds cover a multi-stage lifecycle",
+      passed:
+        Object.keys(domain?.gateThresholds ?? {}).length >=
+        MINIMUM_GATE_THRESHOLD_COUNT,
       score: 15,
       evidence: Object.keys(domain?.gateThresholds ?? {})
     }),

@@ -1,4 +1,5 @@
 id: research-monitor
+schema_version: 1
 version: 0.1.0
 name: Research Monitor
 description: Track sources over time and produce cited research digests.
@@ -19,6 +20,8 @@ goal_templates:
 task_types:
   - scan_sources
   - summarize_findings
+  - triage_source_conflicts
+  - prepare_digest_release
 
 default_policy: policies/research-monitor.yaml
 
@@ -44,3 +47,85 @@ security:
     - ".env"
     - ".env.*"
     - "**/secrets/**"
+
+migrations:
+  - from_version: 0.0.0
+    to_version: 0.1.0
+    description: Install research monitoring source scans, cited digest generation, conflict triage, and publish-gate contracts.
+    steps:
+      - Register monitored topics, source inventory, and citation ledger resources.
+      - Require source freshness and contradiction checks before digest completion.
+      - Require approval before any digest is published or sent externally.
+
+repo_templates:
+  - id: literature-watch
+    label: Literature Watch
+    description: Track papers, preprints, and technical blogs for a recurring cited digest.
+    required_signals:
+      - source_inventory
+      - retrieval_timestamps
+      - citation_ledger
+      - contradiction_notes
+  - id: market-intel
+    label: Market Intelligence
+    description: Monitor competitor, customer, and pricing sources without publishing claims until reviewed.
+    required_signals:
+      - tracked_competitors
+      - source_freshness
+      - claim_confidence
+      - publish_approval
+  - id: policy-regulatory
+    label: Policy And Regulatory Monitor
+    description: Track regulatory updates, cite primary sources, and route risky claims through approval.
+    required_signals:
+      - primary_sources
+      - jurisdiction
+      - risk_classification
+      - review_owner
+
+gate_thresholds:
+  scan:
+    max_critical_blockers: 0
+    max_major_blockers: 1
+    minimum_evidence_completeness: 0.75
+    minimum_report_quality: 0.7
+  digest:
+    max_critical_blockers: 0
+    max_major_blockers: 0
+    minimum_evidence_completeness: 0.9
+    minimum_report_quality: 0.85
+  publish:
+    max_critical_blockers: 0
+    max_major_blockers: 0
+    minimum_evidence_completeness: 0.95
+    minimum_report_quality: 0.9
+
+report_sections:
+  - id: source-coverage
+    title: Source Coverage
+    description: Monitored source inventory, freshness windows, retrieval timestamps, and source gaps.
+    evidence_types:
+      - source_inventory
+      - source_freshness
+      - retrieval_log
+  - id: claim-quality
+    title: Claim Quality
+    description: Cited claims, uncited-claim checks, uncertainty markers, and contradiction reviews.
+    evidence_types:
+      - citation_ledger
+      - contradiction_review
+      - claim_confidence
+  - id: distribution-readiness
+    title: Distribution Readiness
+    description: Publish approval, audience notes, redaction checks, and external-send policy status.
+    evidence_types:
+      - publish_approval
+      - redaction_review
+      - distribution_log
+
+eval_quality:
+  minimum_score: 0.85
+  required_contracts:
+    - sources_are_cited
+    - source_freshness_checked
+    - publish_gate_requires_approval

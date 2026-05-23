@@ -24,6 +24,13 @@ publishing, external writes, and worker starts behind approval while allowing
 read-only inspection, evidence records, reports, gates, and local verifier
 commands.
 
+`research-monitor` is now the second maturity-gated built-in pack. It models a
+scan -> digest -> publish lifecycle for recurring cited research work, with
+source freshness, contradiction review, citation quality, and external publish
+approval contracts. Its fixtures cover a weekly digest smoke path, conflicting
+source regression, and approval-gated publish review so the pack abstraction is
+validated outside the startup domain.
+
 Runtime task and goal state belongs in SQLite under `.runstead/state.db`.
 Domain YAML remains configuration and template material only.
 

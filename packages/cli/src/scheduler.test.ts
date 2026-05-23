@@ -194,10 +194,16 @@ describe("scheduleDueTasks", () => {
         now: new Date("2026-05-15T00:01:01.000Z")
       });
 
-      expect(result.scheduledTasks.map((item) => item.type)).toEqual([
+      const expectedScheduledTypes = [
         "scan_sources",
-        "summarize_findings"
-      ]);
+        "summarize_findings",
+        "triage_source_conflicts",
+        "prepare_digest_release"
+      ];
+
+      expect(result.scheduledTasks.map((item) => item.type)).toEqual(
+        expectedScheduledTypes
+      );
       expect(result.scheduledTasks[0]?.task).toMatchObject({
         domain: "research-monitor",
         type: "scan_sources",

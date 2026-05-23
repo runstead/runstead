@@ -6,4 +6,19 @@ benchmarks:
       - sources_are_cited
       - source_freshness_checked
       - contradictions_reviewed
+      - publish_gate_requires_approval
+      - external_publish_not_performed
+  - id: conflicting-sources-regression
+    fixture: conflicting-sources-regression
+    acceptance_contracts:
+      - sources_are_cited
+      - contradictions_reviewed
+      - claim_confidence_recorded
+      - uncertainty_marked
+  - id: publish-gate-review
+    fixture: publish-gate-review
+    acceptance_contracts:
+      - sources_are_cited
+      - source_freshness_checked
+      - publish_gate_requires_approval
       - external_publish_not_performed

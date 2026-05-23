@@ -1,0 +1,17 @@
+id: prepare_digest_release
+domain: research-monitor
+description: Prepare a cited digest for external distribution while keeping publish side effects approval-gated.
+
+default_priority: high
+max_attempts: 1
+
+verifiers:
+  required:
+    - citation:no_uncited_claims
+    - source:freshness_checked
+    - publish:approval_required
+
+worker_routing:
+  preferred: codex_cli
+  fallback:
+    - shell

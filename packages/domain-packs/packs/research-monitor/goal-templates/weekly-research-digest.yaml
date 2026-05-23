@@ -9,9 +9,12 @@ generated:
   recurring_tasks:
     - scan_sources
     - summarize_findings
+    - triage_source_conflicts
+    - prepare_digest_release
   policy_profile: research-monitor
   acceptance_contracts:
     - sources_are_cited
     - source_freshness_checked
     - contradictions_reviewed
+    - publish_gate_requires_approval
     - external_publish_not_performed

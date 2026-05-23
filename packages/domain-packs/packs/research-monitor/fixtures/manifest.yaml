@@ -12,4 +12,33 @@ fixtures:
       - sources_are_cited
       - source_freshness_checked
       - contradictions_reviewed
+      - publish_gate_requires_approval
+      - external_publish_not_performed
+  - id: conflicting-sources-regression
+    description: Research monitor fixture with conflicting source claims that must be cited, qualified, and triaged before digest completion.
+    path: conflicting-sources-regression
+    task_type: triage_source_conflicts
+    goal_template: weekly-research-digest
+    tags:
+      - regression
+      - contradiction
+      - research
+    acceptance_contracts:
+      - sources_are_cited
+      - contradictions_reviewed
+      - claim_confidence_recorded
+      - uncertainty_marked
+  - id: publish-gate-review
+    description: Digest release fixture proving external publish remains approval-gated even when the digest is otherwise ready.
+    path: publish-gate-review
+    task_type: prepare_digest_release
+    goal_template: weekly-research-digest
+    tags:
+      - publish
+      - governance
+      - review
+    acceptance_contracts:
+      - sources_are_cited
+      - source_freshness_checked
+      - publish_gate_requires_approval
       - external_publish_not_performed
