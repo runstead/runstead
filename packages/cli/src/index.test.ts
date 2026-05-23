@@ -487,6 +487,7 @@ describe("cli entrypoint", () => {
         "--cwd",
         "--governance",
         "--plan",
+        "--refresh-context",
         "--max-attempts",
         "--resume",
         "--stage",

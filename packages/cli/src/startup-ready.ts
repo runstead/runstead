@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -36,6 +36,8 @@ import {
 
 const execFileAsync = promisify(execFile);
 const DEFAULT_UI_SMOKE_TIMEOUT_MS = 20_000;
+const STARTUP_CONTEXT_FILE_NAMES = ["AGENTS.md", "CLAUDE.md", "CODEX.md"];
+const STALE_STARTUP_DOC_DAYS = 30;
 
 export type StartupReadyStage = "mvp" | "launch" | "scale" | "complete";
 export type StartupReadyTarget = "local" | "staging" | "production";
@@ -86,6 +88,7 @@ export interface StartupReadyOptions {
   resumeRunId?: string;
   writeCi?: boolean;
   ci?: boolean;
+  refreshContext?: boolean;
   maxAttempts?: number;
   workerRunner?: StartupBuildMvpOptions["workerRunner"];
   now?: Date;
@@ -206,12 +209,14 @@ export async function planStartupReady(
   });
   const worker = governance.worker;
   const now = options.now ?? new Date();
-  const [root, inspection, devServer, recordedEvidence, gate] = await Promise.all([
+  const [root, inspection, devServer, recordedEvidence, gate, docs] =
+    await Promise.all([
     resolveRunsteadRoot(cwd),
     collectRepoInspection(cwd, now.toISOString()),
     inspectStartupReadyDevServer(cwd),
     collectRecordedStartupReadinessEvidence(cwd),
-    inspectStartupReadyGate(cwd, startupReadyStageToGateStage(stage), now)
+    inspectStartupReadyGate(cwd, startupReadyStageToGateStage(stage), now),
+    inspectStartupReadyDocs(cwd, now)
   ]);
   const evidenceTypes = new Set(recordedEvidence.evidenceTypes);
   const evidenceTiers = new Set(recordedEvidence.evidenceTiers);
@@ -224,12 +229,23 @@ export async function planStartupReady(
     governanceProfile: governance.profile,
     runsteadInitialized: root.source !== "missing",
     phases: [
-      planPhase("onboard", "Onboard repo", root.source === "missing" ? [] : []),
-      planPhase("context", "Generate context", hypothesisPlanBlockers(evidenceTypes)),
+      planPhase(
+        "onboard",
+        "Onboard repo",
+        root.source === "missing" ? [] : [],
+        root.source === "missing" ? "execute: initialize Runstead" : "ingest: use existing Runstead state"
+      ),
+      planPhase(
+        "context",
+        "Generate or ingest context",
+        hypothesisPlanBlockers(evidenceTypes),
+        contextPlanNextAction(docs, evidenceTypes, options.refreshContext === true)
+      ),
       planPhase(
         "measurement",
         "Measurement framework",
-        metricPlanBlockers(evidenceTypes)
+        metricPlanBlockers(evidenceTypes),
+        measurementPlanNextAction(docs, evidenceTypes, options.refreshContext === true)
       ),
       planPhase("build_mvp", "Build or repair MVP", []),
       planPhase("verifiers", "Run verifiers", [
@@ -420,10 +436,10 @@ export function formatStartupReadyPlan(plan: StartupReadyPlan): string {
     `Runstead initialized: ${plan.runsteadInitialized ? "yes" : "no"}`,
     "",
     "Phases:",
-    ...plan.phases.map(
-      (phase, index) =>
-        `${index + 1}. ${phase.title}: ${phase.status}${phase.blockers.length === 0 ? "" : ` (${phase.blockers.join("; ")})`}`
-    )
+    ...plan.phases.flatMap((phase, index) => [
+      `${index + 1}. ${phase.title}: ${phase.status}${phase.blockers.length === 0 ? "" : ` (${phase.blockers.join("; ")})`}`,
+      ...(phase.nextAction === undefined ? [] : [`   next: ${phase.nextAction}`])
+    ])
   ].join("\n");
 }
 
@@ -466,6 +482,7 @@ async function executeStartupReadyRun(
     const onboard = await startupOnboard({
       cwd: run.cwd,
       writeCi: options.writeCi === true,
+      force: options.refreshContext === true,
       ...(options.now === undefined ? {} : { now: options.now })
     });
 
@@ -2306,14 +2323,130 @@ export function parseStartupReadyGovernanceProfile(
 function planPhase(
   id: string,
   title: string,
-  blockers: string[]
+  blockers: string[],
+  nextAction?: string
 ): StartupReadyPlanPhase {
   return {
     id,
     title,
     status: blockers.length === 0 ? "pending" : "blocked",
-    blockers
+    blockers,
+    ...(nextAction === undefined ? {} : { nextAction })
   };
+}
+
+interface StartupReadyDocsInspection {
+  contextFiles: {
+    existing: string[];
+    stale: string[];
+  };
+  measurement: {
+    exists: boolean;
+    stale: boolean;
+  };
+}
+
+async function inspectStartupReadyDocs(
+  cwd: string,
+  now: Date
+): Promise<StartupReadyDocsInspection> {
+  const staleBefore = now.getTime() - STALE_STARTUP_DOC_DAYS * 24 * 60 * 60 * 1000;
+  const context = await Promise.all(
+    STARTUP_CONTEXT_FILE_NAMES.map(async (name) => {
+      const path = join(cwd, name);
+      const stats = await optionalStat(path);
+
+      return stats === undefined
+        ? undefined
+        : {
+            path,
+            stale: stats.mtimeMs < staleBefore
+          };
+    })
+  );
+  const measurementStats = await optionalStat(join(cwd, "MEASUREMENT.md"));
+
+  return {
+    contextFiles: {
+      existing: context
+        .filter((item): item is { path: string; stale: boolean } => item !== undefined)
+        .map((item) => item.path),
+      stale: context
+        .filter(
+          (item): item is { path: string; stale: boolean } =>
+            item !== undefined && item.stale
+        )
+        .map((item) => item.path)
+    },
+    measurement: {
+      exists: measurementStats !== undefined,
+      stale:
+        measurementStats === undefined ? false : measurementStats.mtimeMs < staleBefore
+    }
+  };
+}
+
+function contextPlanNextAction(
+  docs: StartupReadyDocsInspection,
+  evidenceTypes: Set<string>,
+  refreshContext: boolean
+): string {
+  if (refreshContext) {
+    return "refresh: regenerate context files because --refresh-context was set";
+  }
+
+  const hasEvidence = evidenceTypes.has("startup_agent_context");
+
+  if (docs.contextFiles.existing.length > 0 && !hasEvidence) {
+    return [
+      `ingest: record existing ${docs.contextFiles.existing.map((path) => path.split("/").pop()).join(", ")} as evidence`,
+      docs.contextFiles.stale.length === 0
+        ? "use --refresh-context to regenerate instead"
+        : "stale files detected; prefer --refresh-context before launch"
+    ].join("; ");
+  }
+
+  if (docs.contextFiles.stale.length > 0) {
+    return "refresh recommended: context files are older than 30 days; use --refresh-context";
+  }
+
+  return hasEvidence
+    ? "skip: context evidence already exists; use --refresh-context to regenerate"
+    : "execute: generate AGENTS.md, CLAUDE.md, and CODEX.md";
+}
+
+function measurementPlanNextAction(
+  docs: StartupReadyDocsInspection,
+  evidenceTypes: Set<string>,
+  refreshContext: boolean
+): string {
+  if (refreshContext) {
+    return "refresh: regenerate MEASUREMENT.md because --refresh-context was set";
+  }
+
+  const hasEvidence = evidenceTypes.has("startup_measurement_framework");
+
+  if (docs.measurement.exists && !hasEvidence) {
+    return docs.measurement.stale
+      ? "ingest: record existing MEASUREMENT.md as evidence; stale file detected, prefer --refresh-context before launch"
+      : "ingest: record existing MEASUREMENT.md as evidence; use --refresh-context to regenerate instead";
+  }
+
+  if (docs.measurement.stale) {
+    return "refresh recommended: MEASUREMENT.md is older than 30 days; use --refresh-context";
+  }
+
+  return hasEvidence
+    ? "skip: measurement evidence already exists; use --refresh-context to regenerate"
+    : "execute: generate MEASUREMENT.md with default startup metrics";
+}
+
+async function optionalStat(path: string): Promise<{ mtimeMs: number } | undefined> {
+  try {
+    return await stat(path);
+  } catch {
+    return undefined;
+  }
 }
 
 async function inspectStartupReadyDevServer(

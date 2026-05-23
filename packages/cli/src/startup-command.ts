@@ -167,6 +167,10 @@ export function registerStartupCommands(program: Command): void {
     .option("--resume <run-id>", "Resume an existing startup readiness run")
     .option("--write-ci", "Generate or update the target repo readiness workflow")
     .option("--ci", "Write CI summary artifacts for this readiness run")
+    .option(
+      "--refresh-context",
+      "Regenerate startup context and measurement docs instead of ingesting existing files"
+    )
     .option("--max-attempts <count>", "Maximum bounded MVP repair attempts", "2")
     .action(
       async (options: {
@@ -179,6 +183,7 @@ export function registerStartupCommands(program: Command): void {
         resume?: string;
         writeCi?: boolean;
         ci?: boolean;
+        refreshContext?: boolean;
         maxAttempts: string;
       }) => {
         const {
@@ -202,6 +207,7 @@ export function registerStartupCommands(program: Command): void {
           ...(options.resume === undefined ? {} : { resumeRunId: options.resume }),
           writeCi: options.writeCi === true,
           ci: options.ci === true,
+          refreshContext: options.refreshContext === true,
           maxAttempts: parsePositiveInteger(options.maxAttempts, "--max-attempts")
         };
 

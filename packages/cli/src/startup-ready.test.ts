@@ -214,6 +214,57 @@ describe("startup readiness run model", () => {
     }
   });
 
+  it("explains first-run context ingest and refresh behavior in plans", async () => {
+    const workspace = join(
+      tmpdir(),
+      `runstead-startup-ready-plan-ingest-${process.pid}`
+    );
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await mkdir(workspace, { recursive: true });
+      await writeFile(join(workspace, "AGENTS.md"), "# Existing agent guide\n", "utf8");
+      await writeFile(
+        join(workspace, "MEASUREMENT.md"),
+        "# Existing measurement\n",
+        "utf8"
+      );
+
+      const ingestPlan = await planStartupReady({
+        cwd: workspace,
+        stage: "mvp",
+        target: "local",
+        now: new Date("2026-05-22T01:21:00.000Z")
+      });
+      const refreshPlan = await planStartupReady({
+        cwd: workspace,
+        stage: "mvp",
+        target: "local",
+        refreshContext: true,
+        now: new Date("2026-05-22T01:21:00.000Z")
+      });
+      const context = ingestPlan.phases.find((phase) => phase.id === "context");
+      const measurement = ingestPlan.phases.find(
+        (phase) => phase.id === "measurement"
+      );
+      const formatted = formatStartupReadyPlan(ingestPlan);
+
+      expect(context?.nextAction).toContain("ingest: record existing AGENTS.md");
+      expect(measurement?.nextAction).toContain(
+        "ingest: record existing MEASUREMENT.md"
+      );
+      expect(formatted).toContain("next: ingest: record existing AGENTS.md");
+      expect(
+        refreshPlan.phases.find((phase) => phase.id === "context")?.nextAction
+      ).toContain("refresh: regenerate context files");
+      expect(
+        refreshPlan.phases.find((phase) => phase.id === "measurement")?.nextAction
+      ).toContain("refresh: regenerate MEASUREMENT.md");
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
   it("keeps local startup readiness on the readiness wrapper profile by default", async () => {
     const workspace = join(tmpdir(), `runstead-startup-ready-local-${process.pid}`);
 
