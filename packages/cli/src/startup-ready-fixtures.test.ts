@@ -1,4 +1,4 @@
-import { cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -14,11 +14,13 @@ import {
 import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sqlite";
 import { describe, expect, it } from "vitest";
 
+import { buildDashboard } from "./dashboard.js";
 import { initRunstead } from "./init.js";
 import {
   inferStartupReadyUiSmokeFlowActions,
   runStartupReady
 } from "./startup-ready.js";
+import { recordStartupSourceEvidence } from "./startup-source-connectors.js";
 import { listTasks } from "./tasks.js";
 import type { WorkerProcessRunner } from "./wrapped-worker.js";
 
@@ -71,10 +73,59 @@ describe("startup ready fixture matrix", () => {
       const verifiers = result.run.phases.find((phase) => phase.id === "verifiers");
       const uiSmoke = result.run.phases.find((phase) => phase.id === "ui_smoke");
       const complete = result.run.phases.find((phase) => phase.id === "complete_check");
+      const persistedRun = JSON.parse(await readFile(result.path, "utf8")) as {
+        guidedFlow: { id: string; status: string }[];
+        operatorCommands: { kind: string; command: string }[];
+      };
+      const sourceEvidence = await recordStartupSourceEvidence({
+        cwd: workspace,
+        connector: "github_actions",
+        uri: "https://github.com/acme/tiny-todo/actions/runs/1",
+        summary: "Tiny todo local launch CI passed",
+        status: "passed",
+        trustLevel: "authoritative",
+        payload: JSON.stringify({
+          workflow: "ci",
+          conclusion: "success",
+          headSha: "abc123"
+        }),
+        now: new Date("2026-05-23T00:16:00.000Z")
+      });
+      const dashboard = await buildDashboard({
+        cwd: workspace,
+        now: new Date("2026-05-23T00:17:00.000Z")
+      });
+      const dashboardHtml = await readFile(dashboard.htmlPath, "utf8");
 
       expect(verifiers?.status).toBe("passed");
       expect(uiSmoke?.status).toBe("passed");
       expect(complete).toBeDefined();
+      expect(persistedRun.guidedFlow[0]).toMatchObject({
+        id: "next_target",
+        status: "next"
+      });
+      expect(persistedRun.operatorCommands.map((command) => command.kind)).toEqual([
+        "resume",
+        "rerun",
+        "dashboard",
+        "complete_check"
+      ]);
+      expect(sourceEvidence).toMatchObject({
+        connector: "github_actions",
+        qualityTier: "external_observed",
+        payloadWarnings: []
+      });
+      expect(dashboard.snapshot.startup.latestRun).toMatchObject({
+        id: result.run.id,
+        verdict: "local_launch_ready"
+      });
+      expect(
+        dashboard.snapshot.startup.latestRun?.operatorCommands.some(
+          (command) => command.kind === "dashboard"
+        )
+      ).toBe(true);
+      expect(dashboardHtml).toContain("Operator command");
+      expect(dashboardHtml).toContain("runstead dashboard build --cwd");
       expect(result.run.reportPaths).toEqual(
         expect.arrayContaining([
           join(
