@@ -24,7 +24,10 @@ import {
   type StartupWorkerGovernanceProfile
 } from "./startup-founder-flow.js";
 import { generateStartupCompleteProductCheck } from "./startup-complete-check.js";
-import { executeStartupUiValidation } from "./startup-ui-validation.js";
+import {
+  executeStartupUiValidation,
+  type StartupUiFlowAction
+} from "./startup-ui-validation.js";
 import {
   addStartupEvidence,
   checkStartupGate,
@@ -125,6 +128,7 @@ export interface StartupReadyUiSmokeCheckConfig {
   viewport?: string;
   expectText: string[];
   flow?: string;
+  steps?: StartupUiFlowAction[];
   timeoutMs?: number;
 }
 
@@ -657,6 +661,7 @@ export async function executeStartupReadyUiSmoke(input: {
           loaded.config.server.timeoutMs ??
           DEFAULT_UI_SMOKE_TIMEOUT_MS,
         expectText: check.expectText,
+        ...(check.steps === undefined ? {} : { flowActions: check.steps }),
         ...(url === undefined ? {} : { url }),
         ...(check.flow === undefined ? {} : { criticalFlow: check.flow }),
         ...(input.now === undefined ? {} : { now: input.now })
@@ -751,6 +756,7 @@ async function defaultStartupReadyUiSmokeConfig(
   command: string
 ): Promise<StartupReadyUiSmokeConfig> {
   const expectText = await inferStartupReadyUiSmokeExpectText(cwd);
+  const steps = await inferStartupReadyUiSmokeFlowActions(cwd);
 
   return {
     schemaVersion: 1,
@@ -766,7 +772,11 @@ async function defaultStartupReadyUiSmokeConfig(
         url: "http://127.0.0.1:3000",
         viewport: "desktop",
         expectText,
-        flow: "load the primary product route"
+        flow:
+          steps.length === 0
+            ? "load the primary product route"
+            : "todo golden path: add, toggle, search/filter, reload persistence",
+        ...(steps.length === 0 ? {} : { steps })
       }
     ]
   };
@@ -784,6 +794,101 @@ export async function inferStartupReadyUiSmokeExpectText(
   const inferred = unique([...htmlTexts, ...readmeTexts, ...packageText]).slice(0, 6);
 
   return inferred.length === 0 ? ["html"] : inferred;
+}
+
+export async function inferStartupReadyUiSmokeFlowActions(
+  cwd: string
+): Promise<StartupUiFlowAction[]> {
+  const signals = (
+    await Promise.all([
+      readOptionalTextFile(join(cwd, "package.json")),
+      readOptionalTextFile(join(cwd, "README.md")),
+      readOptionalTextFile(join(cwd, "index.html")),
+      readOptionalTextFile(join(cwd, "src", "App.tsx")),
+      readOptionalTextFile(join(cwd, "src", "App.jsx"))
+    ])
+  ).join("\n");
+
+  if (!/\btodo\b|\btodos\b|\btask\b|\btasks\b/i.test(signals)) {
+    return [];
+  }
+
+  const smokeTodo = "Runstead smoke todo";
+
+  return [
+    {
+      type: "fill",
+      selectors: [
+        "[data-testid='todo-input']",
+        "[data-testid='task-input']",
+        "input[placeholder*='todo' i]",
+        "input[placeholder*='task' i]",
+        "input[type='text']",
+        "input:not([type])",
+        "textarea"
+      ],
+      value: smokeTodo
+    },
+    {
+      type: "click",
+      selectors: [
+        "[data-testid='add-todo']",
+        "[data-testid='add-task']",
+        "button[type='submit']",
+        "button:has-text('Add')",
+        "text=Add"
+      ]
+    },
+    {
+      type: "expectText",
+      text: smokeTodo
+    },
+    {
+      type: "click",
+      selectors: [
+        "[data-testid='todo-item'] input[type='checkbox']",
+        "[data-testid='task-item'] input[type='checkbox']",
+        "input[type='checkbox']",
+        `text=${smokeTodo}`
+      ]
+    },
+    {
+      type: "fill",
+      selectors: [
+        "[data-testid='todo-search']",
+        "[data-testid='task-search']",
+        "input[placeholder*='search' i]",
+        "input[type='search']"
+      ],
+      value: "Runstead"
+    },
+    {
+      type: "expectText",
+      text: smokeTodo
+    },
+    {
+      type: "click",
+      selectors: [
+        "[data-testid='filter-active']",
+        "[aria-label*='active' i]",
+        "button:has-text('Active')",
+        "text=Active"
+      ]
+    },
+    {
+      type: "click",
+      selectors: [
+        "[data-testid='filter-all']",
+        "[aria-label*='all' i]",
+        "button:has-text('All')",
+        "text=All"
+      ]
+    },
+    {
+      type: "expectPersisted",
+      text: smokeTodo
+    }
+  ];
 }
 
 async function inferExpectTextFromPackageJson(cwd: string): Promise<string[]> {
@@ -965,11 +1070,21 @@ function parseStartupReadyUiSmokeCheck(
   const legacyExpect = isRecord(input.expect) ? input.expect : undefined;
   const expectText = [
     ...arrayOfStrings(input.expectText),
-    ...arrayOfStrings(legacyExpect?.bodyContains)
+    ...arrayOfStrings(input.expect),
+    ...arrayOfStrings(legacyExpect?.bodyContains),
+    ...arrayOfStrings(legacyExpect?.expectText),
+    ...arrayOfStrings(legacyExpect?.text)
   ];
   const url = stringValue(input.url) ?? stringValue(legacyRequest?.url);
   const viewport = stringValue(input.viewport);
-  const flow = stringValue(input.flow) ?? stringValue(input.description);
+  const parsedFlowSteps = parseStartupReadyUiSmokeSteps(input.steps ?? input.flow);
+  const flow =
+    typeof input.flow === "string"
+      ? input.flow
+      : stringValue(input.description) ??
+        (parsedFlowSteps.length === 0
+          ? undefined
+          : "configured UI smoke interaction flow");
   const timeoutMs = numberValue(input.timeoutMs);
 
   return {
@@ -978,8 +1093,128 @@ function parseStartupReadyUiSmokeCheck(
     ...(viewport === undefined ? {} : { viewport }),
     expectText,
     ...(flow === undefined ? {} : { flow }),
+    ...(parsedFlowSteps.length === 0 ? {} : { steps: parsedFlowSteps }),
     ...(timeoutMs === undefined ? {} : { timeoutMs })
   };
+}
+
+function parseStartupReadyUiSmokeSteps(value: unknown): StartupUiFlowAction[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.map((item, index) => parseStartupReadyUiSmokeStep(item, index));
+}
+
+function parseStartupReadyUiSmokeStep(
+  value: unknown,
+  index: number
+): StartupUiFlowAction {
+  if (!isRecord(value)) {
+    throw new Error(`UI smoke flow step ${index + 1} must be an object`);
+  }
+
+  const type = stringValue(value.type);
+  const normalized =
+    type === undefined && Object.keys(value).length === 1
+      ? keyedFlowAction(value)
+      : value;
+  const normalizedType = stringValue(normalized.type);
+
+  switch (normalizedType) {
+    case "fill":
+      return {
+        type: "fill",
+        ...flowSelectors(normalized),
+        value: requiredStringValue(normalized.value, `UI smoke fill ${index + 1}`)
+      };
+    case "select":
+      return {
+        type: "select",
+        ...flowSelectors(normalized),
+        value: requiredStringValue(normalized.value, `UI smoke select ${index + 1}`)
+      };
+    case "click":
+      return {
+        type: "click",
+        ...flowSelectors(normalized)
+      };
+    case "expectText":
+      return {
+        type: "expectText",
+        text: requiredStringValue(
+          normalized.text ?? normalized.value,
+          `UI smoke expectText ${index + 1}`
+        )
+      };
+    case "expectCount":
+      return {
+        type: "expectCount",
+        selector: requiredStringValue(
+          normalized.selector,
+          `UI smoke expectCount selector ${index + 1}`
+        ),
+        count: requiredNumberValue(
+          normalized.count,
+          `UI smoke expectCount count ${index + 1}`
+        )
+      };
+    case "reload":
+      return {
+        type: "reload"
+      };
+    case "expectPersisted":
+      return {
+        type: "expectPersisted",
+        text: requiredStringValue(
+          normalized.text ?? normalized.value,
+          `UI smoke expectPersisted ${index + 1}`
+        ),
+        ...flowSelectors(normalized)
+      };
+    default:
+      throw new Error(
+        `Unsupported UI smoke flow step ${index + 1}: ${String(normalizedType)}`
+      );
+  }
+}
+
+function keyedFlowAction(value: Record<string, unknown>): Record<string, unknown> {
+  const [type, payload] = Object.entries(value)[0] ?? [];
+
+  return isRecord(payload) ? { type, ...payload } : { type, value: payload };
+}
+
+function flowSelectors(value: Record<string, unknown>): {
+  selector?: string;
+  selectors?: string[];
+} {
+  return {
+    ...(typeof value.selector === "string" ? { selector: value.selector } : {}),
+    ...(!Array.isArray(value.selectors)
+      ? {}
+      : { selectors: arrayOfStrings(value.selectors) })
+  };
+}
+
+function requiredStringValue(value: unknown, label: string): string {
+  const parsed = stringValue(value);
+
+  if (parsed === undefined) {
+    throw new Error(`${label} must be a non-empty string`);
+  }
+
+  return parsed;
+}
+
+function requiredNumberValue(value: unknown, label: string): number {
+  const parsed = numberValue(value);
+
+  if (parsed === undefined) {
+    throw new Error(`${label} must be a number`);
+  }
+
+  return parsed;
 }
 
 function portFromUrl(url: string | undefined): number | undefined {
@@ -2345,6 +2580,12 @@ function numberValue(value: unknown): number | undefined {
 }
 
 function arrayOfStrings(value: unknown): string[] {
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+
+    return trimmed.length === 0 ? [] : [trimmed];
+  }
+
   if (!Array.isArray(value)) {
     return [];
   }

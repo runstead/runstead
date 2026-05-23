@@ -110,6 +110,21 @@ checks:
       - Dashboard
       - Add task
     flow: primary activation flow
+    steps:
+      - type: fill
+        selectors:
+          - "[data-testid='todo-input']"
+          - "input[type='text']"
+        value: Runstead smoke todo
+      - type: click
+        selectors:
+          - "[data-testid='add-todo']"
+          - "button[type='submit']"
+      - type: expectText
+        text: Runstead smoke todo
+      - type: reload
+      - type: expectPersisted
+        text: Runstead smoke todo
 ```
 
 If the file is missing but a `dev`, `start`, or `preview` script exists,
@@ -118,8 +133,15 @@ phase becomes a blocker rather than a silent skip.
 
 For compatibility with older agent-generated configs, Runstead also accepts the
 legacy `startup.run` / `startup.readyWhen.url` shape and
-`checks[].expect.bodyContains`. New configs should use `server` and
-`expectText`.
+`checks[].expect.bodyContains`. New configs should use `server`, `expectText`,
+and optional `steps`.
+
+Supported UI smoke steps are `fill`, `select`, `click`, `expectText`,
+`expectCount`, `reload`, and `expectPersisted`. For todo/task apps, generated
+configs include a golden path that adds a synthetic todo, toggles it, exercises
+search/filter controls when present, and reloads to prove persistence. Flow
+execution stores DOM, screenshot, console log, and managed server log artifacts
+when available so a failed launch gate has inspectable evidence.
 
 ## Evidence Tiers
 

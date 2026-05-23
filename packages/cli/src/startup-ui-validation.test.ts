@@ -236,6 +236,126 @@ describe("startup UI validation evidence", () => {
       await rm(workspace, { force: true, recursive: true });
     }
   });
+
+  it("executes interactive UI flow actions and stores failure artifacts", async () => {
+    const workspace = join(tmpdir(), `runstead-startup-ui-flow-${process.pid}`);
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await initRunstead({ cwd: workspace });
+
+      const executed = await executeStartupUiValidation({
+        cwd: workspace,
+        url: "http://127.0.0.1:3000",
+        viewport: "desktop",
+        criticalFlow: "todo golden path",
+        expectText: ["Todo MVP", "Runstead smoke todo"],
+        flowActions: [
+          {
+            type: "fill",
+            selector: "input[type='text']",
+            value: "Runstead smoke todo"
+          },
+          {
+            type: "click",
+            selector: "button[type='submit']"
+          },
+          {
+            type: "expectText",
+            text: "Runstead smoke todo"
+          },
+          {
+            type: "expectPersisted",
+            text: "Runstead smoke todo"
+          }
+        ],
+        browserRunner: async () => ({
+          responseStatus: 200,
+          responseOk: true,
+          html: "<main><h1>Todo MVP</h1><button>Add todo</button><p>Runstead smoke todo</p></main>",
+          screenshot: Buffer.from("png bytes"),
+          consoleMessages: ["[error] simulated console warning"],
+          actionResults: [
+            {
+              type: "fill",
+              status: "pass",
+              summary: "filled input",
+              selector: "input[type='text']"
+            },
+            {
+              type: "click",
+              status: "pass",
+              summary: "clicked add",
+              selector: "button[type='submit']"
+            },
+            {
+              type: "expectText",
+              status: "pass",
+              summary: "found todo",
+              expected: "Runstead smoke todo"
+            },
+            {
+              type: "expectPersisted",
+              status: "pass",
+              summary: "persisted todo",
+              expected: "Runstead smoke todo"
+            }
+          ]
+        }),
+        now: new Date("2026-05-14T04:30:00.000Z")
+      });
+      const artifact = JSON.parse(
+        await readFile(executed.evidence.artifactPath, "utf8")
+      ) as {
+        content: string;
+        sources: { kind: string; uri: string; hash?: string }[];
+      };
+      const content = JSON.parse(artifact.content) as {
+        domStatus: string;
+        criticalFlowStatus: string;
+        screenshot: string;
+        consoleErrors: string[];
+        execution: {
+          runner: string;
+          flowActions: { type: string; status: string }[];
+          artifacts: {
+            dom: string;
+            screenshot: string;
+            consoleLog: string;
+          };
+        };
+      };
+
+      expect(executed.failed).toBe(false);
+      expect(content).toMatchObject({
+        domStatus: "pass",
+        criticalFlowStatus: "pass",
+        consoleErrors: ["[error] simulated console warning"],
+        execution: {
+          runner: "browser_flow_smoke",
+          flowActions: [
+            { type: "fill", status: "pass" },
+            { type: "click", status: "pass" },
+            { type: "expectText", status: "pass" },
+            { type: "expectPersisted", status: "pass" }
+          ]
+        }
+      });
+      expect(content.screenshot).toBe(content.execution.artifacts.screenshot);
+      expect(artifact.sources.map((source) => source.uri)).toEqual(
+        expect.arrayContaining([
+          content.execution.artifacts.dom,
+          content.execution.artifacts.screenshot,
+          content.execution.artifacts.consoleLog
+        ])
+      );
+      await expect(
+        readFile(fileURLToPath(content.execution.artifacts.screenshot), "utf8")
+      ).resolves.toBe("png bytes");
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
 });
 
 async function runCli(...args: string[]): Promise<string> {

@@ -550,6 +550,44 @@ describe("startup readiness run model", () => {
     }
   });
 
+  it("infers todo golden-path UI smoke flow actions", async () => {
+    const workspace = join(tmpdir(), `runstead-startup-ready-ui-flow-${process.pid}`);
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await mkdir(join(workspace, "src"), { recursive: true });
+      await writeFile(
+        join(workspace, "package.json"),
+        `${JSON.stringify({ name: "todo-mvp" }, null, 2)}\n`,
+        "utf8"
+      );
+      await writeFile(
+        join(workspace, "src", "App.tsx"),
+        "export function App() { return <TodoApp />; }\n",
+        "utf8"
+      );
+
+      const { inferStartupReadyUiSmokeFlowActions } = await import(
+        "./startup-ready.js"
+      );
+      const steps = await inferStartupReadyUiSmokeFlowActions(workspace);
+
+      expect(steps.map((step) => step.type)).toEqual([
+        "fill",
+        "click",
+        "expectText",
+        "click",
+        "fill",
+        "expectText",
+        "click",
+        "click",
+        "expectPersisted"
+      ]);
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
   it("accepts legacy agent-generated UI smoke config shape", async () => {
     const workspace = join(tmpdir(), `runstead-startup-ready-legacy-ui-${process.pid}`);
     const port = await availablePort();

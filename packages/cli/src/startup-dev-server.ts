@@ -19,7 +19,13 @@ export interface StartupDevServerHandle {
   port: number;
   managed: true;
   pid?: number;
+  logs: () => StartupDevServerLogs;
   stop: () => Promise<void>;
+}
+
+export interface StartupDevServerLogs {
+  stdout: string;
+  stderr: string;
 }
 
 interface PackageJson {
@@ -44,6 +50,7 @@ export async function startStartupDevServer(
     },
     stdio: "pipe"
   });
+  const logs = collectStartupDevServerLogs(child);
 
   try {
     await waitForStartupDevServer({
@@ -63,8 +70,32 @@ export async function startStartupDevServer(
     port,
     managed: true,
     ...(child.pid === undefined ? {} : { pid: child.pid }),
+    logs,
     stop: () => stopStartupDevServerProcess(child, port)
   };
+}
+
+function collectStartupDevServerLogs(
+  child: ChildProcessWithoutNullStreams
+): () => StartupDevServerLogs {
+  const stdout: string[] = [];
+  const stderr: string[] = [];
+  const collect = (chunks: string[]) => (chunk: Buffer | string) => {
+    chunks.push(String(chunk));
+    const joined = chunks.join("");
+
+    if (joined.length > 64_000) {
+      chunks.splice(0, chunks.length, joined.slice(-64_000));
+    }
+  };
+
+  child.stdout.on("data", collect(stdout));
+  child.stderr.on("data", collect(stderr));
+
+  return () => ({
+    stdout: stdout.join(""),
+    stderr: stderr.join("")
+  });
 }
 
 export async function detectStartupDevServerCommand(cwd: string): Promise<string> {
