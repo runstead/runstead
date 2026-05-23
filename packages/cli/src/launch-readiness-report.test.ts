@@ -374,36 +374,42 @@ describe("generateLaunchReadinessReport", () => {
           createdAt: "2026-05-14T03:21:30.000Z"
         });
 
-        const staleUiArtifactPath = join(evidenceDir, "startup_ui_validation_old.json");
+        for (let index = 0; index < 12; index += 1) {
+          const suffix = String(index).padStart(2, "0");
+          const staleUiArtifactPath = join(
+            evidenceDir,
+            `startup_ui_validation_old_${suffix}.json`
+          );
 
-        await writeFile(
-          staleUiArtifactPath,
-          `${JSON.stringify(
-            {
-              schemaVersion: 1,
-              content: JSON.stringify({
-                url: "http://localhost:3000",
-                viewport: "desktop",
-                domStatus: "fail",
-                accessibilityStatus: "not_run",
-                responsiveStatus: "not_run",
-                criticalFlowStatus: "fail"
-              })
-            },
-            null,
-            2
-          )}\n`,
-          "utf8"
-        );
-        projectEvidence(database, {
-          id: "ev_startup_ui_validation_old",
-          type: "startup_ui_validation",
-          subjectType: "goal",
-          subjectId: created.goal.id,
-          uri: pathToFileURL(staleUiArtifactPath).href,
-          summary: "old desktop UI validation failed",
-          createdAt: "2026-05-14T03:20:00.000Z"
-        });
+          await writeFile(
+            staleUiArtifactPath,
+            `${JSON.stringify(
+              {
+                schemaVersion: 1,
+                content: JSON.stringify({
+                  url: "http://localhost:3000",
+                  viewport: "desktop",
+                  domStatus: "fail",
+                  accessibilityStatus: "not_run",
+                  responsiveStatus: "not_run",
+                  criticalFlowStatus: "fail"
+                })
+              },
+              null,
+              2
+            )}\n`,
+            "utf8"
+          );
+          projectEvidence(database, {
+            id: `ev_startup_ui_validation_old_${suffix}`,
+            type: "startup_ui_validation",
+            subjectType: "goal",
+            subjectId: created.goal.id,
+            uri: pathToFileURL(staleUiArtifactPath).href,
+            summary: `old desktop UI validation failed ${suffix}`,
+            createdAt: `2026-05-14T03:20:${suffix}.000Z`
+          });
+        }
 
         for (const [type, summary, content] of [
           ["startup_agent_context", "agent context recorded", undefined],
@@ -522,6 +528,7 @@ describe("generateLaunchReadinessReport", () => {
         now: new Date("2026-05-14T12:05:00.000Z")
       });
       const json = await readFile(result.jsonPath, "utf8");
+      const parsedJson = JSON.parse(json) as { staleEvidence?: unknown[] };
 
       expect(result.status).toBe("launch_ready");
       expect(result.blockers).toEqual([]);
@@ -540,7 +547,11 @@ describe("generateLaunchReadinessReport", () => {
       expect(result.markdown).toContain("Current command evidence records: 2");
       expect(result.markdown).toContain("Stale command evidence records: 0");
       expect(result.markdown).toContain("## Stale Evidence Appendix");
-      expect(result.markdown).toContain("ev_startup_ui_validation_old");
+      expect(result.markdown).toContain("Total stale records: 12; showing 10");
+      expect(result.markdown).toContain(
+        "2 additional stale evidence records omitted from markdown"
+      );
+      expect(parsedJson.staleEvidence).toHaveLength(12);
       expect(result.markdown).toContain(
         "superseded by newer evidence for startup_ui_validation:http://localhost:3000:desktop"
       );

@@ -153,6 +153,7 @@ interface LaunchReadinessReportData {
 }
 
 const STARTUP_DOMAIN = "ai-native-startup";
+const STALE_EVIDENCE_APPENDIX_LIMIT = 10;
 const PROTECTED_PATH_PATTERNS = [
   ".env",
   ".env.*",
@@ -1044,12 +1045,25 @@ function evidenceProvenance(data: LaunchReadinessReportData): string {
 
 function staleEvidenceAppendix(data: LaunchReadinessReportData): string {
   const rows = staleEvidenceRows(data);
+  const visibleRows = rows.slice(0, STALE_EVIDENCE_APPENDIX_LIMIT);
+  const omitted = rows.length - visibleRows.length;
 
-  return listOrNone(
-    rows,
-    (item) =>
-      `- ${item.id}: ${item.summary ?? item.uri} (${staleEvidenceReason(data, item)}; ${evidenceSourceSummary(item)})`
-  );
+  if (rows.length === 0) {
+    return "none";
+  }
+
+  return [
+    `- Total stale records: ${rows.length}; showing ${visibleRows.length}. Full stale evidence remains in the JSON artifact.`,
+    ...visibleRows.map(
+      (item) =>
+        `- ${item.id}: ${item.summary ?? item.uri} (${staleEvidenceReason(data, item)}; ${evidenceSourceSummary(item)})`
+    ),
+    ...(omitted === 0
+      ? []
+      : [
+          `- ${omitted} additional stale evidence record${omitted === 1 ? "" : "s"} omitted from markdown; inspect staleEvidence in the JSON artifact.`
+        ])
+  ].join("\n");
 }
 
 function evidenceSourceSummary(item: EvidenceReportRow): string {
