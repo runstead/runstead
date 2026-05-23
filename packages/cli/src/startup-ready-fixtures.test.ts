@@ -2,11 +2,24 @@ import { cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
+import {
+  createRunsteadId,
+  type Evidence,
+  type Goal,
+  type RunsteadEvent,
+  type Task
+} from "@runstead/core";
+import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sqlite";
 import { describe, expect, it } from "vitest";
 
-import { runStartupReady } from "./startup-ready.js";
+import { initRunstead } from "./init.js";
+import {
+  inferStartupReadyUiSmokeFlowActions,
+  runStartupReady
+} from "./startup-ready.js";
+import { listTasks } from "./tasks.js";
 import type { WorkerProcessRunner } from "./wrapped-worker.js";
 
 const fixturesRoot = resolve(
@@ -73,6 +86,69 @@ describe("startup ready fixture matrix", () => {
           join(workspace, ".runstead", "reports", "startup-complete-product-check.md")
         ])
       );
+    });
+  }, 90_000);
+
+  it("runs the todo dogfood regression fixture with legacy evidence repair", async () => {
+    await withFixture("todo-dogfood-regression", async (workspace) => {
+      const port = await availablePort();
+
+      await initRunstead({ cwd: workspace, profile: "trusted-local" });
+      await seedLegacyStartupMetricSnapshot(workspace);
+      await seedStaleStartupRemediationTask(workspace);
+      await writeUiSmokeConfig(workspace, port, [
+        "Todo MVP",
+        "Add todo",
+        "Search todos"
+      ]);
+
+      const inferredSteps = await inferStartupReadyUiSmokeFlowActions(workspace);
+
+      expect(inferredSteps[0]).toMatchObject({
+        type: "fill",
+        selectors: expect.arrayContaining([
+          "[data-testid='todo-input']",
+          "#todo-input",
+          "input[placeholder*='todo' i]"
+        ])
+      });
+      expect(
+        inferredSteps[0]?.type === "fill"
+          ? inferredSteps[0].selectors?.indexOf("#todo-input")
+          : -1
+      ).toBeLessThan(
+        inferredSteps[0]?.type === "fill"
+          ? (inferredSteps[0].selectors?.indexOf("input[placeholder*='todo' i]") ?? -1)
+          : -1
+      );
+
+      const result = await runStartupReady({
+        cwd: workspace,
+        stage: "launch",
+        target: "local",
+        worker: "codex_cli",
+        maxAttempts: 1,
+        workerRunner: successfulWorker,
+        now: new Date("2026-05-23T00:18:00.000Z")
+      });
+      const remediationTask = listTasks({ cwd: workspace }).tasks.find(
+        (task) => task.id === "task_todo_dogfood_stale_remediation"
+      );
+
+      expect(result.run.status).toBe("completed");
+      expect(result.run.verdict).toBe("local_launch_ready");
+      expect(result.run.phases.find((phase) => phase.id === "ui_smoke")?.status).toBe(
+        "passed"
+      );
+      expect(evidenceCount(workspace, "startup_metric_snapshot")).toBeGreaterThan(1);
+      expect(remediationTask).toMatchObject({
+        status: "cancelled",
+        output: {
+          superseded: {
+            byRunId: result.run.id
+          }
+        }
+      });
     });
   }, 90_000);
 
@@ -182,6 +258,164 @@ async function writeUiSmokeConfig(
     ].join("\n"),
     "utf8"
   );
+}
+
+async function seedLegacyStartupMetricSnapshot(workspace: string): Promise<void> {
+  const evidenceId = createRunsteadId("ev");
+  const eventId = createRunsteadId("evt");
+  const createdAt = "2026-05-23T00:11:00.000Z";
+  const artifactPath = join(
+    workspace,
+    ".runstead",
+    "evidence",
+    `startup-metric_snapshot-${evidenceId}.json`
+  );
+  const artifact = {
+    schemaVersion: 1,
+    createdAt,
+    evidenceType: "metric_snapshot",
+    summary: "Legacy malformed metric snapshot from todo dogfood",
+    sourceRefs: [],
+    sources: [],
+    provenance: {
+      recordedBy: "todo-dogfood-regression",
+      recordedAt: createdAt,
+      sourceCount: 0,
+      sourceKinds: [],
+      captureMode: "manual_seed"
+    },
+    associations: {
+      gate: "launch"
+    },
+    content: JSON.stringify(
+      {
+        metric: "local_required_checks_passed",
+        source: "manual",
+        threshold: 1,
+        currentValue: 1
+      },
+      null,
+      2
+    )
+  };
+  const evidence: Evidence = {
+    id: evidenceId,
+    type: "startup_metric_snapshot",
+    subjectType: "startup",
+    subjectId: "ai-native-startup",
+    uri: pathToFileURL(artifactPath).href,
+    summary: "Legacy malformed metric snapshot from todo dogfood",
+    createdAt
+  };
+  const event: RunsteadEvent = {
+    eventId,
+    type: "evidence.recorded",
+    aggregateType: "evidence",
+    aggregateId: evidence.id,
+    payload: evidence,
+    createdAt
+  };
+  const database = openRunsteadDatabase(join(workspace, ".runstead", "state.db"));
+
+  try {
+    await mkdir(join(workspace, ".runstead", "evidence"), { recursive: true });
+    await writeFile(artifactPath, `${JSON.stringify(artifact, null, 2)}\n`, "utf8");
+    appendEventAndProject(database, {
+      event,
+      projection: {
+        type: "evidence",
+        value: evidence
+      }
+    });
+  } finally {
+    database.close();
+  }
+}
+
+async function seedStaleStartupRemediationTask(workspace: string): Promise<void> {
+  const createdAt = "2026-05-23T00:12:00.000Z";
+  const goal: Goal = {
+    id: "goal_todo_dogfood_regression",
+    domain: "ai-native-startup",
+    title: "Todo dogfood regression",
+    status: "active",
+    priority: "medium",
+    scope: {
+      repositoryPath: workspace
+    },
+    policyRef: "policy_startup_mvp_v1",
+    createdAt,
+    updatedAt: createdAt
+  };
+  const task: Task = {
+    id: "task_todo_dogfood_stale_remediation",
+    goalId: goal.id,
+    domain: "ai-native-startup",
+    type: "startup_remediation",
+    status: "blocked",
+    priority: "medium",
+    attempt: 1,
+    maxAttempts: 1,
+    input: {
+      stage: "launch",
+      blocker: "old UI smoke blocker"
+    },
+    output: {
+      summary: "Stale remediation from earlier dogfood run"
+    },
+    verifiers: [],
+    createdAt,
+    updatedAt: createdAt
+  };
+  const event: RunsteadEvent = {
+    eventId: createRunsteadId("evt"),
+    type: "task.created",
+    aggregateType: "task",
+    aggregateId: task.id,
+    payload: task,
+    createdAt
+  };
+  const database = openRunsteadDatabase(join(workspace, ".runstead", "state.db"));
+
+  try {
+    appendEventAndProject(database, {
+      event: {
+        eventId: createRunsteadId("evt"),
+        type: "goal.created",
+        aggregateType: "goal",
+        aggregateId: goal.id,
+        payload: goal,
+        createdAt
+      },
+      projection: {
+        type: "goal",
+        value: goal
+      }
+    });
+    appendEventAndProject(database, {
+      event,
+      projection: {
+        type: "task",
+        value: task
+      }
+    });
+  } finally {
+    database.close();
+  }
+}
+
+function evidenceCount(workspace: string, type: string): number {
+  const database = openRunsteadDatabase(join(workspace, ".runstead", "state.db"));
+
+  try {
+    const row = database
+      .prepare("SELECT COUNT(*) AS count FROM evidence WHERE type = ?")
+      .get(type) as { count: number };
+
+    return row.count;
+  } finally {
+    database.close();
+  }
 }
 
 function successfulWorker(): ReturnType<WorkerProcessRunner> {

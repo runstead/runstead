@@ -75,6 +75,21 @@ fixtures:
       - launch_readiness_report_ready
       - support_category_aggregated
       - scale_gate_passed
+  - id: todo-dogfood-regression
+    description: Todo app dogfood fixture for startup-ready regressions around UI selector ambiguity, legacy evidence repair, and stale remediation cleanup.
+    path: todo-dogfood-regression
+    task_type: run_mvp_verifiers
+    goal_template: build-mvp
+    tags:
+      - dogfood
+      - todo
+      - launch
+      - regression
+    acceptance_contracts:
+      - generated_ui_flow_uses_stable_selectors
+      - legacy_metric_snapshot_repaired
+      - stale_remediation_cancelled
+      - local_launch_ready
   - id: broken-launch-repo
     description: Reference repo with missing CI, scripts, measurement, rollback, and launch evidence for blocked launch dogfood.
     path: broken-launch-repo

@@ -39,6 +39,13 @@ benchmarks:
       - launch_readiness_report_ready
       - support_category_aggregated
       - scale_gate_passed
+  - id: todo-dogfood-regression
+    fixture: todo-dogfood-regression
+    acceptance_contracts:
+      - generated_ui_flow_uses_stable_selectors
+      - legacy_metric_snapshot_repaired
+      - stale_remediation_cancelled
+      - local_launch_ready
   - id: broken-launch-repo
     fixture: broken-launch-repo
     acceptance_contracts:
