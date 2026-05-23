@@ -4,6 +4,11 @@ import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 
 import { createRunsteadId, type RunsteadEvent } from "@runstead/core";
+import {
+  compileReadinessReleaseDecision,
+  type ReadinessExternalCheck,
+  type ReadinessReleaseDecision
+} from "@runstead/runtime";
 import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sqlite";
 
 import { requireRunsteadStateDb } from "./runstead-root.js";
@@ -14,7 +19,6 @@ import {
   type StartupGateStage
 } from "./startup-evidence.js";
 import { getStartupStatus } from "./startup-status.js";
-import { startupVerdictReady } from "./startup-verdict.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -43,6 +47,7 @@ export interface GenerateStartupCiSummaryResult {
   remoteActions: StartupGitHubActionsRemoteStatus;
   prComment: string;
   releaseGate: StartupReleaseGateSummary;
+  releaseDecision: ReadinessReleaseDecision;
   event: RunsteadEvent;
 }
 
@@ -110,18 +115,22 @@ export async function generateStartupCiSummary(
       domain,
       now: new Date(checkedAt)
     }));
-  const effectiveGate = effectiveStartupCiGate(gate, readiness);
   const remoteActions = await inspectGitHubActionsRemoteStatus({
     cwd,
     ...(options.fetch === undefined ? {} : { fetch: options.fetch })
   });
-  const finalGate = mergeRemoteActionsIntoStartupGate(effectiveGate, remoteActions);
+  const releaseDecision = compileReadinessReleaseDecision({
+    gate,
+    ...(readiness === undefined ? {} : { readiness }),
+    externalChecks: [remoteActionsReadinessCheck(remoteActions)]
+  });
+  const finalGate = startupGateFromReleaseDecision(gate, releaseDecision);
   const checkRun = startupCheckRunSummary({
     gate: finalGate,
     checkName: options.checkName ?? "Runstead Startup Gate"
   });
   const releaseGate: StartupReleaseGateSummary = {
-    status: finalGate.passed ? "allow_release" : "block_release",
+    status: releaseDecision.status,
     requiredArtifact: "runstead-startup-ci-summary.json",
     branchProtectionHint:
       "Configure CI to fail this step when conclusion is failure, require the check in branch protection, and treat failed remote GitHub Actions as release blockers."
@@ -141,6 +150,7 @@ export async function generateStartupCiSummary(
     checkRun,
     remoteActions,
     releaseGate,
+    releaseDecision,
     prComment,
     gate: {
       passed: gate.passed,
@@ -157,7 +167,11 @@ export async function generateStartupCiSummary(
       findings: finalGate.findings,
       diff: finalGate.diff,
       eventId: finalGate.event.eventId,
-      ...(readiness === undefined ? {} : { readinessVerdict: readiness.verdict })
+      ...(releaseDecision.readinessVerdict === undefined
+        ? {}
+        : { readinessVerdict: releaseDecision.readinessVerdict }),
+      supersededGateBlockers: releaseDecision.supersededGateBlockers,
+      externalChecks: releaseDecision.externalChecks
     }
   };
   const event: RunsteadEvent = {
@@ -190,92 +204,61 @@ export async function generateStartupCiSummary(
     remoteActions,
     prComment,
     releaseGate,
+    releaseDecision,
     event
   };
 }
 
-function mergeRemoteActionsIntoStartupGate(
-  gate: StartupGateCheckResult,
+function remoteActionsReadinessCheck(
   remoteActions: StartupGitHubActionsRemoteStatus
-): StartupGateCheckResult {
-  const remoteBlockers = remoteActionsReleaseBlockers(remoteActions);
-  const remoteWarnings = remoteActionsReleaseWarnings(remoteActions);
-  const blockers = uniqueStrings([...gate.blockers, ...remoteBlockers]);
-
-  return {
-    ...gate,
-    passed: blockers.length === 0,
-    blockers,
-    warnings: uniqueStrings([...gate.warnings, ...remoteWarnings])
-  };
-}
-
-function remoteActionsReleaseBlockers(
-  remoteActions: StartupGitHubActionsRemoteStatus
-): string[] {
+): ReadinessExternalCheck {
   if (remoteActions.status === "failed") {
-    return [
-      `remote GitHub Actions failed for HEAD${remoteActions.workflowName === undefined ? "" : ` (${remoteActions.workflowName})`}`
-    ];
-  }
-
-  if (remoteActions.status === "pending") {
-    return [
-      `remote GitHub Actions are still pending for HEAD${remoteActions.workflowName === undefined ? "" : ` (${remoteActions.workflowName})`}`
-    ];
-  }
-
-  return [];
-}
-
-function remoteActionsReleaseWarnings(
-  remoteActions: StartupGitHubActionsRemoteStatus
-): string[] {
-  if (remoteActions.status === "not_configured") {
-    return [`remote GitHub Actions status is not configured: ${remoteActions.reason}`];
-  }
-
-  if (remoteActions.status === "unknown") {
-    return [`remote GitHub Actions status is unknown: ${remoteActions.reason}`];
-  }
-
-  return [];
-}
-
-function effectiveStartupCiGate(
-  gate: StartupGateCheckResult,
-  readiness:
-    | {
-        verdict: string;
-        blockers: string[];
-      }
-    | undefined
-): StartupGateCheckResult {
-  if (readiness === undefined) {
-    return gate;
-  }
-
-  if (startupVerdictReady(readiness.verdict) && readiness.blockers.length === 0) {
     return {
-      ...gate,
-      passed: true,
-      blockers: [],
-      warnings: uniqueStrings([
-        ...gate.warnings,
-        ...gate.blockers.map(
-          (blocker) =>
-            `startup readiness verdict ${readiness.verdict} superseded gate blocker: ${blocker}`
-        )
-      ])
+      id: "github_actions",
+      status: "failed",
+      blocker: `remote GitHub Actions failed for HEAD${remoteActions.workflowName === undefined ? "" : ` (${remoteActions.workflowName})`}`
     };
   }
 
-  const blockers = uniqueStrings([...gate.blockers, ...readiness.blockers]);
+  if (remoteActions.status === "pending") {
+    return {
+      id: "github_actions",
+      status: "pending",
+      blocker: `remote GitHub Actions are still pending for HEAD${remoteActions.workflowName === undefined ? "" : ` (${remoteActions.workflowName})`}`
+    };
+  }
+
+  if (remoteActions.status === "not_configured") {
+    return {
+      id: "github_actions",
+      status: "not_configured",
+      warning: `remote GitHub Actions status is not configured: ${remoteActions.reason}`
+    };
+  }
+
+  if (remoteActions.status === "unknown") {
+    return {
+      id: "github_actions",
+      status: "unknown",
+      warning: `remote GitHub Actions status is unknown: ${remoteActions.reason}`
+    };
+  }
 
   return {
+    id: "github_actions",
+    status: "passed"
+  };
+}
+
+function startupGateFromReleaseDecision(
+  gate: StartupGateCheckResult,
+  decision: ReadinessReleaseDecision
+): StartupGateCheckResult {
+  return {
     ...gate,
-    passed: blockers.length === 0,
-    blockers
+    passed: decision.passed,
+    blockers: decision.blockers,
+    warnings: decision.warnings
   };
 }
 
@@ -663,8 +646,4 @@ function stringIdValue(value: unknown): string | undefined {
   }
 
   return undefined;
-}
-
-function uniqueStrings(values: string[]): string[] {
-  return [...new Set(values)];
 }

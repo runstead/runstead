@@ -50,6 +50,9 @@ describe("startup CI integration", () => {
         releaseGate: {
           status: string;
         };
+        releaseDecision: {
+          status: string;
+        };
         remoteActions: {
           status: string;
         };
@@ -64,6 +67,7 @@ describe("startup CI integration", () => {
       expect(result.releaseGate.status).toBe("block_release");
       expect(json.checkRun.conclusion).toBe("failure");
       expect(json.releaseGate.status).toBe("block_release");
+      expect(json.releaseDecision.status).toBe("block_release");
       expect(json.remoteActions.status).toBe("not_configured");
       expect(json.prComment).toContain("Runstead Startup Gate");
       expect(markdown).toContain("Remote GitHub Actions");
@@ -281,6 +285,10 @@ describe("startup CI integration", () => {
         releaseGate: {
           status: string;
         };
+        releaseDecision: {
+          status: string;
+          blockers: string[];
+        };
         remoteActions: {
           status: string;
           workflowRunId?: string;
@@ -305,6 +313,9 @@ describe("startup CI integration", () => {
       );
       expect(json.checkRun.conclusion).toBe("failure");
       expect(json.releaseGate.status).toBe("block_release");
+      expect(json.releaseDecision.blockers.join("\n")).toContain(
+        "remote GitHub Actions failed for HEAD"
+      );
       expect(json.remoteActions.failedJobLogExcerpt).toContain("exit code 1");
       expect(json.effectiveGate.blockers.join("\n")).toContain(
         "remote GitHub Actions failed for HEAD"
@@ -349,6 +360,10 @@ describe("startup CI integration", () => {
         releaseGate: {
           status: string;
         };
+        releaseDecision: {
+          readinessVerdict?: string;
+          blockers: string[];
+        };
         effectiveGate: {
           readinessVerdict?: string;
           blockers: string[];
@@ -358,6 +373,8 @@ describe("startup CI integration", () => {
       expect(result.checkRun.conclusion).toBe("failure");
       expect(result.releaseGate.status).toBe("block_release");
       expect(result.gate.blockers).toContain("Launch report is blocked");
+      expect(json.releaseDecision.readinessVerdict).toBe("local_launch_blocked");
+      expect(json.releaseDecision.blockers).toContain("Launch report is blocked");
       expect(json.effectiveGate.readinessVerdict).toBe("local_launch_blocked");
       expect(json.effectiveGate.blockers).toContain("Launch report is blocked");
     } finally {
@@ -408,16 +425,26 @@ describe("startup CI integration", () => {
           readinessVerdict?: string;
           blockers: string[];
           warnings: string[];
+          supersededGateBlockers: string[];
+        };
+        releaseDecision: {
+          status: string;
+          readinessVerdict?: string;
         };
       };
 
       expect(json.gate.blockers.length).toBeGreaterThan(0);
       expect(result.checkRun.conclusion).toBe("success");
       expect(result.releaseGate.status).toBe("allow_release");
+      expect(json.releaseDecision).toMatchObject({
+        status: "allow_release",
+        readinessVerdict: "local_launch_ready"
+      });
       expect(json.effectiveGate).toMatchObject({
         readinessVerdict: "local_launch_ready",
         blockers: []
       });
+      expect(json.effectiveGate.supersededGateBlockers.length).toBeGreaterThan(0);
       expect(json.effectiveGate.warnings.join("\n")).toContain(
         "superseded gate blocker"
       );

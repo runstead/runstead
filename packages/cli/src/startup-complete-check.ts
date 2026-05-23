@@ -518,20 +518,23 @@ function startupCompleteProductBaseCriteria(input: {
       title: "CI PR Gate",
       status:
         ["success", "failure"].includes(input.ci.checkRun.conclusion) &&
-        ["allow_release", "block_release"].includes(input.ci.releaseGate.status) &&
+        input.ci.releaseDecision.status === "allow_release" &&
         input.pathState.get(input.ci.jsonPath) === true,
       severity: "critical",
       evidence: [
         input.ci.jsonPath,
         input.ci.markdownPath,
         `check=${input.ci.checkRun.conclusion}`,
-        `release=${input.ci.releaseGate.status}`,
+        `release=${input.ci.releaseDecision.status}`,
+        `readiness=${input.ci.releaseDecision.readinessVerdict ?? "not_evaluated"}`,
         `gateEvent=${input.ci.gate.event.eventId}`
       ],
-      missing: missingPaths(input.pathState, [
-        input.ci.jsonPath,
-        input.ci.markdownPath
-      ]),
+      missing: [
+        ...missingPaths(input.pathState, [input.ci.jsonPath, input.ci.markdownPath]),
+        ...(input.ci.releaseDecision.status === "allow_release"
+          ? []
+          : input.ci.releaseDecision.blockers)
+      ],
       nextAction: "runstead startup ci summary --stage launch"
     }),
     criterion({
@@ -690,6 +693,7 @@ function startupCompleteProductJson(input: {
       ci: {
         checkRun: input.ci.checkRun,
         releaseGate: input.ci.releaseGate,
+        releaseDecision: input.ci.releaseDecision,
         jsonPath: input.ci.jsonPath,
         markdownPath: input.ci.markdownPath
       },
@@ -752,6 +756,8 @@ function startupCompleteProductEvent(input: {
       launchReportJson: input.launchReport.jsonPath,
       ciMarkdown: input.ci.markdownPath,
       ciJson: input.ci.jsonPath,
+      releaseDecision: input.ci.releaseDecision.status,
+      readinessVerdict: input.ci.releaseDecision.readinessVerdict ?? "not_evaluated",
       diagnosticsMarkdown: input.diagnostics.markdownPath,
       diagnosticsJson: input.diagnostics.jsonPath,
       remediationStatus: input.remediation.status

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   compileReadinessPlan,
+  compileReadinessReleaseDecision,
   evaluateCompiledReadinessPlan,
   readinessVerdictReady
 } from "./readiness-plan.js";
@@ -74,5 +75,44 @@ describe("readiness plan runtime", () => {
     expect(readinessVerdictReady("staging_launch_ready")).toBe(true);
     expect(readinessVerdictReady("public_launch_ready")).toBe(true);
     expect(readinessVerdictReady("public_launch_blocked")).toBe(false);
+  });
+
+  it("compiles release decisions from gate, readiness, and external checks", () => {
+    const decision = compileReadinessReleaseDecision({
+      gate: {
+        passed: false,
+        blockers: ["Launch gate lacks local evidence"],
+        warnings: ["Synthetic evidence is low confidence"]
+      },
+      readiness: {
+        verdict: "local_launch_ready",
+        blockers: []
+      },
+      externalChecks: [
+        {
+          id: "github_actions",
+          status: "failed",
+          blocker: "remote GitHub Actions failed for HEAD"
+        },
+        {
+          id: "deployment",
+          status: "unknown",
+          warning: "deployment evidence is unknown"
+        }
+      ]
+    });
+
+    expect(decision).toMatchObject({
+      status: "block_release",
+      passed: false,
+      readinessVerdict: "local_launch_ready",
+      blockers: ["remote GitHub Actions failed for HEAD"],
+      warnings: [
+        "Synthetic evidence is low confidence",
+        "startup readiness verdict local_launch_ready superseded gate blocker: Launch gate lacks local evidence",
+        "deployment evidence is unknown"
+      ],
+      supersededGateBlockers: ["Launch gate lacks local evidence"]
+    });
   });
 });

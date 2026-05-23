@@ -160,6 +160,11 @@ describe("generateStartupCompleteProductCheck", () => {
           status: string;
           criteria: { id: string; status: string }[];
           surfaces: Record<string, string>;
+          ci: {
+            releaseDecision: {
+              status: string;
+            };
+          };
         };
       };
 
@@ -188,6 +193,7 @@ describe("generateStartupCompleteProductCheck", () => {
       expect(markdown).toContain("Artifact State Evidence Event Truth");
       expect(json.kind).toBe("startup_complete_product_check");
       expect(json.data.status).toBe("complete");
+      expect(json.data.ci.releaseDecision.status).toBe("allow_release");
       expect(json.data.surfaces.launchReportJson).toContain(
         "launch-readiness-ai-native-startup.json"
       );

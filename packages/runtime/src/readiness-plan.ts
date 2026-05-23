@@ -93,6 +93,47 @@ export interface ReadinessVerdictResult extends ReadinessVerdictDecision {
   };
 }
 
+export interface ReadinessReleaseGateInput {
+  passed: boolean;
+  blockers: string[];
+  warnings: string[];
+}
+
+export interface ReadinessVerdictSnapshot {
+  verdict: string;
+  blockers: string[];
+}
+
+export type ReadinessExternalCheckStatus =
+  | "passed"
+  | "failed"
+  | "pending"
+  | "not_configured"
+  | "unknown";
+
+export interface ReadinessExternalCheck {
+  id: string;
+  status: ReadinessExternalCheckStatus;
+  blocker?: string;
+  warning?: string;
+}
+
+export interface CompileReadinessReleaseDecisionInput {
+  gate: ReadinessReleaseGateInput;
+  readiness?: ReadinessVerdictSnapshot;
+  externalChecks?: ReadinessExternalCheck[];
+}
+
+export interface ReadinessReleaseDecision {
+  status: "allow_release" | "block_release";
+  passed: boolean;
+  blockers: string[];
+  warnings: string[];
+  readinessVerdict?: string;
+  supersededGateBlockers: string[];
+  externalChecks: ReadinessExternalCheck[];
+}
+
 export function compileReadinessPlan(
   input: CompileReadinessPlanInput
 ): CompiledReadinessPlan {
@@ -149,6 +190,55 @@ export function readinessVerdictReady(verdict: string): boolean {
   return ["local_launch_ready", "staging_launch_ready", "public_launch_ready"].includes(
     verdict
   );
+}
+
+export function compileReadinessReleaseDecision(
+  input: CompileReadinessReleaseDecisionInput
+): ReadinessReleaseDecision {
+  const externalChecks = input.externalChecks ?? [];
+  const readinessAllowsRelease =
+    input.readiness !== undefined &&
+    readinessVerdictReady(input.readiness.verdict) &&
+    input.readiness.blockers.length === 0;
+  const supersededGateBlockers = readinessAllowsRelease ? input.gate.blockers : [];
+  const readinessWarnings = readinessAllowsRelease
+    ? input.gate.blockers.map(
+        (blocker) =>
+          `startup readiness verdict ${input.readiness?.verdict} superseded gate blocker: ${blocker}`
+      )
+    : [];
+  const localBlockers = readinessAllowsRelease
+    ? []
+    : [...input.gate.blockers, ...(input.readiness?.blockers ?? [])];
+  const externalBlockers = externalChecks.flatMap((check) =>
+    check.status === "failed" || check.status === "pending"
+      ? [check.blocker ?? `${check.id} is ${check.status}`]
+      : []
+  );
+  const externalWarnings = externalChecks.flatMap((check) =>
+    check.status === "not_configured" || check.status === "unknown"
+      ? [check.warning ?? `${check.id} is ${check.status}`]
+      : []
+  );
+  const blockers = uniqueStrings([...localBlockers, ...externalBlockers]);
+  const warnings = uniqueStrings([
+    ...input.gate.warnings,
+    ...readinessWarnings,
+    ...externalWarnings
+  ]);
+  const passed = blockers.length === 0;
+
+  return {
+    status: passed ? "allow_release" : "block_release",
+    passed,
+    blockers,
+    warnings,
+    ...(input.readiness === undefined
+      ? {}
+      : { readinessVerdict: input.readiness.verdict }),
+    supersededGateBlockers,
+    externalChecks
+  };
 }
 
 export function readinessVerdictForTarget(
