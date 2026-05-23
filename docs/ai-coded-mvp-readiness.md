@@ -163,10 +163,11 @@ Runstead separates local evidence from launch-grade evidence:
 - `security_scan`
 
 `--target local` can return `local_launch_ready` from local command and UI
-evidence. `--target staging` additionally requires CI and staging deployment
-evidence. `--target production` requires production deployment, real analytics,
-support or feedback triage, security evidence, rollback, and observability
-evidence.
+evidence. `--target staging` additionally requires CI, staging deployment,
+rollback drill, monitoring alert, and migration validation evidence. `--target
+production` requires production deployment, rollback drill, monitoring alerts,
+error budget, migration validation, traffic gate, real analytics, support or
+feedback triage, security evidence, and a post-launch watch record.
 
 ## CI Integration
 
@@ -201,7 +202,13 @@ runstead startup hypothesis add --cwd /path/to/mvp --kind user --statement "..."
 runstead startup hypothesis add --cwd /path/to/mvp --kind solution --statement "..."
 runstead startup measurement snapshot --cwd /path/to/mvp --metric activation --threshold 1 --current 1
 runstead startup evidence add --cwd /path/to/mvp --type rollback_plan --summary "..." --source docs/rollback-plan.md --gate launch
+runstead startup evidence add --cwd /path/to/mvp --type rollback_drill --summary "..." --source docs/rollback-drill.md --gate launch
 runstead startup evidence add --cwd /path/to/mvp --type observability --summary "..." --source docs/observability.md --gate launch
+runstead startup evidence add --cwd /path/to/mvp --type monitoring_alerts --summary "..." --source docs/alerts.md --gate launch
+runstead startup evidence add --cwd /path/to/mvp --type error_budget --summary "..." --source docs/error-budget.md --gate launch
+runstead startup evidence add --cwd /path/to/mvp --type migration_validation --summary "..." --source docs/migration-validation.md --gate launch
+runstead startup evidence add --cwd /path/to/mvp --type traffic_gate --summary "..." --source docs/traffic-gate.md --gate launch
+runstead startup evidence add --cwd /path/to/mvp --type post_launch_watch --summary "..." --source docs/post-launch-watch.md --gate launch
 runstead startup source record --cwd /path/to/mvp --connector deployment --source-uri https://staging.example.com --summary "Staging deployment smoke passed" --status pass
 ```
 

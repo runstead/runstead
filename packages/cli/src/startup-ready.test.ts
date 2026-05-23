@@ -335,7 +335,13 @@ describe("startup readiness run model", () => {
         expect.arrayContaining([
           "production deployment evidence is missing",
           "real-user analytics evidence is missing",
-          "support or feedback triage evidence is missing"
+          "support or feedback triage evidence is missing",
+          "rollback-drill evidence is missing",
+          "monitoring-alert evidence is missing",
+          "error-budget evidence is missing",
+          "migration-validation evidence is missing",
+          "real-user traffic-gate evidence is missing",
+          "post-launch watch evidence is missing"
         ])
       );
       expect(plan.worker).toBe("codex_direct");
@@ -572,7 +578,13 @@ describe("startup readiness run model", () => {
         "real-user analytics evidence is required",
         "support or feedback triage evidence is required",
         "rollback-plan evidence is required",
-        "observability evidence is required"
+        "rollback drill evidence is required",
+        "observability evidence is required",
+        "monitoring alert evidence is required",
+        "error budget evidence is required",
+        "migration validation evidence is required",
+        "real-user traffic gate evidence is required",
+        "post-launch watch evidence is required"
       ])
     );
   });

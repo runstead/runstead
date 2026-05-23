@@ -329,7 +329,7 @@ export async function planStartupReady(
       ]),
       planPhase("launch_report", "Launch report", [
         ...deploymentPlanBlockers(evidenceTiers, target),
-        ...productionEvidencePlanBlockers(evidenceTiers, target)
+        ...targetOperationalEvidencePlanBlockers(evidenceTypes, evidenceTiers, target)
       ]),
       planPhase("complete_check", "Complete product check", [
         ...gate.blockers,
@@ -2426,7 +2426,7 @@ function startupReadinessTargetBoundary(
       requiredNextEvidence: [
         "CI summary artifact",
         "staging deployment evidence",
-        "rollback and observability evidence from the deployment target",
+        "rollback drill, migration validation, and monitoring alert evidence from the deployment target",
         "real-user analytics or support triage evidence before production"
       ]
     };
@@ -2446,9 +2446,9 @@ function startupReadinessTargetBoundary(
       ],
       requiredNextEvidence: [
         "production deployment evidence",
-        "production rollback verification",
-        "production observability baseline",
-        "real-user analytics and support triage evidence"
+        "production rollback drill",
+        "production monitoring alerts, error budget, and migration validation",
+        "real-user traffic gate, analytics, support triage, and post-launch watch evidence"
       ]
     };
   }
@@ -2458,7 +2458,7 @@ function startupReadinessTargetBoundary(
     boundary:
       "public_launch_ready is the only Runstead readiness verdict that claims production/public launch clearance.",
     allowedUse:
-      "Use this verdict only when CI, deployment, rollback, observability, real-user, and support evidence are all current.",
+      "Use this verdict only when CI, deployment, rollback drill, monitoring alerts, error budget, migration validation, traffic gate, real-user, support, and post-launch watch evidence are all current.",
     notEvidenceFor: [
       "ongoing scale safety after launch",
       "compliance certification beyond the recorded evidence",
@@ -2466,6 +2466,7 @@ function startupReadinessTargetBoundary(
     ],
     requiredNextEvidence: [
       "post-launch monitoring review",
+      "traffic gate and error budget review",
       "support ticket and feedback triage",
       "scale readiness evidence before delegation or growth spend"
     ]
@@ -3387,12 +3388,27 @@ function deploymentPlanBlockers(
     : ["production deployment evidence is missing"];
 }
 
-function productionEvidencePlanBlockers(
+function targetOperationalEvidencePlanBlockers(
+  evidenceTypes: Set<string>,
   evidenceTiers: Set<StartupReadinessEvidenceTier>,
   target: StartupReadyTarget
 ): string[] {
-  if (target !== "production") {
+  if (target === "local") {
     return [];
+  }
+
+  if (target === "staging") {
+    return [
+      ...(evidenceTypes.has("startup_rollback_drill")
+        ? []
+        : ["rollback-drill evidence is missing"]),
+      ...(evidenceTypes.has("startup_monitoring_alerts")
+        ? []
+        : ["monitoring-alert evidence is missing"]),
+      ...(evidenceTypes.has("startup_migration_validation")
+        ? []
+        : ["migration-validation evidence is missing"])
+    ];
   }
 
   return [
@@ -3402,7 +3418,25 @@ function productionEvidencePlanBlockers(
     ...(evidenceTiers.has("support_ticket")
       ? []
       : ["support or feedback triage evidence is missing"]),
-    ...(evidenceTiers.has("security_scan") ? [] : ["security scan evidence is missing"])
+    ...(evidenceTiers.has("security_scan") ? [] : ["security scan evidence is missing"]),
+    ...(evidenceTypes.has("startup_rollback_drill")
+      ? []
+      : ["rollback-drill evidence is missing"]),
+    ...(evidenceTypes.has("startup_monitoring_alerts")
+      ? []
+      : ["monitoring-alert evidence is missing"]),
+    ...(evidenceTypes.has("startup_error_budget")
+      ? []
+      : ["error-budget evidence is missing"]),
+    ...(evidenceTypes.has("startup_migration_validation")
+      ? []
+      : ["migration-validation evidence is missing"]),
+    ...(evidenceTypes.has("startup_traffic_gate")
+      ? []
+      : ["real-user traffic-gate evidence is missing"]),
+    ...(evidenceTypes.has("startup_post_launch_watch")
+      ? []
+      : ["post-launch watch evidence is missing"])
   ];
 }
 

@@ -165,6 +165,18 @@ function missingStartupEvidenceBlockers(input: {
       blockers.push("staging deployment evidence is required");
     }
 
+    if (!evidenceTypes.has("startup_rollback_drill")) {
+      blockers.push("rollback drill evidence is required for staging");
+    }
+
+    if (!evidenceTypes.has("startup_monitoring_alerts")) {
+      blockers.push("monitoring alert evidence is required for staging");
+    }
+
+    if (!evidenceTypes.has("startup_migration_validation")) {
+      blockers.push("migration validation evidence is required for staging");
+    }
+
     return blockers;
   }
 
@@ -188,8 +200,32 @@ function missingStartupEvidenceBlockers(input: {
     blockers.push("rollback-plan evidence is required");
   }
 
+  if (!evidenceTypes.has("startup_rollback_drill")) {
+    blockers.push("rollback drill evidence is required");
+  }
+
   if (!evidenceTypes.has("startup_observability")) {
     blockers.push("observability evidence is required");
+  }
+
+  if (!evidenceTypes.has("startup_monitoring_alerts")) {
+    blockers.push("monitoring alert evidence is required");
+  }
+
+  if (!evidenceTypes.has("startup_error_budget")) {
+    blockers.push("error budget evidence is required");
+  }
+
+  if (!evidenceTypes.has("startup_migration_validation")) {
+    blockers.push("migration validation evidence is required");
+  }
+
+  if (!evidenceTypes.has("startup_traffic_gate")) {
+    blockers.push("real-user traffic gate evidence is required");
+  }
+
+  if (!evidenceTypes.has("startup_post_launch_watch")) {
+    blockers.push("post-launch watch evidence is required");
   }
 
   return blockers;

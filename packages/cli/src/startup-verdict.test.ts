@@ -40,7 +40,10 @@ describe("startup verdict engine", () => {
       canLaunch: false,
       blockers: [
         "CI-verified evidence is required for staging or production",
-        "staging deployment evidence is required"
+        "staging deployment evidence is required",
+        "rollback drill evidence is required for staging",
+        "monitoring alert evidence is required for staging",
+        "migration validation evidence is required for staging"
       ]
     });
   });
