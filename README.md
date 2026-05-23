@@ -79,6 +79,13 @@ commands, executes UI smoke when a dev server is available, writes launch and
 complete-check reports, and returns a target-aware verdict such as
 `local_launch_ready` or explicit blockers.
 
+Use `--interactive` when the founder wants to supplement the generated context
+and measurement evidence before the run starts:
+
+```bash
+runstead startup ready --cwd /path/to/mvp --stage launch --target local --interactive
+```
+
 Preview the same run without executing the worker:
 
 ```bash

@@ -160,6 +160,77 @@ describe("startup readiness run model", () => {
     }
   }, 60_000);
 
+  it("feeds interactive founder answers into context and measurement evidence", async () => {
+    const workspace = join(
+      tmpdir(),
+      `runstead-startup-ready-interactive-${process.pid}`
+    );
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await mkdir(workspace, { recursive: true });
+      await writeFile(
+        join(workspace, "package.json"),
+        `${JSON.stringify(
+          {
+            name: "startup-ready-interactive-fixture",
+            private: true,
+            scripts: {
+              test: 'node -e "process.exit(0)"',
+              lint: 'node -e "process.exit(0)"',
+              typecheck: 'node -e "process.exit(0)"',
+              build: 'node -e "process.exit(0)"'
+            }
+          },
+          null,
+          2
+        )}\n`,
+        "utf8"
+      );
+
+      await runStartupReady({
+        cwd: workspace,
+        stage: "mvp",
+        target: "local",
+        worker: "codex_cli",
+        interactive: true,
+        interactiveAnswers: {
+          architecturePrinciple: "Keep todo data offline-first until sync exists.",
+          technicalConstraint: "Avoid new runtime dependencies for the MVP.",
+          acceptedDebt: "LocalStorage persistence is accepted for launch smoke.",
+          activationMetric: "User creates their first todo.",
+          retentionMetric: "User returns and completes a todo.",
+          day7Metric: "D7 todo users with one completed task.",
+          day30Metric: "D30 todo users with one completed task.",
+          falsePositiveMetric: "Todo is added but not visible after reload."
+        },
+        workerRunner: () =>
+          Promise.resolve({
+            stdout: JSON.stringify({
+              summary: "built interactive MVP fixture",
+              files_changed: [],
+              commands_run: [],
+              risks: [],
+              needs_approval: false,
+              approval_reason: null
+            }),
+            stderr: "",
+            exitCode: 0
+          }),
+        now: new Date("2026-05-22T01:18:00.000Z")
+      });
+
+      await expect(readFile(join(workspace, "AGENTS.md"), "utf8")).resolves.toContain(
+        "Keep todo data offline-first until sync exists."
+      );
+      await expect(
+        readFile(join(workspace, "MEASUREMENT.md"), "utf8")
+      ).resolves.toContain("User creates their first todo.");
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  }, 60_000);
+
   it("plans missing launch evidence before execution", async () => {
     const workspace = join(tmpdir(), `runstead-startup-ready-plan-${process.pid}`);
 

@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
+import { stdin, stdout } from "node:process";
+import { createInterface } from "node:readline/promises";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { openRunsteadDatabase } from "@runstead/state-sqlite";
@@ -21,6 +23,7 @@ import {
   startupScaleCheck,
   type ResolvedStartupWorkerGovernanceProfile,
   type StartupBuildMvpOptions,
+  type StartupFounderFlowOptions,
   type StartupWorkerGovernanceProfile
 } from "./startup-founder-flow.js";
 import { generateStartupCompleteProductCheck } from "./startup-complete-check.js";
@@ -89,9 +92,22 @@ export interface StartupReadyOptions {
   writeCi?: boolean;
   ci?: boolean;
   refreshContext?: boolean;
+  interactive?: boolean;
+  interactiveAnswers?: Partial<StartupReadyInteractiveAnswers>;
   maxAttempts?: number;
   workerRunner?: StartupBuildMvpOptions["workerRunner"];
   now?: Date;
+}
+
+export interface StartupReadyInteractiveAnswers {
+  architecturePrinciple: string;
+  technicalConstraint: string;
+  acceptedDebt: string;
+  activationMetric: string;
+  retentionMetric: string;
+  day7Metric: string;
+  day30Metric: string;
+  falsePositiveMetric: string;
 }
 
 export interface StartupReadyPlan {
@@ -472,6 +488,8 @@ async function executeStartupReadyRun(
   run: StartupReadinessRun,
   options: StartupReadyOptions
 ): Promise<void> {
+  const interactiveAnswers = await collectStartupReadyInteractiveAnswers(options);
+
   if (
     shouldRunPhase(run, "onboard") ||
     shouldRunPhase(run, "context") ||
@@ -483,6 +501,7 @@ async function executeStartupReadyRun(
       cwd: run.cwd,
       writeCi: options.writeCi === true,
       force: options.refreshContext === true,
+      ...startupReadyInteractiveFounderFlowOptions(interactiveAnswers),
       ...(options.now === undefined ? {} : { now: options.now })
     });
 
@@ -642,6 +661,138 @@ async function executeStartupReadyRun(
     collectRunEvidence(run);
     await writeStartupReadinessRun(run);
   }
+}
+
+async function collectStartupReadyInteractiveAnswers(
+  options: StartupReadyOptions
+): Promise<Partial<StartupReadyInteractiveAnswers>> {
+  const provided = normalizeStartupReadyInteractiveAnswers(options.interactiveAnswers);
+
+  if (options.interactive !== true) {
+    return provided;
+  }
+
+  if (stdin.isTTY !== true || stdout.isTTY !== true) {
+    if (Object.keys(provided).length > 0) {
+      return provided;
+    }
+
+    throw new Error(
+      "--interactive startup ready requires a TTY; omit --interactive for default answers"
+    );
+  }
+
+  const prompts = createInterface({
+    input: stdin,
+    output: stdout
+  });
+
+  try {
+    return normalizeStartupReadyInteractiveAnswers({
+      architecturePrinciple:
+        provided.architecturePrinciple ??
+        (await promptStartupReadyAnswer(
+          prompts,
+          "Architecture principle to add to agent context"
+        )),
+      technicalConstraint:
+        provided.technicalConstraint ??
+        (await promptStartupReadyAnswer(
+          prompts,
+          "Technical constraint to add to agent context"
+        )),
+      acceptedDebt:
+        provided.acceptedDebt ??
+        (await promptStartupReadyAnswer(
+          prompts,
+          "Accepted technical debt to record"
+        )),
+      activationMetric:
+        provided.activationMetric ??
+        (await promptStartupReadyAnswer(prompts, "Activation metric")),
+      retentionMetric:
+        provided.retentionMetric ??
+        (await promptStartupReadyAnswer(prompts, "Retention metric")),
+      day7Metric:
+        provided.day7Metric ??
+        (await promptStartupReadyAnswer(prompts, "Day 7 metric")),
+      day30Metric:
+        provided.day30Metric ??
+        (await promptStartupReadyAnswer(prompts, "Day 30 metric")),
+      falsePositiveMetric:
+        provided.falsePositiveMetric ??
+        (await promptStartupReadyAnswer(prompts, "False-positive control metric"))
+    });
+  } finally {
+    prompts.close();
+  }
+}
+
+async function promptStartupReadyAnswer(
+  prompts: ReturnType<typeof createInterface>,
+  label: string
+): Promise<string | undefined> {
+  const answer = (await prompts.question(`${label}: `)).trim();
+
+  return answer.length === 0 ? undefined : answer;
+}
+
+function normalizeStartupReadyInteractiveAnswers(
+  answers:
+    | Partial<Record<keyof StartupReadyInteractiveAnswers, string | undefined>>
+    | undefined
+): Partial<StartupReadyInteractiveAnswers> {
+  if (answers === undefined) {
+    return {};
+  }
+
+  return Object.fromEntries(
+    Object.entries(answers)
+      .map(([key, value]) => [key, stringValue(value)] as const)
+      .filter((entry): entry is readonly [string, string] => entry[1] !== undefined)
+  ) as Partial<StartupReadyInteractiveAnswers>;
+}
+
+function startupReadyInteractiveFounderFlowOptions(
+  answers: Partial<StartupReadyInteractiveAnswers>
+): Pick<
+  StartupFounderFlowOptions,
+  | "architecturePrinciples"
+  | "technicalConstraints"
+  | "acceptedDebt"
+  | "activationMetric"
+  | "retentionMetric"
+  | "day7Metric"
+  | "day30Metric"
+  | "falsePositiveMetric"
+> {
+  return {
+    ...optionalSingleValueArray(
+      "architecturePrinciples",
+      answers.architecturePrinciple
+    ),
+    ...optionalSingleValueArray("technicalConstraints", answers.technicalConstraint),
+    ...optionalSingleValueArray("acceptedDebt", answers.acceptedDebt),
+    ...optionalStringField("activationMetric", answers.activationMetric),
+    ...optionalStringField("retentionMetric", answers.retentionMetric),
+    ...optionalStringField("day7Metric", answers.day7Metric),
+    ...optionalStringField("day30Metric", answers.day30Metric),
+    ...optionalStringField("falsePositiveMetric", answers.falsePositiveMetric)
+  };
+}
+
+function optionalSingleValueArray<K extends string>(
+  key: K,
+  value: string | undefined
+): { [P in K]?: string[] } {
+  return value === undefined ? {} : { [key]: [value] } as { [P in K]: string[] };
+}
+
+function optionalStringField<K extends string>(
+  key: K,
+  value: string | undefined
+): { [P in K]?: string } {
+  return value === undefined ? {} : { [key]: value } as { [P in K]: string };
 }
 
 export async function executeStartupReadyUiSmoke(input: {

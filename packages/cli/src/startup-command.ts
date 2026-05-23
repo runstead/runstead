@@ -171,6 +171,10 @@ export function registerStartupCommands(program: Command): void {
       "--refresh-context",
       "Regenerate startup context and measurement docs instead of ingesting existing files"
     )
+    .option(
+      "--interactive",
+      "Prompt for founder context and measurement details before generating evidence"
+    )
     .option("--max-attempts <count>", "Maximum bounded MVP repair attempts", "2")
     .action(
       async (options: {
@@ -184,6 +188,7 @@ export function registerStartupCommands(program: Command): void {
         writeCi?: boolean;
         ci?: boolean;
         refreshContext?: boolean;
+        interactive?: boolean;
         maxAttempts: string;
       }) => {
         const {
@@ -208,6 +213,7 @@ export function registerStartupCommands(program: Command): void {
           writeCi: options.writeCi === true,
           ci: options.ci === true,
           refreshContext: options.refreshContext === true,
+          interactive: options.interactive === true,
           maxAttempts: parsePositiveInteger(options.maxAttempts, "--max-attempts")
         };
 

@@ -39,6 +39,14 @@ export interface StartupFounderFlowOptions {
   profile?: InitPolicyProfile;
   force?: boolean;
   writeCi?: boolean;
+  architecturePrinciples?: string[];
+  technicalConstraints?: string[];
+  acceptedDebt?: string[];
+  activationMetric?: string;
+  retentionMetric?: string;
+  day7Metric?: string;
+  day30Metric?: string;
+  falsePositiveMetric?: string;
   now?: Date;
 }
 
@@ -164,6 +172,15 @@ export async function startupOnboard(
     generateStartupContext({
       cwd,
       force: options.force === true,
+      ...(options.architecturePrinciples === undefined
+        ? {}
+        : { architecturePrinciples: options.architecturePrinciples }),
+      ...(options.technicalConstraints === undefined
+        ? {}
+        : { technicalConstraints: options.technicalConstraints }),
+      ...(options.acceptedDebt === undefined
+        ? {}
+        : { acceptedDebt: options.acceptedDebt }),
       ...(options.now === undefined ? {} : { now: options.now })
     })
   );
@@ -171,6 +188,19 @@ export async function startupOnboard(
     generateMeasurementFramework({
       cwd,
       force: options.force === true,
+      ...(options.activationMetric === undefined
+        ? {}
+        : { activationMetric: options.activationMetric }),
+      ...(options.retentionMetric === undefined
+        ? {}
+        : { retentionMetric: options.retentionMetric }),
+      ...(options.day7Metric === undefined ? {} : { day7Metric: options.day7Metric }),
+      ...(options.day30Metric === undefined
+        ? {}
+        : { day30Metric: options.day30Metric }),
+      ...(options.falsePositiveMetric === undefined
+        ? {}
+        : { falsePositiveMetric: options.falsePositiveMetric }),
       ...(options.now === undefined ? {} : { now: options.now })
     })
   );

@@ -22,6 +22,11 @@ policy, diff scope, verifier evidence, and reports, but it does not hard-proxy
 every internal Codex CLI tool call. Use `codex_direct` when the product promise
 requires Runstead to govern exposed model tool calls through its native proxy.
 
+By default the onboarding path is non-interactive and uses conservative
+generated context and measurement defaults. Add `--interactive` to collect
+founder-supplied architecture principles, constraints, accepted debt, and core
+metrics before Runstead writes context/measurement artifacts and evidence.
+
 For the `local` target, `startup ready` also records a conservative local
 baseline when evidence is missing: problem/user/solution hypotheses,
 disconfirming-signal review, metric snapshot, migration plan, rollback plan,
