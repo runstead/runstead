@@ -60,9 +60,15 @@ jobs:
         run: |
           pnpm --filter @runstead/core pack --dry-run
           pnpm --filter @runstead/domain-packs pack --dry-run
+          pnpm --filter @runstead/evidence pack --dry-run
+          pnpm --filter @runstead/governance pack --dry-run
           pnpm --filter @runstead/skills pack --dry-run
           pnpm --filter @runstead/runtime pack --dry-run
+          pnpm --filter @runstead/sdk pack --dry-run
           pnpm --filter @runstead/state-sqlite pack --dry-run
+          pnpm --filter @runstead/tools pack --dry-run
+          pnpm --filter @runstead/verifiers pack --dry-run
+          pnpm --filter @runstead/workers pack --dry-run
           pnpm --filter @runstead/cli pack --dry-run
 
       - name: CLI smoke
