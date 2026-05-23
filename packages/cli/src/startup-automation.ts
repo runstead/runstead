@@ -483,6 +483,9 @@ export async function generateStartupContext(
   });
   const files: string[] = [];
   const structuredFiles: string[] = [];
+  const contentBlocks: string[] = [];
+  let generatedCount = 0;
+  let ingestedCount = 0;
   const contextData = {
     contextFiles: STARTUP_CONTEXT_FILES,
     inspection,
@@ -493,13 +496,21 @@ export async function generateStartupContext(
 
   for (const filename of STARTUP_CONTEXT_FILES) {
     const path = join(cwd, filename);
+    let fileContent: string;
+    let ingested = false;
 
     if (options.force !== true && (await exists(path))) {
-      throw new Error(`${filename} already exists. Use --force to overwrite it.`);
+      fileContent = await readFile(path, "utf8");
+      ingested = true;
+      ingestedCount += 1;
+    } else {
+      fileContent = contextForFile(filename, context);
+      await writeFile(path, fileContent, "utf8");
+      generatedCount += 1;
     }
 
-    await writeFile(path, contextForFile(filename, context), "utf8");
     files.push(path);
+    contentBlocks.push(`## ${filename}\n\n${fileContent}`);
     structuredFiles.push(
       await writeStartupStructuredArtifact({
         kind: "startup_agent_context",
@@ -507,7 +518,8 @@ export async function generateStartupContext(
         markdownPath: path,
         data: {
           ...contextData,
-          contextFile: filename
+          contextFile: filename,
+          ingested
         }
       })
     );
@@ -532,9 +544,9 @@ export async function generateStartupContext(
   const evidence = await addStartupEvidence({
     cwd,
     type: "agent_context",
-    summary: "Generated startup agent context files",
+    summary: startupContextEvidenceSummary({ generatedCount, ingestedCount }),
     sourceRefs: [...files, summaryPath, ...structuredFiles],
-    content: context,
+    content: ingestedCount > 0 ? contentBlocks.join("\n\n") : context,
     ...(options.now === undefined ? {} : { now: options.now })
   });
 
@@ -553,7 +565,7 @@ export async function generateMeasurementFramework(
   const cwd = resolve(options.cwd ?? process.cwd());
   const state = await requireRunsteadStateDb(cwd);
   const generatedAt = (options.now ?? new Date()).toISOString();
-  const framework = formatMeasurementFramework({
+  const generatedFramework = formatMeasurementFramework({
     generatedAt,
     ...(options.activationMetric === undefined
       ? {}
@@ -568,12 +580,16 @@ export async function generateMeasurementFramework(
       : { falsePositiveMetric: options.falsePositiveMetric })
   });
   const rootPath = join(cwd, "MEASUREMENT.md");
+  const rootPathExists = await exists(rootPath);
+  const framework =
+    rootPathExists && options.force !== true
+      ? await readFile(rootPath, "utf8")
+      : generatedFramework;
 
-  if (options.force !== true && (await exists(rootPath))) {
-    throw new Error("MEASUREMENT.md already exists. Use --force to overwrite it.");
+  if (!rootPathExists || options.force === true) {
+    await writeFile(rootPath, framework, "utf8");
   }
 
-  await writeFile(rootPath, framework, "utf8");
   await mkdir(join(state.root, "startup"), { recursive: true });
 
   const runtimePath = join(state.root, "startup", "measurement-framework.md");
@@ -612,7 +628,10 @@ export async function generateMeasurementFramework(
         kind: "startup_measurement_framework",
         generatedAt,
         markdownPath: path,
-        data: measurementData
+        data: {
+          ...measurementData,
+          ingested: rootPathExists && options.force !== true
+        }
       })
     )
   );
@@ -620,7 +639,10 @@ export async function generateMeasurementFramework(
   const evidence = await addStartupEvidence({
     cwd,
     type: "measurement_framework",
-    summary: "Generated startup measurement framework",
+    summary:
+      rootPathExists && options.force !== true
+        ? "Ingested existing startup measurement framework"
+        : "Generated startup measurement framework",
     sourceRefs: [rootPath, runtimePath, ...structuredFiles],
     content: framework,
     ...(options.now === undefined ? {} : { now: options.now })
@@ -633,6 +655,21 @@ export async function generateMeasurementFramework(
     structuredFiles,
     evidenceId: evidence.evidence.id
   };
+}
+
+function startupContextEvidenceSummary(input: {
+  generatedCount: number;
+  ingestedCount: number;
+}): string {
+  if (input.ingestedCount === 0) {
+    return "Generated startup agent context files";
+  }
+
+  if (input.generatedCount === 0) {
+    return "Ingested existing startup agent context files";
+  }
+
+  return "Generated and ingested startup agent context files";
 }
 
 export async function generateRepoReadinessAudit(

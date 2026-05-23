@@ -161,6 +161,56 @@ describe("startup automation", () => {
     }
   });
 
+  it("ingests existing agent context files instead of forcing overwrite", async () => {
+    const workspace = join(tmpdir(), `runstead-startup-context-ingest-${process.pid}`);
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await initStartup({
+        cwd: workspace,
+        stage: "mvp",
+        now: new Date("2026-05-14T02:00:00.000Z")
+      });
+      await writeFile(join(workspace, "AGENTS.md"), "# Existing AGENTS\n", "utf8");
+      await writeFile(join(workspace, "CLAUDE.md"), "# Existing CLAUDE\n", "utf8");
+      await writeFile(join(workspace, "CODEX.md"), "# Existing CODEX\n", "utf8");
+
+      const result = await generateStartupContext({
+        cwd: workspace,
+        now: new Date("2026-05-14T04:30:00.000Z")
+      });
+      const agents = await readFile(join(workspace, "AGENTS.md"), "utf8");
+      const structured = await expectStructuredArtifact(
+        result.structuredFiles,
+        "AGENTS.json",
+        "startup_agent_context"
+      );
+
+      expect(agents).toBe("# Existing AGENTS\n");
+      expect(structured.data).toMatchObject({
+        contextFile: "AGENTS.md",
+        ingested: true
+      });
+
+      const database = openRunsteadDatabase(result.stateDb);
+
+      try {
+        const evidence = database
+          .prepare("SELECT type, summary FROM evidence WHERE id = ?")
+          .get(result.evidenceId) as { type: string; summary: string } | undefined;
+
+        expect(evidence).toEqual({
+          type: "startup_agent_context",
+          summary: "Ingested existing startup agent context files"
+        });
+      } finally {
+        database.close();
+      }
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
   it("generates measurement framework files and evidence", async () => {
     const workspace = join(tmpdir(), `runstead-startup-measurement-${process.pid}`);
 
@@ -220,6 +270,67 @@ describe("startup automation", () => {
         expect(evidence).toEqual({
           type: "startup_measurement_framework",
           summary: "Generated startup measurement framework"
+        });
+      } finally {
+        database.close();
+      }
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("ingests an existing measurement framework instead of forcing overwrite", async () => {
+    const workspace = join(
+      tmpdir(),
+      `runstead-startup-measurement-ingest-${process.pid}`
+    );
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await initStartup({
+        cwd: workspace,
+        stage: "mvp",
+        now: new Date("2026-05-14T02:00:00.000Z")
+      });
+      await writeFile(
+        join(workspace, "MEASUREMENT.md"),
+        "# Existing Measurement\n\nActivation is todo created.\n",
+        "utf8"
+      );
+
+      const result = await generateMeasurementFramework({
+        cwd: workspace,
+        now: new Date("2026-05-14T05:30:00.000Z")
+      });
+      const rootMeasurement = await readFile(join(workspace, "MEASUREMENT.md"), "utf8");
+      const runtimeMeasurement = await readFile(
+        join(workspace, ".runstead", "startup", "measurement-framework.md"),
+        "utf8"
+      );
+      const structured = await expectStructuredArtifact(
+        result.structuredFiles,
+        "MEASUREMENT.json",
+        "startup_measurement_framework"
+      );
+
+      expect(rootMeasurement).toBe(
+        "# Existing Measurement\n\nActivation is todo created.\n"
+      );
+      expect(runtimeMeasurement).toBe(rootMeasurement);
+      expect(structured.data).toMatchObject({
+        ingested: true
+      });
+
+      const database = openRunsteadDatabase(result.stateDb);
+
+      try {
+        const evidence = database
+          .prepare("SELECT type, summary FROM evidence WHERE id = ?")
+          .get(result.evidenceId) as { type: string; summary: string } | undefined;
+
+        expect(evidence).toEqual({
+          type: "startup_measurement_framework",
+          summary: "Ingested existing startup measurement framework"
         });
       } finally {
         database.close();
