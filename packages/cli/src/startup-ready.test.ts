@@ -2,9 +2,11 @@ import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 
+import { createRunsteadId, type Evidence, type RunsteadEvent } from "@runstead/core";
 import { describe, expect, it } from "vitest";
-import { openRunsteadDatabase } from "@runstead/state-sqlite";
+import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sqlite";
 
 import { initRunstead } from "./init.js";
 import { addStartupEvidence } from "./startup-evidence.js";
@@ -545,9 +547,8 @@ describe("startup readiness run model", () => {
       await rm(workspace, { force: true, recursive: true });
       await mkdir(join(workspace, ".runstead", "startup"), { recursive: true });
       await initRunstead({ cwd: workspace, profile: "trusted-local" });
-      await addStartupEvidence({
+      await insertLegacyStartupMetricSnapshot({
         cwd: workspace,
-        type: "metric_snapshot",
         summary: "Malformed metric snapshot from an earlier manual attempt",
         content: JSON.stringify(
           {
@@ -559,7 +560,6 @@ describe("startup readiness run model", () => {
           null,
           2
         ),
-        gate: "launch",
         now: new Date("2026-05-22T01:20:00.000Z")
       });
       await addStartupEvidence({
@@ -920,6 +920,76 @@ function evidenceCount(workspace: string, type: string): number {
       .get(type) as { count: number };
 
     return row.count;
+  } finally {
+    database.close();
+  }
+}
+
+async function insertLegacyStartupMetricSnapshot(input: {
+  cwd: string;
+  summary: string;
+  content: string;
+  now: Date;
+}): Promise<void> {
+  const evidenceId = createRunsteadId("ev");
+  const eventId = createRunsteadId("evt");
+  const createdAt = input.now.toISOString();
+  const artifactPath = join(
+    input.cwd,
+    ".runstead",
+    "evidence",
+    `startup-metric_snapshot-${evidenceId}.json`
+  );
+  const artifact = {
+    schemaVersion: 1,
+    createdAt,
+    evidenceType: "metric_snapshot",
+    summary: input.summary,
+    sourceRefs: [],
+    sources: [],
+    provenance: {
+      recordedBy: "legacy-runstead-test",
+      recordedAt: createdAt,
+      sourceCount: 0,
+      sourceKinds: [],
+      captureMode: "manual_seed"
+    },
+    associations: {
+      gate: "launch"
+    },
+    content: input.content
+  };
+  const evidence: Evidence = {
+    id: evidenceId,
+    type: "startup_metric_snapshot",
+    subjectType: "startup",
+    subjectId: "ai-native-startup",
+    uri: pathToFileURL(artifactPath).href,
+    summary: input.summary,
+    createdAt
+  };
+  const event: RunsteadEvent = {
+    eventId,
+    type: "evidence.recorded",
+    aggregateType: "evidence",
+    aggregateId: evidence.id,
+    payload: evidence,
+    createdAt
+  };
+
+  await mkdir(join(input.cwd, ".runstead", "evidence"), { recursive: true });
+  await writeFile(artifactPath, `${JSON.stringify(artifact, null, 2)}\n`, "utf8");
+
+  const database = openRunsteadDatabase(join(input.cwd, ".runstead", "state.db"));
+
+  try {
+    appendEventAndProject(database, {
+      event,
+      projection: {
+        type: "evidence",
+        value: evidence
+      }
+    });
   } finally {
     database.close();
   }

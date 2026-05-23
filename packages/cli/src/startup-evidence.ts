@@ -287,6 +287,7 @@ export async function addStartupEvidence(
   const resolvedState = await requireRunsteadStateDb(cwd);
   const createdAt = (options.now ?? new Date()).toISOString();
   const evidenceType = parseStartupEvidenceType(options.type);
+  validateStartupEvidenceContent(evidenceType, options.content);
   const evidenceId = createRunsteadId("ev");
   const sources = normalizeStartupEvidenceSources({
     createdAt,
@@ -1448,6 +1449,47 @@ function parseStartupEvidenceType(value: string): StartupEvidenceType {
   throw new Error(
     `Unsupported startup evidence type ${value}. Expected one of: ${STARTUP_EVIDENCE_TYPES.join(", ")}`
   );
+}
+
+function validateStartupEvidenceContent(
+  evidenceType: StartupEvidenceType,
+  content: string | undefined
+): void {
+  if (evidenceType !== "metric_snapshot") {
+    return;
+  }
+
+  const parsed = parseEvidenceContentJson(content, "metric_snapshot");
+
+  if (
+    !isRecord(parsed) ||
+    !hasNonEmptyString(parsed.source) ||
+    !hasNonEmptyValue(parsed.threshold) ||
+    !hasNonEmptyValue(parsed.current)
+  ) {
+    throw new Error(
+      "startup metric_snapshot evidence requires JSON content with source, threshold, and current. Prefer: runstead startup measurement snapshot --metric <name> --source <source> --threshold <value> --current <value>"
+    );
+  }
+}
+
+function parseEvidenceContentJson(
+  content: string | undefined,
+  evidenceType: string
+): unknown {
+  if (content === undefined || content.trim().length === 0) {
+    throw new Error(
+      `startup ${evidenceType} evidence requires JSON content. Prefer the typed startup measurement snapshot command.`
+    );
+  }
+
+  try {
+    return JSON.parse(content) as unknown;
+  } catch {
+    throw new Error(
+      `startup ${evidenceType} evidence content must be valid JSON. Prefer the typed startup measurement snapshot command.`
+    );
+  }
 }
 
 function gateRule(

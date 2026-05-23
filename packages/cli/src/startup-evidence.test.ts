@@ -19,6 +19,37 @@ import {
 } from "./startup-evidence.js";
 
 describe("startup evidence ledger", () => {
+  it("rejects malformed metric snapshot evidence before it reaches launch gates", async () => {
+    const workspace = join(
+      tmpdir(),
+      `runstead-startup-evidence-metric-schema-${process.pid}`
+    );
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await initRunstead({ cwd: workspace });
+
+      await expect(
+        addStartupEvidence({
+          cwd: workspace,
+          type: "metric_snapshot",
+          summary: "Malformed metric snapshot",
+          content: JSON.stringify({
+            metric: "activation",
+            source: "manual",
+            threshold: 1,
+            currentValue: 1
+          }),
+          now: new Date("2026-05-14T01:00:00.000Z")
+        })
+      ).rejects.toThrow(
+        "startup metric_snapshot evidence requires JSON content with source, threshold, and current"
+      );
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
   it("records founder evidence artifacts and blocks launch without measurement", async () => {
     const workspace = join(tmpdir(), `runstead-startup-evidence-${process.pid}`);
 
