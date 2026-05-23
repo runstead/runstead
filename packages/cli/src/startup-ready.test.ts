@@ -14,6 +14,7 @@ import {
   planStartupReady,
   readStartupReadinessRun,
   runStartupReady,
+  startupBuildMvpPhaseExecutionStatus,
   type StartupReadinessRunPhase
 } from "./startup-ready.js";
 
@@ -514,6 +515,14 @@ describe("startup readiness run model", () => {
         "observability evidence is required"
       ])
     );
+  });
+
+  it("treats verified MVP worker warnings as a passed build phase", () => {
+    expect(startupBuildMvpPhaseExecutionStatus("completed")).toBe("passed");
+    expect(startupBuildMvpPhaseExecutionStatus("completed_with_warnings")).toBe(
+      "passed"
+    );
+    expect(startupBuildMvpPhaseExecutionStatus("failed")).toBe("failed");
   });
 
   it("loads UI smoke config and executes the launch UI phase", async () => {

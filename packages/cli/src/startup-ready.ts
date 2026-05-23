@@ -555,16 +555,19 @@ async function executeStartupReadyRun(
         : { workerRunner: options.workerRunner }),
       ...(options.now === undefined ? {} : { now: options.now })
     });
+    const buildPhaseStatus = startupBuildMvpPhaseExecutionStatus(build.status);
 
     updatePhase(run, "build_mvp", {
-      status: build.status === "completed" ? "passed" : "failed",
+      status: buildPhaseStatus,
       blockers:
-        build.status === "completed"
+        buildPhaseStatus === "passed"
           ? build.gate.blockers
           : [`worker finished with status ${build.status}`],
       nextAction:
-        build.status === "completed"
-          ? "review MVP gate blockers and continue launch readiness"
+        buildPhaseStatus === "passed"
+          ? build.status === "completed_with_warnings"
+            ? "review MVP worker warnings and continue launch readiness"
+            : "review MVP gate blockers and continue launch readiness"
           : "review worker output and resume startup readiness"
     });
     updatePhase(run, "verifiers", verifierPhaseUpdate(build.verifierRun));
@@ -1754,6 +1757,16 @@ function verifierPhaseUpdate(
         ? "continue launch readiness"
         : "repair verifier failures and rerun startup ready"
   };
+}
+
+type StartupBuildMvpResultStatus = Awaited<ReturnType<typeof startupBuildMvp>>["status"];
+
+export function startupBuildMvpPhaseExecutionStatus(
+  status: StartupBuildMvpResultStatus
+): "passed" | "failed" {
+  return status === "completed" || status === "completed_with_warnings"
+    ? "passed"
+    : "failed";
 }
 
 function phaseStatus(
