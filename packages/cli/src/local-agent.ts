@@ -132,7 +132,12 @@ export interface RunLocalAgentTaskResult {
   task: Task;
   goal: Goal;
   workerResult?: LocalAgentWorkerResult;
-  status: "completed" | "waiting_approval" | "blocked" | "failed";
+  status:
+    | "completed"
+    | "completed_with_warnings"
+    | "waiting_approval"
+    | "blocked"
+    | "failed";
   summary: string;
   audit: LocalAgentAuditSummary;
   checkpoint?: WorkspaceCheckpoint;
@@ -522,6 +527,7 @@ async function runLocalAgentTaskWithDatabase(options: {
       ? await runLocalAgentVerifiersIfNeeded(options)
       : undefined;
     const finalStatus = localAgentFinalTaskStatus(workerResult, verifierResult);
+    const resultStatus = localAgentResultStatus(finalStatus, workerResult);
     const summary = localAgentFinalSummary(workerResult, verifierResult);
     const finalTask = finalizeLocalAgentTask({
       database: options.database,
@@ -539,8 +545,7 @@ async function runLocalAgentTaskWithDatabase(options: {
     finishWorkerRun({
       database: options.database,
       workerRun: orchestratorRun,
-      status:
-        finalStatus === "completed" ? "completed" : localAgentResultStatus(finalStatus),
+      status: localAgentWorkerRunStatus(finalStatus),
       output: localAgentWorkerOutput({
         workerResult,
         summary,
@@ -555,7 +560,7 @@ async function runLocalAgentTaskWithDatabase(options: {
       task: finalTask,
       goal: options.goal,
       workerResult,
-      status: localAgentResultStatus(finalStatus),
+      status: resultStatus,
       summary,
       audit: summarizeLocalAgentAudit(options.database, finalTask.id),
       ...(checkpoint === undefined ? {} : { checkpoint }),
@@ -798,7 +803,9 @@ export function formatLocalAgentUndoReport(result: UndoLocalAgentTaskResult): st
 }
 
 export function localAgentRunExitCode(result: RunLocalAgentTaskResult): number {
-  return result.status === "completed" ? 0 : 1;
+  return result.status === "completed" || result.status === "completed_with_warnings"
+    ? 0
+    : 1;
 }
 
 function formatLocalAgentWorkerResultLines(
@@ -1319,6 +1326,14 @@ function localAgentFinalTaskStatus(
   verifierResult?: RunTaskVerifiersResult
 ): Task["status"] {
   if (isCodexDirectLocalAgentWorkerResult(workerResult)) {
+    if (
+      workerResult.status === "failed" &&
+      workerResult.budget !== undefined &&
+      localAgentVerifiersPassed(verifierResult)
+    ) {
+      return "completed";
+    }
+
     if (workerResult.status !== "completed") {
       return localAgentTaskStatus(workerResult.status);
     }
@@ -1334,10 +1349,20 @@ function localAgentFinalTaskStatus(
 }
 
 function localAgentResultStatus(
-  status: Task["status"]
+  status: Task["status"],
+  workerResult?: LocalAgentWorkerResult
 ): RunLocalAgentTaskResult["status"] {
   switch (status) {
     case "completed":
+      if (
+        workerResult !== undefined &&
+        isCodexDirectLocalAgentWorkerResult(workerResult) &&
+        workerResult.status === "failed" &&
+        workerResult.budget !== undefined
+      ) {
+        return "completed_with_warnings";
+      }
+
       return "completed";
     case "waiting_approval":
       return "waiting_approval";
@@ -1345,6 +1370,21 @@ function localAgentResultStatus(
       return "blocked";
     case "failed":
       return "failed";
+    default:
+      return "failed";
+  }
+}
+
+function localAgentWorkerRunStatus(
+  status: Task["status"]
+): "completed" | "waiting_approval" | "blocked" | "failed" {
+  switch (status) {
+    case "completed":
+      return "completed";
+    case "waiting_approval":
+      return "waiting_approval";
+    case "blocked":
+      return "blocked";
     default:
       return "failed";
   }
@@ -1782,8 +1822,21 @@ function isCodexDirectLocalAgentWorkerResult(
 
 function localAgentWorkerCompleted(workerResult: LocalAgentWorkerResult): boolean {
   return isCodexDirectLocalAgentWorkerResult(workerResult)
-    ? workerResult.status === "completed"
+    ? workerResult.status === "completed" ||
+        (workerResult.status === "failed" && workerResult.budget !== undefined)
     : workerResult.exitCode === 0;
+}
+
+function localAgentVerifiersPassed(
+  verifierResult: RunTaskVerifiersResult | undefined
+): boolean {
+  return (
+    verifierResult !== undefined &&
+    verifierResult.commandResults.length > 0 &&
+    verifierResult.commandResults.every(
+      (result) => result.exitCode === 0 && result.timedOut === false
+    )
+  );
 }
 
 function redactedLocalWrappedWorkerArgs(

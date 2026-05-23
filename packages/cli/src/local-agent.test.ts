@@ -908,6 +908,63 @@ describe("local agent task primitives", () => {
     }
   });
 
+  it("marks budget-exhausted codex_direct edits as completed with warnings when verifiers pass", async () => {
+    const workspace = await mkdtemp(
+      join(tmpdir(), "runstead-local-agent-budget-pass-")
+    );
+    const verifierCommand = nodeCommand(
+      "const fs = require('node:fs'); process.exit(fs.readFileSync('README.md', 'utf8').includes('Edited by Runstead') ? 0 : 1);"
+    );
+
+    try {
+      await initRunstead({ cwd: workspace, profile: "trusted-local" });
+      await allowLocalAgentEditPolicyForTest(workspace, verifierCommand);
+      const created = await createLocalAgentTask({
+        cwd: workspace,
+        prompt: "Update the README.",
+        worker: "codex_direct",
+        model: "gpt-5.3-codex",
+        mode: "edit",
+        maxTurns: 1,
+        verifierCommands: [
+          {
+            name: "test",
+            command: verifierCommand
+          }
+        ]
+      });
+      const result = await runLocalAgentTask({
+        cwd: workspace,
+        taskId: created.task.id,
+        transport: editReadmeTransport()
+      });
+      const storedTask = showTask({ cwd: workspace, id: created.task.id }).task;
+
+      expect(result.status).toBe("completed_with_warnings");
+      expect(localAgentRunExitCode(result)).toBe(0);
+      expect(storedTask.status).toBe("completed");
+      expect(result.workerResult).toMatchObject({
+        worker: "codex_direct",
+        status: "failed",
+        budget: {
+          reason: "turns",
+          maxTurns: 1
+        }
+      });
+      expect(result.verifierResults).toEqual([
+        expect.objectContaining({
+          verifier: "test",
+          exitCode: 0,
+          timedOut: false
+        })
+      ]);
+      expect(result.summary).toContain("turn budget exhausted after 1 turns");
+      expect(result.summary).toContain("Verifiers: All verifier commands passed");
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
   it("undoes a local agent task through its recorded checkpoint", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "runstead-local-agent-undo-"));
     const checkpointId = "chk_agent_undo_test";
