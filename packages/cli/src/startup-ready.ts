@@ -559,6 +559,11 @@ export function formatStartupReadinessRun(run: StartupReadinessRun): string {
         `- ${decision.title}: ${decision.canLaunch ? "yes" : "no"} (${decision.nextAction})`
     ),
     "",
+    "Target boundary:",
+    ...formatStartupReadinessTargetBoundaryLines(
+      startupReadinessTargetBoundary(run.target)
+    ),
+    "",
     "Evidence summary:",
     `- Phase evidence refs: ${run.evidenceIds.length}`,
     `- Evidence tiers: ${run.evidenceTiers.length === 0 ? "none" : run.evidenceTiers.join(", ")}`,
@@ -2209,6 +2214,7 @@ async function writeStartupReadinessDecisionReport(
       },
       targetReadiness: verdict.targetReadiness
     },
+    targetBoundary: startupReadinessTargetBoundary(run.target),
     decisions,
     evidence: {
       ids: run.evidenceIds,
@@ -2373,6 +2379,92 @@ function startupReadinessDecision(input: {
   };
 }
 
+interface StartupReadinessTargetBoundary {
+  requestedTarget: StartupReadyTarget;
+  boundary: string;
+  allowedUse: string;
+  notEvidenceFor: string[];
+  requiredNextEvidence: string[];
+}
+
+function startupReadinessTargetBoundary(
+  target: StartupReadyTarget
+): StartupReadinessTargetBoundary {
+  if (target === "local") {
+    return {
+      requestedTarget: target,
+      boundary:
+        "local_launch_ready covers local demo and local operator validation only; it is not public launch clearance.",
+      allowedUse:
+        "Use this verdict for founder demos, local QA, and deciding whether the MVP is ready for a private staging run.",
+      notEvidenceFor: [
+        "public traffic",
+        "production deployment safety",
+        "CI-backed regression protection",
+        "real-user analytics",
+        "support or incident readiness"
+      ],
+      requiredNextEvidence: [
+        "CI summary artifact",
+        "staging deployment evidence",
+        "rollback and observability evidence from the deployment target",
+        "real-user analytics or support triage evidence before production"
+      ]
+    };
+  }
+
+  if (target === "staging") {
+    return {
+      requestedTarget: target,
+      boundary:
+        "staging_launch_ready covers private beta or staging rollout only; it is not production launch clearance.",
+      allowedUse:
+        "Use this verdict for controlled beta testers, staging release candidates, and pre-production signoff.",
+      notEvidenceFor: [
+        "unrestricted public launch",
+        "production incident response readiness",
+        "production real-user analytics"
+      ],
+      requiredNextEvidence: [
+        "production deployment evidence",
+        "production rollback verification",
+        "production observability baseline",
+        "real-user analytics and support triage evidence"
+      ]
+    };
+  }
+
+  return {
+    requestedTarget: target,
+    boundary:
+      "public_launch_ready is the only Runstead readiness verdict that claims production/public launch clearance.",
+    allowedUse:
+      "Use this verdict only when CI, deployment, rollback, observability, real-user, and support evidence are all current.",
+    notEvidenceFor: [
+      "ongoing scale safety after launch",
+      "compliance certification beyond the recorded evidence",
+      "future product changes without fresh verification"
+    ],
+    requiredNextEvidence: [
+      "post-launch monitoring review",
+      "support ticket and feedback triage",
+      "scale readiness evidence before delegation or growth spend"
+    ]
+  };
+}
+
+function formatStartupReadinessTargetBoundaryLines(
+  boundary: StartupReadinessTargetBoundary
+): string[] {
+  return [
+    `- Requested target: ${boundary.requestedTarget}`,
+    `- Boundary: ${boundary.boundary}`,
+    `- Allowed use: ${boundary.allowedUse}`,
+    `- Not evidence for: ${boundary.notEvidenceFor.join("; ")}`,
+    `- Required next evidence: ${boundary.requiredNextEvidence.join("; ")}`
+  ];
+}
+
 function formatStartupReadinessDecisionMarkdown(input: {
   generatedAt: string;
   run: {
@@ -2395,6 +2487,7 @@ function formatStartupReadinessDecisionMarkdown(input: {
     privateBeta: StartupReadinessDecision;
     publicLaunch: StartupReadinessDecision;
   };
+  targetBoundary: StartupReadinessTargetBoundary;
   evidence: {
     ids: string[];
     tiers: StartupReadinessEvidenceTier[];
@@ -2439,6 +2532,10 @@ function formatStartupReadinessDecisionMarkdown(input: {
       (decision) =>
         `| ${decision.title} | ${decision.canLaunch ? "yes" : "no"} | ${decision.verdict} | ${decision.nextAction} |`
     ),
+    "",
+    "## Target Boundary",
+    "",
+    ...formatStartupReadinessTargetBoundaryLines(input.targetBoundary),
     "",
     "## Why not?",
     "",
