@@ -196,6 +196,31 @@ describe("buildDashboard", () => {
             reportPaths: [
               join(root, "reports", "startup-readiness-run-run_dashboard_ready.md")
             ],
+            guidedFlow: [
+              {
+                id: "next_target",
+                title: "Next target after local",
+                status: "next",
+                resolution: "manual",
+                why: "local launch is not public launch",
+                nextAction: "collect private beta evidence",
+                blockers: []
+              }
+            ],
+            operatorCommands: [
+              {
+                kind: "resume",
+                title: "Resume this readiness run",
+                command: `runstead startup ready --cwd ${workspace} --resume run_dashboard_ready`,
+                when: "Continue the same run."
+              },
+              {
+                kind: "dashboard",
+                title: "Rebuild the local dashboard",
+                command: `runstead dashboard build --cwd ${workspace}`,
+                when: "Refresh the local dashboard."
+              }
+            ],
             startedAt: "2026-05-14T05:35:00.000Z",
             completedAt: "2026-05-14T05:45:00.000Z",
             dirtyState: "clean",
@@ -266,6 +291,10 @@ describe("buildDashboard", () => {
       expect(html).toContain("Startup Readiness");
       expect(html).toContain("run_dashboard_ready");
       expect(html).toContain("UI smoke artifacts");
+      expect(html).toContain("Operator command");
+      expect(html).toContain("Guided next step");
+      expect(html).toContain("runstead dashboard build --cwd");
+      expect(html).toContain("collect private beta evidence");
       expect(html).toContain("src/App.tsx");
       expect(html).toContain("service-api");
       expect(html).toContain("task_001 waiting_approval");
@@ -301,7 +330,21 @@ describe("buildDashboard", () => {
         latestRun: {
           id: "run_dashboard_ready",
           verdict: "local_launch_ready",
-          uiSmokeArtifacts: [join(root, "evidence", "ui-smoke-dom.html")]
+          uiSmokeArtifacts: [join(root, "evidence", "ui-smoke-dom.html")],
+          guidedFlow: [
+            {
+              id: "next_target",
+              nextAction: "collect private beta evidence"
+            }
+          ],
+          operatorCommands: [
+            {
+              kind: "resume"
+            },
+            {
+              kind: "dashboard"
+            }
+          ]
         },
         agentPatch: {
           taskId: "task_001",

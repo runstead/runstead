@@ -219,6 +219,8 @@ export interface StartupReadinessRun {
   verdict: StartupReadinessVerdict;
   verdictBlockers: string[];
   reportPaths: string[];
+  guidedFlow: StartupReadyGuidedStep[];
+  operatorCommands: StartupReadyOperatorCommand[];
   startedAt: string;
   completedAt?: string;
   gitHead?: string;
@@ -246,6 +248,20 @@ export interface StartupReadyGuidedStep {
   nextAction: string;
   command?: string;
   blockers: string[];
+}
+
+export type StartupReadyOperatorCommandKind =
+  | "resume"
+  | "rerun"
+  | "ci"
+  | "dashboard"
+  | "complete_check";
+
+export interface StartupReadyOperatorCommand {
+  kind: StartupReadyOperatorCommandKind;
+  title: string;
+  command: string;
+  when: string;
 }
 
 export interface PersistedStartupReadinessRun {
@@ -462,6 +478,8 @@ export async function createStartupReadinessRun(
     verdict: "not_evaluated",
     verdictBlockers: [],
     reportPaths: [],
+    guidedFlow: [],
+    operatorCommands: [],
     startedAt,
     ...(git.head === undefined ? {} : { gitHead: git.head }),
     dirtyState: git.dirtyState
@@ -480,10 +498,10 @@ export async function readStartupReadinessRun(input: {
   const parsed = JSON.parse(await readFile(path, "utf8")) as StartupReadinessRun;
 
   return {
-    run: {
+    run: withStartupReadinessGuidance({
       ...parsed,
       governanceProfile: startupReadinessRunGovernanceProfile(parsed)
-    },
+    }),
     path
   };
 }
@@ -491,15 +509,16 @@ export async function readStartupReadinessRun(input: {
 export async function writeStartupReadinessRun(
   run: StartupReadinessRun
 ): Promise<PersistedStartupReadinessRun> {
-  const root = await resolveRunsteadRoot(run.cwd);
+  const normalizedRun = withStartupReadinessGuidance(run);
+  const root = await resolveRunsteadRoot(normalizedRun.cwd);
   const dir = startupReadinessRunsDir(root.root);
-  const path = join(dir, `${run.id}.json`);
+  const path = join(dir, `${normalizedRun.id}.json`);
 
   await mkdir(dir, { recursive: true });
-  await writeFile(path, `${JSON.stringify(run, null, 2)}\n`, "utf8");
+  await writeFile(path, `${JSON.stringify(normalizedRun, null, 2)}\n`, "utf8");
 
   return {
-    run,
+    run: normalizedRun,
     path
   };
 }
@@ -543,7 +562,12 @@ export function formatStartupReadinessRun(run: StartupReadinessRun): string {
   const requestedDecision = orderedDecisions.find(
     (decision) => decision.target === run.target
   );
-  const guidedFlow = buildStartupReadyGuidedFlow(run);
+  const guidedFlow =
+    run.guidedFlow.length === 0 ? buildStartupReadyGuidedFlow(run) : run.guidedFlow;
+  const operatorCommands =
+    run.operatorCommands.length === 0
+      ? buildStartupReadyOperatorCommands(run)
+      : run.operatorCommands;
 
   return [
     `Runstead startup readiness run: ${run.id}`,
@@ -581,6 +605,9 @@ export function formatStartupReadinessRun(run: StartupReadinessRun): string {
     "",
     "Guided readiness flow:",
     ...formatStartupReadyGuidedFlowLines(guidedFlow),
+    "",
+    "Operator commands:",
+    ...formatStartupReadyOperatorCommandLines(operatorCommands),
     "",
     "Evidence summary:",
     `- Phase evidence refs: ${run.evidenceIds.length}`,
@@ -2234,6 +2261,7 @@ async function writeStartupReadinessDecisionReport(
     },
     targetBoundary: startupReadinessTargetBoundary(run.target),
     guidedFlow: buildStartupReadyGuidedFlow(run),
+    operatorCommands: buildStartupReadyOperatorCommands(run),
     decisions,
     evidence: {
       ids: run.evidenceIds,
@@ -2509,6 +2537,7 @@ function formatStartupReadinessDecisionMarkdown(input: {
   };
   targetBoundary: StartupReadinessTargetBoundary;
   guidedFlow: StartupReadyGuidedStep[];
+  operatorCommands: StartupReadyOperatorCommand[];
   evidence: {
     ids: string[];
     tiers: StartupReadinessEvidenceTier[];
@@ -2566,6 +2595,12 @@ function formatStartupReadinessDecisionMarkdown(input: {
       (step) =>
         `| ${step.title} | ${step.status} | ${step.resolution} | ${step.why} | ${step.nextAction} |`
     ),
+    "",
+    "## Operator Commands",
+    "",
+    "| Command | When |",
+    "| --- | --- |",
+    ...input.operatorCommands.map((item) => `| \`${item.command}\` | ${item.when} |`),
     "",
     "## Why not?",
     "",
@@ -2657,6 +2692,61 @@ export function buildStartupReadyGuidedFlow(
       blockers: []
     }
   ];
+}
+
+export function buildStartupReadyOperatorCommands(
+  run: StartupReadinessRun
+): StartupReadyOperatorCommand[] {
+  const cwd = startupReadyShellArg(run.cwd);
+  const governanceProfile = startupReadinessRunGovernanceProfile(run);
+  const readyCommand = [
+    "runstead startup ready",
+    `--cwd ${cwd}`,
+    `--stage ${run.stage}`,
+    `--target ${run.target}`,
+    `--worker ${run.worker}`,
+    `--governance ${governanceProfile}`
+  ].join(" ");
+  const commands: StartupReadyOperatorCommand[] = [
+    {
+      kind: "resume",
+      title: "Resume this readiness run",
+      command: `runstead startup ready --cwd ${cwd} --resume ${run.id}`,
+      when: "Continue the same run after an interruption, approval, or manual evidence update."
+    },
+    {
+      kind: "rerun",
+      title: "Run the same readiness gate again",
+      command: readyCommand,
+      when: "Re-evaluate after code, evidence, or configuration changes."
+    },
+    {
+      kind: "dashboard",
+      title: "Rebuild the local dashboard",
+      command: `runstead dashboard build --cwd ${cwd}`,
+      when: "Refresh the local HTML/JSON control-plane view for this workspace."
+    },
+    {
+      kind: "complete_check",
+      title: "Run complete-product audit",
+      command: `runstead startup complete-check --cwd ${cwd}`,
+      when: "Verify launch report, CI gate, dashboard, diagnostics, remediation, evidence, and events."
+    }
+  ];
+
+  if (
+    run.target !== "local" ||
+    run.verdictBlockers.some((blocker) => blocker.toLowerCase().includes("ci"))
+  ) {
+    commands.splice(2, 0, {
+      kind: "ci",
+      title: "Attach CI summary evidence",
+      command: `${readyCommand} --ci`,
+      when: "Record CI summary artifacts for staging or production readiness evidence."
+    });
+  }
+
+  return commands;
 }
 
 function startupReadyGuidedStepForPhase(
@@ -2815,6 +2905,12 @@ function formatStartupReadyGuidedFlowLines(steps: StartupReadyGuidedStep[]): str
 
     return `- [${step.status}] ${step.title}: ${step.resolution};${command} why: ${step.why}; next: ${step.nextAction}`;
   });
+}
+
+function formatStartupReadyOperatorCommandLines(
+  commands: StartupReadyOperatorCommand[]
+): string[] {
+  return commands.map((item) => `- ${item.title}: ${item.command} (${item.when})`);
 }
 
 function nextStartupReadinessAction(blockers: string[]): string {
@@ -3084,6 +3180,28 @@ function uniqueEvidenceTiers(
   values: StartupReadinessEvidenceTier[]
 ): StartupReadinessEvidenceTier[] {
   return [...new Set(values)];
+}
+
+function withStartupReadinessGuidance(run: StartupReadinessRun): StartupReadinessRun {
+  const baseRun = {
+    ...run,
+    guidedFlow: [],
+    operatorCommands: []
+  };
+
+  return {
+    ...run,
+    guidedFlow: buildStartupReadyGuidedFlow(baseRun),
+    operatorCommands: buildStartupReadyOperatorCommands(baseRun)
+  };
+}
+
+function startupReadyShellArg(value: string): string {
+  if (/^[A-Za-z0-9_./:@=-]+$/.test(value)) {
+    return value;
+  }
+
+  return `'${value.replaceAll("'", "'\"'\"'")}'`;
 }
 
 export function parseStartupReadyStage(value: string): StartupReadyStage {

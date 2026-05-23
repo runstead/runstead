@@ -67,6 +67,15 @@ describe("startup readiness run model", () => {
         "launch_report",
         "complete_check"
       ]);
+      expect(run.guidedFlow.length).toBeGreaterThan(0);
+      expect(run.operatorCommands.map((command) => command.kind)).toEqual([
+        "resume",
+        "rerun",
+        "dashboard",
+        "complete_check"
+      ]);
+      expect(run.operatorCommands[0]?.command).toContain(`--resume ${run.id}`);
+      expect(formatStartupReadinessRun(run)).toContain("Operator commands:");
       expect(loaded.run).toEqual(run);
     } finally {
       await rm(workspace, { force: true, recursive: true });
@@ -185,6 +194,17 @@ describe("startup readiness run model", () => {
       expect(formatStartupReadinessRun(result.run)).toContain(
         "Next target after local"
       );
+      expect(formatStartupReadinessRun(result.run)).toContain("Operator commands:");
+      expect(result.run.guidedFlow[0]).toMatchObject({
+        id: "next_target",
+        status: "next"
+      });
+      expect(result.run.operatorCommands.map((command) => command.kind)).toEqual([
+        "resume",
+        "rerun",
+        "dashboard",
+        "complete_check"
+      ]);
       expect(formatStartupReadinessRun(result.run)).toContain("Evidence summary:");
       expect(result.run.reportPaths).toEqual(
         expect.arrayContaining([
@@ -216,6 +236,9 @@ describe("startup readiness run model", () => {
       );
       await expect(readFile(decisionJson ?? "", "utf8")).resolves.toContain(
         '"guidedFlow"'
+      );
+      await expect(readFile(decisionJson ?? "", "utf8")).resolves.toContain(
+        '"operatorCommands"'
       );
       expect(persisted).toEqual(result.run);
     } finally {

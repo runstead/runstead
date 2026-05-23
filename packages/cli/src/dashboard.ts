@@ -135,6 +135,8 @@ export interface DashboardStartupRun {
   reports: string[];
   uiSmokeArtifacts: string[];
   timeline: DashboardStartupTimelineItem[];
+  guidedFlow: DashboardStartupGuidedStep[];
+  operatorCommands: DashboardStartupOperatorCommand[];
 }
 
 export interface DashboardStartupTimelineItem {
@@ -145,6 +147,24 @@ export interface DashboardStartupTimelineItem {
   artifacts: string[];
   blockers: string[];
   nextAction?: string;
+}
+
+export interface DashboardStartupGuidedStep {
+  id: string;
+  title: string;
+  status: string;
+  resolution: string;
+  why: string;
+  nextAction: string;
+  command?: string;
+  blockers: string[];
+}
+
+export interface DashboardStartupOperatorCommand {
+  kind: string;
+  title: string;
+  command: string;
+  when: string;
 }
 
 export interface DashboardStartupStaleEvidence {
@@ -383,6 +403,12 @@ async function readStartupRunFile(
     }
 
     const phases = Array.isArray(parsed.phases) ? parsed.phases.filter(isRecord) : [];
+    const guidedFlow = Array.isArray(parsed.guidedFlow)
+      ? parsed.guidedFlow.filter(isRecord).map(rowToStartupGuidedStep)
+      : [];
+    const operatorCommands = Array.isArray(parsed.operatorCommands)
+      ? parsed.operatorCommands.filter(isRecord).map(rowToStartupOperatorCommand)
+      : [];
     const startedAt = stringField(parsed.startedAt);
     const completedAt = stringField(parsed.completedAt);
 
@@ -396,6 +422,8 @@ async function readStartupRunFile(
       ...(completedAt === undefined ? {} : { completedAt }),
       blockers: stringArrayField(parsed.verdictBlockers),
       reports: stringArrayField(parsed.reportPaths),
+      guidedFlow,
+      operatorCommands,
       uiSmokeArtifacts: phases
         .filter((phase) => stringField(phase.id) === "ui_smoke")
         .flatMap((phase) => stringArrayField(phase.artifacts)),
@@ -417,6 +445,38 @@ async function readStartupRunFile(
   } catch {
     return undefined;
   }
+}
+
+function rowToStartupGuidedStep(
+  row: Record<string, unknown>
+): DashboardStartupGuidedStep {
+  const id = stringField(row.id) ?? "unknown";
+
+  return {
+    id,
+    title: stringField(row.title) ?? id,
+    status: stringField(row.status) ?? "unknown",
+    resolution: stringField(row.resolution) ?? "unknown",
+    why: stringField(row.why) ?? "",
+    nextAction: stringField(row.nextAction) ?? "",
+    ...(stringField(row.command) === undefined
+      ? {}
+      : { command: stringField(row.command) ?? "" }),
+    blockers: stringArrayField(row.blockers)
+  };
+}
+
+function rowToStartupOperatorCommand(
+  row: Record<string, unknown>
+): DashboardStartupOperatorCommand {
+  const kind = stringField(row.kind) ?? "unknown";
+
+  return {
+    kind,
+    title: stringField(row.title) ?? kind,
+    command: stringField(row.command) ?? "",
+    when: stringField(row.when) ?? ""
+  };
 }
 
 function startupRunSortTime(run: DashboardStartupRun): string {
@@ -771,6 +831,28 @@ function startupSection(startup: DashboardStartupSnapshot): string {
     )
     .join("");
   const uiArtifacts = run?.uiSmokeArtifacts ?? [];
+  const guidedRows =
+    run === undefined
+      ? ""
+      : run.guidedFlow
+          .map(
+            (step) =>
+              `<tr><td>${escapeHtml(step.title)}</td><td>${statusCell(step.status)}</td><td>${escapeHtml(step.resolution)}</td><td>${escapeHtml(step.nextAction)}${
+                step.command === undefined
+                  ? ""
+                  : `<br><code>${escapeHtml(step.command)}</code>`
+              }</td></tr>`
+          )
+          .join("");
+  const operatorCommandRows =
+    run === undefined
+      ? ""
+      : run.operatorCommands
+          .map(
+            (item) =>
+              `<tr><td>${escapeHtml(item.title)}</td><td><code>${escapeHtml(item.command)}</code></td><td>${escapeHtml(item.when)}</td></tr>`
+          )
+          .join("");
   const agentPatch = startup.agentPatch;
 
   return `<section>
@@ -801,6 +883,22 @@ function startupSection(startup: DashboardStartupSnapshot): string {
         : `<table>
       <thead><tr><th>Timeline</th><th>Status</th><th>Evidence</th><th>Top blocker or next action</th></tr></thead>
       <tbody>${timelineRows}</tbody>
+    </table>`
+    }
+    ${
+      run === undefined || run.operatorCommands.length === 0
+        ? '<div class="empty">No startup operator commands.</div>'
+        : `<table>
+      <thead><tr><th>Operator command</th><th>Command</th><th>When</th></tr></thead>
+      <tbody>${operatorCommandRows}</tbody>
+    </table>`
+    }
+    ${
+      run === undefined || run.guidedFlow.length === 0
+        ? '<div class="empty">No guided next steps.</div>'
+        : `<table>
+      <thead><tr><th>Guided next step</th><th>Status</th><th>Owner</th><th>Action</th></tr></thead>
+      <tbody>${guidedRows}</tbody>
     </table>`
     }
     <table>
@@ -953,6 +1051,8 @@ function dashboardEventPayload(
                   verdict: snapshot.startup.latestRun.verdict,
                   status: snapshot.startup.latestRun.status,
                   timeline: snapshot.startup.latestRun.timeline.length,
+                  guidedFlow: snapshot.startup.latestRun.guidedFlow.length,
+                  operatorCommands: snapshot.startup.latestRun.operatorCommands.length,
                   uiSmokeArtifacts: snapshot.startup.latestRun.uiSmokeArtifacts.length
                 }
               }),
