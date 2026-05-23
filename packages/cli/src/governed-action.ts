@@ -16,7 +16,7 @@ import {
 import {
   createApprovalExpirationTransition,
   createApprovalRequestTransition,
-  findApprovedApprovalForAction
+  findApprovedApprovalGrantForAction
 } from "./approvals.js";
 import {
   fingerprintPolicyProfile,
@@ -121,7 +121,7 @@ export async function runGovernedToolAction<T>(
 
   const approvedGrant =
     preflight.status === "approval_required"
-      ? findApprovedApprovalForAction({
+      ? findApprovedApprovalGrantForAction({
           database: options.database,
           actionId: preflight.action.actionId,
           ...approvalGrantSignatureOption(preflight.action),
@@ -165,8 +165,13 @@ export async function runGovernedToolAction<T>(
     approvedGrant === undefined
       ? {}
       : {
-          approvalId: approvedGrant.id,
-          approvalGrant: "used"
+          approvalId: approvedGrant.approval.id,
+          approvalGrant: "used",
+          approvalGrantMatch: approvedGrant.match,
+          approvalGrantActionId: approvedGrant.approvedActionId,
+          ...(approvedGrant.canonicalSignature === undefined
+            ? {}
+            : { approvalGrantCanonicalSignature: approvedGrant.canonicalSignature })
         };
 
   const initialEntries: AppendEventAndProjectInput[] = [
@@ -177,7 +182,7 @@ export async function runGovernedToolAction<T>(
   if (approvedGrant !== undefined) {
     const expiredGrant = createApprovalExpirationTransition({
       database: options.database,
-      approval: approvedGrant,
+      approval: approvedGrant.approval,
       ...(options.now === undefined ? {} : { now: options.now })
     });
     initialEntries.push(expiredGrant.entry);
@@ -203,7 +208,7 @@ export async function runGovernedToolAction<T>(
       value: executed.value,
       toolCall: completedToolCall,
       policyDecision: recordedPolicy.decision,
-      ...(approvedGrant === undefined ? {} : { approval: approvedGrant })
+      ...(approvedGrant === undefined ? {} : { approval: approvedGrant.approval })
     };
   } catch (error) {
     finishToolCall({

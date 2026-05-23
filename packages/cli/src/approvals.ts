@@ -83,6 +83,15 @@ export interface FindApprovedApprovalOptions {
   now?: Date;
 }
 
+export type ApprovalGrantMatchKind = "action_id" | "canonical_signature";
+
+export interface ApprovedApprovalGrant {
+  approval: ApprovalRequest;
+  match: ApprovalGrantMatchKind;
+  approvedActionId: string;
+  canonicalSignature?: string;
+}
+
 export interface ExpireApprovalGrantOptions {
   database: ReturnType<typeof openRunsteadDatabase>;
   approval: ApprovalRequest;
@@ -307,6 +316,12 @@ export async function decideApproval(
 export function findApprovedApprovalForAction(
   options: FindApprovedApprovalOptions
 ): ApprovalRequest | undefined {
+  return findApprovedApprovalGrantForAction(options)?.approval;
+}
+
+export function findApprovedApprovalGrantForAction(
+  options: FindApprovedApprovalOptions
+): ApprovedApprovalGrant | undefined {
   const now = options.now ?? new Date();
   const rows = options.database
     .prepare(
@@ -323,7 +338,9 @@ export function findApprovedApprovalForAction(
     .all() as unknown as ApprovedApprovalRow[];
 
   for (const row of rows) {
-    if (!approvedApprovalMatchesAction(row, options)) {
+    const grantMatch = approvedApprovalGrantMatch(row, options);
+
+    if (grantMatch === undefined) {
       continue;
     }
 
@@ -341,7 +358,14 @@ export function findApprovedApprovalForAction(
       continue;
     }
 
-    return approval;
+    return {
+      approval,
+      match: grantMatch.match,
+      approvedActionId: row.action_id,
+      ...(grantMatch.canonicalSignature === undefined
+        ? {}
+        : { canonicalSignature: grantMatch.canonicalSignature })
+    };
   }
 
   return undefined;
@@ -696,18 +720,27 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function approvedApprovalMatchesAction(
+function approvedApprovalGrantMatch(
   row: ApprovedApprovalRow,
   options: FindApprovedApprovalOptions
-): boolean {
+): { match: ApprovalGrantMatchKind; canonicalSignature?: string } | undefined {
   if (row.action_id === options.actionId) {
-    return true;
+    return { match: "action_id" };
   }
 
-  return (
+  const canonicalSignature = approvalActionCanonicalSignature(row.action_json);
+
+  if (
     options.canonicalSignature !== undefined &&
-    approvalActionCanonicalSignature(row.action_json) === options.canonicalSignature
-  );
+    canonicalSignature === options.canonicalSignature
+  ) {
+    return {
+      match: "canonical_signature",
+      canonicalSignature
+    };
+  }
+
+  return undefined;
 }
 
 function approvalActionCanonicalSignature(actionJson: string | null): string | undefined {

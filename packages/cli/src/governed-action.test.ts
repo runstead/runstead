@@ -244,6 +244,12 @@ describe("runGovernedToolAction", () => {
 
           expect(result.value).toBe("created");
           expect(result.approval?.id).toBe(approvalId);
+          expect(result.toolCall.output).toMatchObject({
+            approvalId,
+            approvalGrant: "used",
+            approvalGrantMatch: "action_id",
+            approvalGrantActionId: action.actionId
+          });
         } finally {
           database.close();
         }
@@ -355,6 +361,13 @@ describe("runGovernedToolAction", () => {
 
           expect(result.value).toBe("created");
           expect(result.approval?.id).toBe(approvalId);
+          expect(result.toolCall.output).toMatchObject({
+            approvalId,
+            approvalGrant: "used",
+            approvalGrantMatch: "canonical_signature",
+            approvalGrantActionId: firstAction.actionId,
+            approvalGrantCanonicalSignature: canonicalSignature
+          });
         } finally {
           database.close();
         }
