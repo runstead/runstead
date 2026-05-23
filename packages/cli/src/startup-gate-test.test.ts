@@ -11,10 +11,7 @@ import {
 } from "./startup-gate-test.js";
 
 const goldenFixtureDir = fileURLToPath(
-  new URL(
-    "../../domain-packs/packs/ai-native-startup/fixtures/readiness-gates/",
-    import.meta.url
-  )
+  new URL("./fixtures/startup-gates/", import.meta.url)
 );
 
 describe("startup gate fixture replay", () => {
