@@ -148,3 +148,6 @@ Runstead should present:
 
 That gives users a fast path for MVP readiness and an upgrade path for
 high-assurance work.
+
+For the formal trust-boundary and non-goal statement, see
+[security-model.md](security-model.md).

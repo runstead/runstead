@@ -157,9 +157,10 @@ paths denied, keep dependency and external writes approval-gated, and allow
 ordinary workspace source edits only when the repo is trusted and verifier
 evidence is required afterward.
 
-See [docs/codex-direct.md](docs/codex-direct.md) for architecture and
+See [docs/codex-direct.md](docs/codex-direct.md) for architecture,
 [docs/worker-selection.md](docs/worker-selection.md) for when to use strict
-mode.
+mode, and [docs/security-model.md](docs/security-model.md) for the exact
+assurance boundaries.
 
 ## Repo Maintenance And CI Repair
 
@@ -273,6 +274,8 @@ pnpm format:check
   startup pack shape
 - [docs/codex-direct.md](docs/codex-direct.md): native worker architecture and
   strict governance notes
+- [docs/security-model.md](docs/security-model.md): assurance levels, trust
+  boundaries, approval semantics, and non-goals
 - [docs/policy.md](docs/policy.md): policy and approval model
 - [docs/verifier.md](docs/verifier.md): verifier evidence model
 - [docs/domain-packs.md](docs/domain-packs.md): domain pack structure
