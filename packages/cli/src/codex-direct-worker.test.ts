@@ -658,6 +658,30 @@ describe("runCodexDirectWorker", () => {
         const patchCall = database
           .prepare("SELECT status, output_json FROM tool_calls WHERE action_type = ?")
           .get("filesystem.patch") as { status: string; output_json: string };
+        const policyDecision = database
+          .prepare(
+            `
+            SELECT pd.action_json
+            FROM policy_decisions pd
+            JOIN tool_calls tc ON tc.policy_decision_id = pd.id
+            WHERE tc.action_type = ?
+          `
+          )
+          .get("filesystem.patch") as {
+          action_json: string;
+        };
+        const action = JSON.parse(policyDecision.action_json) as {
+          context: {
+            filesTouched: string[];
+            diffHash: string;
+            dependencyImpact: {
+              kind: string;
+              files: string[];
+            };
+            riskSummary: string;
+            canonicalSignature: string;
+          };
+        };
 
         expect(result).toMatchObject({
           status: "completed",
@@ -669,6 +693,18 @@ describe("runCodexDirectWorker", () => {
         ).resolves.toBe("after\n");
         expect(patchCall.status).toBe("completed");
         expect(patchCall.output_json).toContain("src/message.txt");
+        expect(action.context).toMatchObject({
+          filesTouched: ["src/message.txt"],
+          dependencyImpact: {
+            kind: "none",
+            files: []
+          }
+        });
+        expect(action.context.diffHash).toMatch(/^[a-f0-9]{64}$/);
+        expect(action.context.canonicalSignature).toMatch(/^[a-f0-9]{64}$/);
+        expect(action.context.riskSummary).toContain(
+          "no dependency file impact"
+        );
       } finally {
         database.close();
       }

@@ -21,6 +21,13 @@ export interface ActionContext {
   cwd?: string;
   command?: string;
   filesTouched?: string[];
+  diffHash?: string;
+  dependencyImpact?: {
+    kind: string;
+    files: string[];
+  };
+  riskSummary?: string;
+  canonicalSignature?: string;
   networkDomains?: string[];
   secretsRequested?: string[];
   sideEffects?: string[];

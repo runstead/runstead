@@ -51,6 +51,15 @@ import { runShellCommand, type ShellCommandResult } from "./shell-executor.js";
 
 export const CODEX_DIRECT_WORKER_KIND = "codex_direct";
 export const DEFAULT_CODEX_DIRECT_MAX_TURNS = 12;
+const DEPENDENCY_FILE_NAMES = new Set([
+  "package.json",
+  "pnpm-lock.yaml",
+  "package-lock.json",
+  "npm-shrinkwrap.json",
+  "yarn.lock",
+  "bun.lock",
+  "bun.lockb"
+]);
 
 export interface CodexDirectWorkerOptions {
   cwd: string;
@@ -1335,12 +1344,21 @@ async function runGovernedApplyPatch(
   }
 ) {
   const filesTouched = codexDirectPatchFilesTouched(options);
+  const approvalMetadata = codexDirectPatchApprovalMetadata({
+    cwd: options.cwd,
+    filesTouched,
+    ...(options.patch === undefined ? {} : { patch: options.patch }),
+    ...(options.replacements === undefined
+      ? {}
+      : { replacements: options.replacements })
+  });
 
   return runGovernedToolAction({
     ...governedToolOptions(options),
     action: filesystemPatchAction({
       cwd: options.cwd,
       filesTouched,
+      approvalMetadata,
       stableParts: [options.cwd, options.patch, options.replacements ?? []]
     }),
     run: async () => {
@@ -2029,6 +2047,7 @@ function repositoryMetadataReadAction(input: {
 function filesystemPatchAction(input: {
   cwd: string;
   filesTouched: string[];
+  approvalMetadata: CodexDirectPatchApprovalMetadata;
   stableParts: unknown[];
 }): ActionEnvelope {
   return {
@@ -2041,6 +2060,10 @@ function filesystemPatchAction(input: {
     context: {
       cwd: input.cwd,
       filesTouched: input.filesTouched,
+      diffHash: input.approvalMetadata.diffHash,
+      dependencyImpact: input.approvalMetadata.dependencyImpact,
+      riskSummary: input.approvalMetadata.riskSummary,
+      canonicalSignature: input.approvalMetadata.canonicalSignature,
       sideEffects: ["write_workspace"]
     }
   };
@@ -2279,6 +2302,72 @@ function codexDirectPatchFilesTouched(input: {
   }[];
 }): string[] {
   return inferWorkspacePatchTouchedFiles(input);
+}
+
+interface CodexDirectPatchApprovalMetadata {
+  diffHash: string;
+  dependencyImpact: {
+    kind: "none" | "dependency_files_touched";
+    files: string[];
+  };
+  riskSummary: string;
+  canonicalSignature: string;
+}
+
+function codexDirectPatchApprovalMetadata(input: {
+  cwd: string;
+  filesTouched: string[];
+  patch?: string;
+  replacements?: {
+    path: string;
+    search: string;
+    replace: string;
+    replaceAll?: boolean;
+  }[];
+}): CodexDirectPatchApprovalMetadata {
+  const sortedFiles = [...input.filesTouched].sort((left, right) =>
+    left.localeCompare(right)
+  );
+  const diffHash = sha256({
+    patch: input.patch ?? null,
+    replacements: input.replacements ?? null
+  });
+  const dependencyFiles = sortedFiles.filter(isDependencyFilePath);
+  const dependencyImpact = {
+    kind:
+      dependencyFiles.length === 0
+        ? ("none" as const)
+        : ("dependency_files_touched" as const),
+    files: dependencyFiles
+  };
+  const riskSummary =
+    dependencyFiles.length === 0
+      ? `Patch touches ${sortedFiles.length} workspace file${sortedFiles.length === 1 ? "" : "s"} with no dependency file impact.`
+      : `Patch touches dependency files: ${dependencyFiles.join(", ")}.`;
+  const canonicalSignature = sha256({
+    actionType: "filesystem.patch",
+    cwd: input.cwd,
+    filesTouched: sortedFiles,
+    diffHash,
+    dependencyImpact: dependencyImpact.kind
+  });
+
+  return {
+    diffHash,
+    dependencyImpact,
+    riskSummary,
+    canonicalSignature
+  };
+}
+
+function isDependencyFilePath(path: string): boolean {
+  const fileName = path.split("/").pop() ?? path;
+
+  return DEPENDENCY_FILE_NAMES.has(fileName);
+}
+
+function sha256(value: unknown): string {
+  return createHash("sha256").update(JSON.stringify(value)).digest("hex");
 }
 
 async function resolveVerifierCommand(
