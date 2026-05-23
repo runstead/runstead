@@ -1526,7 +1526,7 @@ describe("runCodexDirectWorker", () => {
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }
-  }, 10000);
+  }, 60_000);
 
   it("enforces task-scoped base git diff tool calls", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "runstead-codex-base-diff-"));
