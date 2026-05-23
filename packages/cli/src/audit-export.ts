@@ -108,7 +108,7 @@ export function formatAuditTimeline(entries: AuditLogEntry[]): string {
     .join("\n");
 }
 
-export async function replayAuditLifecycle(
+export function replayAuditLifecycle(
   options: ReplayAuditLifecycleOptions
 ): Promise<ReplayAuditLifecycleResult> {
   const cwd = resolve(options.cwd ?? process.cwd());
@@ -121,13 +121,13 @@ export async function replayAuditLifecycle(
       options.taskId
     );
 
-    return {
+    return Promise.resolve({
       root: resolvedState.root,
       stateDb: resolvedState.stateDb,
       taskId: options.taskId,
       relatedIds,
       entries
-    };
+    });
   } finally {
     database.close();
   }

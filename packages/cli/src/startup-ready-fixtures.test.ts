@@ -95,7 +95,7 @@ describe("startup ready fixture matrix", () => {
 
       await initRunstead({ cwd: workspace, profile: "trusted-local" });
       await seedLegacyStartupMetricSnapshot(workspace);
-      await seedStaleStartupRemediationTask(workspace);
+      seedStaleStartupRemediationTask(workspace);
       await writeUiSmokeConfig(workspace, port, [
         "Todo MVP",
         "Add todo",
@@ -104,14 +104,18 @@ describe("startup ready fixture matrix", () => {
 
       const inferredSteps = await inferStartupReadyUiSmokeFlowActions(workspace);
 
-      expect(inferredSteps[0]).toMatchObject({
-        type: "fill",
-        selectors: expect.arrayContaining([
+      const firstStep = inferredSteps[0];
+      expect(firstStep?.type).toBe("fill");
+      if (firstStep?.type !== "fill") {
+        throw new Error("Expected first inferred UI smoke step to fill todo input");
+      }
+      expect(firstStep.selectors).toEqual(
+        expect.arrayContaining([
           "[data-testid='todo-input']",
           "#todo-input",
           "input[placeholder*='todo' i]"
         ])
-      });
+      );
       expect(
         inferredSteps[0]?.type === "fill"
           ? inferredSteps[0].selectors?.indexOf("#todo-input")
@@ -332,7 +336,7 @@ async function seedLegacyStartupMetricSnapshot(workspace: string): Promise<void>
   }
 }
 
-async function seedStaleStartupRemediationTask(workspace: string): Promise<void> {
+function seedStaleStartupRemediationTask(workspace: string): void {
   const createdAt = "2026-05-23T00:12:00.000Z";
   const goal: Goal = {
     id: "goal_todo_dogfood_regression",

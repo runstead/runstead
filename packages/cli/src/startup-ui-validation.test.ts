@@ -382,39 +382,40 @@ describe("startup UI validation evidence", () => {
             text: "Runstead smoke todo"
           }
         ],
-        browserRunner: async () => ({
-          responseStatus: 200,
-          responseOk: true,
-          html: "<main><h1>Todo MVP</h1><button>Add todo</button><p>Runstead smoke todo</p></main>",
-          screenshot: Buffer.from("png bytes"),
-          consoleMessages: ["[error] simulated console warning"],
-          actionResults: [
-            {
-              type: "fill",
-              status: "pass",
-              summary: "filled input",
-              selector: "input[type='text']"
-            },
-            {
-              type: "click",
-              status: "pass",
-              summary: "clicked add",
-              selector: "button[type='submit']"
-            },
-            {
-              type: "expectText",
-              status: "pass",
-              summary: "found todo",
-              expected: "Runstead smoke todo"
-            },
-            {
-              type: "expectPersisted",
-              status: "pass",
-              summary: "persisted todo",
-              expected: "Runstead smoke todo"
-            }
-          ]
-        }),
+        browserRunner: () =>
+          Promise.resolve({
+            responseStatus: 200,
+            responseOk: true,
+            html: "<main><h1>Todo MVP</h1><button>Add todo</button><p>Runstead smoke todo</p></main>",
+            screenshot: Buffer.from("png bytes"),
+            consoleMessages: ["[error] simulated console warning"],
+            actionResults: [
+              {
+                type: "fill",
+                status: "pass",
+                summary: "filled input",
+                selector: "input[type='text']"
+              },
+              {
+                type: "click",
+                status: "pass",
+                summary: "clicked add",
+                selector: "button[type='submit']"
+              },
+              {
+                type: "expectText",
+                status: "pass",
+                summary: "found todo",
+                expected: "Runstead smoke todo"
+              },
+              {
+                type: "expectPersisted",
+                status: "pass",
+                summary: "persisted todo",
+                expected: "Runstead smoke todo"
+              }
+            ]
+          }),
         now: new Date("2026-05-14T04:30:00.000Z")
       });
       const artifact = JSON.parse(
@@ -493,14 +494,14 @@ describe("startup UI validation evidence", () => {
             text: "Todo MVP"
           }
         ],
-        browserRunner: async () => {
+        browserRunner: () => {
           attempts += 1;
 
           if (attempts === 1) {
             throw new Error("Chrome DevTools websocket closed");
           }
 
-          return {
+          return Promise.resolve({
             responseStatus: 200,
             responseOk: true,
             html: "<main><h1>Todo MVP</h1><button>Add todo</button></main>",
@@ -513,7 +514,7 @@ describe("startup UI validation evidence", () => {
                 expected: "Todo MVP"
               }
             ]
-          };
+          });
         },
         now: new Date("2026-05-14T04:40:00.000Z")
       });
@@ -561,9 +562,11 @@ describe("startup UI validation evidence", () => {
             text: "Todo MVP"
           }
         ],
-        browserRunner: async () => {
+        browserRunner: () => {
           attempts += 1;
-          throw new Error("Chrome exited before exposing DevTools websocket URL");
+          return Promise.reject(
+            new Error("Chrome exited before exposing DevTools websocket URL")
+          );
         },
         now: new Date("2026-05-14T04:45:00.000Z")
       });
@@ -616,22 +619,23 @@ describe("startup UI validation evidence", () => {
             text: "Todo MVP"
           }
         ],
-        browserRunner: async () => ({
-          responseStatus: 200,
-          responseOk: true,
-          html: "<main><h1>Todo MVP</h1><button>Add todo</button></main>",
-          consoleMessages: [
-            "[warn] failed to clean Chrome profile /tmp/runstead-ui-chrome-x: ENOTEMPTY"
-          ],
-          actionResults: [
-            {
-              type: "expectText",
-              status: "pass",
-              summary: "found Todo MVP",
-              expected: "Todo MVP"
-            }
-          ]
-        }),
+        browserRunner: () =>
+          Promise.resolve({
+            responseStatus: 200,
+            responseOk: true,
+            html: "<main><h1>Todo MVP</h1><button>Add todo</button></main>",
+            consoleMessages: [
+              "[warn] failed to clean Chrome profile /tmp/runstead-ui-chrome-x: ENOTEMPTY"
+            ],
+            actionResults: [
+              {
+                type: "expectText",
+                status: "pass",
+                summary: "found Todo MVP",
+                expected: "Todo MVP"
+              }
+            ]
+          }),
         now: new Date("2026-05-14T04:50:00.000Z")
       });
       const artifact = JSON.parse(

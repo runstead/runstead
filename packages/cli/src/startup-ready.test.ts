@@ -821,14 +821,18 @@ describe("startup readiness run model", () => {
         "click",
         "expectPersisted"
       ]);
-      expect(steps[0]).toMatchObject({
-        type: "fill",
-        selectors: expect.arrayContaining([
+      const firstStep = steps[0];
+      expect(firstStep?.type).toBe("fill");
+      if (firstStep?.type !== "fill") {
+        throw new Error("Expected first inferred UI smoke step to fill todo input");
+      }
+      expect(firstStep.selectors).toEqual(
+        expect.arrayContaining([
           "[data-testid='todo-input']",
           "#todo-input",
           "input[name='todo']"
         ])
-      });
+      );
       expect(
         steps[0]?.type === "fill"
           ? steps[0].selectors?.indexOf("#todo-input")
@@ -838,14 +842,18 @@ describe("startup readiness run model", () => {
           ? (steps[0].selectors?.indexOf("input[placeholder*='todo' i]") ?? -1)
           : -1
       );
-      expect(steps[4]).toMatchObject({
-        type: "fill",
-        selectors: expect.arrayContaining([
+      const searchStep = steps[4];
+      expect(searchStep?.type).toBe("fill");
+      if (searchStep?.type !== "fill") {
+        throw new Error("Expected fifth inferred UI smoke step to fill todo search");
+      }
+      expect(searchStep.selectors).toEqual(
+        expect.arrayContaining([
           "[data-testid='todo-search']",
           "#todo-search",
           "input[name='search']"
         ])
-      });
+      );
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }

@@ -1150,10 +1150,7 @@ function viewportSize(viewport: string): { width: number; height: number } {
 }
 
 function dynamicImport(specifier: string): Promise<unknown> {
-  return Function(
-    "specifier",
-    "return import(specifier)"
-  )(specifier) as Promise<unknown>;
+  return import(specifier) as Promise<unknown>;
 }
 
 async function runChromeDevtoolsBrowserFlow(
@@ -1202,7 +1199,9 @@ async function runChromeDevtoolsBrowserFlow(
           .filter((item): item is string => item !== undefined)
           .join(" ");
 
-        consoleMessages.push(`[${String(params.type ?? "log")}] ${text}`);
+        const messageType = typeof params.type === "string" ? params.type : "log";
+
+        consoleMessages.push(`[${messageType}] ${text}`);
       });
       connection.onSessionEvent(sessionId, "Runtime.exceptionThrown", (event) => {
         consoleMessages.push(`[error] ${JSON.stringify(event.params ?? {})}`);

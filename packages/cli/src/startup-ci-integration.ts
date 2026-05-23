@@ -438,7 +438,7 @@ async function inspectGitHubActionsRemoteStatus(input: {
       };
     }
 
-    const body = await response.json();
+    const body: unknown = await response.json();
     const run = latestGitHubActionsRun(body);
 
     if (run === undefined) {
@@ -480,7 +480,7 @@ async function inspectGitHubActionsRemoteStatus(input: {
       ...(workflowRunUrl === undefined ? {} : { workflowRunUrl }),
       ...(runStatus === undefined ? {} : { runStatus }),
       ...(conclusion === undefined ? {} : { conclusion }),
-      ...(failedJob === undefined ? {} : failedJob)
+      ...(failedJob ?? {})
     };
   } catch (error) {
     return {

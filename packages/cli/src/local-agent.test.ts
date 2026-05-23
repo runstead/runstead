@@ -1193,16 +1193,13 @@ describe("local agent task primitives", () => {
         decision: "approved",
         decidedBy: "local-admin"
       });
-      expect(
-        resolveLocalAgentResumeTarget({
-          cwd: workspace,
-          targetId: waiting.approval.id
-        })
-      ).toMatchObject({
-        taskId: created.task.id,
-        approvalId: waiting.approval.id,
-        note: expect.stringContaining("Resolved approval")
+      const resumeTarget = resolveLocalAgentResumeTarget({
+        cwd: workspace,
+        targetId: waiting.approval.id
       });
+      expect(resumeTarget.taskId).toBe(created.task.id);
+      expect(resumeTarget.approvalId).toBe(waiting.approval.id);
+      expect(resumeTarget.note).toContain("Resolved approval");
 
       const resumed = await runLocalAgentTask({
         cwd: workspace,

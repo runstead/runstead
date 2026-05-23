@@ -989,7 +989,7 @@ function normalizeStartupReadyInteractiveAnswers(
     Object.entries(answers)
       .map(([key, value]) => [key, stringValue(value)] as const)
       .filter((entry): entry is readonly [string, string] => entry[1] !== undefined)
-  ) as Partial<StartupReadyInteractiveAnswers>;
+  );
 }
 
 function startupReadyInteractiveFounderFlowOptions(
@@ -1023,15 +1023,15 @@ function startupReadyInteractiveFounderFlowOptions(
 function optionalSingleValueArray<K extends string>(
   key: K,
   value: string | undefined
-): { [P in K]?: string[] } {
-  return value === undefined ? {} : ({ [key]: [value] } as { [P in K]: string[] });
+): Partial<Record<K, string[]>> {
+  return value === undefined ? {} : ({ [key]: [value] } as Record<K, string[]>);
 }
 
 function optionalStringField<K extends string>(
   key: K,
   value: string | undefined
-): { [P in K]?: string } {
-  return value === undefined ? {} : ({ [key]: value } as { [P in K]: string });
+): Partial<Record<K, string>> {
+  return value === undefined ? {} : ({ [key]: value } as Record<K, string>);
 }
 
 export async function executeStartupReadyUiSmoke(input: {
@@ -2862,7 +2862,7 @@ export function evaluateStartupReadinessVerdict(input: {
     phases: input.run.phases,
     evidenceTiers: input.evidenceTiers,
     evidenceTypes: input.evidenceTypes ?? []
-  }) as StartupVerdictResult;
+  });
 }
 
 async function collectRecordedStartupReadinessEvidence(cwd: string): Promise<{
@@ -3176,7 +3176,7 @@ async function inspectStartupReadyDocs(
       stale: context
         .filter(
           (item): item is { path: string; stale: boolean } =>
-            item !== undefined && item.stale
+            item?.stale === true
         )
         .map((item) => item.path)
     },

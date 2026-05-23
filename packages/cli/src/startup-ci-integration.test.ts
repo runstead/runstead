@@ -134,16 +134,16 @@ describe("startup CI integration", () => {
       const result = await generateStartupCiSummary({
         cwd: workspace,
         stage: "launch",
-        fetch: async (url) => {
+        fetch: (url) => {
           expect(url).toContain(
             "https://api.github.com/repos/acme/widgets/actions/runs"
           );
           expect(url).toContain("head_sha=");
 
-          return {
+          return Promise.resolve({
             ok: true,
             status: 200,
-            json: async () => ({
+            json: () => Promise.resolve({
               workflow_runs: [
                 {
                   name: "CI",
@@ -153,7 +153,7 @@ describe("startup CI integration", () => {
                 }
               ]
             })
-          };
+          });
         },
         now: new Date("2026-05-14T01:10:00.000Z")
       });
@@ -213,14 +213,14 @@ describe("startup CI integration", () => {
           verdict: "local_launch_ready",
           blockers: []
         },
-        fetch: async (url) => {
+        fetch: (url) => {
           requestedUrls.push(url);
 
           if (url.includes("/actions/runs?")) {
-            return {
+            return Promise.resolve({
               ok: true,
               status: 200,
-              json: async () => ({
+              json: () => Promise.resolve({
                 workflow_runs: [
                   {
                     id: 123,
@@ -231,14 +231,14 @@ describe("startup CI integration", () => {
                   }
                 ]
               })
-            };
+            });
           }
 
           if (url.includes("/actions/runs/123/jobs")) {
-            return {
+            return Promise.resolve({
               ok: true,
               status: 200,
-              json: async () => ({
+              json: () => Promise.resolve({
                 jobs: [
                   {
                     id: 456,
@@ -247,22 +247,22 @@ describe("startup CI integration", () => {
                   }
                 ]
               })
-            };
+            });
           }
 
           if (url.includes("/actions/jobs/456/logs")) {
-            return {
+            return Promise.resolve({
               ok: true,
               status: 200,
-              json: async () => ({}),
-              text: async () =>
-                [
+              json: () => Promise.resolve({}),
+              text: () =>
+                Promise.resolve([
                   "setup",
                   "npm test",
                   "Error: expected true to equal false",
                   "Process completed with exit code 1"
-                ].join("\n")
-            };
+                ].join("\n"))
+            });
           }
 
           throw new Error(`Unexpected URL ${url}`);
@@ -350,10 +350,8 @@ describe("startup CI integration", () => {
       expect(result.checkRun.conclusion).toBe("failure");
       expect(result.releaseGate.status).toBe("block_release");
       expect(result.gate.blockers).toContain("Launch report is blocked");
-      expect(json.effectiveGate).toMatchObject({
-        readinessVerdict: "local_launch_blocked",
-        blockers: expect.arrayContaining(["Launch report is blocked"])
-      });
+      expect(json.effectiveGate.readinessVerdict).toBe("local_launch_blocked");
+      expect(json.effectiveGate.blockers).toContain("Launch report is blocked");
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }

@@ -207,7 +207,7 @@ async function loadStartupGateFixture(
   fixturePath: string
 ): Promise<StartupGateFixture> {
   const raw = await readFile(fixturePath, "utf8");
-  const parsed = parseYaml(raw);
+  const parsed: unknown = parseYaml(raw);
   const fixture = StartupGateFixtureSchema.parse(parsed);
 
   return fixture;

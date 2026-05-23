@@ -1056,16 +1056,14 @@ function parseCodexApplyPatchTouchedFiles(patch: string): string[] {
   const paths: string[] = [];
 
   for (const line of patch.split(/\r?\n/)) {
-    const fileMatch = line.match(
-      /^\*\*\* (?:Add|Update|Delete) File:\s*(?<path>.+?)\s*$/
-    );
+    const fileMatch = /^\*\*\* (?:Add|Update|Delete) File:\s*(?<path>.+?)\s*$/.exec(line);
 
     if (fileMatch?.groups?.path !== undefined) {
       paths.push(normalizePath(fileMatch.groups.path));
       continue;
     }
 
-    const moveMatch = line.match(/^\*\*\* Move to:\s*(?<path>.+?)\s*$/);
+    const moveMatch = /^\*\*\* Move to:\s*(?<path>.+?)\s*$/.exec(line);
 
     if (moveMatch?.groups?.path !== undefined) {
       paths.push(normalizePath(moveMatch.groups.path));
