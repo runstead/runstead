@@ -98,6 +98,24 @@ rules:
     decision: deny
     risk: critical
 
+  - id: allow_local_mvp_product_patch
+    when:
+      action_type: filesystem.patch
+      path:
+        matches_any:
+          - "src/**"
+          - "tests/**"
+          - "test/**"
+          - "scripts/**"
+          - "README.md"
+          - "index.html"
+    decision: allow
+    risk: medium
+    obligations:
+      - summarize_diff
+      - run_local_verifiers
+      - preserve_dependency_boundary
+
   - id: require_approval_for_code_and_context_edits
     when:
       action_type:
@@ -110,6 +128,29 @@ rules:
     risk: high
     obligations:
       - summarize_diff
+      - attach_verifier_evidence
+
+  - id: require_approval_for_dependency_patch
+    when:
+      action_type: filesystem.patch
+      path:
+        matches_any:
+          - package.json
+          - package-lock.json
+          - pnpm-lock.yaml
+          - yarn.lock
+          - bun.lockb
+          - requirements.txt
+          - poetry.lock
+          - uv.lock
+          - go.mod
+          - go.sum
+          - Cargo.toml
+          - Cargo.lock
+    decision: require_approval
+    risk: high
+    obligations:
+      - summarize_dependency_impact
       - attach_verifier_evidence
 
   - id: require_approval_for_worker_start
