@@ -38,48 +38,54 @@ describe("@runstead/runtime control-plane contracts", () => {
     const backend: RuntimeControlPlaneBackend = {
       identity: createLocalSqliteStorageIdentity(layout),
       events: {
-        append: async (entries) => {
+        append: (entries) => {
           appended.push(...entries);
 
-          return entries.map(({ event }, index) => ({
-            eventId: event.eventId,
-            aggregateType: event.aggregateType,
-            aggregateId: event.aggregateId,
-            revision: index + 1
-          }));
+          return Promise.resolve(
+            entries.map(({ event }, index) => ({
+              eventId: event.eventId,
+              aggregateType: event.aggregateType,
+              aggregateId: event.aggregateId,
+              revision: index + 1
+            }))
+          );
         },
-        read: async () => appended.map((entry) => entry.event)
+        read: () => Promise.resolve(appended.map((entry) => entry.event))
       },
       locks: {
-        acquire: async (request) => ({
-          resource: request.resource,
-          owner: request.owner,
-          token: "lease_1",
-          expiresAt: new Date(
-            (request.now ?? new Date(0)).getTime() + request.ttlMs
-          ).toISOString(),
-          release: async () => undefined,
-          renew: async (ttlMs) => ({
+        acquire: (request) =>
+          Promise.resolve({
             resource: request.resource,
             owner: request.owner,
-            token: "lease_2",
+            token: "lease_1",
             expiresAt: new Date(
-              (request.now ?? new Date(0)).getTime() + ttlMs
+              (request.now ?? new Date(0)).getTime() + request.ttlMs
             ).toISOString(),
-            release: async () => undefined,
-            renew: async () => {
-              throw new Error("test lease renewal stops here");
-            }
+            release: () => Promise.resolve(undefined),
+            renew: (ttlMs) =>
+              Promise.resolve({
+                resource: request.resource,
+                owner: request.owner,
+                token: "lease_2",
+                expiresAt: new Date(
+                  (request.now ?? new Date(0)).getTime() + ttlMs
+                ).toISOString(),
+                release: () => Promise.resolve(undefined),
+                renew: () =>
+                  Promise.reject(new Error("test lease renewal stops here"))
+              })
           })
-        })
       },
       artifacts: {
-        write: async (artifact) => ({
-          uri: `${layout.artifactBaseUri}/${artifact.path}`,
-          contentType: artifact.contentType,
-          ...(artifact.metadata === undefined ? {} : { metadata: artifact.metadata })
-        }),
-        read: async () => new Uint8Array()
+        write: (artifact) =>
+          Promise.resolve({
+            uri: `${layout.artifactBaseUri}/${artifact.path}`,
+            contentType: artifact.contentType,
+            ...(artifact.metadata === undefined
+              ? {}
+              : { metadata: artifact.metadata })
+          }),
+        read: () => Promise.resolve(new Uint8Array())
       }
     };
 
