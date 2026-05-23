@@ -64,6 +64,7 @@ export interface LaunchReadinessTrustSummary {
   auditExport: {
     schemaVersion: 1;
     evidenceRecords: number;
+    staleEvidenceRecords: number;
     structuredArtifacts: number;
   };
 }
@@ -218,12 +219,20 @@ export async function generateLaunchReadinessReport(
       status,
       blockers,
       trustSummary,
-      evidence: data.evidence.map((item) => ({
+      evidence: currentEvidenceRows(data).map((item) => ({
         id: item.id,
         type: item.type,
         summary: item.summary,
         uri: item.uri,
         createdAt: item.created_at
+      })),
+      staleEvidence: staleEvidenceRows(data).map((item) => ({
+        id: item.id,
+        type: item.type,
+        summary: item.summary,
+        uri: item.uri,
+        createdAt: item.created_at,
+        reason: staleEvidenceReason(data, item)
       })),
       structuredArtifacts: data.structuredArtifacts.map((item) => ({
         id: item.id,
@@ -503,12 +512,13 @@ function trustSummaryMarkdown(summary: LaunchReadinessTrustSummary): string {
     "- Audit export:",
     `  - schemaVersion=${summary.auditExport.schemaVersion}`,
     `  - evidenceRecords=${summary.auditExport.evidenceRecords}`,
+    `  - staleEvidenceRecords=${summary.auditExport.staleEvidenceRecords}`,
     `  - structuredArtifacts=${summary.auditExport.structuredArtifacts}`
   ].join("\n");
 }
 
 function metricEvidenceConfidence(data: LaunchReadinessReportData): string {
-  const metricEvidence = data.evidence.filter(
+  const metricEvidence = currentEvidenceRows(data).filter(
     (item) => item.type === "startup_metric_snapshot"
   );
 
@@ -562,12 +572,13 @@ function launchReadinessTrustSummary(input: {
     "startup_observability",
     "startup_founder_bottleneck"
   ];
+  const currentEvidence = currentEvidenceRows(input.data);
   const completedEvidence = requiredEvidenceTypes.filter((type) =>
-    hasEvidenceType(input.data.evidence, type)
+    hasEvidenceType(currentEvidence, type)
   );
   const evidenceCompletenessScore =
     completedEvidence.length / requiredEvidenceTypes.length;
-  const hasProvenance = input.data.evidence.some(
+  const hasProvenance = currentEvidence.some(
     (item) => artifactSources(readEvidenceProvenanceArtifact(item.uri)).length > 0
   );
   const qualityScore = clampScore(
@@ -607,14 +618,15 @@ function launchReadinessTrustSummary(input: {
     },
     auditExport: {
       schemaVersion: 1,
-      evidenceRecords: input.data.evidence.length,
+      evidenceRecords: currentEvidence.length,
+      staleEvidenceRecords: staleEvidenceRows(input.data).length,
       structuredArtifacts: input.data.structuredArtifacts.length
     }
   };
 }
 
 function acceptedDebtRegisterRows(data: LaunchReadinessReportData): string[] {
-  const debtEvidence = data.evidence.filter(
+  const debtEvidence = currentEvidenceRows(data).filter(
     (item) =>
       item.type === "startup_acceptable_debt" || item.type === "startup_decision"
   );
@@ -703,6 +715,95 @@ function staleCommandEvidence(data: LaunchReadinessReportData): EvidenceReportRo
   return data.evidence
     .filter((item) => item.type === "command_output")
     .filter((item) => isStaleCommandEvidence(data, item));
+}
+
+function currentEvidenceRows(data: LaunchReadinessReportData): EvidenceReportRow[] {
+  const stale = staleEvidenceReasons(data);
+
+  return data.evidence.filter((item) => !stale.has(item.id));
+}
+
+function staleEvidenceRows(data: LaunchReadinessReportData): EvidenceReportRow[] {
+  const stale = staleEvidenceReasons(data);
+
+  return data.evidence.filter((item) => stale.has(item.id));
+}
+
+function staleEvidenceReason(
+  data: LaunchReadinessReportData,
+  item: EvidenceReportRow
+): string {
+  return staleEvidenceReasons(data).get(item.id) ?? "not stale";
+}
+
+function staleEvidenceReasons(data: LaunchReadinessReportData): Map<string, string> {
+  const reasons = new Map<string, string>();
+  const latestStartupEvidence = latestEvidenceByCurrentKey(
+    data.evidence.filter((item) => item.type.startsWith("startup_"))
+  );
+
+  for (const item of data.evidence) {
+    if (item.type === "command_output" && isStaleCommandEvidence(data, item)) {
+      reasons.set(
+        item.id,
+        `${commandEvidenceCodeState(data, item)}; ${commandEvidenceGovernance(item)}`
+      );
+      continue;
+    }
+
+    if (!item.type.startsWith("startup_")) {
+      continue;
+    }
+
+    const key = evidenceCurrentKey(item);
+    const latest = latestStartupEvidence.get(key);
+
+    if (latest !== undefined && latest.id !== item.id) {
+      reasons.set(item.id, `superseded by newer evidence for ${key}`);
+    }
+  }
+
+  return reasons;
+}
+
+function latestEvidenceByCurrentKey(
+  rows: EvidenceReportRow[]
+): Map<string, EvidenceReportRow> {
+  const latest = new Map<string, EvidenceReportRow>();
+
+  for (const row of rows) {
+    const key = evidenceCurrentKey(row);
+    const current = latest.get(key);
+
+    if (
+      current === undefined ||
+      Date.parse(row.created_at) > Date.parse(current.created_at) ||
+      (row.created_at === current.created_at && row.id.localeCompare(current.id) > 0)
+    ) {
+      latest.set(key, row);
+    }
+  }
+
+  return latest;
+}
+
+function evidenceCurrentKey(item: EvidenceReportRow): string {
+  if (item.type === "startup_ui_validation") {
+    const content = parsedEvidenceContent(item.uri);
+    const url = isRecord(content) ? stringValue(content.url) : undefined;
+    const viewport = isRecord(content) ? stringValue(content.viewport) : undefined;
+
+    return `${item.type}:${url ?? item.subject_id}:${viewport ?? "unknown"}`;
+  }
+
+  if (item.type === "startup_metric" || item.type === "startup_metric_snapshot") {
+    const content = parsedEvidenceContent(item.uri);
+    const metric = isRecord(content) ? stringValue(content.metric) : undefined;
+
+    return `${item.type}:${metric ?? item.subject_id}`;
+  }
+
+  return item.type;
 }
 
 function isStaleCommandEvidence(
@@ -846,7 +947,7 @@ function dependencyAndSecurityRisk(data: LaunchReadinessReportData): string {
 }
 
 function architecturalDebt(data: LaunchReadinessReportData): string {
-  const debtEvidence = data.evidence.filter(
+  const debtEvidence = currentEvidenceRows(data).filter(
     (item) => item.type === "startup_accepted_debt" || item.type === "startup_debt"
   );
 
@@ -860,12 +961,13 @@ function architecturalDebt(data: LaunchReadinessReportData): string {
 }
 
 function missingObservability(data: LaunchReadinessReportData): string {
+  const currentEvidence = currentEvidenceRows(data);
   const measurementPresent =
-    hasEvidenceType(data.evidence, "startup_measurement_framework") ||
+    hasEvidenceType(currentEvidence, "startup_measurement_framework") ||
     hasCompletedTask(data.tasks, "define_measurement_framework");
   const metricPresent =
-    hasEvidenceType(data.evidence, "startup_metric") ||
-    hasEvidenceType(data.evidence, "startup_observability");
+    hasEvidenceType(currentEvidence, "startup_metric") ||
+    hasEvidenceType(currentEvidence, "startup_observability");
   const rows = [
     measurementPresent
       ? "measurement framework evidence present"
@@ -879,7 +981,9 @@ function missingObservability(data: LaunchReadinessReportData): string {
 }
 
 function frontendUiValidation(data: LaunchReadinessReportData): string {
-  const rows = data.evidence.filter((item) => item.type === "startup_ui_validation");
+  const rows = currentEvidenceRows(data).filter(
+    (item) => item.type === "startup_ui_validation"
+  );
 
   return listOrNone(rows, (item) => {
     const content = parsedEvidenceContent(item.uri);
@@ -922,7 +1026,7 @@ function structuredStartupArtifacts(data: LaunchReadinessReportData): string {
 }
 
 function evidenceProvenance(data: LaunchReadinessReportData): string {
-  const rows = data.evidence.filter(
+  const rows = currentEvidenceRows(data).filter(
     (item) =>
       (item.type === "command_output" && !isStaleCommandEvidence(data, item)) ||
       item.type.startsWith("startup_")
@@ -932,12 +1036,12 @@ function evidenceProvenance(data: LaunchReadinessReportData): string {
 }
 
 function staleEvidenceAppendix(data: LaunchReadinessReportData): string {
-  const rows = staleCommandEvidence(data);
+  const rows = staleEvidenceRows(data);
 
   return listOrNone(
     rows,
     (item) =>
-      `- ${item.id}: ${item.summary ?? item.uri} (${commandEvidenceCodeState(data, item)}; ${commandEvidenceGovernance(item)}; ${evidenceSourceSummary(item)})`
+      `- ${item.id}: ${item.summary ?? item.uri} (${staleEvidenceReason(data, item)}; ${evidenceSourceSummary(item)})`
   );
 }
 
@@ -988,7 +1092,7 @@ function formatArtifactSource(source: JsonObject): string {
 }
 
 function acceptableDebt(data: LaunchReadinessReportData): string {
-  const acceptableDebtEvidence = data.evidence.filter(
+  const acceptableDebtEvidence = currentEvidenceRows(data).filter(
     (item) => item.type === "startup_acceptable_debt"
   );
 
@@ -1036,8 +1140,10 @@ function missingEvidenceRows(data: LaunchReadinessReportData): {
   source: string;
   recommendedTask: string;
 }[] {
+  const currentEvidence = currentEvidenceRows(data);
+
   return [
-    ...(hasEvidenceType(data.evidence, "startup_repo_readiness")
+    ...(hasEvidenceType(currentEvidence, "startup_repo_readiness")
       ? []
       : [
           {
@@ -1046,7 +1152,7 @@ function missingEvidenceRows(data: LaunchReadinessReportData): {
             recommendedTask: "run startup launch audit"
           }
         ]),
-    ...(hasEvidenceType(data.evidence, "startup_security_baseline")
+    ...(hasEvidenceType(currentEvidence, "startup_security_baseline")
       ? []
       : [
           {
@@ -1126,8 +1232,10 @@ function blockerSource(data: LaunchReadinessReportData, blocker: string): string
   if (blocker.includes("security baseline")) {
     return evidenceSource(data, "startup_security_baseline");
   }
-  if (blocker.includes("migration")) return evidenceSource(data, "startup_migration_plan");
-  if (blocker.includes("rollback")) return evidenceSource(data, "startup_rollback_plan");
+  if (blocker.includes("migration"))
+    return evidenceSource(data, "startup_migration_plan");
+  if (blocker.includes("rollback"))
+    return evidenceSource(data, "startup_rollback_plan");
   if (blocker.includes("observability")) {
     return evidenceSource(data, "startup_observability");
   }
@@ -1141,8 +1249,9 @@ function blockerSource(data: LaunchReadinessReportData, blocker: string): string
 function evidenceSource(data: LaunchReadinessReportData, type: string): string {
   const evidence =
     type === "command_output"
-      ? currentCommandEvidence(data)[0] ?? staleCommandEvidence(data)[0]
-      : data.evidence.find((item) => item.type === type);
+      ? (currentCommandEvidence(data)[0] ?? staleCommandEvidence(data)[0])
+      : (currentEvidenceRows(data).find((item) => item.type === type) ??
+        data.evidence.find((item) => item.type === type));
 
   return evidence === undefined ? "missing evidence" : `${evidence.id} ${evidence.uri}`;
 }
@@ -1177,7 +1286,7 @@ function recommendedTaskForRisk(risk: string): string {
 }
 
 function releaseBlockers(data: LaunchReadinessReportData): string[] {
-  const hasVerifierEvidence = hasEvidenceType(data.evidence, "command_output");
+  const hasVerifierEvidence = currentCommandEvidence(data).length > 0;
 
   return [
     ...data.gate.blockers,
@@ -1256,21 +1365,21 @@ function taskBlockerResolvedByEvidence(
 
   if (
     task.type === "generate_agent_context" &&
-    hasEvidenceType(data.evidence, "startup_agent_context")
+    hasEvidenceType(currentEvidenceRows(data), "startup_agent_context")
   ) {
     return true;
   }
 
   if (
     task.type === "define_measurement_framework" &&
-    hasEvidenceType(data.evidence, "startup_measurement_framework")
+    hasEvidenceType(currentEvidenceRows(data), "startup_measurement_framework")
   ) {
     return true;
   }
 
   if (
     task.type === "inspect_repo_readiness" &&
-    hasEvidenceType(data.evidence, "startup_repo_readiness")
+    hasEvidenceType(currentEvidenceRows(data), "startup_repo_readiness")
   ) {
     return true;
   }
@@ -1431,7 +1540,8 @@ function reportEventPayload(input: {
       blockers: input.blockers.length,
       goals: input.data.goals.length,
       tasks: input.data.tasks.length,
-      evidence: input.data.evidence.length,
+      evidence: currentEvidenceRows(input.data).length,
+      staleEvidence: staleEvidenceRows(input.data).length,
       structuredArtifacts: input.data.structuredArtifacts.length,
       protectedPathChanges: input.data.protectedPathChanges.length
     }

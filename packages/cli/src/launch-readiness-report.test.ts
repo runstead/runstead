@@ -11,6 +11,7 @@ import { installDomainPack } from "./domain-pack-install.js";
 import { createGoal } from "./goals.js";
 import { initRunstead } from "./init.js";
 import { generateLaunchReadinessReport } from "./launch-readiness-report.js";
+import { collectCommandVerifierCodeState } from "./verifier-evidence.js";
 
 describe("generateLaunchReadinessReport", () => {
   it("writes a launch readiness report and records an audit event", async () => {
@@ -134,7 +135,9 @@ describe("generateLaunchReadinessReport", () => {
       expect(markdown).toContain("## Verifier Status");
       expect(markdown).toContain("## Governance Boundary");
       expect(markdown).toContain("## Release Blockers");
-      expect(markdown).toContain("CI configuration is missing [source: repo:ci_detection]");
+      expect(markdown).toContain(
+        "CI configuration is missing [source: repo:ci_detection]"
+      );
       expect(markdown).toContain("ev_launch_report_command_001");
       expect(markdown).toContain("measurement framework");
       expect(markdown).not.toContain("task_old_goal_blocked");
@@ -292,6 +295,7 @@ describe("generateLaunchReadinessReport", () => {
       };
       const evidenceDir = join(initialized.root, "evidence");
       const commandArtifactPath = join(evidenceDir, "verifier-wrapped.json");
+      const currentCodeState = await collectCommandVerifierCodeState(workspace);
 
       await mkdir(evidenceDir, { recursive: true });
       await writeFile(
@@ -299,16 +303,7 @@ describe("generateLaunchReadinessReport", () => {
         `${JSON.stringify(
           {
             schemaVersion: 1,
-            codeState: {
-              kind: "git_workspace",
-              available: true,
-              dirty: false,
-              statusHash: "status",
-              fileSetHash: "files",
-              fingerprint:
-                "0000000000000000000000000000000000000000000000000000000000000000",
-              changedFiles: []
-            },
+            codeState: currentCodeState,
             result: {
               exitCode: 0,
               timedOut: false,
@@ -379,12 +374,39 @@ describe("generateLaunchReadinessReport", () => {
           createdAt: "2026-05-14T03:21:30.000Z"
         });
 
+        const staleUiArtifactPath = join(evidenceDir, "startup_ui_validation_old.json");
+
+        await writeFile(
+          staleUiArtifactPath,
+          `${JSON.stringify(
+            {
+              schemaVersion: 1,
+              content: JSON.stringify({
+                url: "http://localhost:3000",
+                viewport: "desktop",
+                domStatus: "fail",
+                accessibilityStatus: "not_run",
+                responsiveStatus: "not_run",
+                criticalFlowStatus: "fail"
+              })
+            },
+            null,
+            2
+          )}\n`,
+          "utf8"
+        );
+        projectEvidence(database, {
+          id: "ev_startup_ui_validation_old",
+          type: "startup_ui_validation",
+          subjectType: "goal",
+          subjectId: created.goal.id,
+          uri: pathToFileURL(staleUiArtifactPath).href,
+          summary: "old desktop UI validation failed",
+          createdAt: "2026-05-14T03:20:00.000Z"
+        });
+
         for (const [type, summary, content] of [
-          [
-            "startup_agent_context",
-            "agent context recorded",
-            undefined
-          ],
+          ["startup_agent_context", "agent context recorded", undefined],
           [
             "startup_measurement_framework",
             "measurement framework recorded",
@@ -515,12 +537,12 @@ describe("generateLaunchReadinessReport", () => {
       });
       expect(json).toContain('"schemaVersion": 1');
       expect(json).toContain('"trustSummary"');
-      expect(result.markdown).toContain("Current command evidence records: 0");
-      expect(result.markdown).toContain("Stale command evidence records: 2");
+      expect(result.markdown).toContain("Current command evidence records: 2");
+      expect(result.markdown).toContain("Stale command evidence records: 0");
       expect(result.markdown).toContain("## Stale Evidence Appendix");
-      expect(result.markdown).toContain("code_state=stale");
+      expect(result.markdown).toContain("ev_startup_ui_validation_old");
       expect(result.markdown).toContain(
-        "2 verifier evidence records recorded against stale code state; see stale evidence appendix"
+        "superseded by newer evidence for startup_ui_validation:http://localhost:3000:desktop"
       );
       expect(result.markdown).toContain("## Trust Summary");
       expect(result.markdown).toContain("## Metric Evidence Confidence");
@@ -535,15 +557,20 @@ describe("generateLaunchReadinessReport", () => {
       expect(result.markdown).toContain("## Evidence Provenance");
       expect(result.markdown).toContain("## Frontend UI Validation");
       expect(result.markdown).toContain("url=http://localhost:3000");
+      const uiSection = markdownSection(
+        result.markdown,
+        "## Frontend UI Validation",
+        "## Structured Startup Artifacts"
+      );
+
+      expect(uiSection).not.toContain("old desktop UI validation failed");
       expect(result.markdown).toContain("source=posthog");
       expect(result.markdown).toContain(
         "https://posthog.example/project/1/insights/activation"
       );
       expect(result.markdown).not.toContain("run_mvp_verifiers is failed");
       expect(result.markdown).not.toContain("generate_agent_context is blocked");
-      expect(result.markdown).not.toContain(
-        "define_measurement_framework is blocked"
-      );
+      expect(result.markdown).not.toContain("define_measurement_framework is blocked");
       expect(result.markdown).not.toContain("inspect_repo_readiness is blocked");
       expect(result.markdown).not.toContain("startup_remediation is blocked");
     } finally {
@@ -551,6 +578,17 @@ describe("generateLaunchReadinessReport", () => {
     }
   });
 });
+
+function markdownSection(markdown: string, start: string, end: string): string {
+  const startIndex = markdown.indexOf(start);
+  const endIndex = markdown.indexOf(end, startIndex + start.length);
+
+  if (startIndex === -1 || endIndex === -1) {
+    return "";
+  }
+
+  return markdown.slice(startIndex, endIndex);
+}
 
 function projectGoal(
   database: ReturnType<typeof openRunsteadDatabase>,
