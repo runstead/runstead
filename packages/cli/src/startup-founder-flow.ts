@@ -10,7 +10,10 @@ import {
 } from "./local-agent.js";
 import { collectRepoInspection } from "./inspection-evidence.js";
 import type { InitPolicyProfile } from "./init.js";
-import { generateLaunchReadinessReport } from "./launch-readiness-report.js";
+import {
+  generateLaunchReadinessReport,
+  type LaunchReadinessTarget
+} from "./launch-readiness-report.js";
 import {
   generateMeasurementFramework,
   generateRepoReadinessAudit,
@@ -47,6 +50,7 @@ export interface StartupFounderFlowOptions {
   day7Metric?: string;
   day30Metric?: string;
   falsePositiveMetric?: string;
+  target?: LaunchReadinessTarget;
   now?: Date;
 }
 
@@ -347,6 +351,7 @@ export async function startupLaunchCheck(
   options: StartupFounderFlowOptions = {}
 ): Promise<StartupLaunchCheckResult> {
   const cwd = resolve(options.cwd ?? process.cwd());
+  const target = options.target ?? "production";
   await initStartup({
     cwd,
     stage: "launch",
@@ -368,14 +373,22 @@ export async function startupLaunchCheck(
     stage: "launch",
     ...(options.now === undefined ? {} : { now: options.now })
   });
+  const readinessBlockers =
+    target === "local"
+      ? readiness.blockers.filter((blocker) => blocker !== "CI configuration is missing")
+      : readiness.blockers;
   const report = await generateLaunchReadinessReport({
     cwd,
+    target,
     ...(options.now === undefined ? {} : { now: options.now })
   });
 
   return {
     root: readiness.root,
-    readiness,
+    readiness: {
+      ...readiness,
+      blockers: readinessBlockers
+    },
     security,
     gate,
     reportPath: report.reportPath,

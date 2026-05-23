@@ -4,7 +4,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
+import { openRunsteadDatabase } from "@runstead/state-sqlite";
 
+import { initRunstead } from "./init.js";
+import { addStartupEvidence } from "./startup-evidence.js";
 import {
   createStartupReadinessRun,
   evaluateStartupReadinessVerdict,
@@ -541,6 +544,38 @@ describe("startup readiness run model", () => {
     try {
       await rm(workspace, { force: true, recursive: true });
       await mkdir(join(workspace, ".runstead", "startup"), { recursive: true });
+      await initRunstead({ cwd: workspace, profile: "trusted-local" });
+      await addStartupEvidence({
+        cwd: workspace,
+        type: "metric_snapshot",
+        summary: "Malformed metric snapshot from an earlier manual attempt",
+        content: JSON.stringify(
+          {
+            metric: "local_required_checks_passed",
+            source: "manual",
+            threshold: 1,
+            currentValue: 1
+          },
+          null,
+          2
+        ),
+        gate: "launch",
+        now: new Date("2026-05-22T01:20:00.000Z")
+      });
+      await addStartupEvidence({
+        cwd: workspace,
+        type: "migration_plan",
+        summary: "Thin migration note missing remediation quality fields",
+        content: JSON.stringify(
+          {
+            owner: "founder"
+          },
+          null,
+          2
+        ),
+        gate: "launch",
+        now: new Date("2026-05-22T01:21:00.000Z")
+      });
       await writeFile(
         join(workspace, "package.json"),
         `${JSON.stringify(
@@ -627,6 +662,8 @@ describe("startup readiness run model", () => {
         status: "passed",
         blockers: []
       });
+      expect(result.run.verdict).toBe("local_launch_ready");
+      expect(result.run.verdictBlockers).toEqual([]);
       expect(uiPhase?.evidenceIds).toHaveLength(2);
       expect(result.run.evidenceTypes).toEqual(
         expect.arrayContaining([
@@ -650,6 +687,8 @@ describe("startup readiness run model", () => {
           join(workspace, ".runstead", "reports", "startup-complete-product-check.json")
         ])
       );
+      expect(evidenceCount(workspace, "startup_metric_snapshot")).toBeGreaterThan(1);
+      expect(evidenceCount(workspace, "startup_migration_plan")).toBeGreaterThan(1);
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }
@@ -845,4 +884,18 @@ function availablePort(): Promise<number> {
       });
     });
   });
+}
+
+function evidenceCount(workspace: string, type: string): number {
+  const database = openRunsteadDatabase(join(workspace, ".runstead", "state.db"));
+
+  try {
+    const row = database
+      .prepare("SELECT COUNT(*) AS count FROM evidence WHERE type = ?")
+      .get(type) as { count: number };
+
+    return row.count;
+  } finally {
+    database.close();
+  }
 }

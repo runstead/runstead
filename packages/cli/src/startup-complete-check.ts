@@ -14,6 +14,7 @@ import {
 } from "./inspection-evidence.js";
 import {
   generateLaunchReadinessReport,
+  type LaunchReadinessTarget,
   type LaunchReadinessReportResult
 } from "./launch-readiness-report.js";
 import {
@@ -44,6 +45,7 @@ import { getStartupStatus, type StartupStatusResult } from "./startup-status.js"
 export interface GenerateStartupCompleteProductCheckOptions {
   cwd?: string;
   domain?: string;
+  target?: LaunchReadinessTarget;
   now?: Date;
 }
 
@@ -135,6 +137,7 @@ export async function generateStartupCompleteProductCheck(
 ): Promise<StartupCompleteProductCheckResult> {
   const cwd = resolve(options.cwd ?? process.cwd());
   const domain = options.domain ?? STARTUP_DOMAIN;
+  const target = options.target ?? "production";
   const now = options.now ?? new Date();
   const generatedAt = now.toISOString();
   const state = await requireRunsteadStateDb(cwd);
@@ -143,7 +146,12 @@ export async function generateStartupCompleteProductCheck(
   const repo = await collectRepoInspection(cwd, generatedAt);
   const status = await getStartupStatus({ cwd, domain, now });
   const remediation = await generateStartupRemediationPlan({ cwd, domain, now });
-  const launchReport = await generateLaunchReadinessReport({ cwd, domain, now });
+  const launchReport = await generateLaunchReadinessReport({
+    cwd,
+    domain,
+    target,
+    now
+  });
   const ci = await generateStartupCiSummary({ cwd, domain, stage: "launch", now });
   const dashboard = await buildDashboard({ cwd, now });
   const diagnostics = await generateOpsDiagnosticsBundle({
@@ -187,7 +195,8 @@ export async function generateStartupCompleteProductCheck(
     evidenceRows,
     blockers,
     eventCount,
-    pathState
+    pathState,
+    target
   });
   const baseStatus = completeProductStatus(baseCriteria);
   const eventId = createRunsteadId("evt");
@@ -345,6 +354,7 @@ function startupCompleteProductBaseCriteria(input: {
   blockers: StartupCompleteProductBlockerAudit[];
   eventCount: number;
   pathState: Map<string, boolean>;
+  target: LaunchReadinessTarget;
 }): StartupCompleteProductCriterion[] {
   const evidenceTypes = new Set(input.evidenceRows.map((item) => item.type));
   const sourceKinds = new Set(input.status.evidence.sourceKinds);
@@ -365,7 +375,7 @@ function startupCompleteProductBaseCriteria(input: {
     ...(input.repo.commands.lint.detected ? [] : ["lint command"]),
     ...(input.repo.commands.typecheck.detected ? [] : ["typecheck command"]),
     ...(input.repo.commands.build.detected ? [] : ["build command"]),
-    ...(input.repo.ci.detected ? [] : ["CI config"]),
+    ...(input.target === "local" || input.repo.ci.detected ? [] : ["CI config"]),
     ...(evidenceTypes.has("startup_repo_readiness") ? [] : ["repo readiness evidence"]),
     ...(evidenceTypes.has("startup_security_baseline")
       ? []

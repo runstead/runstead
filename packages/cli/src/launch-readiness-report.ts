@@ -30,6 +30,7 @@ const execFileAsync = promisify(execFile);
 export interface GenerateLaunchReadinessReportOptions {
   cwd?: string;
   domain?: string;
+  target?: LaunchReadinessTarget;
   now?: Date;
 }
 
@@ -47,6 +48,7 @@ export interface LaunchReadinessReportResult {
 }
 
 type LaunchReadinessStatus = "launch_ready" | "blocked";
+export type LaunchReadinessTarget = "local" | "staging" | "production";
 
 export interface LaunchReadinessTrustSummary {
   qualityScore: number;
@@ -183,7 +185,8 @@ export async function generateLaunchReadinessReport(
       currentCodeState: await collectCommandVerifierCodeState(cwd),
       ...readLaunchReadinessData(database, domain)
     };
-    const blockers = releaseBlockers(data);
+    const target = options.target ?? "production";
+    const blockers = releaseBlockers(data, target);
     const status: LaunchReadinessStatus =
       blockers.length === 0 ? "launch_ready" : "blocked";
     const aggregateId = `launch_readiness_${domain.replaceAll("-", "_")}`;
@@ -197,6 +200,7 @@ export async function generateLaunchReadinessReport(
     const markdown = formatLaunchReadinessReport({
       generatedAt,
       domain,
+      target,
       status,
       blockers,
       trustSummary,
@@ -216,6 +220,7 @@ export async function generateLaunchReadinessReport(
       schemaVersion: 1,
       generatedAt,
       domain,
+      target,
       status,
       blockers,
       trustSummary,
@@ -378,6 +383,7 @@ function readLaunchReadinessData(
 function formatLaunchReadinessReport(input: {
   generatedAt: string;
   domain: string;
+  target: LaunchReadinessTarget;
   status: LaunchReadinessStatus;
   blockers: string[];
   trustSummary: LaunchReadinessTrustSummary;
@@ -387,6 +393,7 @@ function formatLaunchReadinessReport(input: {
     "# Runstead Launch Readiness Report",
     "",
     `Domain: ${input.domain}`,
+    `Target: ${input.target}`,
     `Generated: ${input.generatedAt}`,
     `Status: ${input.status}`,
     "",
@@ -1285,7 +1292,10 @@ function recommendedTaskForRisk(risk: string): string {
   return "create a remediation task and attach evidence";
 }
 
-function releaseBlockers(data: LaunchReadinessReportData): string[] {
+function releaseBlockers(
+  data: LaunchReadinessReportData,
+  target: LaunchReadinessTarget
+): string[] {
   const hasVerifierEvidence = currentCommandEvidence(data).length > 0;
 
   return [
@@ -1295,7 +1305,9 @@ function releaseBlockers(data: LaunchReadinessReportData): string[] {
     ...(data.repo.commands.lint.detected ? [] : ["lint command is missing"]),
     ...(data.repo.commands.typecheck.detected ? [] : ["typecheck command is missing"]),
     ...(data.repo.commands.build.detected ? [] : ["build command is missing"]),
-    ...(data.repo.ci.detected ? [] : ["CI configuration is missing"]),
+    ...(target === "local" || data.repo.ci.detected
+      ? []
+      : ["CI configuration is missing"]),
     ...(data.protectedPathChanges.length === 0
       ? []
       : [

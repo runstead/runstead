@@ -644,6 +644,7 @@ async function executeStartupReadyRun(
     await writeStartupReadinessRun(run);
     const launch = await startupLaunchCheck({
       cwd: run.cwd,
+      target: run.target,
       ...(options.now === undefined ? {} : { now: options.now })
     });
     const auditBlockers = [...launch.readiness.blockers, ...launch.security.blockers];
@@ -680,6 +681,7 @@ async function executeStartupReadyRun(
     await writeStartupReadinessRun(run);
     const complete = await generateStartupCompleteProductCheck({
       cwd: run.cwd,
+      target: run.target,
       ...(options.now === undefined ? {} : { now: options.now })
     });
 
@@ -1524,6 +1526,12 @@ async function ensureStartupReadyLocalMvpEvidence(
   const evidenceTypes = new Set(
     (await collectRecordedStartupReadinessEvidence(run.cwd)).evidenceTypes
   );
+  const gate = await checkStartupGate({
+    cwd: run.cwd,
+    stage: "mvp",
+    now,
+    recordEvent: false
+  });
 
   await addLocalReadinessEvidenceIfMissing(evidenceTypes, {
     cwd: run.cwd,
@@ -1540,7 +1548,8 @@ async function ensureStartupReadyLocalMvpEvidence(
       confidence: "local_manual"
     },
     gate: "mvp",
-    now
+    now,
+    force: gateNeedsBaselineEvidence(gate.blockers, "problem hypothesis is missing")
   });
   await addLocalReadinessEvidenceIfMissing(evidenceTypes, {
     cwd: run.cwd,
@@ -1558,7 +1567,8 @@ async function ensureStartupReadyLocalMvpEvidence(
       confidence: "local_manual"
     },
     gate: "mvp",
-    now
+    now,
+    force: gateNeedsBaselineEvidence(gate.blockers, "user hypothesis is missing")
   });
   await addLocalReadinessEvidenceIfMissing(evidenceTypes, {
     cwd: run.cwd,
@@ -1575,7 +1585,8 @@ async function ensureStartupReadyLocalMvpEvidence(
       confidence: "local_manual"
     },
     gate: "mvp",
-    now
+    now,
+    force: gateNeedsBaselineEvidence(gate.blockers, "solution hypothesis is missing")
   });
   await addLocalReadinessEvidenceIfMissing(evidenceTypes, {
     cwd: run.cwd,
@@ -1592,7 +1603,8 @@ async function ensureStartupReadyLocalMvpEvidence(
       confidence: "local_manual"
     },
     gate: "mvp",
-    now
+    now,
+    force: gateNeedsBaselineEvidence(gate.blockers, "disconfirming evidence is missing")
   });
 }
 
@@ -1611,6 +1623,12 @@ async function ensureStartupReadyLocalLaunchEvidence(
   const evidenceTypes = new Set(
     (await collectRecordedStartupReadinessEvidence(run.cwd)).evidenceTypes
   );
+  const gate = await checkStartupGate({
+    cwd: run.cwd,
+    stage: "launch",
+    now,
+    recordEvent: false
+  });
 
   await addLocalReadinessEvidenceIfMissing(evidenceTypes, {
     cwd: run.cwd,
@@ -1629,7 +1647,11 @@ async function ensureStartupReadyLocalLaunchEvidence(
       uiSmokePhase: phaseStatus(run, "ui_smoke") ?? "not_included"
     },
     gate: "launch",
-    now
+    now,
+    force: gateNeedsBaselineEvidence(
+      gate.blockers,
+      "metric snapshot with source, threshold, and current value is missing"
+    )
   });
   await addLocalReadinessEvidenceIfMissing(evidenceTypes, {
     cwd: run.cwd,
@@ -1653,7 +1675,10 @@ async function ensureStartupReadyLocalLaunchEvidence(
       "Recheck migration impact before adding server persistence, schema changes, or shared data stores.",
     acceptanceCriteria:
       "Local launch remains safe when no schema migration is required, or a future migration plan is recorded before release.",
-    now
+    now,
+    force:
+      gateNeedsBaselineEvidence(gate.blockers, "migration plan evidence is missing") ||
+      gateNeedsBaselineEvidence(gate.blockers, "migration plan", "needs owner")
   });
   await addLocalReadinessEvidenceIfMissing(evidenceTypes, {
     cwd: run.cwd,
@@ -1676,7 +1701,10 @@ async function ensureStartupReadyLocalLaunchEvidence(
       "Keep the latest passing git commit and generated static artifact restorable before public traffic.",
     acceptanceCriteria:
       "A failed local launch can be rolled back by reverting the commit or restoring the previous static output.",
-    now
+    now,
+    force:
+      gateNeedsBaselineEvidence(gate.blockers, "rollback plan evidence is missing") ||
+      gateNeedsBaselineEvidence(gate.blockers, "rollback plan", "needs owner")
   });
   await addLocalReadinessEvidenceIfMissing(evidenceTypes, {
     cwd: run.cwd,
@@ -1706,7 +1734,10 @@ async function ensureStartupReadyLocalLaunchEvidence(
       "Review verifier output, UI smoke artifacts, launch report, CI summary, and diagnostics after each launch change.",
     acceptanceCriteria:
       "Any failed verifier, smoke check, or launch gate produces an explicit blocker before release.",
-    now
+    now,
+    force:
+      gateNeedsBaselineEvidence(gate.blockers, "observability evidence is missing") ||
+      gateNeedsBaselineEvidence(gate.blockers, "observability", "needs owner")
   });
   await addLocalReadinessEvidenceIfMissing(evidenceTypes, {
     cwd: run.cwd,
@@ -1770,7 +1801,21 @@ async function ensureStartupReadyLocalLaunchEvidence(
       "Assign durable owners before moving from local launch readiness to scale readiness.",
     acceptanceCriteria:
       "Scale readiness remains blocked until workflow registry, delegation policy, and institutional memory evidence are recorded.",
-    now
+    now,
+    force: gateNeedsBaselineEvidence(
+      gate.blockers,
+      "founder bottleneck audit is missing"
+    )
+  });
+}
+
+function gateNeedsBaselineEvidence(blockers: string[], ...needles: string[]): boolean {
+  const loweredNeedles = needles.map((needle) => needle.toLowerCase());
+
+  return blockers.some((blocker) => {
+    const lowered = blocker.toLowerCase();
+
+    return loweredNeedles.every((needle) => lowered.includes(needle));
   });
 }
 
@@ -1788,11 +1833,12 @@ async function addLocalReadinessEvidenceIfMissing(
     remediationTask?: string;
     acceptanceCriteria?: string;
     now: Date;
+    force?: boolean;
   }
 ): Promise<void> {
   const storedType = `startup_${input.type}`;
 
-  if (evidenceTypes.has(storedType)) {
+  if (input.force !== true && evidenceTypes.has(storedType)) {
     return;
   }
 
