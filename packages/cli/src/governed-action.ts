@@ -124,6 +124,7 @@ export async function runGovernedToolAction<T>(
       ? findApprovedApprovalForAction({
           database: options.database,
           actionId: preflight.action.actionId,
+          ...approvalGrantSignatureOption(preflight.action),
           ...(options.now === undefined ? {} : { now: options.now })
         })
       : undefined;
@@ -219,4 +220,14 @@ export async function runGovernedToolAction<T>(
 
     throw error;
   }
+}
+
+function approvalGrantSignatureOption(
+  action: ActionEnvelope
+): { canonicalSignature: string } | object {
+  const signature = action.context?.canonicalSignature;
+
+  return typeof signature === "string" && signature.length > 0
+    ? { canonicalSignature: signature }
+    : {};
 }

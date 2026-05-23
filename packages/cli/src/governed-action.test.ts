@@ -257,6 +257,117 @@ describe("runGovernedToolAction", () => {
     }
   });
 
+  it("reuses an approved grant for an equivalent canonical action signature", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-governed-signature-"));
+
+    try {
+      const initialized = await initRunstead({ cwd: workspace });
+      const task = await firstGeneratedTask(workspace);
+      const policy = await loadPolicyProfileFromFile(
+        join(initialized.root, "policies", "repo-maintenance.yaml")
+      );
+      const canonicalSignature = "signature_same_patch";
+      const firstAction = {
+        actionId: "act_patch_first",
+        actionType: "github.pr.create",
+        resource: {
+          type: "pull_request",
+          id: "main...runstead/task-1"
+        },
+        context: {
+          canonicalSignature,
+          filesTouched: ["src/app.ts"]
+        }
+      };
+      const equivalentAction = {
+        ...firstAction,
+        actionId: "act_patch_regenerated"
+      };
+      let approvalId: string | undefined;
+
+      {
+        const database = openRunsteadDatabase(initialized.stateDb);
+
+        try {
+          const workerRun = startWorkerRun({
+            database,
+            task,
+            workerType: "test_worker",
+            enforcementLevel: "policy_enforced"
+          });
+
+          await expect(
+            runGovernedToolAction({
+              cwd: workspace,
+              stateDb: initialized.stateDb,
+              database,
+              policy,
+              task,
+              workerRun,
+              action: firstAction,
+              requestedBy: "test",
+              run: () => Promise.resolve({ value: "created" })
+            })
+          ).rejects.toBeInstanceOf(ToolActionApprovalRequiredError);
+
+          const approval = database
+            .prepare("SELECT id FROM approvals WHERE action_id = ?")
+            .get(firstAction.actionId) as { id: string } | undefined;
+
+          approvalId = approval?.id;
+        } finally {
+          database.close();
+        }
+      }
+
+      if (approvalId === undefined) {
+        throw new Error("Expected approval id");
+      }
+
+      await decideApproval({
+        cwd: workspace,
+        id: approvalId,
+        decision: "approved",
+        decidedBy: "local-admin"
+      });
+
+      {
+        const database = openRunsteadDatabase(initialized.stateDb);
+
+        try {
+          const workerRun = startWorkerRun({
+            database,
+            task,
+            workerType: "test_worker",
+            enforcementLevel: "policy_enforced"
+          });
+          const result = await runGovernedToolAction({
+            cwd: workspace,
+            stateDb: initialized.stateDb,
+            database,
+            policy,
+            task,
+            workerRun,
+            action: equivalentAction,
+            requestedBy: "test",
+            run: () => Promise.resolve({ value: "created" })
+          });
+
+          expect(result.value).toBe("created");
+          expect(result.approval?.id).toBe(approvalId);
+        } finally {
+          database.close();
+        }
+      }
+
+      expect(showApproval({ cwd: workspace, id: approvalId }).approval.status).toBe(
+        "expired"
+      );
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
   it("consumes approved grants before running approved actions", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "runstead-governed-failure-"));
 

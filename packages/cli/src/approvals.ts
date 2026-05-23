@@ -77,6 +77,7 @@ export interface DecideApprovalResult {
 export interface FindApprovedApprovalOptions {
   database: ReturnType<typeof openRunsteadDatabase>;
   actionId: string;
+  canonicalSignature?: string;
   now?: Date;
 }
 
@@ -301,40 +302,44 @@ export async function decideApproval(
 export function findApprovedApprovalForAction(
   options: FindApprovedApprovalOptions
 ): ApprovalRequest | undefined {
-  const row = options.database
+  const now = options.now ?? new Date();
+  const rows = options.database
     .prepare(
       `
-      SELECT id, policy_decision_id, action_id, status, risk, reason,
-             requested_by, expires_at, decided_at, decided_by,
-             created_at, updated_at
-      FROM approvals
-      WHERE action_id = ? AND status = 'approved'
-      ORDER BY decided_at ASC, created_at ASC, id ASC
-      LIMIT 1
+      SELECT a.id, a.policy_decision_id, a.action_id, a.status, a.risk, a.reason,
+             a.requested_by, a.expires_at, a.decided_at, a.decided_by,
+             a.created_at, a.updated_at, pd.action_json
+      FROM approvals a
+      LEFT JOIN policy_decisions pd ON pd.id = a.policy_decision_id
+      WHERE a.status = 'approved'
+      ORDER BY a.decided_at ASC, a.created_at ASC, a.id ASC
     `
     )
-    .get(options.actionId) as ApprovalRow | undefined;
+    .all() as unknown as ApprovedApprovalRow[];
 
-  if (row === undefined) {
-    return undefined;
+  for (const row of rows) {
+    if (!approvedApprovalMatchesAction(row, options)) {
+      continue;
+    }
+
+    const approval = rowToApproval(row);
+
+    if (
+      approval.expiresAt !== undefined &&
+      Date.parse(approval.expiresAt) <= now.getTime()
+    ) {
+      expireApprovalGrant({
+        database: options.database,
+        approval,
+        now
+      });
+      continue;
+    }
+
+    return approval;
   }
 
-  const approval = rowToApproval(row);
-  const now = options.now ?? new Date();
-
-  if (
-    approval.expiresAt !== undefined &&
-    Date.parse(approval.expiresAt) <= now.getTime()
-  ) {
-    expireApprovalGrant({
-      database: options.database,
-      approval,
-      now
-    });
-    return undefined;
-  }
-
-  return approval;
+  return undefined;
 }
 
 export function createApprovalExpirationTransition(
@@ -571,6 +576,10 @@ interface ApprovalRow {
   updated_at: string;
 }
 
+interface ApprovedApprovalRow extends ApprovalRow {
+  action_json: string | null;
+}
+
 interface PolicyDecisionRow {
   id: string;
   action_id: string;
@@ -680,4 +689,35 @@ function stringArrayValue(value: unknown): string[] {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function approvedApprovalMatchesAction(
+  row: ApprovedApprovalRow,
+  options: FindApprovedApprovalOptions
+): boolean {
+  if (row.action_id === options.actionId) {
+    return true;
+  }
+
+  return (
+    options.canonicalSignature !== undefined &&
+    approvalActionCanonicalSignature(row.action_json) === options.canonicalSignature
+  );
+}
+
+function approvalActionCanonicalSignature(actionJson: string | null): string | undefined {
+  if (actionJson === null) {
+    return undefined;
+  }
+
+  try {
+    const action = JSON.parse(actionJson) as unknown;
+    const context = isRecord(action) && isRecord(action.context) ? action.context : {};
+
+    return typeof context.canonicalSignature === "string"
+      ? context.canonicalSignature
+      : undefined;
+  } catch {
+    return undefined;
+  }
 }
