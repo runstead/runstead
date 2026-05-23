@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdirSync } from "node:fs";
+import { chmodSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
@@ -26,6 +26,7 @@ export function openRunsteadDatabase(path: string): RunsteadDatabase {
 
   configureRunsteadDatabase(database);
   migrateRunsteadDatabase(database);
+  tightenRunsteadDatabasePermissions(path);
 
   return database;
 }
@@ -121,4 +122,29 @@ function appliedMigrations(database: RunsteadDatabase): AppliedMigrationRow[] {
 
 function migrationChecksum(sql: string): string {
   return createHash("sha256").update(sql).digest("hex");
+}
+
+export function tightenRunsteadDatabasePermissions(path: string): void {
+  if (path === ":memory:") {
+    return;
+  }
+
+  for (const target of [path, `${path}-wal`, `${path}-shm`]) {
+    try {
+      chmodSync(target, 0o600);
+    } catch (error) {
+      if (!isMissingFileError(error)) {
+        throw error;
+      }
+    }
+  }
+}
+
+function isMissingFileError(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    error.code === "ENOENT"
+  );
 }

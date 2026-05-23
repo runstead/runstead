@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { chmod, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -12,6 +12,7 @@ import {
   formatRunsteadSchemaValidation,
   openRunsteadDatabase,
   readRunsteadDatabasePath,
+  tightenRunsteadDatabasePermissions,
   validateRunsteadDatabaseSchema
 } from "./index.js";
 
@@ -79,6 +80,37 @@ describe("openRunsteadDatabase", () => {
       expect(migrations[0]?.checksum).toMatch(/^[a-f0-9]{64}$/);
       expect(migrations[1]?.checksum).toMatch(/^[a-f0-9]{64}$/);
       expect(userVersion.user_version).toBe(RUNSTEAD_SCHEMA_VERSION);
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("tightens SQLite state file permissions", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-state-"));
+
+    try {
+      const stateDb = join(workspace, "state.db");
+      const database = openRunsteadDatabase(stateDb);
+
+      database.close();
+      expect((await stat(stateDb)).mode & 0o777).toBe(0o600);
+
+      for (const file of [`${stateDb}-wal`, `${stateDb}-shm`]) {
+        await writeFile(file, "", { mode: 0o666 });
+        await chmod(file, 0o666);
+      }
+
+      for (const file of [stateDb, `${stateDb}-wal`, `${stateDb}-shm`]) {
+        await chmod(file, 0o666);
+      }
+
+      tightenRunsteadDatabasePermissions(stateDb);
+
+      for (const file of [stateDb, `${stateDb}-wal`, `${stateDb}-shm`]) {
+        const mode = (await stat(file)).mode & 0o777;
+
+        expect(mode).toBe(0o600);
+      }
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }

@@ -96,6 +96,8 @@ Recommended defaults:
 
 Runstead persists events and projections in SQLite. The state store is intended
 to be durable local audit state, not a multi-tenant security boundary.
+Runstead sets the SQLite database file and WAL/SHM sidecars to owner-only
+permissions when it opens the state store.
 
 The state DB records:
 
