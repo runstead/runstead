@@ -1078,14 +1078,62 @@ function releaseBlockers(data: LaunchReadinessReportData): string[] {
       : [
           `protected path changes require review: ${data.protectedPathChanges.join(", ")}`
         ]),
-    ...data.tasks
-      .filter((task) => ["failed", "blocked", "waiting_approval"].includes(task.status))
-      .filter((task) => !(hasVerifierEvidence && task.type === "run_mvp_verifiers"))
-      .map((task) => `${task.type} is ${task.status}`),
+    ...unresolvedTaskBlockers({
+      ...data,
+      hasVerifierEvidence
+    }),
     ...data.approvals
       .filter((approval) => approval.status === "pending")
       .map((approval) => `approval ${approval.id} is pending`)
   ];
+}
+
+function unresolvedTaskBlockers(
+  data: LaunchReadinessReportData & { hasVerifierEvidence: boolean }
+): string[] {
+  return data.tasks
+    .filter((task) => ["failed", "blocked", "waiting_approval"].includes(task.status))
+    .filter((task) => !taskBlockerResolvedByEvidence(task, data))
+    .map((task) => `${task.type} is ${task.status}`);
+}
+
+function taskBlockerResolvedByEvidence(
+  task: TaskReportRow,
+  data: LaunchReadinessReportData & { hasVerifierEvidence: boolean }
+): boolean {
+  if (
+    data.hasVerifierEvidence &&
+    (task.type === "run_mvp_verifiers" || task.type === "run_local_verifiers")
+  ) {
+    return true;
+  }
+
+  if (
+    task.type === "generate_agent_context" &&
+    hasEvidenceType(data.evidence, "startup_agent_context")
+  ) {
+    return true;
+  }
+
+  if (
+    task.type === "define_measurement_framework" &&
+    hasEvidenceType(data.evidence, "startup_measurement_framework")
+  ) {
+    return true;
+  }
+
+  if (
+    task.type === "inspect_repo_readiness" &&
+    hasEvidenceType(data.evidence, "startup_repo_readiness")
+  ) {
+    return true;
+  }
+
+  if (task.type === "startup_remediation" && data.gate.blockers.length === 0) {
+    return true;
+  }
+
+  return false;
 }
 
 function formatTaskCounts(tasks: TaskReportRow[]): string {

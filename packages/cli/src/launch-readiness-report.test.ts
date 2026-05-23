@@ -223,9 +223,23 @@ describe("generateLaunchReadinessReport", () => {
       const verifierTask = created.generatedTasks.find(
         (task) => task.type === "run_mvp_verifiers"
       );
+      const contextTask = created.generatedTasks.find(
+        (task) => task.type === "generate_agent_context"
+      );
+      const measurementTask = created.generatedTasks.find(
+        (task) => task.type === "define_measurement_framework"
+      );
+      const repoReadinessTask = created.generatedTasks.find(
+        (task) => task.type === "inspect_repo_readiness"
+      );
 
-      if (verifierTask === undefined) {
-        throw new Error("Expected startup goal to generate verifier task");
+      if (
+        verifierTask === undefined ||
+        contextTask === undefined ||
+        measurementTask === undefined ||
+        repoReadinessTask === undefined
+      ) {
+        throw new Error("Expected startup goal to generate readiness tasks");
       }
 
       const wrappedWorkerTask: Task = {
@@ -283,6 +297,36 @@ describe("generateLaunchReadinessReport", () => {
           status: "failed",
           updatedAt: "2026-05-14T03:19:00.000Z"
         });
+        for (const task of [contextTask, measurementTask, repoReadinessTask]) {
+          projectTask(database, {
+            ...task,
+            status: "blocked",
+            output: {
+              summary: "Superseded by current startup evidence"
+            },
+            updatedAt: "2026-05-14T03:19:30.000Z"
+          });
+        }
+        projectTask(database, {
+          id: "task_stale_startup_remediation_001",
+          goalId: created.goal.id,
+          domain: "ai-native-startup",
+          type: "startup_remediation",
+          status: "blocked",
+          priority: "medium",
+          attempt: 1,
+          maxAttempts: 1,
+          input: {
+            stage: "launch",
+            blocker: "measurement framework is missing"
+          },
+          output: {
+            summary: "Superseded by current launch gate evidence"
+          },
+          verifiers: [],
+          createdAt: "2026-05-14T03:18:00.000Z",
+          updatedAt: "2026-05-14T03:19:30.000Z"
+        });
         projectTask(database, wrappedWorkerTask);
         projectEvidence(database, {
           id: "ev_wrapped_worker_command_001",
@@ -295,6 +339,11 @@ describe("generateLaunchReadinessReport", () => {
         });
 
         for (const [type, summary, content] of [
+          [
+            "startup_agent_context",
+            "agent context recorded",
+            undefined
+          ],
           [
             "startup_measurement_framework",
             "measurement framework recorded",
@@ -446,6 +495,12 @@ describe("generateLaunchReadinessReport", () => {
         "https://posthog.example/project/1/insights/activation"
       );
       expect(result.markdown).not.toContain("run_mvp_verifiers is failed");
+      expect(result.markdown).not.toContain("generate_agent_context is blocked");
+      expect(result.markdown).not.toContain(
+        "define_measurement_framework is blocked"
+      );
+      expect(result.markdown).not.toContain("inspect_repo_readiness is blocked");
+      expect(result.markdown).not.toContain("startup_remediation is blocked");
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }
