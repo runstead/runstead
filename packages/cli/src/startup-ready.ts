@@ -464,6 +464,16 @@ export function formatStartupReadyPlan(plan: StartupReadyPlan): string {
 }
 
 export function formatStartupReadinessRun(run: StartupReadinessRun): string {
+  const decisions = startupReadinessDecisionMatrix(run);
+  const orderedDecisions = [
+    decisions.localDemo,
+    decisions.privateBeta,
+    decisions.publicLaunch
+  ];
+  const requestedDecision = orderedDecisions.find(
+    (decision) => decision.target === run.target
+  );
+
   return [
     `Runstead startup readiness run: ${run.id}`,
     `Worker: ${run.worker}`,
@@ -484,7 +494,24 @@ export function formatStartupReadinessRun(run: StartupReadinessRun): string {
     `Evidence types: ${run.evidenceTypes.length === 0 ? "none" : run.evidenceTypes.join(", ")}`,
     `Verdict blockers: ${run.verdictBlockers.length === 0 ? "none" : run.verdictBlockers.join("; ")}`,
     `Git head: ${run.gitHead ?? "unknown"}`,
-    `Dirty state: ${run.dirtyState}`
+    `Dirty state: ${run.dirtyState}`,
+    "",
+    "Launch decision:",
+    `- Requested target: ${run.target} ${requestedDecision?.canLaunch === true ? "ready" : "blocked"} (${run.verdict})`,
+    ...orderedDecisions.map(
+      (decision) =>
+        `- ${decision.title}: ${decision.canLaunch ? "yes" : "no"} (${decision.nextAction})`
+    ),
+    "",
+    "Evidence summary:",
+    `- Phase evidence refs: ${run.evidenceIds.length}`,
+    `- Evidence tiers: ${run.evidenceTiers.length === 0 ? "none" : run.evidenceTiers.join(", ")}`,
+    `- Evidence types: ${run.evidenceTypes.length === 0 ? "none" : run.evidenceTypes.join(", ")}`,
+    "",
+    "Reports:",
+    run.reportPaths.length === 0
+      ? "- none"
+      : run.reportPaths.map((path) => `- ${path}`).join("\n")
   ].join("\n");
 }
 

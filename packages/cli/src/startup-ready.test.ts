@@ -145,6 +145,11 @@ describe("startup readiness run model", () => {
       );
       expect(result.run.verdict).toBe("local_launch_ready");
       expect(result.run.verdictBlockers).toEqual([]);
+      expect(formatStartupReadinessRun(result.run)).toContain("Launch decision:");
+      expect(formatStartupReadinessRun(result.run)).toContain(
+        "- Requested target: local ready (local_launch_ready)"
+      );
+      expect(formatStartupReadinessRun(result.run)).toContain("Evidence summary:");
       expect(result.run.reportPaths).toEqual(
         expect.arrayContaining([
           join(workspace, ".runstead", "reports", "runstead-startup-ci-summary.md"),
