@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  compileRunsteadExtensionRuntime,
   defineReadinessFacet,
   defineRunsteadExtension,
   extensionReadinessTargets,
+  RunsteadExtensionCompileError,
   validateRunsteadExtension
 } from "./index.js";
 
@@ -75,6 +77,101 @@ describe("Runstead SDK extension contracts", () => {
       safeForWrappedWorkers: false
     });
     expect(extensionReadinessTargets(extension)).toEqual(["staging", "production"]);
+  });
+
+  it("compiles extension manifests into runtime-loadable contracts", () => {
+    const runtime = compileRunsteadExtensionRuntime({
+      schemaVersion: 1,
+      id: "growth-readiness",
+      version: "0.1.0",
+      name: "Growth readiness",
+      description: "Growth-stage readiness facets for product-led launches.",
+      domains: ["ai-native-startup"],
+      facets: [
+        {
+          name: "activation-metric",
+          title: "Activation metric",
+          description: "Activation metric evidence needed for launch.",
+          appliesToTargets: ["staging", "production"],
+          requiredEvidenceTiers: ["real_user_analytics"],
+          requiredEvidenceTypes: ["startup_metric_snapshot"],
+          blockers: ["activation metric evidence is missing"]
+        }
+      ],
+      collectors: [
+        {
+          id: "posthog-activation",
+          title: "PostHog activation",
+          description: "Collect activation metrics from PostHog.",
+          producesEvidenceTypes: ["startup_metric_snapshot"],
+          requiredSecrets: ["POSTHOG_API_KEY"],
+          safeForWrappedWorkers: true
+        }
+      ],
+      verifiers: [
+        {
+          id: "metric-contract",
+          command: "npm run test:metrics",
+          evidenceTier: "local_command",
+          producesEvidenceTypes: ["command_output"]
+        }
+      ],
+      gates: [
+        {
+          id: "production-growth",
+          stage: "launch",
+          target: "production",
+          requiredFacets: ["activation-metric"],
+          requiredEvidenceTiers: ["real_user_analytics"]
+        }
+      ]
+    });
+
+    expect(runtime).toMatchObject({
+      schemaVersion: 1,
+      extensionId: "growth-readiness",
+      readinessTargets: ["staging", "production"],
+      requiredSecrets: ["POSTHOG_API_KEY"],
+      requiredEvidenceTiers: ["real_user_analytics", "local_command"],
+      requiredEvidenceTypes: ["startup_metric_snapshot", "command_output"],
+      safeForWrappedWorkers: true
+    });
+    expect(runtime.gates[0]?.requiredFacets[0]?.name).toBe("activation-metric");
+    expect(runtime.evidenceRequirements).toContainEqual(
+      expect.objectContaining({
+        source: "facet",
+        sourceId: "activation-metric",
+        blockers: ["activation metric evidence is missing"]
+      })
+    );
+    expect(runtime.evidenceRequirements).toContainEqual(
+      expect.objectContaining({
+        source: "verifier",
+        sourceId: "metric-contract",
+        evidenceTypes: ["command_output"]
+      })
+    );
+  });
+
+  it("rejects runtime contracts that reference unknown facets", () => {
+    expect(() =>
+      compileRunsteadExtensionRuntime({
+        schemaVersion: 1,
+        id: "bad-runtime",
+        version: "0.1.0",
+        name: "Bad runtime",
+        description: "Bad gate reference.",
+        domains: ["ai-native-startup"],
+        gates: [
+          {
+            id: "launch",
+            stage: "launch",
+            target: "production",
+            requiredFacets: ["missing-facet"]
+          }
+        ]
+      })
+    ).toThrow(RunsteadExtensionCompileError);
   });
 
   it("reports validation issues without throwing", () => {

@@ -91,11 +91,29 @@ if (!result.valid) {
 authoring. `validateRunsteadExtension` returns structured issues and is intended
 for loaders, registries, and tests.
 
+## Runtime Compile
+
+Use `compileRunsteadExtensionRuntime` when a loader needs the manifest converted
+into a runtime contract:
+
+```ts
+import { compileRunsteadExtensionRuntime } from "@runstead/sdk";
+
+const runtime = compileRunsteadExtensionRuntime(candidate);
+
+console.log(runtime.requiredEvidenceTypes);
+console.log(runtime.verifiers.map((verifier) => verifier.command));
+```
+
+The compiled contract resolves gate facet references, flattens required secrets
+and evidence requirements, and rejects invalid references such as a gate that
+requires an unknown facet.
+
 ## Boundaries
 
-The SDK does not execute collectors, verifiers, or workers. It only describes
-contracts that Runstead can compile into runtime plans, policy, and evidence
-requirements.
+The SDK does not execute collectors, verifiers, or workers. It describes and
+compiles contracts that Runstead runtime adapters can turn into plans, policy,
+and evidence requirements.
 
 Keep extension code side-effect free at declaration time. Network calls,
 credential reads, file writes, and worker execution belong in governed Runstead

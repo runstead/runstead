@@ -122,6 +122,59 @@ export type RunsteadExtensionValidationResult =
       manifest?: undefined;
     };
 
+export interface RunsteadCompiledVerifier {
+  id: string;
+  command: string;
+  evidenceTier?: RunsteadEvidenceTier;
+  producesEvidenceTypes: string[];
+}
+
+export interface RunsteadCompiledGate {
+  id: string;
+  stage: string;
+  target: RunsteadReadinessTarget;
+  requiredFacets: RunsteadReadinessFacet[];
+  requiredEvidenceTiers: RunsteadEvidenceTier[];
+  requiredEvidenceTypes: string[];
+}
+
+export interface RunsteadCompiledEvidenceRequirement {
+  source: "facet" | "gate" | "verifier";
+  sourceId: string;
+  targets: RunsteadReadinessTarget[];
+  evidenceTiers: RunsteadEvidenceTier[];
+  evidenceTypes: string[];
+  blockers: string[];
+}
+
+export interface RunsteadExtensionRuntimeContract {
+  schemaVersion: 1;
+  extensionId: string;
+  extensionVersion: string;
+  name: string;
+  domains: string[];
+  readinessTargets: RunsteadReadinessTarget[];
+  facets: RunsteadReadinessFacet[];
+  collectors: RunsteadEvidenceCollector[];
+  verifiers: RunsteadCompiledVerifier[];
+  gates: RunsteadCompiledGate[];
+  requiredSecrets: string[];
+  requiredEvidenceTiers: RunsteadEvidenceTier[];
+  requiredEvidenceTypes: string[];
+  evidenceRequirements: RunsteadCompiledEvidenceRequirement[];
+  safeForWrappedWorkers: boolean;
+}
+
+export class RunsteadExtensionCompileError extends Error {
+  readonly issues: string[];
+
+  constructor(issues: string[]) {
+    super(`Runstead extension compile failed: ${issues.join("; ")}`);
+    this.name = "RunsteadExtensionCompileError";
+    this.issues = issues;
+  }
+}
+
 export function defineReadinessFacet(
   facet: z.input<typeof RunsteadReadinessFacetSchema>
 ): RunsteadReadinessFacet {
@@ -168,6 +221,106 @@ export function extensionReadinessTargets(
   ];
 }
 
+export function compileRunsteadExtensionRuntime(
+  manifestInput: z.input<typeof RunsteadExtensionManifestSchema>
+): RunsteadExtensionRuntimeContract {
+  const manifest = defineRunsteadExtension(manifestInput);
+  const compileIssues = runsteadExtensionCompileIssues(manifest);
+
+  if (compileIssues.length > 0) {
+    throw new RunsteadExtensionCompileError(compileIssues);
+  }
+
+  const facetsByName = new Map(
+    manifest.facets.map((facet) => [facet.name, facet] as const)
+  );
+  const verifiers = manifest.verifiers.map((verifier) => ({
+    id: verifier.id,
+    command: verifier.command,
+    ...(verifier.evidenceTier === undefined
+      ? {}
+      : { evidenceTier: verifier.evidenceTier }),
+    producesEvidenceTypes: [...verifier.producesEvidenceTypes]
+  }));
+  const gates = manifest.gates.map((gate) => ({
+    id: gate.id,
+    stage: gate.stage,
+    target: gate.target,
+    requiredFacets: gate.requiredFacets.map((facetName) => {
+      const facet = facetsByName.get(facetName);
+
+      if (facet === undefined) {
+        throw new RunsteadExtensionCompileError([
+          `Gate ${gate.id} references unknown facet: ${facetName}`
+        ]);
+      }
+
+      return facet;
+    }),
+    requiredEvidenceTiers: [...gate.requiredEvidenceTiers],
+    requiredEvidenceTypes: [...gate.requiredEvidenceTypes]
+  }));
+  const evidenceRequirements = [
+    ...manifest.facets.map(
+      (facet): RunsteadCompiledEvidenceRequirement => ({
+        source: "facet",
+        sourceId: facet.name,
+        targets: [...facet.appliesToTargets],
+        evidenceTiers: [...facet.requiredEvidenceTiers],
+        evidenceTypes: [...facet.requiredEvidenceTypes],
+        blockers: [...facet.blockers]
+      })
+    ),
+    ...gates.map(
+      (gate): RunsteadCompiledEvidenceRequirement => ({
+        source: "gate",
+        sourceId: gate.id,
+        targets: [gate.target],
+        evidenceTiers: [...gate.requiredEvidenceTiers],
+        evidenceTypes: [...gate.requiredEvidenceTypes],
+        blockers: []
+      })
+    ),
+    ...verifiers.map(
+      (verifier): RunsteadCompiledEvidenceRequirement => ({
+        source: "verifier",
+        sourceId: verifier.id,
+        targets: ["local", "staging", "production"],
+        evidenceTiers:
+          verifier.evidenceTier === undefined ? [] : [verifier.evidenceTier],
+        evidenceTypes: [...verifier.producesEvidenceTypes],
+        blockers: []
+      })
+    )
+  ];
+
+  return {
+    schemaVersion: 1,
+    extensionId: manifest.id,
+    extensionVersion: manifest.version,
+    name: manifest.name,
+    domains: [...manifest.domains],
+    readinessTargets: extensionReadinessTargets(manifest),
+    facets: manifest.facets.map(copyReadinessFacet),
+    collectors: manifest.collectors.map(copyEvidenceCollector),
+    verifiers,
+    gates,
+    requiredSecrets: uniqueStrings(
+      manifest.collectors.flatMap((collector) => collector.requiredSecrets)
+    ),
+    requiredEvidenceTiers: uniqueStrings(
+      evidenceRequirements.flatMap((requirement) => requirement.evidenceTiers)
+    ) as RunsteadEvidenceTier[],
+    requiredEvidenceTypes: uniqueStrings(
+      evidenceRequirements.flatMap((requirement) => requirement.evidenceTypes)
+    ),
+    evidenceRequirements,
+    safeForWrappedWorkers: manifest.collectors.every(
+      (collector) => collector.safeForWrappedWorkers
+    )
+  };
+}
+
 function addDuplicateIdIssues(
   context: z.RefinementCtx,
   collection: string,
@@ -187,4 +340,39 @@ function addDuplicateIdIssues(
 
     seen.add(id);
   }
+}
+
+function runsteadExtensionCompileIssues(manifest: RunsteadExtensionManifest): string[] {
+  const facetNames = new Set(manifest.facets.map((facet) => facet.name));
+
+  return manifest.gates.flatMap((gate) =>
+    gate.requiredFacets
+      .filter((facetName) => !facetNames.has(facetName))
+      .map((facetName) => `Gate ${gate.id} references unknown facet: ${facetName}`)
+  );
+}
+
+function copyReadinessFacet(facet: RunsteadReadinessFacet): RunsteadReadinessFacet {
+  return {
+    ...facet,
+    fields: facet.fields.map((field) => ({ ...field })),
+    appliesToTargets: [...facet.appliesToTargets],
+    requiredEvidenceTiers: [...facet.requiredEvidenceTiers],
+    requiredEvidenceTypes: [...facet.requiredEvidenceTypes],
+    blockers: [...facet.blockers]
+  };
+}
+
+function copyEvidenceCollector(
+  collector: RunsteadEvidenceCollector
+): RunsteadEvidenceCollector {
+  return {
+    ...collector,
+    producesEvidenceTypes: [...collector.producesEvidenceTypes],
+    requiredSecrets: [...collector.requiredSecrets]
+  };
+}
+
+function uniqueStrings(values: string[]): string[] {
+  return [...new Set(values)];
 }
