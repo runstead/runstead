@@ -20,6 +20,7 @@ import {
   readStartupReadinessRun,
   runStartupReady,
   startupBuildMvpPhaseExecutionStatus,
+  type StartupReadyProgressEvent,
   type StartupReadinessRunPhase
 } from "./startup-ready.js";
 
@@ -96,6 +97,7 @@ describe("startup readiness run model", () => {
         )}\n`,
         "utf8"
       );
+      const progress: StartupReadyProgressEvent[] = [];
 
       const result = await runStartupReady({
         cwd: workspace,
@@ -103,6 +105,9 @@ describe("startup readiness run model", () => {
         target: "local",
         worker: "codex_cli",
         ci: true,
+        onProgress: (event) => {
+          progress.push(event);
+        },
         workerRunner: () =>
           Promise.resolve({
             stdout: JSON.stringify({
@@ -127,6 +132,24 @@ describe("startup readiness run model", () => {
       );
 
       expect(result.run.status).toBe("completed");
+      expect(progress.map((event) => [event.phaseId ?? "run", event.status])).toEqual(
+        expect.arrayContaining([
+          ["run", "started"],
+          ["onboard", "started"],
+          ["onboard", "completed"],
+          ["context", "completed"],
+          ["measurement", "completed"],
+          ["build_mvp", "started"],
+          ["build_mvp", "completed"],
+          ["verifiers", "completed"],
+          ["run", "completed"]
+        ])
+      );
+      expect(
+        progress.find(
+          (event) => event.phaseId === "verifiers" && event.status === "completed"
+        )?.evidenceIds
+      ).toHaveLength(4);
       expect(result.run.phases.map((phase) => [phase.id, phase.status])).toEqual([
         ["onboard", "passed"],
         ["context", "passed"],

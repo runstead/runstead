@@ -104,7 +104,27 @@ export interface StartupReadyOptions {
   interactiveAnswers?: Partial<StartupReadyInteractiveAnswers>;
   maxAttempts?: number;
   workerRunner?: StartupBuildMvpOptions["workerRunner"];
+  onProgress?: (event: StartupReadyProgressEvent) => void;
   now?: Date;
+}
+
+export type StartupReadyProgressEventStatus =
+  | "started"
+  | "completed"
+  | "blocked"
+  | "failed"
+  | "skipped";
+
+export interface StartupReadyProgressEvent {
+  runId: string;
+  phaseId?: string;
+  phaseTitle?: string;
+  status: StartupReadyProgressEventStatus;
+  message: string;
+  timestamp: string;
+  evidenceIds?: string[];
+  artifacts?: string[];
+  blockers?: string[];
 }
 
 export interface StartupReadyInteractiveAnswers {
@@ -336,6 +356,10 @@ export async function runStartupReady(
   };
 
   await writeStartupReadinessRun(run);
+  emitStartupReadyProgress(run, options, {
+    status: "started",
+    message: `startup ready run started for ${run.stage}/${run.target}`
+  });
 
   try {
     await executeStartupReadyRun(run, options);
@@ -347,6 +371,11 @@ export async function runStartupReady(
     };
 
     await writeStartupReadinessRun(failedRun);
+    emitStartupReadyProgress(failedRun, options, {
+      status: "failed",
+      message: `startup ready run failed: ${errorMessage(error)}`,
+      blockers: [errorMessage(error)]
+    });
     throw error;
   }
 
@@ -375,6 +404,13 @@ export async function runStartupReady(
   }
 
   const finalPersisted = await writeStartupReadinessRun(reportedRun);
+  emitStartupReadyProgress(reportedRun, options, {
+    status: isStartupReadyVerdict(reportedRun.verdict) ? "completed" : "blocked",
+    message: `startup ready run finished with ${reportedRun.verdict}`,
+    evidenceIds: reportedRun.evidenceIds,
+    artifacts: reportedRun.reportPaths,
+    blockers: reportedRun.verdictBlockers
+  });
 
   return {
     ...finalPersisted,
@@ -535,6 +571,28 @@ export function formatStartupReadinessRun(run: StartupReadinessRun): string {
   ].join("\n");
 }
 
+export function formatStartupReadyProgress(event: StartupReadyProgressEvent): string {
+  const scope =
+    event.phaseTitle === undefined
+      ? "run"
+      : `${event.phaseTitle} (${event.phaseId ?? "phase"})`;
+  const details = [
+    `[startup ready] ${scope}: ${event.status}`,
+    event.message,
+    ...(event.blockers === undefined || event.blockers.length === 0
+      ? []
+      : [`blockers=${event.blockers.length}`]),
+    ...(event.evidenceIds === undefined || event.evidenceIds.length === 0
+      ? []
+      : [`evidence=${event.evidenceIds.length}`]),
+    ...(event.artifacts === undefined || event.artifacts.length === 0
+      ? []
+      : [`artifacts=${event.artifacts.length}`])
+  ];
+
+  return details.join(" | ");
+}
+
 async function executeStartupReadyRun(
   run: StartupReadinessRun,
   options: StartupReadyOptions
@@ -548,6 +606,11 @@ async function executeStartupReadyRun(
   ) {
     updatePhase(run, "onboard", { status: "running" });
     await writeStartupReadinessRun(run);
+    emitStartupReadyProgress(run, options, {
+      phaseId: "onboard",
+      status: "started",
+      message: "initializing Runstead startup context and measurement"
+    });
     const onboard = await startupOnboard({
       cwd: run.cwd,
       writeCi: options.writeCi === true,
@@ -587,6 +650,9 @@ async function executeStartupReadyRun(
     });
     collectRunEvidence(run);
     await writeStartupReadinessRun(run);
+    emitStartupReadyPhaseResult(run, options, "onboard");
+    emitStartupReadyPhaseResult(run, options, "context");
+    emitStartupReadyPhaseResult(run, options, "measurement");
   }
 
   if (run.target === "local" && hasPhase(run, "build_mvp")) {
@@ -596,6 +662,11 @@ async function executeStartupReadyRun(
   if (shouldRunPhase(run, "build_mvp") || shouldRunPhase(run, "verifiers")) {
     updatePhase(run, "build_mvp", { status: "running" });
     await writeStartupReadinessRun(run);
+    emitStartupReadyProgress(run, options, {
+      phaseId: "build_mvp",
+      status: "started",
+      message: "running bounded MVP build or repair loop"
+    });
     const build = await startupBuildMvp({
       cwd: run.cwd,
       worker: run.worker,
@@ -624,11 +695,18 @@ async function executeStartupReadyRun(
     updatePhase(run, "verifiers", verifierPhaseUpdate(build.verifierRun));
     collectRunEvidence(run);
     await writeStartupReadinessRun(run);
+    emitStartupReadyPhaseResult(run, options, "build_mvp");
+    emitStartupReadyPhaseResult(run, options, "verifiers");
   }
 
   if (shouldRunPhase(run, "ui_smoke")) {
     updatePhase(run, "ui_smoke", { status: "running" });
     await writeStartupReadinessRun(run);
+    emitStartupReadyProgress(run, options, {
+      phaseId: "ui_smoke",
+      status: "started",
+      message: "running local UI smoke checks"
+    });
     const uiSmoke = await executeStartupReadyUiSmoke({
       cwd: run.cwd,
       ...(options.now === undefined ? {} : { now: options.now })
@@ -646,6 +724,7 @@ async function executeStartupReadyRun(
     });
     collectRunEvidence(run);
     await writeStartupReadinessRun(run);
+    emitStartupReadyPhaseResult(run, options, "ui_smoke");
   }
 
   if (run.target === "local" && hasPhase(run, "launch_audit")) {
@@ -656,6 +735,16 @@ async function executeStartupReadyRun(
     updatePhase(run, "launch_audit", { status: "running" });
     updatePhase(run, "launch_report", { status: "running" });
     await writeStartupReadinessRun(run);
+    emitStartupReadyProgress(run, options, {
+      phaseId: "launch_audit",
+      status: "started",
+      message: "running launch audit and security checks"
+    });
+    emitStartupReadyProgress(run, options, {
+      phaseId: "launch_report",
+      status: "started",
+      message: "building launch readiness report"
+    });
     const launch = await startupLaunchCheck({
       cwd: run.cwd,
       target: run.target,
@@ -681,6 +770,8 @@ async function executeStartupReadyRun(
     run.reportPaths = unique([...run.reportPaths, launch.reportPath]);
     collectRunEvidence(run);
     await writeStartupReadinessRun(run);
+    emitStartupReadyPhaseResult(run, options, "launch_audit");
+    emitStartupReadyPhaseResult(run, options, "launch_report");
   }
 
   if (run.stage === "scale") {
@@ -693,6 +784,11 @@ async function executeStartupReadyRun(
   if (shouldRunPhase(run, "complete_check")) {
     updatePhase(run, "complete_check", { status: "running" });
     await writeStartupReadinessRun(run);
+    emitStartupReadyProgress(run, options, {
+      phaseId: "complete_check",
+      status: "started",
+      message: "running complete product readiness check"
+    });
     const complete = await generateStartupCompleteProductCheck({
       cwd: run.cwd,
       target: run.target,
@@ -716,7 +812,74 @@ async function executeStartupReadyRun(
     ]);
     collectRunEvidence(run);
     await writeStartupReadinessRun(run);
+    emitStartupReadyPhaseResult(run, options, "complete_check");
   }
+}
+
+function emitStartupReadyPhaseResult(
+  run: StartupReadinessRun,
+  options: StartupReadyOptions,
+  phaseId: string
+): void {
+  const phase = run.phases.find((item) => item.id === phaseId);
+
+  if (phase === undefined) {
+    return;
+  }
+
+  emitStartupReadyProgress(run, options, {
+    phaseId,
+    status: startupReadyProgressStatusForPhase(phase.status),
+    message: `${phase.title} ${phase.status}`,
+    evidenceIds: phase.evidenceIds,
+    artifacts: phase.artifacts,
+    blockers: phase.blockers
+  });
+}
+
+function emitStartupReadyProgress(
+  run: StartupReadinessRun,
+  options: StartupReadyOptions,
+  event: Omit<StartupReadyProgressEvent, "runId" | "timestamp" | "phaseTitle">
+): void {
+  const phase =
+    event.phaseId === undefined
+      ? undefined
+      : run.phases.find((item) => item.id === event.phaseId);
+
+  options.onProgress?.({
+    runId: run.id,
+    ...(event.phaseId === undefined ? {} : { phaseId: event.phaseId }),
+    ...(phase === undefined ? {} : { phaseTitle: phase.title }),
+    status: event.status,
+    message: event.message,
+    timestamp: (options.now ?? new Date()).toISOString(),
+    ...(event.evidenceIds === undefined ? {} : { evidenceIds: event.evidenceIds }),
+    ...(event.artifacts === undefined ? {} : { artifacts: event.artifacts }),
+    ...(event.blockers === undefined ? {} : { blockers: event.blockers })
+  });
+}
+
+function startupReadyProgressStatusForPhase(
+  status: StartupReadinessPhaseStatus
+): StartupReadyProgressEventStatus {
+  if (status === "passed") {
+    return "completed";
+  }
+
+  if (status === "blocked") {
+    return "blocked";
+  }
+
+  if (status === "failed") {
+    return "failed";
+  }
+
+  if (status === "skipped") {
+    return "skipped";
+  }
+
+  return "started";
 }
 
 async function collectStartupReadyInteractiveAnswers(

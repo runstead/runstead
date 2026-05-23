@@ -2,6 +2,7 @@ import type { Command } from "commander";
 
 import { checkPermission } from "./rbac.js";
 import type { StartupEvidenceSourceInput } from "./startup-evidence.js";
+import type { StartupReadyProgressEvent } from "./startup-ready.js";
 import {
   formatWorkerProcessProgress,
   type WorkerProcessProgress
@@ -192,6 +193,7 @@ export function registerStartupCommands(program: Command): void {
         maxAttempts: string;
       }) => {
         const {
+          formatStartupReadyProgress,
           formatStartupReadyPlan,
           formatStartupReadinessRun,
           parseStartupReadyStage,
@@ -214,7 +216,10 @@ export function registerStartupCommands(program: Command): void {
           ci: options.ci === true,
           refreshContext: options.refreshContext === true,
           interactive: options.interactive === true,
-          maxAttempts: parsePositiveInteger(options.maxAttempts, "--max-attempts")
+          maxAttempts: parsePositiveInteger(options.maxAttempts, "--max-attempts"),
+          onProgress: (event: StartupReadyProgressEvent) => {
+            console.error(formatStartupReadyProgress(event));
+          }
         };
 
         if (options.plan === true) {
