@@ -181,6 +181,10 @@ describe("startup readiness run model", () => {
       expect(formatStartupReadinessRun(result.run)).toContain(
         "local_launch_ready covers local demo and local operator validation only"
       );
+      expect(formatStartupReadinessRun(result.run)).toContain(
+        "Guided readiness flow:"
+      );
+      expect(formatStartupReadinessRun(result.run)).toContain("Next target after local");
       expect(formatStartupReadinessRun(result.run)).toContain("Evidence summary:");
       expect(result.run.reportPaths).toEqual(
         expect.arrayContaining([
@@ -196,6 +200,9 @@ describe("startup readiness run model", () => {
         "## Target Boundary"
       );
       await expect(readFile(decisionReport ?? "", "utf8")).resolves.toContain(
+        "## Guided Flow"
+      );
+      await expect(readFile(decisionReport ?? "", "utf8")).resolves.toContain(
         "it is not public launch clearance"
       );
       await expect(readFile(decisionReport ?? "", "utf8")).resolves.toContain(
@@ -206,6 +213,9 @@ describe("startup readiness run model", () => {
       );
       await expect(readFile(decisionJson ?? "", "utf8")).resolves.toContain(
         '"targetBoundary"'
+      );
+      await expect(readFile(decisionJson ?? "", "utf8")).resolves.toContain(
+        '"guidedFlow"'
       );
       expect(persisted).toEqual(result.run);
     } finally {

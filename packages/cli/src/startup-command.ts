@@ -176,6 +176,10 @@ export function registerStartupCommands(program: Command): void {
       "--interactive",
       "Prompt for founder context and measurement details before generating evidence"
     )
+    .option(
+      "--guided",
+      "Print and persist guided next steps for missing evidence and launch blockers"
+    )
     .option("--max-attempts <count>", "Maximum bounded MVP repair attempts", "2")
     .action(
       async (options: {
@@ -190,6 +194,7 @@ export function registerStartupCommands(program: Command): void {
         ci?: boolean;
         refreshContext?: boolean;
         interactive?: boolean;
+        guided?: boolean;
         maxAttempts: string;
       }) => {
         const {
@@ -216,6 +221,7 @@ export function registerStartupCommands(program: Command): void {
           ci: options.ci === true,
           refreshContext: options.refreshContext === true,
           interactive: options.interactive === true,
+          guided: options.guided === true,
           maxAttempts: parsePositiveInteger(options.maxAttempts, "--max-attempts"),
           onProgress: (event: StartupReadyProgressEvent) => {
             console.error(formatStartupReadyProgress(event));

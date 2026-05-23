@@ -101,6 +101,7 @@ export interface StartupReadyOptions {
   ci?: boolean;
   refreshContext?: boolean;
   interactive?: boolean;
+  guided?: boolean;
   interactiveAnswers?: Partial<StartupReadyInteractiveAnswers>;
   maxAttempts?: number;
   workerRunner?: StartupBuildMvpOptions["workerRunner"];
@@ -232,6 +233,19 @@ export interface StartupReadinessRunPhase {
   artifacts: string[];
   blockers: string[];
   nextAction?: string;
+}
+
+export type StartupReadyGuidedResolution = "runstead" | "agent" | "manual";
+
+export interface StartupReadyGuidedStep {
+  id: string;
+  title: string;
+  status: "ready" | "blocked" | "next";
+  resolution: StartupReadyGuidedResolution;
+  why: string;
+  nextAction: string;
+  command?: string;
+  blockers: string[];
 }
 
 export interface PersistedStartupReadinessRun {
@@ -529,6 +543,7 @@ export function formatStartupReadinessRun(run: StartupReadinessRun): string {
   const requestedDecision = orderedDecisions.find(
     (decision) => decision.target === run.target
   );
+  const guidedFlow = buildStartupReadyGuidedFlow(run);
 
   return [
     `Runstead startup readiness run: ${run.id}`,
@@ -563,6 +578,9 @@ export function formatStartupReadinessRun(run: StartupReadinessRun): string {
     ...formatStartupReadinessTargetBoundaryLines(
       startupReadinessTargetBoundary(run.target)
     ),
+    "",
+    "Guided readiness flow:",
+    ...formatStartupReadyGuidedFlowLines(guidedFlow),
     "",
     "Evidence summary:",
     `- Phase evidence refs: ${run.evidenceIds.length}`,
@@ -2215,6 +2233,7 @@ async function writeStartupReadinessDecisionReport(
       targetReadiness: verdict.targetReadiness
     },
     targetBoundary: startupReadinessTargetBoundary(run.target),
+    guidedFlow: buildStartupReadyGuidedFlow(run),
     decisions,
     evidence: {
       ids: run.evidenceIds,
@@ -2488,6 +2507,7 @@ function formatStartupReadinessDecisionMarkdown(input: {
     publicLaunch: StartupReadinessDecision;
   };
   targetBoundary: StartupReadinessTargetBoundary;
+  guidedFlow: StartupReadyGuidedStep[];
   evidence: {
     ids: string[];
     tiers: StartupReadinessEvidenceTier[];
@@ -2537,6 +2557,15 @@ function formatStartupReadinessDecisionMarkdown(input: {
     "",
     ...formatStartupReadinessTargetBoundaryLines(input.targetBoundary),
     "",
+    "## Guided Flow",
+    "",
+    "| Step | Status | Owner | Why | Next action |",
+    "| --- | --- | --- | --- | --- |",
+    ...input.guidedFlow.map(
+      (step) =>
+        `| ${step.title} | ${step.status} | ${step.resolution} | ${step.why} | ${step.nextAction} |`
+    ),
+    "",
     "## Why not?",
     "",
     blockers.length === 0
@@ -2569,6 +2598,227 @@ function formatStartupReadinessDecisionMarkdown(input: {
       : input.reports.map((path) => `- ${path}`).join("\n"),
     ""
   ].join("\n");
+}
+
+export function buildStartupReadyGuidedFlow(
+  run: StartupReadinessRun
+): StartupReadyGuidedStep[] {
+  const blockedPhases = run.phases.filter(
+    (phase) => phase.status === "blocked" || phase.status === "failed"
+  );
+  const phaseSteps = blockedPhases.map((phase, index) =>
+    startupReadyGuidedStepForPhase(run, phase, index)
+  );
+
+  if (phaseSteps.length > 0) {
+    return phaseSteps;
+  }
+
+  const requestedDecision = startupReadinessDecision({
+    surface:
+      run.target === "local"
+        ? "local_demo"
+        : run.target === "staging"
+          ? "private_beta"
+          : "public_launch",
+    title:
+      run.target === "local"
+        ? "Local demo"
+        : run.target === "staging"
+          ? "Private beta / staging"
+          : "Public launch",
+    target: run.target,
+    run
+  });
+
+  if (requestedDecision.blockers.length > 0) {
+    return requestedDecision.blockers.map((blocker, index) =>
+      startupReadyGuidedStepForBlocker({
+        id: `target_${index + 1}`,
+        title: `Target evidence: ${run.target}`,
+        blocker,
+        fallbackNextAction: requestedDecision.nextAction,
+        run
+      })
+    );
+  }
+
+  const boundary = startupReadinessTargetBoundary(run.target);
+
+  return [
+    {
+      id: "next_target",
+      title: `Next target after ${run.target}`,
+      status: "next",
+      resolution: "manual",
+      why: boundary.boundary,
+      nextAction: boundary.requiredNextEvidence.join("; "),
+      blockers: []
+    }
+  ];
+}
+
+function startupReadyGuidedStepForPhase(
+  run: StartupReadinessRun,
+  phase: StartupReadinessRunPhase,
+  index: number
+): StartupReadyGuidedStep {
+  const blocker =
+    phase.blockers[0] ?? `${phase.title} has not completed successfully`;
+
+  return startupReadyGuidedStepForBlocker({
+    id: `${phase.id}_${index + 1}`,
+    title: phase.title,
+    blocker,
+    fallbackNextAction: phase.nextAction ?? nextStartupReadinessAction([blocker]),
+    run,
+    blockers: phase.blockers.length === 0 ? [blocker] : phase.blockers
+  });
+}
+
+function startupReadyGuidedStepForBlocker(input: {
+  id: string;
+  title: string;
+  blocker: string;
+  fallbackNextAction: string;
+  run: StartupReadinessRun;
+  blockers?: string[];
+}): StartupReadyGuidedStep {
+  const resolution = startupReadyGuidedResolution(input.blocker);
+  const command = startupReadyGuidedCommand({
+    blocker: input.blocker,
+    resolution,
+    run: input.run
+  });
+
+  return {
+    id: input.id,
+    title: input.title,
+    status: "blocked",
+    resolution,
+    why: startupReadyGuidedWhy(input.blocker),
+    nextAction: startupReadyGuidedNextAction({
+      blocker: input.blocker,
+      fallbackNextAction: input.fallbackNextAction,
+      resolution,
+      run: input.run
+    }),
+    ...(command === undefined ? {} : { command }),
+    blockers: input.blockers ?? [input.blocker]
+  };
+}
+
+function startupReadyGuidedResolution(
+  blocker: string
+): StartupReadyGuidedResolution {
+  const lower = blocker.toLowerCase();
+
+  if (
+    lower.includes("deployment") ||
+    lower.includes("analytics") ||
+    lower.includes("support") ||
+    lower.includes("feedback") ||
+    lower.includes("rollback") ||
+    lower.includes("observability") ||
+    lower.includes("migration") ||
+    lower.includes("release-plan")
+  ) {
+    return "manual";
+  }
+
+  if (
+    lower.includes("ui smoke") ||
+    lower.includes("verifier") ||
+    lower.includes("repo readiness") ||
+    lower.includes("security baseline") ||
+    lower.includes("ci provider") ||
+    lower.includes("ci-verified")
+  ) {
+    return "agent";
+  }
+
+  return "runstead";
+}
+
+function startupReadyGuidedWhy(blocker: string): string {
+  const lower = blocker.toLowerCase();
+
+  if (lower.includes("ui smoke")) {
+    return "Runstead cannot prove the primary product flow works in a browser.";
+  }
+
+  if (lower.includes("verifier") || lower.includes("local command")) {
+    return "The launch gate needs current command evidence from tests, lint, typecheck, or build.";
+  }
+
+  if (lower.includes("ci")) {
+    return "The requested target needs remote regression evidence, not only local execution.";
+  }
+
+  if (lower.includes("deployment")) {
+    return "The requested target needs evidence from the actual deployment surface.";
+  }
+
+  if (lower.includes("rollback")) {
+    return "Launch readiness needs proof that the release can be reversed safely.";
+  }
+
+  if (lower.includes("observability")) {
+    return "Launch readiness needs a monitoring and alerting baseline for the release target.";
+  }
+
+  if (lower.includes("analytics")) {
+    return "Production readiness needs measured real-user behavior, not synthetic smoke alone.";
+  }
+
+  if (lower.includes("support") || lower.includes("feedback")) {
+    return "Production readiness needs a triage path for user feedback or incidents.";
+  }
+
+  return `Runstead is missing evidence for: ${blocker}.`;
+}
+
+function startupReadyGuidedNextAction(input: {
+  blocker: string;
+  fallbackNextAction: string;
+  resolution: StartupReadyGuidedResolution;
+  run: StartupReadinessRun;
+}): string {
+  if (input.resolution === "agent") {
+    return `let ${input.run.worker} repair the repo, then resume this readiness run`;
+  }
+
+  if (input.resolution === "manual") {
+    return input.fallbackNextAction;
+  }
+
+  return input.fallbackNextAction;
+}
+
+function startupReadyGuidedCommand(input: {
+  blocker: string;
+  resolution: StartupReadyGuidedResolution;
+  run: StartupReadinessRun;
+}): string | undefined {
+  if (input.resolution === "agent") {
+    return `runstead startup ready --cwd ${input.run.cwd} --resume ${input.run.id}`;
+  }
+
+  if (input.blocker.toLowerCase().includes("ci")) {
+    return `runstead startup ready --cwd ${input.run.cwd} --stage ${input.run.stage} --target ${input.run.target} --ci`;
+  }
+
+  return undefined;
+}
+
+function formatStartupReadyGuidedFlowLines(
+  steps: StartupReadyGuidedStep[]
+): string[] {
+  return steps.map((step) => {
+    const command = step.command === undefined ? "" : ` command: ${step.command};`;
+
+    return `- [${step.status}] ${step.title}: ${step.resolution};${command} why: ${step.why}; next: ${step.nextAction}`;
+  });
 }
 
 function nextStartupReadinessAction(blockers: string[]): string {
