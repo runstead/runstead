@@ -14,11 +14,11 @@ describe("evidence quality contracts", () => {
         uri: "https://github.com/acme/app/actions/runs/1",
         capturedAt: "2026-05-23T00:00:00.000Z",
         freshnessDays: 7,
-        trust: "high"
+        trust: "authoritative"
       })
     ).toMatchObject({
       kind: "github_actions",
-      trust: "high"
+      trust: "authoritative"
     });
   });
 

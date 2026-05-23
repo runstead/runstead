@@ -10,7 +10,12 @@ export const EvidenceQualityTierSchema = z.enum([
 
 export type EvidenceQualityTier = z.infer<typeof EvidenceQualityTierSchema>;
 
-export const EvidenceSourceTrustSchema = z.enum(["low", "medium", "high"]);
+export const EvidenceSourceTrustSchema = z.enum([
+  "low",
+  "medium",
+  "high",
+  "authoritative"
+]);
 
 export type EvidenceSourceTrust = z.infer<typeof EvidenceSourceTrustSchema>;
 

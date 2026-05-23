@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 
 import { startupOnboard } from "./startup-founder-flow.js";
 import {
+  listStartupSourceConnectorDefinitions,
   recordStartupSourceEvidence,
   STARTUP_SOURCE_CONNECTORS
 } from "./startup-source-connectors.js";
@@ -66,11 +67,22 @@ describe("startup source connectors", () => {
           runId: number;
           conclusion: string;
         };
+        qualityTier: string;
+        payloadWarnings: string[];
       };
 
       expect(STARTUP_SOURCE_CONNECTORS).toContain("github_actions");
       expect(result.evidence.type).toBe("startup_repo_readiness");
       expect(result.connector).toBe("github_actions");
+      expect(result.definition).toMatchObject({
+        displayName: "GitHub Actions",
+        qualityTier: "external_observed",
+        defaultTrustLevel: "authoritative"
+      });
+      expect(result.qualityTier).toBe("external_observed");
+      expect(result.payloadWarnings).toContain(
+        "payload missing recommended field: workflow"
+      );
       expect(artifact.evidenceType).toBe("repo_readiness");
       expect(artifact.sources[0]).toMatchObject({
         kind: "github_actions",
@@ -81,12 +93,17 @@ describe("startup source connectors", () => {
         trustLevel: "authoritative",
         provenance: {
           connector: "github_actions",
-          captureMode: "connector_ingest"
+          captureMode: "connector_ingest",
+          qualityTier: "external_observed",
+          readinessUse: "CI and remote verifier evidence"
         }
       });
       expect(content).toMatchObject({
         connector: "github_actions",
         status: "passed",
+        qualityTier: "external_observed",
+        trustLevel: "authoritative",
+        readinessUse: "CI and remote verifier evidence",
         payload: {
           runId: 123,
           conclusion: "success"
@@ -95,6 +112,30 @@ describe("startup source connectors", () => {
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }
+  });
+
+  it("lists connector definitions with defensive copies", () => {
+    const definitions = listStartupSourceConnectorDefinitions();
+    const github = definitions.find(
+      (definition) => definition.connector === "github_actions"
+    );
+
+    expect(definitions.map((definition) => definition.connector)).toEqual(
+      STARTUP_SOURCE_CONNECTORS
+    );
+    expect(github).toMatchObject({
+      evidenceType: "repo_readiness",
+      sourceKind: "github_actions",
+      qualityTier: "external_observed"
+    });
+
+    github?.recommendedPayloadFields.push("mutated");
+
+    expect(
+      listStartupSourceConnectorDefinitions().find(
+        (definition) => definition.connector === "github_actions"
+      )?.recommendedPayloadFields
+    ).not.toContain("mutated");
   });
 
   it("rejects connector payloads that are not JSON objects", async () => {
@@ -107,5 +148,17 @@ describe("startup source connectors", () => {
         payload: "[1,2,3]"
       })
     ).rejects.toThrow("--payload must be a JSON object");
+  });
+
+  it("rejects unknown trust levels before writing evidence", async () => {
+    await expect(
+      recordStartupSourceEvidence({
+        cwd: process.cwd(),
+        connector: "analytics",
+        uri: "posthog:activation",
+        summary: "Bad trust",
+        trustLevel: "root"
+      })
+    ).rejects.toThrow("Unsupported source trust level");
   });
 });

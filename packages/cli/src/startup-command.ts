@@ -530,6 +530,28 @@ export function registerStartupCommands(program: Command): void {
     .description("Ingest startup evidence from external source connectors.");
 
   startupSource
+    .command("list")
+    .description("List startup source connector contracts.")
+    .action(async () => {
+      const { listStartupSourceConnectorDefinitions } =
+        await import("./startup-source-connectors.js");
+
+      for (const definition of listStartupSourceConnectorDefinitions()) {
+        console.log(
+          [
+            definition.connector,
+            `evidence=${definition.evidenceType}`,
+            `source=${definition.sourceKind}`,
+            `quality=${definition.qualityTier}`,
+            `trust=${definition.defaultTrustLevel}`,
+            `freshness=${definition.defaultFreshnessDays}d`,
+            `payload=${definition.recommendedPayloadFields.join(",") || "none"}`
+          ].join(" ")
+        );
+      }
+    });
+
+  startupSource
     .command("record")
     .description(
       "Record GitHub, deployment, analytics, support, billing, or security source evidence."

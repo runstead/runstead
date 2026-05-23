@@ -32,6 +32,7 @@
   "dependencies": {
     "@runstead/core": "workspace:*",
     "@runstead/domain-packs": "workspace:*",
+    "@runstead/evidence": "workspace:*",
     "@runstead/governance": "workspace:*",
     "@runstead/runtime": "workspace:*",
     "@runstead/skills": "workspace:*",

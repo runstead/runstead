@@ -93,3 +93,10 @@ make a local decision. They are not enough for public launch. A production
 target should stay blocked until CI, production deployment, real-user
 analytics, support or feedback triage, security, rollback, and observability
 evidence are recorded.
+
+External evidence can be attached through source connector contracts:
+
+```bash
+runstead startup source list
+runstead startup source record --cwd /tmp/runstead-todo --connector github_actions --source-uri https://github.com/acme/todo/actions/runs/1 --summary "CI passed" --status passed
+```

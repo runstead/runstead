@@ -83,6 +83,9 @@ importers:
       '@runstead/domain-packs':
         specifier: workspace:*
         version: link:../domain-packs
+      '@runstead/evidence':
+        specifier: workspace:*
+        version: link:../evidence
       '@runstead/governance':
         specifier: workspace:*
         version: link:../governance

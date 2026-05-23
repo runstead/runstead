@@ -51,6 +51,9 @@ describe("startup SDK", () => {
           webhookIngest: "startup.source.record"
         }
       });
+      expect(snapshot.contracts.sourceConnectors).toEqual(
+        expect.arrayContaining(["github_actions", "analytics"])
+      );
       expect(snapshot.status.evidence.total).toBeGreaterThan(0);
       expect(clientSnapshot.schemaVersion).toBe(1);
       expect(await client.checkGate("mvp")).toMatchObject({ stage: "mvp" });

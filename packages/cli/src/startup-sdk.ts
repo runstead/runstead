@@ -10,6 +10,7 @@ import {
   addStartupEvidence
 } from "./startup-evidence.js";
 import {
+  listStartupSourceConnectorDefinitions,
   recordStartupSourceEvidence,
   type RecordStartupSourceEvidenceOptions
 } from "./startup-source-connectors.js";
@@ -34,6 +35,7 @@ export interface StartupApiSnapshot {
     evidencePrefix: "startup_";
     artifactSchemaVersion: 1;
     webhookIngest: "startup.source.record";
+    sourceConnectors: string[];
   };
 }
 
@@ -82,7 +84,10 @@ export async function startupApiSnapshot(
     contracts: {
       evidencePrefix: "startup_",
       artifactSchemaVersion: 1,
-      webhookIngest: "startup.source.record"
+      webhookIngest: "startup.source.record",
+      sourceConnectors: listStartupSourceConnectorDefinitions().map(
+        (definition) => definition.connector
+      )
     }
   };
 }
