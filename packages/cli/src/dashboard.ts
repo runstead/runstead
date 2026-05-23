@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
 import { createRunsteadId, type JsonObject, type RunsteadEvent } from "@runstead/core";
@@ -117,7 +117,52 @@ export interface DashboardStartupSnapshot {
   available: boolean;
   status?: StartupStatusResult;
   latestReportPath?: string;
+  latestRun?: DashboardStartupRun;
+  staleEvidence: DashboardStartupStaleEvidence[];
+  agentPatch?: DashboardStartupAgentPatch;
   error?: string;
+}
+
+export interface DashboardStartupRun {
+  id: string;
+  stage: string;
+  target: string;
+  status: string;
+  verdict: string;
+  startedAt?: string;
+  completedAt?: string;
+  blockers: string[];
+  reports: string[];
+  uiSmokeArtifacts: string[];
+  timeline: DashboardStartupTimelineItem[];
+}
+
+export interface DashboardStartupTimelineItem {
+  phase: string;
+  title: string;
+  status: string;
+  evidence: number;
+  artifacts: string[];
+  blockers: string[];
+  nextAction?: string;
+}
+
+export interface DashboardStartupStaleEvidence {
+  evidenceId: string;
+  type: string;
+  uri: string;
+  ageDays: number;
+  freshnessDays: number;
+}
+
+export interface DashboardStartupAgentPatch {
+  taskId: string;
+  workerRunId: string;
+  status: string;
+  startedAt: string;
+  endedAt?: string;
+  filesTouched: string[];
+  summary: string;
 }
 
 export async function buildDashboard(
@@ -143,7 +188,8 @@ export async function buildDashboard(
       startup: await readDashboardStartupStatus({
         cwd,
         root,
-        generatedAt
+        generatedAt,
+        database
       })
     };
     const html = formatDashboardHtml(snapshot);
@@ -251,7 +297,8 @@ function readDashboardSnapshot(
       available: false
     },
     startup: {
-      available: false
+      available: false,
+      staleEvidence: []
     }
   };
 }
@@ -260,19 +307,32 @@ async function readDashboardStartupStatus(input: {
   cwd: string;
   root: string;
   generatedAt: string;
+  database: RunsteadDatabase;
 }): Promise<DashboardStartupSnapshot> {
   try {
+    const status = await getStartupStatus({
+      cwd: input.cwd,
+      now: new Date(input.generatedAt)
+    });
+
     return {
       available: true,
-      status: await getStartupStatus({
-        cwd: input.cwd,
-        now: new Date(input.generatedAt)
-      }),
-      ...latestStartupReport(input.root)
+      status,
+      ...latestStartupReport(input.root),
+      ...(await latestStartupRun(input.root)),
+      staleEvidence: status.evidence.staleSources.slice(0, 12).map((source) => ({
+        evidenceId: source.evidenceId,
+        type: source.type,
+        uri: source.uri,
+        ageDays: source.ageDays,
+        freshnessDays: source.freshnessDays
+      })),
+      ...latestStartupAgentPatch(input.database)
     };
   } catch (error) {
     return {
       available: false,
+      staleEvidence: [],
       error: error instanceof Error ? error.message : String(error)
     };
   }
@@ -282,6 +342,135 @@ function latestStartupReport(root: string): { latestReportPath?: string } {
   const reportPath = join(root, "reports", "launch-readiness-ai-native-startup.md");
 
   return { latestReportPath: reportPath };
+}
+
+async function latestStartupRun(
+  root: string
+): Promise<{ latestRun?: DashboardStartupRun }> {
+  const dirs = [
+    join(root, "startup", "readiness-runs"),
+    join(root, "startup", "runs")
+  ];
+  const runs = (
+    await Promise.all(
+      dirs.map(async (dir) => {
+        try {
+          return await Promise.all(
+            (await readdir(dir))
+              .filter((name) => name.endsWith(".json"))
+              .map((name) => readStartupRunFile(join(dir, name)))
+          );
+        } catch {
+          return [];
+        }
+      })
+    )
+  )
+    .flat()
+    .filter((run): run is DashboardStartupRun => run !== undefined)
+    .sort((left, right) =>
+      startupRunSortTime(right).localeCompare(startupRunSortTime(left))
+    );
+
+  return runs[0] === undefined ? {} : { latestRun: runs[0] };
+}
+
+async function readStartupRunFile(
+  path: string
+): Promise<DashboardStartupRun | undefined> {
+  try {
+    const parsed = JSON.parse(await readFile(path, "utf8")) as unknown;
+
+    if (!isRecord(parsed)) {
+      return undefined;
+    }
+
+    const phases = Array.isArray(parsed.phases) ? parsed.phases.filter(isRecord) : [];
+    const startedAt = stringField(parsed.startedAt);
+    const completedAt = stringField(parsed.completedAt);
+
+    return {
+      id: stringField(parsed.id) ?? "unknown",
+      stage: stringField(parsed.stage) ?? "unknown",
+      target: stringField(parsed.target) ?? "unknown",
+      status: stringField(parsed.status) ?? "unknown",
+      verdict: stringField(parsed.verdict) ?? "not_evaluated",
+      ...(startedAt === undefined ? {} : { startedAt }),
+      ...(completedAt === undefined ? {} : { completedAt }),
+      blockers: stringArrayField(parsed.verdictBlockers),
+      reports: stringArrayField(parsed.reportPaths),
+      uiSmokeArtifacts: phases
+        .filter((phase) => stringField(phase.id) === "ui_smoke")
+        .flatMap((phase) => stringArrayField(phase.artifacts)),
+      timeline: phases.map((phase) => {
+        const phaseId = stringField(phase.id) ?? "unknown";
+        const nextAction = stringField(phase.nextAction);
+
+        return {
+          phase: phaseId,
+          title: stringField(phase.title) ?? phaseId,
+          status: stringField(phase.status) ?? "unknown",
+          evidence: stringArrayField(phase.evidenceIds).length,
+          artifacts: stringArrayField(phase.artifacts),
+          blockers: stringArrayField(phase.blockers),
+          ...(nextAction === undefined ? {} : { nextAction })
+        };
+      })
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+function startupRunSortTime(run: DashboardStartupRun): string {
+  return run.completedAt ?? run.startedAt ?? "";
+}
+
+function latestStartupAgentPatch(
+  database: RunsteadDatabase
+): { agentPatch?: DashboardStartupAgentPatch } {
+  const row = database
+    .prepare(
+      `
+      SELECT worker_run_id, task_id, status, output_json, started_at, ended_at
+      FROM tool_calls
+      WHERE action_type = 'filesystem.patch'
+      ORDER BY started_at DESC, id DESC
+      LIMIT 1
+      `
+    )
+    .get() as
+    | {
+        worker_run_id: string;
+        task_id: string;
+        status: string;
+        output_json: string | null;
+        started_at: string;
+        ended_at: string | null;
+      }
+    | undefined;
+
+  if (row === undefined) {
+    return {};
+  }
+
+  const output = parseJsonRecord(row.output_json);
+  const filesTouched = stringArrayField(output?.filesTouched).slice(0, 20);
+
+  return {
+    agentPatch: {
+      taskId: row.task_id,
+      workerRunId: row.worker_run_id,
+      status: row.status,
+      startedAt: row.started_at,
+      ...(row.ended_at === null ? {} : { endedAt: row.ended_at }),
+      filesTouched,
+      summary:
+        filesTouched.length === 0
+          ? "filesystem.patch audited; touched files were not reported"
+          : `filesystem.patch touched ${filesTouched.length} file${filesTouched.length === 1 ? "" : "s"}`
+    }
+  };
 }
 
 async function readDashboardDaemonStatus(
@@ -555,6 +744,7 @@ function startupSection(startup: DashboardStartupSnapshot): string {
   }
 
   const status = startup.status;
+  const run = startup.latestRun;
   const gateRows = status.gates
     .map(
       (gate) =>
@@ -568,14 +758,54 @@ function startupSection(startup: DashboardStartupSnapshot): string {
     )
   );
   const sources = status.evidence.sourceKinds.join(", ") || "none";
+  const timelineRows =
+    run === undefined
+      ? ""
+      : run.timeline
+          .map(
+            (item) =>
+              `<tr><td>${escapeHtml(item.title)}</td><td>${statusCell(item.status)}</td><td>${item.evidence}</td><td>${escapeHtml(item.blockers[0] ?? item.nextAction ?? "none")}</td></tr>`
+          )
+          .join("");
+  const staleRows = startup.staleEvidence
+    .map(
+      (item) =>
+        `<tr><td><code>${escapeHtml(item.evidenceId)}</code></td><td>${escapeHtml(item.type)}</td><td>${item.ageDays}d / ${item.freshnessDays}d</td><td>${escapeHtml(item.uri)}</td></tr>`
+    )
+    .join("");
+  const uiArtifacts = run?.uiSmokeArtifacts ?? [];
+  const agentPatch = startup.agentPatch;
 
   return `<section>
     <header><h2>Startup Readiness</h2><span class="muted">${escapeHtml(status.currentStage)}</span></header>
     <table><tbody>
+      <tr><th>Latest run</th><td>${
+        run === undefined
+          ? "none"
+          : `<code>${escapeHtml(run.id)}</code> ${statusCell(run.status)} verdict=${escapeHtml(run.verdict)} target=${escapeHtml(run.target)}`
+      }</td></tr>
       <tr><th>Next action</th><td><code>${escapeHtml(status.nextAction.command)}</code><br>${escapeHtml(status.nextAction.reason)}</td></tr>
       <tr><th>Evidence</th><td>${status.evidence.total} records; sources: ${escapeHtml(sources)}; stale: ${status.evidence.staleSources.length}</td></tr>
       <tr><th>Latest report</th><td><code>${escapeHtml(startup.latestReportPath ?? "none")}</code></td></tr>
+      <tr><th>UI smoke artifacts</th><td>${uiArtifacts.length === 0 ? "none" : uiArtifacts.map((artifact) => `<code>${escapeHtml(artifact)}</code>`).join("<br>")}</td></tr>
+      <tr><th>Agent patch</th><td>${
+        agentPatch === undefined
+          ? "none"
+          : `${statusCell(agentPatch.status)} task=<code>${escapeHtml(agentPatch.taskId)}</code><br>${escapeHtml(agentPatch.summary)}${
+              agentPatch.filesTouched.length === 0
+                ? ""
+                : `<br>${agentPatch.filesTouched.map((file) => `<code>${escapeHtml(file)}</code>`).join("<br>")}`
+            }`
+      }</td></tr>
     </tbody></table>
+    ${
+      run === undefined
+        ? '<div class="empty">No startup readiness run has been recorded.</div>'
+        : `<table>
+      <thead><tr><th>Timeline</th><th>Status</th><th>Evidence</th><th>Top blocker or next action</th></tr></thead>
+      <tbody>${timelineRows}</tbody>
+    </table>`
+    }
     <table>
       <thead><tr><th>Gate</th><th>Status</th><th>Blockers</th><th>Top blocker</th></tr></thead>
       <tbody>${gateRows}</tbody>
@@ -584,6 +814,11 @@ function startupSection(startup: DashboardStartupSnapshot): string {
       blockerRows.length === 0
         ? '<div class="empty">No startup blockers.</div>'
         : `<table><thead><tr><th>Gate</th><th>Blocker board</th></tr></thead><tbody>${blockerRows.join("")}</tbody></table>`
+    }
+    ${
+      startup.staleEvidence.length === 0
+        ? '<div class="empty">No stale startup evidence sources.</div>'
+        : `<table><thead><tr><th>Evidence</th><th>Type</th><th>Age</th><th>Source</th></tr></thead><tbody>${staleRows}</tbody></table>`
     }
   </section>`;
 }
@@ -696,6 +931,47 @@ function dashboardEventPayload(
   htmlPath: string,
   dataPath: string
 ): JsonObject {
+  const startupDetails =
+    snapshot.startup.status === undefined
+      ? {}
+      : {
+          currentStage: snapshot.startup.status.currentStage,
+          nextAction: snapshot.startup.status.nextAction,
+          gates: snapshot.startup.status.gates.map((gate) => ({
+            stage: gate.stage,
+            status: gate.status,
+            blockers: gate.blockers.length
+          })),
+          evidence: {
+            total: snapshot.startup.status.evidence.total,
+            staleSources: snapshot.startup.status.evidence.staleSources.length,
+            sourceKinds: snapshot.startup.status.evidence.sourceKinds
+          },
+          ...(snapshot.startup.latestRun === undefined
+            ? {}
+            : {
+                latestRun: {
+                  id: snapshot.startup.latestRun.id,
+                  target: snapshot.startup.latestRun.target,
+                  verdict: snapshot.startup.latestRun.verdict,
+                  status: snapshot.startup.latestRun.status,
+                  timeline: snapshot.startup.latestRun.timeline.length,
+                  uiSmokeArtifacts:
+                    snapshot.startup.latestRun.uiSmokeArtifacts.length
+                }
+              }),
+          staleEvidence: snapshot.startup.staleEvidence.length,
+          ...(snapshot.startup.agentPatch === undefined
+            ? {}
+            : {
+                agentPatch: {
+                  taskId: snapshot.startup.agentPatch.taskId,
+                  status: snapshot.startup.agentPatch.status,
+                  filesTouched: snapshot.startup.agentPatch.filesTouched.length
+                }
+              })
+        };
+
   return {
     htmlPath,
     dataPath,
@@ -723,22 +999,7 @@ function dashboardEventPayload(
     },
     startup: {
       available: snapshot.startup.available,
-      ...(snapshot.startup.status === undefined
-        ? {}
-        : {
-            currentStage: snapshot.startup.status.currentStage,
-            nextAction: snapshot.startup.status.nextAction,
-            gates: snapshot.startup.status.gates.map((gate) => ({
-              stage: gate.stage,
-              status: gate.status,
-              blockers: gate.blockers.length
-            })),
-            evidence: {
-              total: snapshot.startup.status.evidence.total,
-              staleSources: snapshot.startup.status.evidence.staleSources.length,
-              sourceKinds: snapshot.startup.status.evidence.sourceKinds
-            }
-          })
+      ...startupDetails
     }
   };
 }
@@ -807,6 +1068,34 @@ function escapeHtml(value: string): string {
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;");
+}
+
+function parseJsonRecord(value: string | null | undefined): Record<string, unknown> | undefined {
+  if (value === null || value === undefined) {
+    return undefined;
+  }
+
+  try {
+    const parsed = JSON.parse(value) as unknown;
+
+    return isRecord(parsed) ? parsed : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function stringField(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim().length > 0
+    ? value.trim()
+    : undefined;
+}
+
+function stringArrayField(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
 }
 
 interface RepositoryRow {

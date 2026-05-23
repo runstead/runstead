@@ -129,9 +129,99 @@ describe("buildDashboard", () => {
             }
           }
         });
+        database
+          .prepare(
+            `
+            INSERT INTO worker_runs (
+              id, task_id, worker_type, status, enforcement_level,
+              checkpoint_before, started_at, ended_at, output_json
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `
+          )
+          .run(
+            "wr_dashboard_patch",
+            "task_001",
+            "codex_direct",
+            "completed",
+            "hard_proxy_tool_calls",
+            null,
+            "2026-05-14T05:40:00.000Z",
+            "2026-05-14T05:41:00.000Z",
+            "{}"
+          );
+        database
+          .prepare(
+            `
+            INSERT INTO tool_calls (
+              id, worker_run_id, task_id, action_type, status,
+              policy_decision_id, input_json, output_json, started_at, ended_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `
+          )
+          .run(
+            "tool_dashboard_patch",
+            "wr_dashboard_patch",
+            "task_001",
+            "filesystem.patch",
+            "completed",
+            null,
+            "{}",
+            JSON.stringify({ filesTouched: ["src/App.tsx", "package.json"] }),
+            "2026-05-14T05:40:10.000Z",
+            "2026-05-14T05:40:11.000Z"
+          );
       } finally {
         database.close();
       }
+
+      await mkdir(join(root, "startup", "readiness-runs"), { recursive: true });
+      await writeFile(
+        join(root, "startup", "readiness-runs", "run_dashboard_ready.json"),
+        `${JSON.stringify(
+          {
+            schemaVersion: 1,
+            id: "run_dashboard_ready",
+            cwd: workspace,
+            stage: "launch",
+            target: "local",
+            worker: "codex_direct",
+            status: "completed",
+            verdict: "local_launch_ready",
+            verdictBlockers: [],
+            evidenceIds: ["ev_ui_dashboard"],
+            evidenceTiers: ["synthetic_smoke", "local_command"],
+            evidenceTypes: ["startup_ui_validation", "command_output"],
+            reportPaths: [join(root, "reports", "startup-readiness-run-run_dashboard_ready.md")],
+            startedAt: "2026-05-14T05:35:00.000Z",
+            completedAt: "2026-05-14T05:45:00.000Z",
+            dirtyState: "clean",
+            phases: [
+              {
+                id: "ui_smoke",
+                title: "UI smoke",
+                status: "passed",
+                evidenceIds: ["ev_ui_dashboard"],
+                artifacts: [join(root, "evidence", "ui-smoke-dom.html")],
+                blockers: [],
+                nextAction: "continue launch readiness"
+              },
+              {
+                id: "launch_report",
+                title: "Launch report",
+                status: "passed",
+                evidenceIds: [],
+                artifacts: [join(root, "reports", "launch.md")],
+                blockers: []
+              }
+            ]
+          },
+          null,
+          2
+        )}\n`,
+        "utf8"
+      );
 
       await mkdir(join(root, "daemon"), { recursive: true });
       await writeFile(
@@ -172,10 +262,13 @@ describe("buildDashboard", () => {
       expect(result.outputDir).toBe(join(root, "dashboard"));
       expect(html).toContain("Runstead Dashboard");
       expect(html).toContain("Startup Readiness");
+      expect(html).toContain("run_dashboard_ready");
+      expect(html).toContain("UI smoke artifacts");
+      expect(html).toContain("src/App.tsx");
       expect(html).toContain("service-api");
       expect(html).toContain("task_001 waiting_approval");
       expect(html).toContain("healthy age=60000ms");
-      expect(html).toContain("runstead startup onboard");
+      expect(html).toContain("runstead startup ready --stage launch");
       expect(html).toContain(
         "waiting_approval branch=runstead/task_001/ci-456 approval=appr_dashboard_ci"
       );
@@ -203,10 +296,19 @@ describe("buildDashboard", () => {
       });
       expect(snapshot.startup).toMatchObject({
         available: true,
+        latestRun: {
+          id: "run_dashboard_ready",
+          verdict: "local_launch_ready",
+          uiSmokeArtifacts: [join(root, "evidence", "ui-smoke-dom.html")]
+        },
+        agentPatch: {
+          taskId: "task_001",
+          filesTouched: ["src/App.tsx", "package.json"]
+        },
         status: {
-          currentStage: "mvp",
+          currentStage: "launch",
           nextAction: {
-            command: "runstead startup onboard"
+            command: "runstead startup ready --stage launch"
           }
         }
       });
@@ -247,7 +349,15 @@ describe("buildDashboard", () => {
           },
           startup: {
             available: true,
-            currentStage: "mvp"
+            currentStage: "launch",
+            latestRun: {
+              id: "run_dashboard_ready",
+              verdict: "local_launch_ready"
+            },
+            agentPatch: {
+              taskId: "task_001",
+              filesTouched: 2
+            }
           }
         });
       } finally {
