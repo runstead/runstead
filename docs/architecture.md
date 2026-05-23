@@ -14,6 +14,8 @@ The current implementation keeps the package graph intentionally small:
 - `@runstead/state-sqlite`: SQLite schema and state-store adapter
 - `@runstead/domain-packs`: built-in `repo-maintenance` pack and validation
 - `@runstead/skills`: skill package contracts, candidate scaffolding, and tests
+- `@runstead/sdk`: public extension contracts for readiness facets, evidence
+  collectors, verifiers, and gates
 - `@runstead/cli`: local command surface
 - `@runstead/testkit`: fixture and temporary workspace helpers
 

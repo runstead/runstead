@@ -260,6 +260,11 @@ pnpm format:check
 - `@runstead/core`: domain-agnostic control-plane contracts
 - `@runstead/state-sqlite`: SQLite state store
 - `@runstead/domain-packs`: built-in domain packs
+- `@runstead/runtime`: reusable execution, readiness, and tool-call primitives
+- `@runstead/governance`: policy and risk primitives
+- `@runstead/sdk`: public extension contracts for facets, collectors, verifiers,
+  and gates
+- `@runstead/skills`: skill package lifecycle utilities
 - `@runstead/testkit`: test helpers and fixture utilities
 
 ## Documentation
@@ -279,3 +284,4 @@ pnpm format:check
 - [docs/policy.md](docs/policy.md): policy and approval model
 - [docs/verifier.md](docs/verifier.md): verifier evidence model
 - [docs/domain-packs.md](docs/domain-packs.md): domain pack structure
+- [docs/sdk.md](docs/sdk.md): extension manifest and SDK contracts

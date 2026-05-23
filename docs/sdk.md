@@ -1,0 +1,102 @@
+# SDK
+
+`@runstead/sdk` defines the public contract for external Runstead extensions.
+It is intentionally smaller than the CLI internals: extension authors describe
+facets, evidence collectors, verifiers, and gates, while Runstead remains
+responsible for state, policy, workers, and audit.
+
+The SDK is the stable surface to use when a domain pack or integration needs to
+declare readiness semantics without importing `@runstead/cli`.
+
+## Extension Manifest
+
+```ts
+import { defineRunsteadExtension } from "@runstead/sdk";
+
+export default defineRunsteadExtension({
+  schemaVersion: 1,
+  id: "growth-readiness",
+  version: "0.1.0",
+  name: "Growth readiness",
+  description: "Growth-stage readiness facets for product-led launches.",
+  domains: ["ai-native-startup"],
+  facets: [
+    {
+      name: "activation-metric",
+      title: "Activation metric",
+      description: "Activation metric evidence needed for launch.",
+      appliesToTargets: ["staging", "production"],
+      requiredEvidenceTypes: ["startup_metric_snapshot"]
+    }
+  ],
+  collectors: [
+    {
+      id: "posthog-activation",
+      title: "PostHog activation",
+      description: "Collect activation metrics from PostHog.",
+      producesEvidenceTypes: ["startup_metric_snapshot"],
+      requiredSecrets: ["POSTHOG_API_KEY"]
+    }
+  ],
+  verifiers: [
+    {
+      id: "metric-contract",
+      command: "npm run test:metrics",
+      evidenceTier: "local_command",
+      producesEvidenceTypes: ["command_output"]
+    }
+  ],
+  gates: [
+    {
+      id: "production-growth",
+      stage: "launch",
+      target: "production",
+      requiredFacets: ["activation-metric"],
+      requiredEvidenceTiers: ["real_user_analytics"]
+    }
+  ]
+});
+```
+
+## Contract Shape
+
+An extension manifest contains:
+
+- `facets`: named readiness dimensions, such as activation metrics, rollback,
+  migration, support triage, or security review.
+- `collectors`: integrations that produce evidence records from external
+  systems.
+- `verifiers`: commands that produce local or CI evidence.
+- `gates`: stage and target requirements that compose facets and evidence.
+
+The SDK validates duplicate ids, target names, evidence tiers, semantic version
+strings, and stable kebab-case ids.
+
+## Validation
+
+Use `validateRunsteadExtension` when loading untrusted or third-party
+extension manifests:
+
+```ts
+import { validateRunsteadExtension } from "@runstead/sdk";
+
+const result = validateRunsteadExtension(candidate);
+
+if (!result.valid) {
+  console.error(result.issues);
+}
+```
+
+`defineRunsteadExtension` throws on invalid manifests and is intended for typed
+authoring. `validateRunsteadExtension` returns structured issues and is intended
+for loaders, registries, and tests.
+
+## Boundaries
+
+The SDK does not execute collectors, verifiers, or workers. It only describes
+contracts that Runstead can compile into runtime plans, policy, and evidence
+requirements.
+
+Keep extension code side-effect free at declaration time. Network calls,
+credential reads, file writes, and worker execution belong in governed Runstead
+runtime paths, not in manifest definition modules.

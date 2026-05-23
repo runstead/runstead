@@ -27,6 +27,11 @@ commands.
 Runtime task and goal state belongs in SQLite under `.runstead/state.db`.
 Domain YAML remains configuration and template material only.
 
+Use `@runstead/sdk` when a pack needs to publish typed extension contracts for
+custom readiness facets, evidence collectors, verifiers, or gates. Domain YAML
+owns installable pack templates; SDK manifests own stable integration contracts
+for code and third-party packages.
+
 ## Create A Pack
 
 Start from the scaffold instead of copying an existing pack by hand:
