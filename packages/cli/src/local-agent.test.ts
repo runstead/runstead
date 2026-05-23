@@ -371,6 +371,98 @@ describe("local agent task primitives", () => {
     }
   });
 
+  it("explains recoverable failed native tool calls in agent reports", async () => {
+    const workspace = await mkdtemp(
+      join(tmpdir(), "runstead-local-agent-tool-failure-")
+    );
+    const requests: CodexResponsesRequest[] = [];
+    const transport: CodexDirectTransport = {
+      createResponse(request) {
+        requests.push(request);
+
+        if (requests.length === 1) {
+          return Promise.resolve({
+            id: "resp_local_agent_missing_file_1",
+            status: "completed",
+            outputText: "",
+            toolCalls: [
+              {
+                id: "call_missing_file",
+                name: "read_file",
+                arguments: JSON.stringify({
+                  path: "pyproject.toml"
+                })
+              }
+            ],
+            finishReason: "tool_calls",
+            outputItems: []
+          });
+        }
+
+        return Promise.resolve({
+          id: "resp_local_agent_missing_file_2",
+          status: "completed",
+          outputText: "Missing file handled by choosing package metadata instead.",
+          toolCalls: [],
+          finishReason: "stop",
+          outputItems: []
+        });
+      }
+    };
+
+    try {
+      await initRunstead({ cwd: workspace, profile: "trusted-local" });
+      const created = await createLocalAgentTask({
+        cwd: workspace,
+        prompt: "Inspect Python metadata if present.",
+        worker: "codex_direct",
+        model: "gpt-5.3-codex",
+        mode: "read-only"
+      });
+      const result = await runLocalAgentTask({
+        cwd: workspace,
+        taskId: created.task.id,
+        transport
+      });
+      const report = await loadLocalAgentTaskReport({
+        cwd: workspace,
+        taskId: created.task.id
+      });
+      const reportText = formatLocalAgentTaskReport(report);
+      const reportJson = JSON.parse(formatLocalAgentTaskReportJson(report)) as {
+        failedToolCalls?: {
+          actionType: string;
+          status: string;
+          failureKind?: string;
+          recoverable?: boolean;
+        }[];
+      };
+
+      expect(result.status).toBe("completed");
+      expect(result.workerResult).toMatchObject({
+        worker: "codex_direct",
+        failedToolCalls: 1
+      });
+      expect(JSON.stringify(requests[1]?.input)).toContain("ENOENT");
+      expect(reportText).toContain("filesystem.read failed pyproject.toml");
+      expect(reportText).toContain("failure=missing_file recoverable=yes");
+      expect(reportText).toContain("choosing a current path");
+      expect(reportJson.failedToolCalls).toEqual([
+        expect.objectContaining({
+          actionType: "filesystem.read",
+          status: "failed",
+          failureKind: "missing_file",
+          recoverable: true
+        })
+      ]);
+      expect(formatLocalAgentTaskReportMarkdown(report)).toContain(
+        "failure=missing_file recoverable=yes"
+      );
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
   it("runs a codex_cli read-only local agent task through the wrapped worker", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "runstead-local-agent-codex-cli-"));
     const workerCalls: {

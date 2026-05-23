@@ -192,7 +192,18 @@ export interface LocalAgentReportToolCall {
   policyDecisionId?: string;
   resource?: string;
   summary?: string;
+  failureKind?: LocalAgentToolFailureKind;
+  recoverable?: boolean;
+  failureExplanation?: string;
 }
+
+export type LocalAgentToolFailureKind =
+  | "approval_required"
+  | "policy_denied"
+  | "harmless_patch_mismatch_retry"
+  | "missing_file"
+  | "tool_runtime_error"
+  | "unknown";
 
 export interface LocalAgentWorkerGovernanceProfile {
   level: "level_1_wrapper" | "level_2_native_proxy";
@@ -1074,8 +1085,18 @@ function formatReportToolCalls(calls: LocalAgentReportToolCall[]): string[] {
     ? ["  none"]
     : calls.map(
         (call) =>
-          `  ${call.actionType} ${call.status}${call.resource === undefined ? "" : ` ${call.resource}`}`
+          `  ${call.actionType} ${call.status}${call.resource === undefined ? "" : ` ${call.resource}`}${formatToolCallInlineSummary(call)}`
       );
+}
+
+function formatToolCallInlineSummary(call: LocalAgentReportToolCall): string {
+  const summary = call.summary === undefined ? "" : ` summary=${call.summary}`;
+  const failure =
+    call.failureKind === undefined
+      ? ""
+      : ` failure=${call.failureKind} recoverable=${call.recoverable === true ? "yes" : "no"} explanation=${call.failureExplanation ?? "none"}`;
+
+  return `${summary}${failure}`;
 }
 
 function formatReportVerifiers(
@@ -1137,7 +1158,7 @@ function markdownToolCalls(calls: LocalAgentReportToolCall[]): string[] {
     ? ["None recorded."]
     : calls.map(
         (call) =>
-          `- ${call.actionType} ${call.status}${call.resource === undefined ? "" : ` (${call.resource})`}`
+          `- ${call.actionType} ${call.status}${call.resource === undefined ? "" : ` (${call.resource})`}${formatToolCallInlineSummary(call)}`
       );
 }
 
@@ -1712,7 +1733,12 @@ function readLocalAgentReportToolCalls(
         ? { policyDecisionId: record.policy_decision_id }
         : {}),
       ...toolCallResource(input),
-      ...toolCallSummary(output)
+      ...toolCallSummary(output),
+      ...toolCallFailureInsight({
+        actionType: String(record.action_type),
+        status: String(record.status),
+        output
+      })
     };
   });
 }
@@ -2268,6 +2294,101 @@ function toolCallSummary(input: JsonObject): Pick<LocalAgentReportToolCall, "sum
   const summary = input.summary;
 
   return typeof summary === "string" && summary.length > 0 ? { summary } : {};
+}
+
+function toolCallFailureInsight(input: {
+  actionType: string;
+  status: string;
+  output: JsonObject;
+}): Pick<
+  LocalAgentReportToolCall,
+  "failureKind" | "recoverable" | "failureExplanation"
+> {
+  if (input.status === "completed") {
+    return {};
+  }
+
+  if (input.status === "approval_required") {
+    return {
+      failureKind: "approval_required",
+      recoverable: true,
+      failureExplanation:
+        "Tool execution is paused for human approval; approve or deny the request, then resume the task."
+    };
+  }
+
+  if (input.status === "denied") {
+    return {
+      failureKind: "policy_denied",
+      recoverable: false,
+      failureExplanation:
+        "Runstead policy denied the action; change the task scope or policy before retrying."
+    };
+  }
+
+  const message = toolCallFailureMessage(input.output).toLowerCase();
+
+  if (
+    input.actionType === "filesystem.patch" &&
+    (message.includes("replacement search text not found") ||
+      message.includes("replacement search text is ambiguous") ||
+      message.includes("patch does not apply"))
+  ) {
+    return {
+      failureKind: "harmless_patch_mismatch_retry",
+      recoverable: true,
+      failureExplanation:
+        "Patch did not match current file contents; reread the file and retry with a narrower patch."
+    };
+  }
+
+  if (
+    message.includes("enoent") ||
+    message.includes("no such file or directory") ||
+    message.includes("not found")
+  ) {
+    return {
+      failureKind: "missing_file",
+      recoverable: true,
+      failureExplanation:
+        "The requested file or path was absent; this is usually recoverable by listing files or choosing a current path."
+    };
+  }
+
+  if (message.length > 0) {
+    return {
+      failureKind: "tool_runtime_error",
+      recoverable: true,
+      failureExplanation:
+        "The tool failed during execution; inspect the error, adjust the request, and retry if the task still needs it."
+    };
+  }
+
+  return {
+    failureKind: "unknown",
+    recoverable: false,
+    failureExplanation:
+      "Runstead recorded a non-completed tool call without a structured error message."
+  };
+}
+
+function toolCallFailureMessage(output: JsonObject): string {
+  const error = output.error;
+  const reason = output.reason;
+
+  if (typeof error === "string") {
+    return error;
+  }
+
+  if (isRecord(error) && typeof error.message === "string") {
+    return error.message;
+  }
+
+  if (typeof reason === "string") {
+    return reason;
+  }
+
+  return "";
 }
 
 function isVerifierReportRow(value: unknown): value is {
