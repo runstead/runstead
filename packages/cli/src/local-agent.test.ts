@@ -943,6 +943,13 @@ describe("local agent task primitives", () => {
       expect(result.status).toBe("completed_with_warnings");
       expect(localAgentRunExitCode(result)).toBe(0);
       expect(storedTask.status).toBe("completed");
+      expect(storedTask.output).toMatchObject({
+        execution: {
+          implementation: "applied",
+          verification: "passed",
+          agentCompletion: "budget_exhausted"
+        }
+      });
       expect(result.workerResult).toMatchObject({
         worker: "codex_direct",
         status: "failed",

@@ -1451,6 +1451,66 @@ function localAgentFinalSummary(
     : workerResult.summary;
 }
 
+function localAgentExecutionSemantics(input: {
+  workerResult: LocalAgentWorkerResult;
+  verifierResult?: RunTaskVerifiersResult;
+}): JsonObject {
+  return {
+    implementation: localAgentImplementationStatus(input),
+    verification: localAgentVerificationStatus(input.verifierResult),
+    agentCompletion: localAgentCompletionStatus(input.workerResult)
+  };
+}
+
+function localAgentImplementationStatus(input: {
+  workerResult: LocalAgentWorkerResult;
+  verifierResult?: RunTaskVerifiersResult;
+}): "applied" | "not_applied" {
+  if (localAgentVerifiersPassed(input.verifierResult)) {
+    return "applied";
+  }
+
+  if (isCodexDirectLocalAgentWorkerResult(input.workerResult)) {
+    return input.workerResult.status === "completed" && input.workerResult.toolCalls > 0
+      ? "applied"
+      : "not_applied";
+  }
+
+  return input.workerResult.exitCode === 0 ? "applied" : "not_applied";
+}
+
+function localAgentVerificationStatus(
+  verifierResult: RunTaskVerifiersResult | undefined
+): "passed" | "failed" | "skipped" {
+  if (verifierResult === undefined) {
+    return "skipped";
+  }
+
+  return localAgentVerifiersPassed(verifierResult) ? "passed" : "failed";
+}
+
+function localAgentCompletionStatus(
+  workerResult: LocalAgentWorkerResult
+): "completed" | "budget_exhausted" | "approval_waiting" | "blocked" | "failed" {
+  if (!isCodexDirectLocalAgentWorkerResult(workerResult)) {
+    return workerResult.exitCode === 0 ? "completed" : "failed";
+  }
+
+  if (workerResult.status === "completed") {
+    return "completed";
+  }
+
+  if (workerResult.status === "waiting_approval") {
+    return "approval_waiting";
+  }
+
+  if (workerResult.status === "blocked") {
+    return "blocked";
+  }
+
+  return workerResult.budget === undefined ? "failed" : "budget_exhausted";
+}
+
 function finalizeLocalAgentTask(input: {
   database: RunsteadDatabase;
   task: Task;
@@ -1495,6 +1555,7 @@ function localAgentTaskOutput(input: {
       command: input.workerResult.command,
       args: redactedLocalWrappedWorkerArgs(input.workerResult),
       governance: localWrappedWorkerGovernanceOutput(input.workerResult),
+      execution: localAgentExecutionSemantics(input),
       outputValidation: input.workerResult.outputValidation,
       stdoutBytes: Buffer.byteLength(input.workerResult.stdout, "utf8"),
       stderrBytes: Buffer.byteLength(input.workerResult.stderr, "utf8"),
@@ -1527,6 +1588,7 @@ function localAgentTaskOutput(input: {
     failedToolCalls: input.workerResult.failedToolCalls,
     workerRunId: input.workerResult.workerRun.id,
     governance: localNativeWorkerGovernanceOutput(),
+    execution: localAgentExecutionSemantics(input),
     ...(input.workerResult.warnings.length === 0
       ? {}
       : { warnings: input.workerResult.warnings }),
@@ -1558,6 +1620,7 @@ function localAgentWorkerOutput(input: {
       command: input.workerResult.command,
       args: redactedLocalWrappedWorkerArgs(input.workerResult),
       governance: localWrappedWorkerGovernanceOutput(input.workerResult),
+      execution: localAgentExecutionSemantics(input),
       status: input.workerResult.exitCode === 0 ? "completed" : "failed",
       exitCode: input.workerResult.exitCode,
       outputValidation: input.workerResult.outputValidation,
@@ -1592,6 +1655,7 @@ function localAgentWorkerOutput(input: {
     failedToolCalls: input.workerResult.failedToolCalls,
     summary: input.summary ?? input.workerResult.summary,
     governance: localNativeWorkerGovernanceOutput(),
+    execution: localAgentExecutionSemantics(input),
     ...(input.workerResult.warnings.length === 0
       ? {}
       : { warnings: input.workerResult.warnings }),
