@@ -674,6 +674,7 @@ describe("runCodexDirectWorker", () => {
           context: {
             filesTouched: string[];
             diffHash: string;
+            riskClass: string;
             dependencyImpact: {
               kind: string;
               files: string[];
@@ -684,6 +685,7 @@ describe("runCodexDirectWorker", () => {
               mode: string;
               filesTouched: string[];
               diffHash: string;
+              riskClass: string;
               dependencyImpact: {
                 kind: string;
                 files: string[];
@@ -711,6 +713,7 @@ describe("runCodexDirectWorker", () => {
         expect(patchCall.output_json).toContain("src/message.txt");
         expect(action.context).toMatchObject({
           filesTouched: ["src/message.txt"],
+          riskClass: "workspace_patch",
           dependencyImpact: {
             kind: "none",
             files: []
@@ -725,6 +728,7 @@ describe("runCodexDirectWorker", () => {
           mode: "replacements",
           filesTouched: ["src/message.txt"],
           diffHash: action.context.diffHash,
+          riskClass: "workspace_patch",
           dependencyImpact: action.context.dependencyImpact,
           riskSummary: action.context.riskSummary,
           canonicalSignature: action.context.canonicalSignature,

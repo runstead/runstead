@@ -2231,6 +2231,7 @@ function filesystemPatchAction(input: {
       cwd: input.cwd,
       filesTouched: input.filesTouched,
       diffHash: input.approvalMetadata.diffHash,
+      riskClass: input.approvalMetadata.riskClass,
       dependencyImpact: input.approvalMetadata.dependencyImpact,
       riskSummary: input.approvalMetadata.riskSummary,
       canonicalSignature: input.approvalMetadata.canonicalSignature,
@@ -2477,6 +2478,7 @@ function codexDirectPatchFilesTouched(input: {
 
 interface CodexDirectPatchApprovalMetadata {
   diffHash: string;
+  riskClass: "workspace_patch" | "dependency_patch";
   dependencyImpact: {
     kind: "none" | "dependency_files_touched";
     files: string[];
@@ -2529,6 +2531,10 @@ function codexDirectPatchApprovalMetadata(input: {
         : ("dependency_files_touched" as const),
     files: dependencyFiles
   };
+  const riskClass =
+    dependencyFiles.length === 0
+      ? ("workspace_patch" as const)
+      : ("dependency_patch" as const);
   const riskSummary =
     dependencyFiles.length === 0
       ? `Patch touches ${sortedFiles.length} workspace file${sortedFiles.length === 1 ? "" : "s"} with no dependency file impact.`
@@ -2538,11 +2544,12 @@ function codexDirectPatchApprovalMetadata(input: {
     cwd: input.cwd,
     filesTouched: sortedFiles,
     diffHash,
-    dependencyImpact: dependencyImpact.kind
+    riskClass
   });
 
   return {
     diffHash,
+    riskClass,
     dependencyImpact,
     riskSummary,
     canonicalSignature
@@ -2564,6 +2571,7 @@ function codexDirectPendingPatchPayload(input: {
     mode: input.patch === undefined ? "replacements" : "unified_diff",
     filesTouched: input.filesTouched,
     diffHash: input.approvalMetadata.diffHash,
+    riskClass: input.approvalMetadata.riskClass,
     dependencyImpact: input.approvalMetadata.dependencyImpact,
     riskSummary: input.approvalMetadata.riskSummary,
     canonicalSignature: input.approvalMetadata.canonicalSignature,
@@ -2648,6 +2656,7 @@ function parseCodexDirectPendingPatchPayload(
     dependencyFiles === undefined ||
     typeof dependencyImpact.kind !== "string" ||
     typeof value.diffHash !== "string" ||
+    typeof value.riskClass !== "string" ||
     typeof value.riskSummary !== "string" ||
     typeof value.canonicalSignature !== "string"
   ) {
@@ -2660,6 +2669,7 @@ function parseCodexDirectPendingPatchPayload(
           mode,
           filesTouched,
           diffHash: value.diffHash,
+          riskClass: normalizePendingPatchRiskClass(value.riskClass),
           dependencyImpact: {
             kind:
               dependencyImpact.kind === "dependency_files_touched"
@@ -2682,6 +2692,7 @@ function parseCodexDirectPendingPatchPayload(
         mode,
         filesTouched,
         diffHash: value.diffHash,
+        riskClass: normalizePendingPatchRiskClass(value.riskClass),
         dependencyImpact: {
           kind:
             dependencyImpact.kind === "dependency_files_touched"
@@ -2693,6 +2704,12 @@ function parseCodexDirectPendingPatchPayload(
         canonicalSignature: value.canonicalSignature,
         replacements
       };
+}
+
+function normalizePendingPatchRiskClass(
+  value: string
+): CodexDirectPatchApprovalMetadata["riskClass"] {
+  return value === "dependency_patch" ? "dependency_patch" : "workspace_patch";
 }
 
 function stringArray(value: unknown): string[] | undefined {

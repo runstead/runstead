@@ -27,11 +27,13 @@ export interface ActionContext {
     files: string[];
   };
   riskSummary?: string;
+  riskClass?: string;
   canonicalSignature?: string;
   pendingPatch?: {
     mode: "unified_diff" | "replacements";
     filesTouched: string[];
     diffHash: string;
+    riskClass: string;
     dependencyImpact: {
       kind: string;
       files: string[];

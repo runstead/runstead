@@ -38,6 +38,7 @@ describe("approvals", () => {
             kind: "dependency_files_touched",
             files: ["package.json"]
           },
+          riskClass: "dependency_patch",
           riskSummary: "Patch touches dependency files: package.json.",
           canonicalSignature: "b".repeat(64),
           sideEffects: ["github_pr_create"]
@@ -96,6 +97,7 @@ describe("approvals", () => {
             files: ["package.json"]
           },
           diffHash: "a".repeat(64),
+          riskClass: "dependency_patch",
           canonicalSignature: "b".repeat(64),
           riskSummary: "Patch touches dependency files: package.json."
         });

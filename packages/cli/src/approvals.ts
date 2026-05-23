@@ -57,6 +57,7 @@ export interface ApprovalActionMetadata {
     files: string[];
   };
   diffHash?: string;
+  riskClass?: string;
   canonicalSignature?: string;
   riskSummary?: string;
 }
@@ -234,6 +235,7 @@ export function approvalActionMetadata(
       files: stringArrayValue(dependencyImpact.files)
     },
     ...(typeof context.diffHash === "string" ? { diffHash: context.diffHash } : {}),
+    ...(typeof context.riskClass === "string" ? { riskClass: context.riskClass } : {}),
     ...(typeof context.canonicalSignature === "string"
       ? { canonicalSignature: context.canonicalSignature }
       : {}),

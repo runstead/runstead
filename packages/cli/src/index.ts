@@ -2101,14 +2101,15 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
               : metadata.filesTouched.join(", ")
           }`
         );
-        console.log(
-          `Dependency impact: ${metadata.dependencyImpact.kind}${
-            metadata.dependencyImpact.files.length === 0
-              ? ""
-              : ` (${metadata.dependencyImpact.files.join(", ")})`
-          }`
-        );
-        console.log(`Diff hash: ${metadata.diffHash ?? "unknown"}`);
+      console.log(
+        `Dependency impact: ${metadata.dependencyImpact.kind}${
+          metadata.dependencyImpact.files.length === 0
+            ? ""
+            : ` (${metadata.dependencyImpact.files.join(", ")})`
+        }`
+      );
+      console.log(`Risk class: ${metadata.riskClass ?? "unknown"}`);
+      console.log(`Diff hash: ${metadata.diffHash ?? "unknown"}`);
         console.log(
           `Canonical signature: ${metadata.canonicalSignature ?? "unknown"}`
         );
