@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
-import type { Evidence, Task } from "@runstead/core";
+import type { Evidence, Goal, Task } from "@runstead/core";
 import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sqlite";
 import { describe, expect, it } from "vitest";
 
@@ -63,6 +63,20 @@ describe("generateLaunchReadinessReport", () => {
       const database = openRunsteadDatabase(initialized.stateDb);
 
       try {
+        projectGoal(database, {
+          ...created.goal,
+          id: "goal_old_startup",
+          title: "Old startup goal",
+          createdAt: "2026-05-14T01:00:00.000Z",
+          updatedAt: "2026-05-14T02:30:00.000Z"
+        });
+        projectTask(database, {
+          ...measurementTask,
+          id: "task_old_goal_blocked",
+          goalId: "goal_old_startup",
+          status: "blocked",
+          updatedAt: "2026-05-14T04:00:00.000Z"
+        });
         projectTask(database, {
           ...measurementTask,
           id: "task_old_measurement_blocked",
@@ -123,6 +137,7 @@ describe("generateLaunchReadinessReport", () => {
       expect(markdown).toContain("CI configuration is missing [source: repo:ci_detection]");
       expect(markdown).toContain("ev_launch_report_command_001");
       expect(markdown).toContain("measurement framework");
+      expect(markdown).not.toContain("task_old_goal_blocked");
       expect(markdown).not.toContain("task_old_measurement_blocked");
 
       const auditDatabase = openRunsteadDatabase(initialized.stateDb);
@@ -171,7 +186,7 @@ describe("generateLaunchReadinessReport", () => {
           blockers: result.blockers,
           summary: {
             blockers: result.blockers.length,
-            tasks: 5
+            tasks: 6
           }
         });
         expect(payload.trustSummary?.conclusion).toContain("Not launch-ready");
@@ -536,6 +551,28 @@ describe("generateLaunchReadinessReport", () => {
     }
   });
 });
+
+function projectGoal(
+  database: ReturnType<typeof openRunsteadDatabase>,
+  goal: Goal
+): void {
+  appendEventAndProject(database, {
+    event: {
+      eventId: `evt_${goal.id}`,
+      type: "goal.updated",
+      aggregateType: "goal",
+      aggregateId: goal.id,
+      payload: {
+        status: goal.status
+      },
+      createdAt: goal.updatedAt
+    },
+    projection: {
+      type: "goal",
+      value: goal
+    }
+  });
+}
 
 function projectTask(
   database: ReturnType<typeof openRunsteadDatabase>,

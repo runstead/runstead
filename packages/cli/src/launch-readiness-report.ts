@@ -1205,10 +1205,24 @@ function releaseBlockers(data: LaunchReadinessReportData): string[] {
 function unresolvedTaskBlockers(
   data: LaunchReadinessReportData & { hasVerifierEvidence: boolean }
 ): string[] {
-  return latestTaskPerType(data.tasks)
+  return latestTaskPerType(scopedTaskBlockerTasks(data))
     .filter((task) => ["failed", "blocked", "waiting_approval"].includes(task.status))
     .filter((task) => !taskBlockerResolvedByEvidence(task, data))
     .map((task) => `task ${task.id} (${task.type}) is ${task.status}`);
+}
+
+function scopedTaskBlockerTasks(data: LaunchReadinessReportData): TaskReportRow[] {
+  const latestGoal = data.goals
+    .toSorted(
+      (left, right) =>
+        Date.parse(right.updated_at) - Date.parse(left.updated_at) ||
+        right.id.localeCompare(left.id)
+    )
+    .at(0);
+
+  return latestGoal === undefined
+    ? data.tasks
+    : data.tasks.filter((task) => task.goal_id === latestGoal.id);
 }
 
 function latestTaskPerType(tasks: TaskReportRow[]): TaskReportRow[] {
