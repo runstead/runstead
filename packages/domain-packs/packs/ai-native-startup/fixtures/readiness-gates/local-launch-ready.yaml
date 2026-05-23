@@ -1,0 +1,40 @@
+schemaVersion: 1
+name: local launch ready
+description: Local launch can proceed with command verifier and synthetic UI smoke evidence.
+input:
+  target: local
+  stage: launch
+  phases:
+    - id: verifiers
+      title: Run verifiers
+      status: passed
+      evidenceIds:
+        - ev_local_command
+    - id: ui_smoke
+      title: UI smoke
+      status: passed
+      evidenceIds:
+        - ev_ui_smoke
+  evidenceTiers:
+    - local_command
+    - synthetic_smoke
+  evidenceTypes:
+    - command_output
+    - startup_ui_validation
+expect:
+  verdict: local_launch_ready
+  canLaunch: true
+  blockers: []
+  evidenceRefs:
+    - ev_local_command
+    - ev_ui_smoke
+  targetReadiness:
+    staging:
+      verdict: staging_launch_blocked
+      canLaunch: false
+      blockers:
+        - CI-verified evidence is required for staging or production
+        - staging deployment evidence is required
+        - rollback drill evidence is required for staging
+        - monitoring alert evidence is required for staging
+        - migration validation evidence is required for staging

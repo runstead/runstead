@@ -1,0 +1,50 @@
+schemaVersion: 1
+name: production launch blocked
+description: Production launch stays blocked until production, analytics, support, security, and ops evidence exist.
+input:
+  target: production
+  stage: launch
+  phases:
+    - id: verifiers
+      title: Run verifiers
+      status: passed
+      evidenceIds:
+        - ev_local_command
+    - id: ui_smoke
+      title: UI smoke
+      status: passed
+      evidenceIds:
+        - ev_ui_smoke
+  evidenceTiers:
+    - local_command
+    - synthetic_smoke
+    - ci_verified
+    - staging_deployment
+  evidenceTypes:
+    - command_output
+    - startup_ui_validation
+    - startup_rollback_drill
+    - startup_monitoring_alerts
+    - startup_migration_validation
+expect:
+  verdict: public_launch_blocked
+  canLaunch: false
+  blockers:
+    - production deployment evidence is required
+    - real-user analytics evidence is required
+    - support or feedback triage evidence is required
+    - security scan evidence is required
+    - rollback-plan evidence is required
+    - observability evidence is required
+    - error budget evidence is required
+    - real-user traffic gate evidence is required
+    - post-launch watch evidence is required
+  targetReadiness:
+    local:
+      verdict: local_launch_ready
+      canLaunch: true
+      blockers: []
+    staging:
+      verdict: staging_launch_ready
+      canLaunch: true
+      blockers: []

@@ -454,6 +454,7 @@ describe("cli entrypoint", () => {
     const evidenceAdd = evidence?.commands.find((command) => command.name() === "add");
     const gate = startup?.commands.find((command) => command.name() === "gate");
     const gateCheck = gate?.commands.find((command) => command.name() === "check");
+    const gateTest = gate?.commands.find((command) => command.name() === "test");
 
     expect(startup?.commands.map((command) => command.name())).toEqual(
       expect.arrayContaining([
@@ -681,6 +682,12 @@ describe("cli entrypoint", () => {
     );
     expect(gateCheck?.options.map((option) => option.long)).toEqual(
       expect.arrayContaining(["--actor", "--cwd", "--domain", "--stage"])
+    );
+    expect(gate?.commands.map((command) => command.name())).toEqual(
+      expect.arrayContaining(["check", "decide", "test", "waive"])
+    );
+    expect(gateTest?.options.map((option) => option.long)).toEqual(
+      expect.arrayContaining(["--json"])
     );
   });
 

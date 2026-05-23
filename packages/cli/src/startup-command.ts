@@ -2182,6 +2182,27 @@ export function registerStartupCommands(program: Command): void {
     );
 
   startupGate
+    .command("test")
+    .description("Replay startup gate fixture files against the readiness verdict engine.")
+    .argument("<fixture>", "Startup gate fixture file or directory")
+    .option("--json", "Print JSON output")
+    .action(async (fixture: string, options: { json?: boolean }) => {
+      const { formatStartupGateFixtureTestSummary, testStartupGateFixtures } =
+        await import("./startup-gate-test.js");
+      const result = await testStartupGateFixtures({ fixturePath: fixture });
+
+      if (options.json === true) {
+        console.log(JSON.stringify(result, null, 2));
+      } else {
+        console.log(formatStartupGateFixtureTestSummary(result));
+      }
+
+      if (result.failed > 0) {
+        process.exitCode = 1;
+      }
+    });
+
+  startupGate
     .command("waive")
     .description(
       "Record a time-boxed owner-approved waiver for a startup gate blocker."
