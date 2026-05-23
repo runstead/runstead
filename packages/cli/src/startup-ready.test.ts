@@ -327,9 +327,7 @@ describe("startup readiness run model", () => {
         now: new Date("2026-05-22T01:21:00.000Z")
       });
       const context = ingestPlan.phases.find((phase) => phase.id === "context");
-      const measurement = ingestPlan.phases.find(
-        (phase) => phase.id === "measurement"
-      );
+      const measurement = ingestPlan.phases.find((phase) => phase.id === "measurement");
       const formatted = formatStartupReadyPlan(ingestPlan);
 
       expect(context?.nextAction).toContain("ingest: record existing AGENTS.md");
@@ -587,7 +585,9 @@ describe("startup readiness run model", () => {
           "checks:",
           "  - name: home",
           `    url: http://127.0.0.1:${port}`,
-          "    viewport: desktop",
+          "    viewports:",
+          "      - desktop",
+          "      - mobile",
           "    expectText:",
           "      - Todo MVP",
           "      - Add todo",
@@ -627,7 +627,7 @@ describe("startup readiness run model", () => {
         status: "passed",
         blockers: []
       });
-      expect(uiPhase?.evidenceIds).toHaveLength(1);
+      expect(uiPhase?.evidenceIds).toHaveLength(2);
       expect(result.run.evidenceTypes).toEqual(
         expect.arrayContaining([
           "startup_metric_snapshot",
@@ -709,9 +709,8 @@ describe("startup readiness run model", () => {
         "utf8"
       );
 
-      const { inferStartupReadyUiSmokeFlowActions } = await import(
-        "./startup-ready.js"
-      );
+      const { inferStartupReadyUiSmokeFlowActions } =
+        await import("./startup-ready.js");
       const steps = await inferStartupReadyUiSmokeFlowActions(workspace);
 
       expect(steps.map((step) => step.type)).toEqual([

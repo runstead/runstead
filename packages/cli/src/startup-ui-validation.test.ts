@@ -12,10 +12,38 @@ import { initRunstead } from "./init.js";
 import { checkStartupGate } from "./startup-evidence.js";
 import {
   executeStartupUiValidation,
-  recordStartupUiValidation
+  recordStartupUiValidation,
+  summarizeStartupUiValidationFailure
 } from "./startup-ui-validation.js";
 
 describe("startup UI validation evidence", () => {
+  it("summarizes failures by the failed user action first", () => {
+    expect(
+      summarizeStartupUiValidationFailure({
+        runner: "browser_flow_smoke",
+        responseStatus: 200,
+        responseOk: true,
+        expectedText: [{ text: "Todo MVP", found: true }],
+        flowActions: [
+          {
+            type: "fill",
+            status: "pass",
+            summary: "filled todo",
+            selector: "input[type='text']"
+          },
+          {
+            type: "click",
+            status: "fail",
+            summary: "button did not become enabled",
+            selector: "button[type='submit']"
+          }
+        ]
+      })
+    ).toBe(
+      "user action click selector \"button[type='submit']\" failed: button did not become enabled"
+    );
+  });
+
   it("records UI validation artifacts and blocks launch on failed checks", async () => {
     const workspace = join(tmpdir(), `runstead-startup-ui-${process.pid}`);
 

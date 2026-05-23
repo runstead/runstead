@@ -142,6 +142,32 @@ export interface StartupUiFlowActionResult {
   actual?: string | number;
 }
 
+export function summarizeStartupUiValidationFailure(
+  execution: StartupUiValidationExecutionEvidence
+): string {
+  const failedAction = execution.flowActions?.find(
+    (action) => action.status === "fail"
+  );
+
+  if (failedAction !== undefined) {
+    return startupUiFlowActionFailureSummary(failedAction);
+  }
+
+  const missingText = execution.expectedText.find((item) => !item.found);
+
+  if (missingText !== undefined) {
+    return `expected text was not visible: ${JSON.stringify(missingText.text)}`;
+  }
+
+  if (!execution.responseOk) {
+    return execution.responseStatus === 0
+      ? "page did not load"
+      : `page returned HTTP ${execution.responseStatus}`;
+  }
+
+  return execution.error ?? "one or more UI validation checks failed";
+}
+
 export interface StartupUiValidationExecutionArtifacts {
   dom?: string;
   screenshot?: string;
@@ -297,8 +323,7 @@ async function executeHttpDomValidation(
   const domStatus = executedDomStatus(response, html, expectedText);
   const accessibilityStatus = executedAccessibilityStatus(html);
   const responsiveStatus = executedResponsiveStatus(options.viewport);
-  const criticalFlowStatus =
-    options.criticalFlow === undefined ? "not_run" : domStatus;
+  const criticalFlowStatus = options.criticalFlow === undefined ? "not_run" : domStatus;
   const execution: StartupUiValidationExecutionEvidence = {
     runner: "http_dom_smoke",
     responseStatus: response.status,
@@ -375,9 +400,8 @@ async function executeBrowserFlowValidation(
     );
     const serverLogAsset = await persistServerLogAsset(options.cwd, options.server);
     const expectedText = textChecks(browser.html, options.expectText ?? []);
-    const domStatus = browser.responseOk && expectedText.every((item) => item.found)
-      ? "pass"
-      : "fail";
+    const domStatus =
+      browser.responseOk && expectedText.every((item) => item.found) ? "pass" : "fail";
     const accessibilityStatus = executedAccessibilityStatus(browser.html);
     const responsiveStatus = executedResponsiveStatus(options.viewport);
     const criticalFlowStatus = browser.actionResults.every(
@@ -393,9 +417,7 @@ async function executeBrowserFlowValidation(
       flowActions: browser.actionResults,
       artifacts: {
         dom: domAsset.uri,
-        ...(screenshotAsset === undefined
-          ? {}
-          : { screenshot: screenshotAsset.uri }),
+        ...(screenshotAsset === undefined ? {} : { screenshot: screenshotAsset.uri }),
         ...(consoleAsset === undefined ? {} : { consoleLog: consoleAsset.uri }),
         ...(serverLogAsset === undefined ? {} : { serverLog: serverLogAsset.uri })
       },
@@ -588,7 +610,8 @@ async function recordStartupUiExecutionFailure(
     error: unknown;
   }
 ): Promise<ExecuteStartupUiValidationResult> {
-  const message = options.error instanceof Error ? options.error.message : String(options.error);
+  const message =
+    options.error instanceof Error ? options.error.message : String(options.error);
   const html = `<!doctype html><html><body><pre>${escapeHtml(message)}</pre></body></html>`;
   const domAsset = await persistStartupUiTextAsset({
     cwd: options.cwd,
@@ -668,6 +691,19 @@ function textChecks(
     text,
     found: html.includes(text)
   }));
+}
+
+function startupUiFlowActionFailureSummary(action: StartupUiFlowActionResult): string {
+  const selector =
+    action.selector === undefined || action.selector.length === 0
+      ? ""
+      : ` selector ${JSON.stringify(action.selector)}`;
+  const expected =
+    action.expected === undefined ? "" : ` expected ${JSON.stringify(action.expected)}`;
+  const actual =
+    action.actual === undefined ? "" : ` actual ${JSON.stringify(action.actual)}`;
+
+  return `user action ${action.type}${selector}${expected}${actual} failed: ${action.summary}`;
 }
 
 function startupUiExecutionSources(
@@ -774,9 +810,7 @@ async function runPlaywrightBrowserFlow(
     const actionResults: StartupUiFlowActionResult[] = [];
 
     for (const action of input.flowActions) {
-      actionResults.push(
-        await runPlaywrightFlowAction(page, action, input.timeoutMs)
-      );
+      actionResults.push(await runPlaywrightFlowAction(page, action, input.timeoutMs));
     }
 
     const html = await page.content();
@@ -999,7 +1033,10 @@ function viewportSize(viewport: string): { width: number; height: number } {
 }
 
 function dynamicImport(specifier: string): Promise<unknown> {
-  return Function("specifier", "return import(specifier)")(specifier) as Promise<unknown>;
+  return Function(
+    "specifier",
+    "return import(specifier)"
+  )(specifier) as Promise<unknown>;
 }
 
 async function runChromeDevtoolsBrowserFlow(
@@ -1236,12 +1273,7 @@ async function runCdpFlowAction(
     }
 
     if (action.type === "expectText" || action.type === "expectPersisted") {
-      const text = await waitForCdpText(
-        connection,
-        sessionId,
-        action.text,
-        timeoutMs
-      );
+      const text = await waitForCdpText(connection, sessionId, action.text, timeoutMs);
       const found = text.includes(action.text);
 
       return {
@@ -1522,10 +1554,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function escapeHtml(value: string): string {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;");
+  return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 }
 
 interface PlaywrightBrowser {

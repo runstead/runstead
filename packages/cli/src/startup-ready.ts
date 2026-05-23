@@ -29,6 +29,7 @@ import {
 import { generateStartupCompleteProductCheck } from "./startup-complete-check.js";
 import {
   executeStartupUiValidation,
+  summarizeStartupUiValidationFailure,
   type StartupUiFlowAction
 } from "./startup-ui-validation.js";
 import {
@@ -159,6 +160,8 @@ export interface StartupReadyUiSmokeRunResult {
   status: "passed" | "blocked";
   configPath: string;
   configStatus: "generated" | "loaded" | "blocked";
+  configWarnings: string[];
+  configRepairHints: string[];
   checks: StartupReadyUiSmokeCheckResult[];
   evidenceIds: string[];
   artifacts: string[];
@@ -170,6 +173,7 @@ export interface StartupReadyUiSmokeCheckResult {
   status: "passed" | "failed";
   evidenceId?: string;
   artifact?: string;
+  failureSummary?: string;
   blockers: string[];
 }
 
@@ -229,15 +233,16 @@ export async function planStartupReady(
   });
   const worker = governance.worker;
   const now = options.now ?? new Date();
-  const [root, inspection, devServer, recordedEvidence, gate, docs] =
-    await Promise.all([
-    resolveRunsteadRoot(cwd),
-    collectRepoInspection(cwd, now.toISOString()),
-    inspectStartupReadyDevServer(cwd),
-    collectRecordedStartupReadinessEvidence(cwd),
-    inspectStartupReadyGate(cwd, startupReadyStageToGateStage(stage), now),
-    inspectStartupReadyDocs(cwd, now)
-  ]);
+  const [root, inspection, devServer, recordedEvidence, gate, docs] = await Promise.all(
+    [
+      resolveRunsteadRoot(cwd),
+      collectRepoInspection(cwd, now.toISOString()),
+      inspectStartupReadyDevServer(cwd),
+      collectRecordedStartupReadinessEvidence(cwd),
+      inspectStartupReadyGate(cwd, startupReadyStageToGateStage(stage), now),
+      inspectStartupReadyDocs(cwd, now)
+    ]
+  );
   const evidenceTypes = new Set(recordedEvidence.evidenceTypes);
   const evidenceTiers = new Set(recordedEvidence.evidenceTiers);
 
@@ -253,7 +258,9 @@ export async function planStartupReady(
         "onboard",
         "Onboard repo",
         root.source === "missing" ? [] : [],
-        root.source === "missing" ? "execute: initialize Runstead" : "ingest: use existing Runstead state"
+        root.source === "missing"
+          ? "execute: initialize Runstead"
+          : "ingest: use existing Runstead state"
       ),
       planPhase(
         "context",
@@ -439,8 +446,7 @@ function startupReadinessRunGovernanceProfile(
   }
 ): ResolvedStartupWorkerGovernanceProfile {
   return (
-    run.governanceProfile ??
-    (run.worker === "codex_direct" ? "governed" : "readiness")
+    run.governanceProfile ?? (run.worker === "codex_direct" ? "governed" : "readiness")
   );
 }
 
@@ -737,10 +743,7 @@ async function collectStartupReadyInteractiveAnswers(
         )),
       acceptedDebt:
         provided.acceptedDebt ??
-        (await promptStartupReadyAnswer(
-          prompts,
-          "Accepted technical debt to record"
-        )),
+        (await promptStartupReadyAnswer(prompts, "Accepted technical debt to record")),
       activationMetric:
         provided.activationMetric ??
         (await promptStartupReadyAnswer(prompts, "Activation metric")),
@@ -819,14 +822,14 @@ function optionalSingleValueArray<K extends string>(
   key: K,
   value: string | undefined
 ): { [P in K]?: string[] } {
-  return value === undefined ? {} : { [key]: [value] } as { [P in K]: string[] };
+  return value === undefined ? {} : ({ [key]: [value] } as { [P in K]: string[] });
 }
 
 function optionalStringField<K extends string>(
   key: K,
   value: string | undefined
 ): { [P in K]?: string } {
-  return value === undefined ? {} : { [key]: value } as { [P in K]: string };
+  return value === undefined ? {} : ({ [key]: value } as { [P in K]: string });
 }
 
 export async function executeStartupReadyUiSmoke(input: {
@@ -841,6 +844,8 @@ export async function executeStartupReadyUiSmoke(input: {
       status: "blocked",
       configPath: loaded.path,
       configStatus: "blocked",
+      configWarnings: [],
+      configRepairHints: [],
       checks: [],
       evidenceIds: [],
       artifacts: [],
@@ -868,13 +873,19 @@ export async function executeStartupReadyUiSmoke(input: {
         ...(check.flow === undefined ? {} : { criticalFlow: check.flow }),
         ...(input.now === undefined ? {} : { now: input.now })
       });
+      const failureSummary = result.failed
+        ? summarizeStartupUiValidationFailure(result.execution)
+        : undefined;
 
       checks.push({
         name: check.name,
         status: result.failed ? "failed" : "passed",
         evidenceId: result.evidence.evidence.id,
         artifact: result.domArtifact,
-        blockers: result.failed ? [`UI smoke check failed: ${check.name}`] : []
+        ...(failureSummary === undefined ? {} : { failureSummary }),
+        blockers: result.failed
+          ? [`UI smoke check failed: ${check.name}: ${failureSummary}`]
+          : []
       });
     } catch (error) {
       checks.push({
@@ -900,6 +911,8 @@ export async function executeStartupReadyUiSmoke(input: {
     status: blockers.length === 0 ? "passed" : "blocked",
     configPath: loaded.path,
     configStatus: loaded.status,
+    configWarnings: loaded.warnings,
+    configRepairHints: loaded.repairHints,
     checks,
     evidenceIds,
     artifacts,
@@ -912,6 +925,8 @@ async function loadOrCreateStartupReadyUiSmokeConfig(cwd: string): Promise<
       path: string;
       status: "loaded" | "generated";
       config: StartupReadyUiSmokeConfig;
+      warnings: string[];
+      repairHints: string[];
     }
   | {
       path: string;
@@ -925,10 +940,14 @@ async function loadOrCreateStartupReadyUiSmokeConfig(cwd: string): Promise<
   const existing = await readOptionalTextFile(path);
 
   if (existing.trim().length > 0) {
+    const loaded = parseStartupReadyUiSmokeConfig(existing, path);
+
     return {
       path,
       status: "loaded",
-      config: parseStartupReadyUiSmokeConfig(existing, path)
+      config: loaded.config,
+      warnings: loaded.warnings,
+      repairHints: loaded.repairHints
     };
   }
 
@@ -942,7 +961,9 @@ async function loadOrCreateStartupReadyUiSmokeConfig(cwd: string): Promise<
     return {
       path,
       status: "generated",
-      config
+      config,
+      warnings: [],
+      repairHints: []
     };
   } catch (error) {
     return {
@@ -970,7 +991,7 @@ async function defaultStartupReadyUiSmokeConfig(
     },
     checks: [
       {
-        name: "home",
+        name: steps.length === 0 ? "home-desktop" : "home-desktop-product-flow",
         url: "http://127.0.0.1:3000",
         viewport: "desktop",
         expectText,
@@ -979,6 +1000,13 @@ async function defaultStartupReadyUiSmokeConfig(
             ? "load the primary product route"
             : "todo golden path: add, toggle, search/filter, reload persistence",
         ...(steps.length === 0 ? {} : { steps })
+      },
+      {
+        name: "home-mobile",
+        url: "http://127.0.0.1:3000",
+        viewport: "mobile",
+        expectText,
+        flow: "load the primary product route on mobile viewport"
       }
     ]
   };
@@ -1170,7 +1198,7 @@ function extractHtmlSignalText(contents: string): string[] {
 }
 
 function packageNameToDisplayText(name: string): string {
-  const unscoped = name.includes("/") ? name.split("/").pop() ?? name : name;
+  const unscoped = name.includes("/") ? (name.split("/").pop() ?? name) : name;
 
   return unscoped
     .split(/[-_\s]+/u)
@@ -1192,15 +1220,32 @@ function stringifyStartupReadyUiSmokeConfig(config: StartupReadyUiSmokeConfig): 
 function parseStartupReadyUiSmokeConfig(
   contents: string,
   path: string
-): StartupReadyUiSmokeConfig {
+): {
+  config: StartupReadyUiSmokeConfig;
+  warnings: string[];
+  repairHints: string[];
+} {
   const parsed = parseYaml(contents) as unknown;
 
   if (!isRecord(parsed)) {
     throw new Error(`UI smoke config must be a YAML object: ${path}`);
   }
 
+  const warnings: string[] = [];
+  const repairHints: string[] = [];
   const server = startupReadyUiSmokeServerObject(parsed);
   const checks = Array.isArray(parsed.checks) ? parsed.checks : [];
+  const usesLegacyStartupShape = isRecord(parsed.startup);
+  const usesLegacyCheckShape = checks.some(
+    (check) => isRecord(check) && (isRecord(check.request) || isRecord(check.expect))
+  );
+
+  if (usesLegacyStartupShape || usesLegacyCheckShape) {
+    warnings.push("legacy UI smoke config shape was auto-normalized");
+    repairHints.push(
+      "Prefer schemaVersion/server.command/server.port/checks[].expectText for durable UI smoke configs."
+    );
+  }
 
   if (server === undefined) {
     throw new Error(`UI smoke config is missing server settings: ${path}`);
@@ -1222,16 +1267,20 @@ function parseStartupReadyUiSmokeConfig(
   }
 
   return {
-    schemaVersion: 1,
-    server: {
-      command,
-      port,
-      ...(url === undefined ? {} : { url }),
-      ...(timeoutMs === undefined ? {} : { timeoutMs })
+    config: {
+      schemaVersion: 1,
+      server: {
+        command,
+        port,
+        ...(url === undefined ? {} : { url }),
+        ...(timeoutMs === undefined ? {} : { timeoutMs })
+      },
+      checks: checks.flatMap((check, index) =>
+        parseStartupReadyUiSmokeCheck(check, index, path)
+      )
     },
-    checks: checks.map((check, index) =>
-      parseStartupReadyUiSmokeCheck(check, index, path)
-    )
+    warnings,
+    repairHints
   };
 }
 
@@ -1262,7 +1311,7 @@ function parseStartupReadyUiSmokeCheck(
   input: unknown,
   index: number,
   path: string
-): StartupReadyUiSmokeCheckConfig {
+): StartupReadyUiSmokeCheckConfig[] {
   if (!isRecord(input)) {
     throw new Error(`UI smoke check ${index + 1} must be an object: ${path}`);
   }
@@ -1279,25 +1328,48 @@ function parseStartupReadyUiSmokeCheck(
   ];
   const url = stringValue(input.url) ?? stringValue(legacyRequest?.url);
   const viewport = stringValue(input.viewport);
+  const viewports = unique([
+    ...(viewport === undefined ? [] : [viewport]),
+    ...arrayOfStrings(input.viewports)
+  ]);
   const parsedFlowSteps = parseStartupReadyUiSmokeSteps(input.steps ?? input.flow);
   const flow =
     typeof input.flow === "string"
       ? input.flow
-      : stringValue(input.description) ??
+      : (stringValue(input.description) ??
         (parsedFlowSteps.length === 0
           ? undefined
-          : "configured UI smoke interaction flow");
+          : "configured UI smoke interaction flow"));
   const timeoutMs = numberValue(input.timeoutMs);
 
-  return {
+  const base = {
     name,
     ...(url === undefined ? {} : { url }),
-    ...(viewport === undefined ? {} : { viewport }),
     expectText,
     ...(flow === undefined ? {} : { flow }),
     ...(parsedFlowSteps.length === 0 ? {} : { steps: parsedFlowSteps }),
     ...(timeoutMs === undefined ? {} : { timeoutMs })
   };
+
+  if (viewports.length === 0) {
+    return [base];
+  }
+
+  return viewports.map((item) => ({
+    ...base,
+    name: viewports.length === 1 ? name : `${name}-${uiSmokeViewportSlug(item)}`,
+    viewport: item
+  }));
+}
+
+function uiSmokeViewportSlug(value: string): string {
+  const slug = value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/gu, "-")
+    .replace(/^-|-$/gu, "");
+
+  return slug.length === 0 ? "viewport" : slug;
 }
 
 function parseStartupReadyUiSmokeSteps(value: unknown): StartupUiFlowAction[] {
@@ -1790,7 +1862,9 @@ function verifierPhaseUpdate(
   };
 }
 
-type StartupBuildMvpResultStatus = Awaited<ReturnType<typeof startupBuildMvp>>["status"];
+type StartupBuildMvpResultStatus = Awaited<
+  ReturnType<typeof startupBuildMvp>
+>["status"];
 
 export function startupBuildMvpPhaseExecutionStatus(
   status: StartupBuildMvpResultStatus
