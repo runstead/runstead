@@ -95,6 +95,12 @@ importers:
       '@runstead/state-sqlite':
         specifier: workspace:*
         version: link:../state-sqlite
+      '@runstead/tools':
+        specifier: workspace:*
+        version: link:../tools
+      '@runstead/verifiers':
+        specifier: workspace:*
+        version: link:../verifiers
       commander:
         specifier: 'catalog:'
         version: 14.0.3
@@ -116,6 +122,12 @@ importers:
       yaml:
         specifier: 'catalog:'
         version: 2.9.0
+      zod:
+        specifier: 'catalog:'
+        version: 4.4.3
+
+  packages/evidence:
+    dependencies:
       zod:
         specifier: 'catalog:'
         version: 4.4.3
@@ -153,6 +165,16 @@ importers:
         version: link:../core
 
   packages/testkit: {}
+
+  packages/tools: {}
+
+  packages/verifiers:
+    dependencies:
+      zod:
+        specifier: 'catalog:'
+        version: 4.4.3
+
+  packages/workers: {}
 
 packages:
 

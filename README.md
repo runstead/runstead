@@ -262,6 +262,10 @@ pnpm format:check
 - `@runstead/domain-packs`: built-in domain packs
 - `@runstead/runtime`: reusable execution, readiness, and tool-call primitives
 - `@runstead/governance`: policy and risk primitives
+- `@runstead/tools`: governed tool action contracts
+- `@runstead/verifiers`: verifier command contracts
+- `@runstead/evidence`: evidence quality/source contracts
+- `@runstead/workers`: worker capability and governance-level contracts
 - `@runstead/sdk`: public extension contracts for facets, collectors, verifiers,
   and gates
 - `@runstead/skills`: skill package lifecycle utilities

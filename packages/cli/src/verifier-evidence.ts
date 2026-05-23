@@ -12,16 +12,14 @@ import {
   type Task
 } from "@runstead/core";
 import { appendEventAndProject, type RunsteadDatabase } from "@runstead/state-sqlite";
+import type { CommandVerifierInput } from "@runstead/verifiers";
 
 import { writeJsonArtifactFile } from "./artifact-store.js";
 import { runShellCommand, type ShellCommandResult } from "./shell-executor.js";
 
-const execFileAsync = promisify(execFile);
+export type { CommandVerifierInput } from "@runstead/verifiers";
 
-export interface CommandVerifierInput {
-  name: string;
-  command: string;
-}
+const execFileAsync = promisify(execFile);
 
 export interface StoreCommandVerifierEvidenceOptions {
   cwd?: string;

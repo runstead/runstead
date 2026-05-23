@@ -36,6 +36,8 @@
     "@runstead/runtime": "workspace:*",
     "@runstead/skills": "workspace:*",
     "@runstead/state-sqlite": "workspace:*",
+    "@runstead/tools": "workspace:*",
+    "@runstead/verifiers": "workspace:*",
     "commander": "catalog:",
     "yaml": "catalog:",
     "zod": "catalog:"
