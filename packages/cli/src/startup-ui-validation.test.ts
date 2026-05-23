@@ -15,6 +15,7 @@ import {
   executeStartupUiValidation,
   recordStartupUiValidation,
   summarizeStartupUiValidationFailure,
+  startupUiValidationInfraStatus,
   startupUiValidationRepairHint
 } from "./startup-ui-validation.js";
 
@@ -83,6 +84,25 @@ describe("startup UI validation evidence", () => {
     expect(classifyStartupUiValidationFailure(execution)).toBe("product_gap");
     expect(startupUiValidationRepairHint(execution)).toContain(
       "missing user-visible product state"
+    );
+    expect(startupUiValidationInfraStatus(execution)).toBe("pass");
+  });
+
+  it("classifies DevTools failures as browser infrastructure", () => {
+    const execution = {
+      runner: "browser_flow_smoke" as const,
+      responseStatus: 0,
+      responseOk: false,
+      expectedText: [],
+      flowActions: [],
+      error: "Chrome exited before exposing DevTools websocket URL",
+      failureCategory: "browser_runtime" as const
+    };
+
+    expect(classifyStartupUiValidationFailure(execution)).toBe("browser_runtime");
+    expect(startupUiValidationInfraStatus(execution)).toBe("fail");
+    expect(startupUiValidationRepairHint(execution)).toContain(
+      "Playwright/Chrome availability"
     );
   });
 
@@ -445,6 +465,188 @@ describe("startup UI validation evidence", () => {
       await expect(
         readFile(fileURLToPath(content.execution.artifacts.screenshot), "utf8")
       ).resolves.toBe("png bytes");
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("retries browser infrastructure failures once before recording success", async () => {
+    const workspace = join(
+      tmpdir(),
+      `runstead-startup-ui-retry-success-${process.pid}`
+    );
+    let attempts = 0;
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await initRunstead({ cwd: workspace });
+
+      const executed = await executeStartupUiValidation({
+        cwd: workspace,
+        url: "http://127.0.0.1:3000",
+        viewport: "desktop",
+        criticalFlow: "todo golden path",
+        expectText: ["Todo MVP"],
+        flowActions: [
+          {
+            type: "expectText",
+            text: "Todo MVP"
+          }
+        ],
+        browserRunner: async () => {
+          attempts += 1;
+
+          if (attempts === 1) {
+            throw new Error("Chrome DevTools websocket closed");
+          }
+
+          return {
+            responseStatus: 200,
+            responseOk: true,
+            html: "<main><h1>Todo MVP</h1><button>Add todo</button></main>",
+            consoleMessages: [],
+            actionResults: [
+              {
+                type: "expectText",
+                status: "pass",
+                summary: "found Todo MVP",
+                expected: "Todo MVP"
+              }
+            ]
+          };
+        },
+        now: new Date("2026-05-14T04:40:00.000Z")
+      });
+      const artifact = JSON.parse(
+        await readFile(executed.evidence.artifactPath, "utf8")
+      ) as { content: string };
+      const content = JSON.parse(artifact.content) as {
+        infraStatus: string;
+        execution: {
+          retryCount?: number;
+          retryReason?: string;
+        };
+      };
+
+      expect(attempts).toBe(2);
+      expect(executed.failed).toBe(false);
+      expect(content.infraStatus).toBe("pass");
+      expect(content.execution.retryCount).toBe(1);
+      expect(content.execution.retryReason).toContain("DevTools websocket closed");
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("records browser infrastructure failure tier after retry is exhausted", async () => {
+    const workspace = join(
+      tmpdir(),
+      `runstead-startup-ui-retry-fail-${process.pid}`
+    );
+    let attempts = 0;
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await initRunstead({ cwd: workspace });
+
+      const executed = await executeStartupUiValidation({
+        cwd: workspace,
+        url: "http://127.0.0.1:3000",
+        viewport: "desktop",
+        criticalFlow: "todo golden path",
+        expectText: ["Todo MVP"],
+        flowActions: [
+          {
+            type: "expectText",
+            text: "Todo MVP"
+          }
+        ],
+        browserRunner: async () => {
+          attempts += 1;
+          throw new Error("Chrome exited before exposing DevTools websocket URL");
+        },
+        now: new Date("2026-05-14T04:45:00.000Z")
+      });
+      const artifact = JSON.parse(
+        await readFile(executed.evidence.artifactPath, "utf8")
+      ) as { content: string };
+      const content = JSON.parse(artifact.content) as {
+        infraStatus: string;
+        execution: {
+          failureCategory?: string;
+          retryCount?: number;
+          retryReason?: string;
+          error?: string;
+        };
+      };
+
+      expect(attempts).toBe(2);
+      expect(executed.failed).toBe(true);
+      expect(content.infraStatus).toBe("fail");
+      expect(content.execution.failureCategory).toBe("browser_runtime");
+      expect(content.execution.retryCount).toBe(1);
+      expect(content.execution.retryReason).toContain(
+        "Chrome exited before exposing DevTools websocket URL"
+      );
+      expect(content.execution.error).toContain("after retry");
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("keeps cleanup warnings from changing the UI smoke verdict", async () => {
+    const workspace = join(
+      tmpdir(),
+      `runstead-startup-ui-cleanup-warning-${process.pid}`
+    );
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await initRunstead({ cwd: workspace });
+
+      const executed = await executeStartupUiValidation({
+        cwd: workspace,
+        url: "http://127.0.0.1:3000",
+        viewport: "desktop",
+        criticalFlow: "todo golden path",
+        expectText: ["Todo MVP"],
+        flowActions: [
+          {
+            type: "expectText",
+            text: "Todo MVP"
+          }
+        ],
+        browserRunner: async () => ({
+          responseStatus: 200,
+          responseOk: true,
+          html: "<main><h1>Todo MVP</h1><button>Add todo</button></main>",
+          consoleMessages: [
+            "[warn] failed to clean Chrome profile /tmp/runstead-ui-chrome-x: ENOTEMPTY"
+          ],
+          actionResults: [
+            {
+              type: "expectText",
+              status: "pass",
+              summary: "found Todo MVP",
+              expected: "Todo MVP"
+            }
+          ]
+        }),
+        now: new Date("2026-05-14T04:50:00.000Z")
+      });
+      const artifact = JSON.parse(
+        await readFile(executed.evidence.artifactPath, "utf8")
+      ) as { content: string };
+      const content = JSON.parse(artifact.content) as {
+        infraStatus: string;
+        consoleErrors: string[];
+      };
+
+      expect(executed.failed).toBe(false);
+      expect(content.infraStatus).toBe("pass");
+      expect(content.consoleErrors).toEqual([
+        "[warn] failed to clean Chrome profile /tmp/runstead-ui-chrome-x: ENOTEMPTY"
+      ]);
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }

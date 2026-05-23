@@ -88,6 +88,8 @@ export interface StartupUiValidationExecutionEvidence {
   artifacts?: StartupUiValidationExecutionArtifacts;
   error?: string;
   failureCategory?: StartupUiValidationFailureCategory;
+  retryCount?: number;
+  retryReason?: string;
   server?: StartupUiValidationServerEvidence;
 }
 
@@ -267,6 +269,23 @@ export function startupUiValidationRepairHint(
   return "Inspect the DOM artifact and update the product flow or UI smoke config with a narrower assertion.";
 }
 
+export function startupUiValidationInfraStatus(
+  execution: StartupUiValidationExecutionEvidence | undefined
+): StartupUiValidationStatus {
+  if (execution === undefined) {
+    return "not_run";
+  }
+
+  if (
+    classifyStartupUiValidationFailure(execution) === "browser_runtime" ||
+    classifyStartupUiValidationFailure(execution) === "network"
+  ) {
+    return "fail";
+  }
+
+  return "pass";
+}
+
 export interface StartupUiValidationExecutionArtifacts {
   dom?: string;
   screenshot?: string;
@@ -313,6 +332,7 @@ export async function recordStartupUiValidation(
     domStatus: options.domStatus ?? "not_run",
     accessibilityStatus: options.accessibilityStatus ?? "not_run",
     responsiveStatus: options.responsiveStatus ?? "not_run",
+    infraStatus: startupUiValidationInfraStatus(options.execution),
     ...(options.criticalFlow === undefined
       ? {}
       : { criticalFlow: options.criticalFlow }),
@@ -471,13 +491,15 @@ async function executeBrowserFlowValidation(
 ): Promise<ExecuteStartupUiValidationResult> {
   try {
     const runner = options.browserRunner ?? defaultStartupUiBrowserRunner;
-    const browser = await runner({
+    const browserInput = {
       url: options.url,
       viewport: options.viewport,
       expectText: options.expectText ?? [],
       flowActions: options.flowActions,
       timeoutMs: options.timeoutMs ?? 20_000
-    });
+    };
+    const { result: browser, retryCount, retryReason } =
+      await runStartupUiBrowserRunnerWithRetry(runner, browserInput);
     const domAsset = await persistStartupUiTextAsset({
       cwd: options.cwd,
       prefix: "dom",
@@ -514,6 +536,8 @@ async function executeBrowserFlowValidation(
       responseOk: browser.responseOk,
       expectedText,
       flowActions: browser.actionResults,
+      ...(retryCount === 0 ? {} : { retryCount }),
+      ...(retryReason === undefined ? {} : { retryReason }),
       artifacts: {
         dom: domAsset.uri,
         ...(screenshotAsset === undefined ? {} : { screenshot: screenshotAsset.uri }),
@@ -536,7 +560,7 @@ async function executeBrowserFlowValidation(
       domArtifact: domAsset.uri,
       ...(screenshotAsset === undefined ? {} : { screenshot: screenshotAsset.uri }),
       consoleErrors: browser.consoleMessages.filter((message) =>
-        /^\[(error|warning)\]/i.test(message)
+        /^\[(error|warn|warning)\]/i.test(message)
       ),
       execution,
       sources: startupUiExecutionSources(
@@ -711,6 +735,8 @@ async function recordStartupUiExecutionFailure(
 ): Promise<ExecuteStartupUiValidationResult> {
   const message =
     options.error instanceof Error ? options.error.message : String(options.error);
+  const retryCount = startupUiExecutionRetryCount(options.error);
+  const retryReason = startupUiExecutionRetryReason(options.error);
   const html = `<!doctype html><html><body><pre>${escapeHtml(message)}</pre></body></html>`;
   const domAsset = await persistStartupUiTextAsset({
     cwd: options.cwd,
@@ -738,6 +764,8 @@ async function recordStartupUiExecutionFailure(
     },
     error: message,
     failureCategory: startupUiExecutionErrorCategory(message),
+    ...(retryCount === undefined ? {} : { retryCount }),
+    ...(retryReason === undefined ? {} : { retryReason }),
     ...serverEvidence(options.server)
   };
   const recorded = await recordStartupUiValidation({
@@ -796,6 +824,69 @@ function startupUiExecutionErrorCategory(
   }
 
   return "unknown";
+}
+
+async function runStartupUiBrowserRunnerWithRetry(
+  runner: StartupUiBrowserRunner,
+  input: StartupUiBrowserRunnerInput
+): Promise<{
+  result: StartupUiBrowserRunnerResult;
+  retryCount: number;
+  retryReason?: string;
+}> {
+  try {
+    return {
+      result: await runner(input),
+      retryCount: 0
+    };
+  } catch (error) {
+    if (!isRetryableStartupUiInfraError(error)) {
+      throw error;
+    }
+
+    const retryReason = errorMessage(error);
+
+    try {
+      return {
+        result: await runner(input),
+        retryCount: 1,
+        retryReason
+      };
+    } catch (retryError) {
+      throw new StartupUiBrowserRetryError(retryReason, errorMessage(retryError));
+    }
+  }
+}
+
+function isRetryableStartupUiInfraError(error: unknown): boolean {
+  const category = startupUiExecutionErrorCategory(errorMessage(error));
+
+  return category === "browser_runtime" || category === "network";
+}
+
+function startupUiExecutionRetryCount(error: unknown): number | undefined {
+  return error instanceof StartupUiBrowserRetryError ? error.retryCount : undefined;
+}
+
+function startupUiExecutionRetryReason(error: unknown): string | undefined {
+  return error instanceof StartupUiBrowserRetryError ? error.retryReason : undefined;
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+class StartupUiBrowserRetryError extends Error {
+  readonly retryCount = 1;
+  readonly retryReason: string;
+
+  constructor(firstMessage: string, retryMessage: string) {
+    super(
+      `UI smoke browser infrastructure failed after retry: ${retryMessage}; first failure: ${firstMessage}`
+    );
+    this.name = "StartupUiBrowserRetryError";
+    this.retryReason = firstMessage;
+  }
 }
 
 function localScreenshotPath(screenshot: string, cwd?: string): string | undefined {
