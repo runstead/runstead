@@ -774,7 +774,9 @@ async function runPlaywrightBrowserFlow(
     const actionResults: StartupUiFlowActionResult[] = [];
 
     for (const action of input.flowActions) {
-      actionResults.push(await runPlaywrightFlowAction(page, action));
+      actionResults.push(
+        await runPlaywrightFlowAction(page, action, input.timeoutMs)
+      );
     }
 
     const html = await page.content();
@@ -814,7 +816,8 @@ async function launchChromium(chromium: {
 
 async function runPlaywrightFlowAction(
   page: PlaywrightPage,
-  action: StartupUiFlowAction
+  action: StartupUiFlowAction,
+  timeoutMs: number
 ): Promise<StartupUiFlowActionResult> {
   try {
     switch (action.type) {
@@ -854,7 +857,7 @@ async function runPlaywrightFlowAction(
         };
       }
       case "expectText": {
-        const text = await page.locator("body").innerText();
+        const text = await waitForPlaywrightText(page, action.text, timeoutMs);
         const found = text.includes(action.text);
 
         return {
@@ -889,7 +892,10 @@ async function runPlaywrightFlowAction(
           action.selector !== undefined || action.selectors !== undefined
             ? await firstLocator(page, action)
             : page.locator("body");
-        const text = await locator.innerText();
+        const text =
+          action.selector !== undefined || action.selectors !== undefined
+            ? await waitForPlaywrightLocatorText(locator, action.text, timeoutMs)
+            : await waitForPlaywrightText(page, action.text, timeoutMs);
         const found = text.includes(action.text);
         const selector =
           "selector" in locator && typeof locator.selector === "string"
@@ -914,6 +920,47 @@ async function runPlaywrightFlowAction(
       summary: error instanceof Error ? error.message : String(error)
     };
   }
+}
+
+async function waitForPlaywrightText(
+  page: PlaywrightPage,
+  text: string,
+  timeoutMs: number
+): Promise<string> {
+  return waitForText(() => page.locator("body").innerText(), text, timeoutMs);
+}
+
+async function waitForPlaywrightLocatorText(
+  locator: PlaywrightLocator,
+  text: string,
+  timeoutMs: number
+): Promise<string> {
+  return waitForText(() => locator.innerText(), text, timeoutMs);
+}
+
+async function waitForText(
+  readText: () => Promise<string>,
+  text: string,
+  timeoutMs: number
+): Promise<string> {
+  const deadline = Date.now() + timeoutMs;
+  let latest = "";
+
+  while (Date.now() < deadline) {
+    try {
+      latest = await readText();
+    } catch {
+      latest = "";
+    }
+
+    if (latest.includes(text)) {
+      return latest;
+    }
+
+    await sleep(100);
+  }
+
+  return latest;
 }
 
 async function firstLocator(
@@ -1146,6 +1193,25 @@ async function waitForCdpPageReady(
   throw new Error("Timed out waiting for browser page readiness");
 }
 
+async function waitForCdpText(
+  connection: CdpConnection,
+  sessionId: string,
+  text: string,
+  timeoutMs: number
+): Promise<string> {
+  return waitForText(
+    () =>
+      cdpEvaluateString(
+        connection,
+        sessionId,
+        'document.body ? document.body.innerText || document.body.textContent || "" : ""',
+        timeoutMs
+      ),
+    text,
+    timeoutMs
+  );
+}
+
 async function runCdpFlowAction(
   connection: CdpConnection,
   sessionId: string,
@@ -1167,6 +1233,29 @@ async function runCdpFlowAction(
     if (action.type === "expectPersisted") {
       await connection.command("Page.reload", {}, sessionId);
       await waitForCdpPageReady(connection, sessionId, timeoutMs);
+    }
+
+    if (action.type === "expectText" || action.type === "expectPersisted") {
+      const text = await waitForCdpText(
+        connection,
+        sessionId,
+        action.text,
+        timeoutMs
+      );
+      const found = text.includes(action.text);
+
+      return {
+        type: action.type,
+        status: found ? "pass" : "fail",
+        summary: found
+          ? action.type === "expectText"
+            ? `found ${action.text}`
+            : `persisted ${action.text}`
+          : action.type === "expectText"
+            ? `missing ${action.text}`
+            : `missing persisted ${action.text}`,
+        expected: action.text
+      };
     }
 
     const result = (await cdpEvaluateJson(
