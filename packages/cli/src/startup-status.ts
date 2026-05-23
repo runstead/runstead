@@ -388,21 +388,25 @@ function readinessVerdictReady(
 function readLatestStartupReadinessVerdict(
   root: string
 ): StartupStatusReadinessVerdict | undefined {
-  const runsDir = join(root, "startup", "runs");
-
-  if (!existsSync(runsDir)) {
-    return undefined;
-  }
-
-  const runs = readdirSync(runsDir)
-    .filter((name) => name.endsWith(".json"))
-    .map((name) => readStartupReadinessRunVerdict(join(runsDir, name)))
+  const runs = startupReadinessRunDirs(root)
+    .flatMap((runsDir) =>
+      readdirSync(runsDir)
+        .filter((name) => name.endsWith(".json"))
+        .map((name) => readStartupReadinessRunVerdict(join(runsDir, name)))
+    )
     .filter((run): run is StartupStatusReadinessVerdict => run !== undefined)
     .sort((left, right) =>
       readinessVerdictTime(right).localeCompare(readinessVerdictTime(left))
     );
 
   return runs[0];
+}
+
+function startupReadinessRunDirs(root: string): string[] {
+  return [
+    join(root, "startup", "readiness-runs"),
+    join(root, "startup", "runs")
+  ].filter((path) => existsSync(path));
 }
 
 function readStartupReadinessRunVerdict(

@@ -95,9 +95,11 @@ describe("startup status", () => {
         now: new Date("2026-05-14T00:00:00.000Z")
       });
 
-      await mkdir(join(onboard.root, "startup", "runs"), { recursive: true });
+      await mkdir(join(onboard.root, "startup", "readiness-runs"), {
+        recursive: true
+      });
       await writeFile(
-        join(onboard.root, "startup", "runs", "run_ready.json"),
+        join(onboard.root, "startup", "readiness-runs", "run_ready.json"),
         `${JSON.stringify(
           {
             id: "run_ready",
