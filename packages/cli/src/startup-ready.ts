@@ -39,6 +39,7 @@ import {
   checkStartupGate,
   type StartupGateStage
 } from "./startup-evidence.js";
+import { supersedeStartupRemediationTasks } from "./startup-remediation.js";
 import {
   evaluateStartupVerdict,
   type StartupVerdictResult
@@ -352,6 +353,15 @@ export async function runStartupReady(
   const finalRun = await finalizeRun(run, options.now ?? new Date(), {
     extraEvidenceTiers: options.ci === true ? ["ci_verified"] : []
   });
+  if (isStartupReadyVerdict(finalRun.verdict)) {
+    await supersedeStartupRemediationTasks({
+      cwd: finalRun.cwd,
+      stage: startupReadyStageToGateStage(finalRun.stage),
+      activeBlockers: finalRun.verdictBlockers,
+      runId: finalRun.id,
+      now: options.now ?? new Date()
+    });
+  }
   let reportedRun = await writeStartupReadinessDecisionReport(
     finalRun,
     options.now ?? new Date()
@@ -2128,6 +2138,10 @@ function startupReadyStageToGateStage(
   }
 
   return "launch";
+}
+
+function isStartupReadyVerdict(verdict: StartupReadinessVerdict): boolean {
+  return verdict.endsWith("_ready");
 }
 
 function startupReadinessDecisionMatrix(run: StartupReadinessRun): {

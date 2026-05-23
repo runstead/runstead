@@ -12,7 +12,8 @@ import {
   executeStartupRemediationPlan,
   formatStartupRemediationExecution,
   formatStartupRemediationPlan,
-  generateStartupRemediationPlan
+  generateStartupRemediationPlan,
+  supersedeStartupRemediationTasks
 } from "./startup-remediation.js";
 import { listTasks } from "./tasks.js";
 
@@ -110,6 +111,60 @@ describe("startup remediation", () => {
 
       expect(cliOutput).toContain("Startup remediation: launch");
       expect(cliOutput).toContain("(reused)");
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("supersedes stale remediation tasks when readiness blockers clear", async () => {
+    const workspace = join(
+      tmpdir(),
+      `runstead-startup-remediate-supersede-${process.pid}`
+    );
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await initRunstead({ cwd: workspace, profile: "trusted-local" });
+      await installDomainPack({
+        cwd: workspace,
+        ref: "ai-native-startup",
+        now: new Date("2026-05-14T02:00:00.000Z")
+      });
+      await createGoal({
+        cwd: workspace,
+        domain: "ai-native-startup",
+        template: "build-mvp",
+        now: new Date("2026-05-14T03:00:00.000Z")
+      });
+      const plan = await generateStartupRemediationPlan({
+        cwd: workspace,
+        stage: "launch",
+        now: new Date("2026-05-14T03:10:00.000Z")
+      });
+
+      const superseded = await supersedeStartupRemediationTasks({
+        cwd: workspace,
+        stage: "launch",
+        activeBlockers: [],
+        runId: "run_ready_123",
+        now: new Date("2026-05-14T03:20:00.000Z")
+      });
+      const tasks = listTasks({ cwd: workspace }).tasks.filter(
+        (task) => task.type === "startup_remediation"
+      );
+      const nextPlan = await generateStartupRemediationPlan({
+        cwd: workspace,
+        stage: "launch",
+        now: new Date("2026-05-14T03:30:00.000Z")
+      });
+
+      expect(superseded.supersededTasks).toHaveLength(plan.tasks.length);
+      expect(tasks.every((task) => task.status === "cancelled")).toBe(true);
+      expect(tasks[0]?.output?.superseded).toMatchObject({
+        byRunId: "run_ready_123",
+        reason: "latest startup readiness verdict has no active blockers"
+      });
+      expect(nextPlan.tasks.every((item) => !item.reused)).toBe(true);
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }
