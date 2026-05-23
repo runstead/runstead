@@ -259,6 +259,14 @@ describe("generateLaunchReadinessReport", () => {
         createdAt: "2026-05-14T03:15:00.000Z",
         updatedAt: "2026-05-14T03:20:00.000Z"
       };
+      const codexDirectTask: Task = {
+        ...wrappedWorkerTask,
+        id: "task_codex_direct_001",
+        input: {
+          worker: "codex_direct",
+          commands: [{ name: "test", command: "npm test" }]
+        }
+      };
       const evidenceDir = join(initialized.root, "evidence");
       const commandArtifactPath = join(evidenceDir, "verifier-wrapped.json");
 
@@ -328,6 +336,7 @@ describe("generateLaunchReadinessReport", () => {
           updatedAt: "2026-05-14T03:19:30.000Z"
         });
         projectTask(database, wrappedWorkerTask);
+        projectTask(database, codexDirectTask);
         projectEvidence(database, {
           id: "ev_wrapped_worker_command_001",
           type: "command_output",
@@ -336,6 +345,15 @@ describe("generateLaunchReadinessReport", () => {
           uri: pathToFileURL(commandArtifactPath).href,
           summary: "Codex CLI verifier commands passed",
           createdAt: "2026-05-14T03:21:00.000Z"
+        });
+        projectEvidence(database, {
+          id: "ev_codex_direct_command_001",
+          type: "command_output",
+          subjectType: "task",
+          subjectId: codexDirectTask.id,
+          uri: pathToFileURL(commandArtifactPath).href,
+          summary: "Codex Direct verifier commands passed",
+          createdAt: "2026-05-14T03:21:30.000Z"
         });
 
         for (const [type, summary, content] of [
@@ -474,7 +492,7 @@ describe("generateLaunchReadinessReport", () => {
       });
       expect(json).toContain('"schemaVersion": 1');
       expect(json).toContain('"trustSummary"');
-      expect(result.markdown).toContain("Command evidence records: 1");
+      expect(result.markdown).toContain("Command evidence records: 2");
       expect(result.markdown).toContain("code_state=stale");
       expect(result.markdown).toContain(
         "verifier evidence was recorded against stale code state"
@@ -486,6 +504,8 @@ describe("generateLaunchReadinessReport", () => {
       expect(result.markdown).toContain("Accepted debt register:");
       expect(result.markdown).toContain("ev_wrapped_worker_command_001");
       expect(result.markdown).toContain("wrapped worker post-run verifier evidence");
+      expect(result.markdown).toContain("ev_codex_direct_command_001");
+      expect(result.markdown).toContain("codex_direct governed verifier evidence");
       expect(result.markdown).toContain("`codex_direct` is the hard-proxy path");
       expect(result.markdown).toContain("## Evidence Provenance");
       expect(result.markdown).toContain("## Frontend UI Validation");

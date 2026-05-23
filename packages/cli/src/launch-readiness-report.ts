@@ -96,6 +96,7 @@ interface EvidenceReportRow {
   subject_id: string;
   task_domain: string | null;
   task_type: string | null;
+  task_input_json: string | null;
   uri: string;
   summary: string | null;
   created_at: string;
@@ -323,6 +324,7 @@ function readLaunchReadinessData(
       `
       SELECT DISTINCT e.id, e.type, e.subject_type, e.subject_id,
              t.domain AS task_domain, t.type AS task_type,
+             t.input_json AS task_input_json,
              e.uri, e.summary, e.created_at
       FROM evidence e
       LEFT JOIN tasks t ON e.subject_type = 'task' AND e.subject_id = t.id
@@ -707,9 +709,17 @@ function governanceBoundary(data: LaunchReadinessReportData): string {
 
 function commandEvidenceGovernance(item: EvidenceReportRow): string {
   if (item.task_type === "local_agent_task") {
-    return item.task_domain === "repo-maintenance"
-      ? "wrapped worker post-run verifier evidence"
-      : "local agent post-run verifier evidence";
+    const worker = taskInputWorker(item.task_input_json);
+
+    if (worker === "codex_direct") {
+      return "codex_direct governed verifier evidence";
+    }
+
+    if (worker === "codex_cli" || worker === "claude_code") {
+      return "wrapped worker post-run verifier evidence";
+    }
+
+    return "local agent post-run verifier evidence";
   }
 
   if (
@@ -720,6 +730,22 @@ function commandEvidenceGovernance(item: EvidenceReportRow): string {
   }
 
   return "command verifier evidence";
+}
+
+function taskInputWorker(inputJson: string | null): string | undefined {
+  if (inputJson === null) {
+    return undefined;
+  }
+
+  try {
+    const input = JSON.parse(inputJson) as unknown;
+
+    return isRecord(input) && typeof input.worker === "string"
+      ? input.worker
+      : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function formatCurrentCodeFingerprint(codeState: CommandVerifierCodeState): string {
