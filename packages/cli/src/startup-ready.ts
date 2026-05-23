@@ -6,7 +6,8 @@ import { stdin, stdout } from "node:process";
 import { createInterface } from "node:readline/promises";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import { openRunsteadDatabase } from "@runstead/state-sqlite";
+import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sqlite";
+import { createRunsteadId, type JsonObject, type RunsteadEvent } from "@runstead/core";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 
 import { collectRepoInspection } from "./inspection-evidence.js";
@@ -516,10 +517,82 @@ export async function writeStartupReadinessRun(
 
   await mkdir(dir, { recursive: true });
   await writeFile(path, `${JSON.stringify(normalizedRun, null, 2)}\n`, "utf8");
+  await recordStartupReadinessRunSnapshot(normalizedRun, path);
 
   return {
     run: normalizedRun,
     path
+  };
+}
+
+async function recordStartupReadinessRunSnapshot(
+  run: StartupReadinessRun,
+  path: string
+): Promise<void> {
+  let resolvedState: Awaited<ReturnType<typeof requireRunsteadStateDb>>;
+
+  try {
+    resolvedState = await requireRunsteadStateDb(run.cwd);
+  } catch {
+    return;
+  }
+
+  const database = openRunsteadDatabase(resolvedState.stateDb);
+
+  try {
+    appendEventAndProject(database, {
+      event: startupReadinessRunSnapshotEvent(run, path)
+    });
+  } finally {
+    database.close();
+  }
+}
+
+function startupReadinessRunSnapshotEvent(
+  run: StartupReadinessRun,
+  path: string
+): RunsteadEvent {
+  const createdAt = run.completedAt ?? new Date().toISOString();
+  const payload: JsonObject = {
+    runId: run.id,
+    schemaVersion: run.schemaVersion,
+    path,
+    cwd: run.cwd,
+    stage: run.stage,
+    target: run.target,
+    worker: run.worker,
+    governanceProfile: startupReadinessRunGovernanceProfile(run),
+    status: run.status,
+    verdict: run.verdict,
+    verdictBlockers: run.verdictBlockers,
+    evidenceIds: run.evidenceIds,
+    evidenceTiers: run.evidenceTiers,
+    evidenceTypes: run.evidenceTypes,
+    reportPaths: run.reportPaths,
+    phases: run.phases.map((phase) => ({
+      id: phase.id,
+      title: phase.title,
+      status: phase.status,
+      evidenceIds: phase.evidenceIds,
+      artifacts: phase.artifacts,
+      blockers: phase.blockers,
+      ...(phase.nextAction === undefined ? {} : { nextAction: phase.nextAction })
+    })),
+    guidedFlow: run.guidedFlow,
+    operatorCommands: run.operatorCommands,
+    startedAt: run.startedAt,
+    ...(run.completedAt === undefined ? {} : { completedAt: run.completedAt }),
+    ...(run.gitHead === undefined ? {} : { gitHead: run.gitHead }),
+    dirtyState: run.dirtyState
+  };
+
+  return {
+    eventId: createRunsteadId("evt"),
+    type: "startup_readiness.run_snapshot",
+    aggregateType: "startup_readiness_run",
+    aggregateId: run.id,
+    payload,
+    createdAt
   };
 }
 

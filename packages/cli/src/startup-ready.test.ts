@@ -241,6 +241,21 @@ describe("startup readiness run model", () => {
         '"operatorCommands"'
       );
       expect(persisted).toEqual(result.run);
+      const readinessEvents = startupReadinessSnapshotEvents(workspace, result.run.id);
+      expect(readinessEvents.length).toBeGreaterThan(1);
+      expect(readinessEvents.at(-1)).toMatchObject({
+        runId: result.run.id,
+        status: "completed",
+        verdict: "local_launch_ready",
+        path: result.path
+      });
+      expect(
+        readinessEvents.some((event) =>
+          event.phases.some(
+            (phase) => phase.id === "verifiers" && phase.status === "passed"
+          )
+        )
+      ).toBe(true);
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }
@@ -1007,6 +1022,43 @@ function evidenceCount(workspace: string, type: string): number {
       .get(type) as { count: number };
 
     return row.count;
+  } finally {
+    database.close();
+  }
+}
+
+interface StartupReadinessSnapshotEventPayload {
+  runId: string;
+  status: string;
+  verdict: string;
+  path: string;
+  phases: { id: string; status: string }[];
+}
+
+function startupReadinessSnapshotEvents(
+  workspace: string,
+  runId: string
+): StartupReadinessSnapshotEventPayload[] {
+  const database = openRunsteadDatabase(join(workspace, ".runstead", "state.db"));
+
+  try {
+    const rows = database
+      .prepare(
+        `
+        SELECT payload_json
+        FROM events
+        WHERE type = 'startup_readiness.run_snapshot'
+          AND aggregate_type = 'startup_readiness_run'
+          AND aggregate_id = ?
+        ORDER BY id ASC
+      `
+      )
+      .all(runId) as { payload_json: string }[];
+
+    return rows.map(
+      (row) =>
+        JSON.parse(row.payload_json) as unknown as StartupReadinessSnapshotEventPayload
+    );
   } finally {
     database.close();
   }
