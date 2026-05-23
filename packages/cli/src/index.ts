@@ -2064,8 +2064,11 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
         action: "inspect approvals"
       });
 
-      const { showApproval } = await import("./approvals.js");
+      const { approvalActionMetadata, showApproval } = await import(
+        "./approvals.js"
+      );
       const result = showApproval({ ...options, id });
+      const metadata = approvalActionMetadata(result.policyDecision);
 
       console.log(`Approval: ${result.approval.id}`);
       console.log(`Status: ${result.approval.status}`);
@@ -2091,6 +2094,25 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
         console.log(
           `Resource: ${approvalResourceSummary(result.policyDecision.action)}`
         );
+        console.log(
+          `Files touched: ${
+            metadata.filesTouched.length === 0
+              ? "unknown"
+              : metadata.filesTouched.join(", ")
+          }`
+        );
+        console.log(
+          `Dependency impact: ${metadata.dependencyImpact.kind}${
+            metadata.dependencyImpact.files.length === 0
+              ? ""
+              : ` (${metadata.dependencyImpact.files.join(", ")})`
+          }`
+        );
+        console.log(`Diff hash: ${metadata.diffHash ?? "unknown"}`);
+        console.log(
+          `Canonical signature: ${metadata.canonicalSignature ?? "unknown"}`
+        );
+        console.log(`Risk summary: ${metadata.riskSummary ?? "unknown"}`);
         console.log(
           `Obligations: ${
             result.policyDecision.obligations.length === 0

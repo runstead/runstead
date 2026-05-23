@@ -6,6 +6,7 @@ import { openRunsteadDatabase } from "@runstead/state-sqlite";
 import { describe, expect, it } from "vitest";
 
 import {
+  approvalActionMetadata,
   decideApproval,
   findApprovedApprovalForAction,
   listApprovals,
@@ -31,6 +32,14 @@ describe("approvals", () => {
           id: "main...runstead/task_001"
         },
         context: {
+          filesTouched: ["src/app.ts", "package.json"],
+          diffHash: "a".repeat(64),
+          dependencyImpact: {
+            kind: "dependency_files_touched",
+            files: ["package.json"]
+          },
+          riskSummary: "Patch touches dependency files: package.json.",
+          canonicalSignature: "b".repeat(64),
           sideEffects: ["github_pr_create"]
         }
       };
@@ -79,6 +88,16 @@ describe("approvals", () => {
           result: {
             policyFingerprint: "policy_fp_test"
           }
+        });
+        expect(approvalActionMetadata(shown.policyDecision)).toEqual({
+          filesTouched: ["src/app.ts", "package.json"],
+          dependencyImpact: {
+            kind: "dependency_files_touched",
+            files: ["package.json"]
+          },
+          diffHash: "a".repeat(64),
+          canonicalSignature: "b".repeat(64),
+          riskSummary: "Patch touches dependency files: package.json."
         });
         const event = database
           .prepare(
