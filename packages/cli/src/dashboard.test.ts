@@ -286,9 +286,13 @@ describe("buildDashboard", () => {
       const snapshot = JSON.parse(
         await readFile(result.dataPath, "utf8")
       ) as typeof result.snapshot;
+      const operator = JSON.parse(
+        await readFile(result.operatorActionsPath, "utf8")
+      ) as typeof result.snapshot.operator;
 
       expect(result.outputDir).toBe(join(root, "dashboard"));
       expect(html).toContain("Runstead Dashboard");
+      expect(html).toContain("Operator Console");
       expect(html).toContain("Startup Readiness");
       expect(html).toContain("run_dashboard_ready");
       expect(html).toContain("UI smoke artifacts");
@@ -300,6 +304,9 @@ describe("buildDashboard", () => {
       expect(html).toContain("service-api");
       expect(html).toContain("task_001 waiting_approval");
       expect(html).toContain("healthy age=60000ms");
+      expect(html).toContain(
+        "runstead approval approve-and-resume appr_dashboard_ci --cwd"
+      );
       expect(html).toContain("runstead startup ready --stage launch");
       expect(html).toContain(
         "waiting_approval branch=runstead/task_001/ci-456 approval=appr_dashboard_ci"
@@ -358,6 +365,20 @@ describe("buildDashboard", () => {
           }
         }
       });
+      expect(snapshot.operator).toMatchObject({
+        recommendedAction: {
+          id: "daemon-approval-resume",
+          source: "daemon_approval",
+          status: "blocked"
+        }
+      });
+      expect(snapshot.operator.actions.map((action) => action.id)).toEqual([
+        "daemon-approval-resume",
+        "startup-next-action",
+        "startup-run-command-1",
+        "startup-run-command-2"
+      ]);
+      expect(operator).toEqual(snapshot.operator);
 
       const auditDatabase = openRunsteadDatabase(stateDb);
 
@@ -403,6 +424,14 @@ describe("buildDashboard", () => {
             agentPatch: {
               taskId: "task_001",
               filesTouched: 2
+            }
+          },
+          operator: {
+            actions: 4,
+            recommendedAction: {
+              id: "daemon-approval-resume",
+              source: "daemon_approval",
+              status: "blocked"
             }
           }
         });
@@ -532,11 +561,15 @@ describe("buildDashboard", () => {
       try {
         const html = await fetch(served.url);
         const data = await fetch(`${served.url}/state.json`);
+        const operatorActions = await fetch(`${served.url}/operator-actions.json`);
         const missing = await fetch(`${served.url}/missing`);
 
         await expect(html.text()).resolves.toContain("Runstead Dashboard");
         await expect(data.text()).resolves.toContain(
           '"generatedAt": "2026-05-23T02:00:00.000Z"'
+        );
+        await expect(operatorActions.text()).resolves.toContain(
+          '"id": "startup-next-action"'
         );
         expect(missing.status).toBe(404);
         expect(served.port).toBeGreaterThan(0);

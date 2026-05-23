@@ -96,6 +96,11 @@ Serve the same state as a local dashboard:
 runstead dashboard serve --cwd /path/to/mvp
 ```
 
+The dashboard now includes an operator console that merges the current startup
+next action, readiness run commands, guided-flow commands, and daemon approval
+resume commands. The same action queue is available at
+`/operator-actions.json` for local tooling.
+
 ## UI Smoke
 
 `startup ready` looks for:

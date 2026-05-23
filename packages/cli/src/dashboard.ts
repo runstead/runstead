@@ -34,6 +34,7 @@ export interface BuildDashboardResult {
   outputDir: string;
   htmlPath: string;
   dataPath: string;
+  operatorActionsPath: string;
   snapshot: DashboardSnapshot;
   event: RunsteadEvent;
 }
@@ -56,6 +57,7 @@ export interface DashboardSnapshot {
   events: DashboardEvent[];
   daemon: DashboardDaemonStatus;
   startup: DashboardStartupSnapshot;
+  operator: DashboardOperatorConsole;
 }
 
 export interface DashboardSummary {
@@ -204,6 +206,24 @@ export interface DashboardStartupAgentPatch {
   summary: string;
 }
 
+export interface DashboardOperatorConsole {
+  actions: DashboardOperatorAction[];
+  recommendedAction?: DashboardOperatorAction;
+}
+
+export interface DashboardOperatorAction {
+  id: string;
+  title: string;
+  command: string;
+  reason: string;
+  source:
+    | "startup_next_action"
+    | "startup_run_command"
+    | "guided_flow"
+    | "daemon_approval";
+  status: "ready" | "blocked" | "info";
+}
+
 export async function buildDashboard(
   options: BuildDashboardOptions = {}
 ): Promise<BuildDashboardResult> {
@@ -218,17 +238,26 @@ export async function buildDashboard(
       : resolve(options.outputDir);
   const htmlPath = join(outputDir, "index.html");
   const dataPath = join(outputDir, "state.json");
+  const operatorActionsPath = join(outputDir, "operator-actions.json");
   const database = openRunsteadDatabase(stateDb);
 
   try {
-    const snapshot = {
-      ...readDashboardSnapshot(database, generatedAt),
-      daemon: await readDashboardDaemonStatus(root, generatedAt),
-      startup: await readDashboardStartupStatus({
+    const baseSnapshot = readDashboardSnapshot(database, generatedAt);
+    const daemon = await readDashboardDaemonStatus(root, generatedAt);
+    const startup = await readDashboardStartupStatus({
+      cwd,
+      root,
+      generatedAt,
+      database
+    });
+    const snapshot: DashboardSnapshot = {
+      ...baseSnapshot,
+      daemon,
+      startup,
+      operator: buildDashboardOperatorConsole({
         cwd,
-        root,
-        generatedAt,
-        database
+        daemon,
+        startup
       })
     };
     const html = formatDashboardHtml(snapshot);
@@ -243,6 +272,11 @@ export async function buildDashboard(
 
     await mkdir(outputDir, { recursive: true });
     await writeFile(dataPath, `${JSON.stringify(snapshot, null, 2)}\n`, "utf8");
+    await writeFile(
+      operatorActionsPath,
+      `${JSON.stringify(snapshot.operator, null, 2)}\n`,
+      "utf8"
+    );
     await writeFile(htmlPath, html, "utf8");
     appendEventAndProject(database, { event });
 
@@ -252,6 +286,7 @@ export async function buildDashboard(
       outputDir,
       htmlPath,
       dataPath,
+      operatorActionsPath,
       snapshot,
       event
     };
@@ -329,7 +364,12 @@ async function serveDashboardRequest(input: {
             path: input.build.dataPath,
             contentType: "application/json; charset=utf-8"
           }
-        : undefined;
+        : pathname === "/operator-actions.json"
+          ? {
+              path: input.build.operatorActionsPath,
+              contentType: "application/json; charset=utf-8"
+            }
+          : undefined;
 
   if (target === undefined) {
     input.response.writeHead(404, {
@@ -441,6 +481,9 @@ function readDashboardSnapshot(
     startup: {
       available: false,
       staleEvidence: []
+    },
+    operator: {
+      actions: []
     }
   };
 }
@@ -734,6 +777,90 @@ function countRows(database: RunsteadDatabase, table: string, where?: string): n
   return row.count;
 }
 
+function buildDashboardOperatorConsole(input: {
+  cwd: string;
+  daemon: DashboardDaemonStatus;
+  startup: DashboardStartupSnapshot;
+}): DashboardOperatorConsole {
+  const actions: DashboardOperatorAction[] = [];
+  const seen = new Set<string>();
+  const addAction = (action: DashboardOperatorAction): void => {
+    const key = `${action.source}:${action.command}`;
+
+    if (action.command.trim().length === 0 || seen.has(key)) {
+      return;
+    }
+
+    seen.add(key);
+    actions.push(action);
+  };
+
+  if (input.daemon.approvalId !== undefined) {
+    addAction({
+      id: "daemon-approval-resume",
+      title: "Approve and resume daemon task",
+      command: `runstead approval approve-and-resume ${shellQuote(input.daemon.approvalId)} --cwd ${shellQuote(input.cwd)}`,
+      reason:
+        input.daemon.ciRepairStatus === undefined
+          ? "A daemon task is waiting on approval."
+          : `Daemon CI repair is ${input.daemon.ciRepairStatus}.`,
+      source: "daemon_approval",
+      status: "blocked"
+    });
+  }
+
+  if (input.startup.status !== undefined) {
+    const activeBlockers =
+      input.startup.status.readiness?.blockers ??
+      input.startup.status.gates.flatMap((gate) => gate.blockers);
+
+    addAction({
+      id: "startup-next-action",
+      title: "Run startup next action",
+      command: input.startup.status.nextAction.command,
+      reason: input.startup.status.nextAction.reason,
+      source: "startup_next_action",
+      status: activeBlockers.length === 0 ? "ready" : "blocked"
+    });
+  }
+
+  const run = input.startup.latestRun;
+
+  for (const [index, item] of (run?.operatorCommands ?? []).entries()) {
+    addAction({
+      id: `startup-run-command-${index + 1}`,
+      title: item.title,
+      command: item.command,
+      reason: item.when,
+      source: "startup_run_command",
+      status: item.kind === "resume" && run?.status !== "completed" ? "blocked" : "info"
+    });
+  }
+
+  for (const [index, step] of (run?.guidedFlow ?? []).entries()) {
+    if (step.command === undefined) {
+      continue;
+    }
+
+    addAction({
+      id: `guided-flow-${index + 1}`,
+      title: step.title,
+      command: step.command,
+      reason: step.why,
+      source: "guided_flow",
+      status: step.status === "blocked" ? "blocked" : "ready"
+    });
+  }
+
+  const recommendedAction =
+    actions.find((action) => action.status === "blocked") ?? actions[0];
+
+  return {
+    actions,
+    ...(recommendedAction === undefined ? {} : { recommendedAction })
+  };
+}
+
 function formatDashboardHtml(snapshot: DashboardSnapshot): string {
   const summary = snapshot.summary;
 
@@ -836,7 +963,55 @@ function formatDashboardHtml(snapshot: DashboardSnapshot): string {
     .status-blocked { color: var(--risk); font-weight: 650; }
     .status-passed { color: var(--accent); font-weight: 650; }
     .empty { padding: 16px; color: var(--muted); }
+    .operator-actions {
+      display: grid;
+      gap: 0;
+    }
+    .operator-action {
+      display: grid;
+      grid-template-columns: minmax(180px, 1fr) minmax(240px, 2fr) auto;
+      gap: 12px;
+      align-items: center;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--line);
+    }
+    .operator-action:last-child { border-bottom: 0; }
+    .operator-action button {
+      border: 1px solid var(--line);
+      background: var(--panel);
+      border-radius: 6px;
+      color: var(--text);
+      cursor: pointer;
+      font: inherit;
+      min-height: 32px;
+      padding: 5px 10px;
+      white-space: nowrap;
+    }
+    .operator-action button:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+    }
+    @media (max-width: 720px) {
+      .operator-action {
+        grid-template-columns: 1fr;
+      }
+      .operator-action button {
+        justify-self: start;
+      }
+    }
   </style>
+  <script>
+    async function copyOperatorCommand(button) {
+      const command = button.getAttribute("data-command") || "";
+      try {
+        await navigator.clipboard.writeText(command);
+        button.textContent = "Copied";
+      } catch {
+        button.textContent = "Copy failed";
+      }
+      window.setTimeout(() => { button.textContent = "Copy"; }, 1400);
+    }
+  </script>
 </head>
 <body>
   <header>
@@ -852,6 +1027,7 @@ function formatDashboardHtml(snapshot: DashboardSnapshot): string {
       ${metric("Failed Tasks", summary.failedTasks)}
       ${metric("Pending Approvals", summary.pendingApprovals)}
     </div>
+    ${operatorConsoleSection(snapshot.operator)}
     ${startupSection(snapshot.startup)}
     ${daemonSection(snapshot.daemon)}
     ${tableSection(
@@ -915,6 +1091,33 @@ function formatDashboardHtml(snapshot: DashboardSnapshot): string {
 
 function metric(label: string, value: number): string {
   return `<div class="metric"><strong>${value}</strong><span>${escapeHtml(label)}</span></div>`;
+}
+
+function operatorConsoleSection(operator: DashboardOperatorConsole): string {
+  const recommended =
+    operator.recommendedAction === undefined
+      ? "none"
+      : `${operator.recommendedAction.title}: ${operator.recommendedAction.reason}`;
+
+  if (operator.actions.length === 0) {
+    return `<section><header><h2>Operator Console</h2><span class="muted">0 actions</span></header><div class="empty">No operator actions are available.</div></section>`;
+  }
+
+  const rows = operator.actions
+    .map(
+      (action) => `<div class="operator-action">
+        <div><strong>${escapeHtml(action.title)}</strong><br><span class="muted">${escapeHtml(action.source)} · ${statusCell(action.status)}</span></div>
+        <div><code>${escapeHtml(action.command)}</code><br><span class="muted">${escapeHtml(action.reason)}</span></div>
+        <button type="button" data-command="${escapeHtml(action.command)}" onclick="copyOperatorCommand(this)">Copy</button>
+      </div>`
+    )
+    .join("");
+
+  return `<section>
+    <header><h2>Operator Console</h2><span class="muted">${operator.actions.length} action${operator.actions.length === 1 ? "" : "s"}</span></header>
+    <table><tbody><tr><th>Recommended</th><td>${escapeHtml(recommended)}</td></tr><tr><th>API</th><td><code>/operator-actions.json</code></td></tr></tbody></table>
+    <div class="operator-actions">${rows}</div>
+  </section>`;
 }
 
 function startupSection(startup: DashboardStartupSnapshot): string {
@@ -1218,6 +1421,18 @@ function dashboardEventPayload(
     startup: {
       available: snapshot.startup.available,
       ...startupDetails
+    },
+    operator: {
+      actions: snapshot.operator.actions.length,
+      ...(snapshot.operator.recommendedAction === undefined
+        ? {}
+        : {
+            recommendedAction: {
+              id: snapshot.operator.recommendedAction.id,
+              source: snapshot.operator.recommendedAction.source,
+              status: snapshot.operator.recommendedAction.status
+            }
+          })
     }
   };
 }
@@ -1286,6 +1501,14 @@ function escapeHtml(value: string): string {
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;");
+}
+
+function shellQuote(value: string): string {
+  if (/^[A-Za-z0-9_/:=.,@+-]+$/.test(value)) {
+    return value;
+  }
+
+  return `'${value.replaceAll("'", "'\\''")}'`;
 }
 
 function parseJsonRecord(
