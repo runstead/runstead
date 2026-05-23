@@ -727,7 +727,7 @@ async function loadOrCreateStartupReadyUiSmokeConfig(cwd: string): Promise<
 
   try {
     const command = await detectStartupDevServerCommand(cwd);
-    const config = defaultStartupReadyUiSmokeConfig(command);
+    const config = await defaultStartupReadyUiSmokeConfig(cwd, command);
 
     await mkdir(join(root.root, "startup"), { recursive: true });
     await writeFile(path, stringifyStartupReadyUiSmokeConfig(config), "utf8");
@@ -746,7 +746,12 @@ async function loadOrCreateStartupReadyUiSmokeConfig(cwd: string): Promise<
   }
 }
 
-function defaultStartupReadyUiSmokeConfig(command: string): StartupReadyUiSmokeConfig {
+async function defaultStartupReadyUiSmokeConfig(
+  cwd: string,
+  command: string
+): Promise<StartupReadyUiSmokeConfig> {
+  const expectText = await inferStartupReadyUiSmokeExpectText(cwd);
+
   return {
     schemaVersion: 1,
     server: {
@@ -760,11 +765,117 @@ function defaultStartupReadyUiSmokeConfig(command: string): StartupReadyUiSmokeC
         name: "home",
         url: "http://127.0.0.1:3000",
         viewport: "desktop",
-        expectText: [],
+        expectText,
         flow: "load the primary product route"
       }
     ]
   };
+}
+
+export async function inferStartupReadyUiSmokeExpectText(
+  cwd: string
+): Promise<string[]> {
+  const [packageText, htmlTexts, readmeTexts] = await Promise.all([
+    inferExpectTextFromPackageJson(cwd),
+    inferExpectTextFromHtmlFiles(cwd),
+    inferExpectTextFromReadme(cwd)
+  ]);
+
+  const inferred = unique([...htmlTexts, ...readmeTexts, ...packageText]).slice(0, 6);
+
+  return inferred.length === 0 ? ["html"] : inferred;
+}
+
+async function inferExpectTextFromPackageJson(cwd: string): Promise<string[]> {
+  try {
+    const parsed = JSON.parse(
+      await readFile(join(cwd, "package.json"), "utf8")
+    ) as unknown;
+
+    if (!isRecord(parsed) || typeof parsed.name !== "string") {
+      return [];
+    }
+
+    const displayName = packageNameToDisplayText(parsed.name);
+
+    return displayName.length === 0 ? [] : [displayName];
+  } catch {
+    return [];
+  }
+}
+
+async function inferExpectTextFromHtmlFiles(cwd: string): Promise<string[]> {
+  const paths = [
+    join(cwd, "index.html"),
+    join(cwd, "public", "index.html"),
+    join(cwd, "src", "index.html")
+  ];
+  const texts: string[] = [];
+
+  for (const path of paths) {
+    const contents = await readOptionalTextFile(path);
+
+    if (contents.length === 0) {
+      continue;
+    }
+
+    texts.push(...extractHtmlSignalText(contents));
+  }
+
+  return texts;
+}
+
+async function inferExpectTextFromReadme(cwd: string): Promise<string[]> {
+  for (const name of ["README.md", "readme.md"]) {
+    const contents = await readOptionalTextFile(join(cwd, name));
+    const match = /^#\s+(.+)$/m.exec(contents);
+    const heading = match?.[1]?.trim();
+
+    if (heading !== undefined && heading.length > 0) {
+      return [heading];
+    }
+  }
+
+  return [];
+}
+
+function extractHtmlSignalText(contents: string): string[] {
+  const texts: string[] = [];
+  const patterns = [
+    /<title[^>]*>([^<]+)<\/title>/gi,
+    /<h1[^>]*>([^<]+)<\/h1>/gi,
+    /<button[^>]*>([^<]+)<\/button>/gi,
+    /aria-label=["']([^"']+)["']/gi,
+    /placeholder=["']([^"']+)["']/gi
+  ];
+
+  for (const pattern of patterns) {
+    for (const match of contents.matchAll(pattern)) {
+      const text = normalizeUiText(match[1]);
+
+      if (text !== undefined) {
+        texts.push(text);
+      }
+    }
+  }
+
+  return texts;
+}
+
+function packageNameToDisplayText(name: string): string {
+  const unscoped = name.includes("/") ? name.split("/").pop() ?? name : name;
+
+  return unscoped
+    .split(/[-_\s]+/u)
+    .filter(Boolean)
+    .map((part) => `${part.slice(0, 1).toUpperCase()}${part.slice(1)}`)
+    .join(" ");
+}
+
+function normalizeUiText(value: string | undefined): string | undefined {
+  const text = value?.replace(/\s+/gu, " ").trim();
+
+  return text === undefined || text.length === 0 ? undefined : text;
 }
 
 function stringifyStartupReadyUiSmokeConfig(config: StartupReadyUiSmokeConfig): string {

@@ -10,6 +10,7 @@ import {
   evaluateStartupReadinessVerdict,
   formatStartupReadinessRun,
   formatStartupReadyPlan,
+  inferStartupReadyUiSmokeExpectText,
   planStartupReady,
   readStartupReadinessRun,
   runStartupReady,
@@ -511,6 +512,43 @@ describe("startup readiness run model", () => {
       await rm(workspace, { force: true, recursive: true });
     }
   }, 60_000);
+
+  it("infers non-empty default UI smoke text from project metadata", async () => {
+    const workspace = join(tmpdir(), `runstead-startup-ready-ui-text-${process.pid}`);
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await mkdir(workspace, { recursive: true });
+      await writeFile(
+        join(workspace, "package.json"),
+        `${JSON.stringify({ name: "@acme/todo-launchpad" }, null, 2)}\n`,
+        "utf8"
+      );
+      await writeFile(
+        join(workspace, "index.html"),
+        [
+          "<!doctype html>",
+          "<html>",
+          "<head><title>Todo MVP</title></head>",
+          "<body><main><h1>Todo MVP</h1><button>Add task</button></main></body>",
+          "</html>"
+        ].join("\n"),
+        "utf8"
+      );
+      await writeFile(join(workspace, "README.md"), "# Launch Todos\n", "utf8");
+
+      await expect(inferStartupReadyUiSmokeExpectText(workspace)).resolves.toEqual(
+        expect.arrayContaining([
+          "Todo MVP",
+          "Add task",
+          "Launch Todos",
+          "Todo Launchpad"
+        ])
+      );
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
 
   it("accepts legacy agent-generated UI smoke config shape", async () => {
     const workspace = join(tmpdir(), `runstead-startup-ready-legacy-ui-${process.pid}`);
