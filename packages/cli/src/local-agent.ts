@@ -42,6 +42,7 @@ import {
   type CodexDirectPendingPatchResume,
   type CodexDirectWorkerResult
 } from "./codex-direct-worker.js";
+import { showApproval } from "./approvals.js";
 import {
   runGovernedToolAction,
   ToolActionApprovalRequiredError,
@@ -489,6 +490,52 @@ export async function runLocalAgentTask(
   } finally {
     database.close();
   }
+}
+
+export interface ResolveLocalAgentResumeTargetResult {
+  taskId: string;
+  approvalId?: string;
+  note?: string;
+}
+
+export function resolveLocalAgentResumeTarget(input: {
+  cwd?: string;
+  targetId: string;
+}): ResolveLocalAgentResumeTargetResult {
+  if (!input.targetId.startsWith("appr_")) {
+    return {
+      taskId: input.targetId
+    };
+  }
+
+  const shown = showApproval({
+    ...(input.cwd === undefined ? {} : { cwd: input.cwd }),
+    id: input.targetId
+  });
+
+  if (shown.task === undefined) {
+    throw new Error(
+      `Approval ${input.targetId} is not associated with a local agent task`
+    );
+  }
+
+  if (shown.approval.status === "pending") {
+    throw new Error(
+      `Approval ${input.targetId} is pending; run: runstead approval approve-and-resume ${input.targetId}`
+    );
+  }
+
+  if (shown.approval.status !== "approved") {
+    throw new Error(
+      `Approval ${input.targetId} is ${shown.approval.status}; only approved approvals can be resumed`
+    );
+  }
+
+  return {
+    taskId: shown.task.id,
+    approvalId: input.targetId,
+    note: `Resolved approval ${input.targetId} to local agent task ${shown.task.id}.`
+  };
 }
 
 async function runLocalAgentTaskWithDatabase(options: {

@@ -22,6 +22,7 @@ import {
   LOCAL_AGENT_TASK_TYPE,
   loadLocalAgentTaskReport,
   localAgentRunExitCode,
+  resolveLocalAgentResumeTarget,
   runLocalAgentTask,
   undoLocalAgentTask
 } from "./local-agent.js";
@@ -1191,6 +1192,16 @@ describe("local agent task primitives", () => {
         id: waiting.approval.id,
         decision: "approved",
         decidedBy: "local-admin"
+      });
+      expect(
+        resolveLocalAgentResumeTarget({
+          cwd: workspace,
+          targetId: waiting.approval.id
+        })
+      ).toMatchObject({
+        taskId: created.task.id,
+        approvalId: waiting.approval.id,
+        note: expect.stringContaining("Resolved approval")
       });
 
       const resumed = await runLocalAgentTask({

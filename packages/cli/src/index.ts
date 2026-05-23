@@ -2155,6 +2155,7 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
         console.log(`Grant reuse: ${approvalGrantReuseSummary(metadata)}`);
         if (shown.task !== undefined) {
           console.log(`Resume: runstead agent resume ${shown.task.id}`);
+          console.log(`Resume by approval: runstead agent resume ${result.approval.id}`);
         }
       }
     );
@@ -3702,10 +3703,10 @@ function addAgentCommand(command: Command): void {
   command
     .command("resume")
     .description("Resume a queued local agent task after an approval decision.")
-    .argument("<task-id>", "Local agent task id")
+    .argument("<task-or-approval-id>", "Local agent task id or approval id")
     .option("--cwd <path>", "Workspace directory")
     .option("--actor <id>", "RBAC subject for local agent execution", "local-admin")
-    .action(async (taskId: string, options: AgentReportCliOptions) => {
+    .action(async (targetId: string, options: AgentReportCliOptions) => {
       await requireRbacPermission({
         ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
         actor: options.actor,
@@ -3713,14 +3714,25 @@ function addAgentCommand(command: Command): void {
         action: "resume local agent tasks"
       });
 
-      const { formatLocalAgentRunReport, localAgentRunExitCode, runLocalAgentTask } =
-        await import("./local-agent.js");
+      const {
+        formatLocalAgentRunReport,
+        localAgentRunExitCode,
+        resolveLocalAgentResumeTarget,
+        runLocalAgentTask
+      } = await import("./local-agent.js");
+      const resumeTarget = resolveLocalAgentResumeTarget({
+        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+        targetId
+      });
       const result = await runLocalAgentTask({
         ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-        taskId
+        taskId: resumeTarget.taskId
       });
       const exitCode = localAgentRunExitCode(result);
 
+      if (resumeTarget.note !== undefined) {
+        console.log(resumeTarget.note);
+      }
       console.log(formatLocalAgentRunReport(result));
       if (exitCode !== 0) {
         process.exitCode = exitCode;
