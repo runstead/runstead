@@ -27,8 +27,11 @@ import {
 } from "./checkpoints.js";
 import {
   CODEX_DIRECT_WORKER_KIND,
+  readApprovedCodexDirectPendingPatch,
+  runCodexDirectPendingPatchResume,
   runCodexDirectWorker,
   type CodexDirectTransport,
+  type CodexDirectPendingPatchResume,
   type CodexDirectWorkerResult
 } from "./codex-direct-worker.js";
 import {
@@ -379,8 +382,12 @@ export async function runLocalAgentTask(
   const explicitProvider = localAgentTaskProvider(claimedTask);
   const explicitModel = localAgentTaskModel(claimedTask);
   const explicitBaseUrl = localAgentTaskBaseUrl(claimedTask);
-  const runtime =
+  const pendingPatchResume =
     worker === CODEX_DIRECT_WORKER_KIND
+      ? readLocalAgentApprovedPendingPatch(state.stateDb, claimedTask)
+      : undefined;
+  const runtime =
+    worker === CODEX_DIRECT_WORKER_KIND && pendingPatchResume === undefined
       ? options.transport === undefined
         ? await createModelProviderRuntime({
             cwd,
@@ -410,7 +417,7 @@ export async function runLocalAgentTask(
     join(root.root, "policies", "repo-maintenance.yaml")
   );
   const transport =
-    worker === CODEX_DIRECT_WORKER_KIND
+    worker === CODEX_DIRECT_WORKER_KIND && pendingPatchResume === undefined
       ? (options.transport ??
         (runtime as Awaited<ReturnType<typeof createModelProviderRuntime>>).transport)
       : undefined;
@@ -437,6 +444,7 @@ export async function runLocalAgentTask(
       goal,
       task: runningTask,
       worker,
+      ...(pendingPatchResume === undefined ? {} : { pendingPatchResume }),
       ...(runtime === undefined
         ? {}
         : {
@@ -480,6 +488,7 @@ async function runLocalAgentTaskWithDatabase(options: {
   workerRunner?: WorkerProcessRunner;
   workerProgressIntervalMs?: number;
   onWorkerProgress?: (progress: WorkerProcessProgress) => void;
+  pendingPatchResume?: CodexDirectPendingPatchResume;
   now?: Date;
 }): Promise<RunLocalAgentTaskResult> {
   const orchestratorRun = startWorkerRun({
@@ -620,10 +629,29 @@ async function runLocalAgentWorker(options: {
   workerProgressIntervalMs?: number;
   onWorkerProgress?: (progress: WorkerProcessProgress) => void;
   checkpoint?: WorkspaceCheckpoint;
+  pendingPatchResume?: CodexDirectPendingPatchResume;
   now?: Date;
 }): Promise<LocalAgentWorkerResult> {
   if (options.worker === CODEX_DIRECT_WORKER_KIND) {
     const maxTurns = localAgentTaskMaxTurns(options.task);
+
+    if (options.pendingPatchResume !== undefined) {
+      return runCodexDirectPendingPatchResume({
+        cwd: options.cwd,
+        stateDb: options.stateDb,
+        database: options.database,
+        policy: options.policy,
+        goal: options.goal,
+        task: options.task,
+        model: options.model ?? localAgentTaskModel(options.task) ?? "codex_direct",
+        ...(options.modelProviderResourceId === undefined
+          ? {}
+          : { modelProviderResourceId: options.modelProviderResourceId }),
+        evidenceDir: join(options.root, "evidence"),
+        pendingPatch: options.pendingPatchResume,
+        ...(options.now === undefined ? {} : { now: options.now })
+      });
+    }
 
     if (
       options.model === undefined ||
@@ -2010,6 +2038,29 @@ function localAgentShouldIncrementAttempt(task: Task): boolean {
   const approval = task.output?.approval;
 
   return !isRecord(approval) || approval.status !== "approved";
+}
+
+function readLocalAgentApprovedPendingPatch(
+  stateDb: string,
+  task: Task
+): CodexDirectPendingPatchResume | undefined {
+  const approval = task.output?.approval;
+
+  if (
+    !isRecord(approval) ||
+    approval.status !== "approved" ||
+    typeof approval.id !== "string"
+  ) {
+    return undefined;
+  }
+
+  const database = openRunsteadDatabase(stateDb);
+
+  try {
+    return readApprovedCodexDirectPendingPatch(database, approval.id);
+  } finally {
+    database.close();
+  }
 }
 
 function localAgentTaskModel(task: Task): string | undefined {

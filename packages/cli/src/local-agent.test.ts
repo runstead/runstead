@@ -1118,6 +1118,102 @@ describe("local agent task primitives", () => {
       await rm(workspace, { force: true, recursive: true });
     }
   });
+
+  it("applies approved pending patches on resume without model regeneration", async () => {
+    const workspace = await mkdtemp(
+      join(tmpdir(), "runstead-local-agent-pending-patch-resume-")
+    );
+    const verifierCommand = nodeCommand("process.exit(0)");
+
+    try {
+      await mkdir(join(workspace, "docs"), { recursive: true });
+      await writeFile(join(workspace, "docs", "notes.txt"), "before\n");
+      await initRunstead({ cwd: workspace, profile: "trusted-local" });
+      await allowLocalAgentVerifierForTest(workspace, verifierCommand);
+      const created = await createLocalAgentTask({
+        cwd: workspace,
+        prompt: "Update docs/notes.txt.",
+        worker: "codex_direct",
+        model: "gpt-5.3-codex",
+        mode: "edit",
+        verifierCommands: [
+          {
+            name: "test",
+            command: verifierCommand
+          }
+        ]
+      });
+      const waiting = await runLocalAgentTask({
+        cwd: workspace,
+        taskId: created.task.id,
+        transport: patchDocsTransport()
+      });
+
+      expect(waiting.status).toBe("waiting_approval");
+      expect(waiting.approval?.id).toMatch(/^appr_/);
+
+      if (waiting.approval === undefined) {
+        throw new Error("Expected patch approval");
+      }
+
+      const modelCallsBefore = countTaskToolCalls(
+        created.stateDb,
+        created.task.id,
+        "model.inference.request"
+      );
+      const pendingPatch = readApprovalAction(created.stateDb, waiting.approval.id);
+
+      expect(pendingPatch.context.pendingPatch).toMatchObject({
+        mode: "replacements",
+        filesTouched: ["docs/notes.txt"],
+        replacements: [
+          {
+            path: "docs/notes.txt",
+            search: "before",
+            replace: "after"
+          }
+        ]
+      });
+
+      await decideApproval({
+        cwd: workspace,
+        id: waiting.approval.id,
+        decision: "approved",
+        decidedBy: "local-admin"
+      });
+
+      const resumed = await runLocalAgentTask({
+        cwd: workspace,
+        taskId: created.task.id,
+        transport: rejectingTransport()
+      });
+
+      expect(resumed.status).toBe("completed");
+      expect(resumed.summary).toContain("Applied approved pending patch");
+      expect(resumed.task.attempt).toBe(1);
+      await expect(readFile(join(workspace, "docs", "notes.txt"), "utf8")).resolves.toBe(
+        "after\n"
+      );
+      expect(
+        countTaskToolCalls(
+          created.stateDb,
+          created.task.id,
+          "model.inference.request"
+        )
+      ).toBe(modelCallsBefore);
+      expect(resumed.audit.toolCalls).toEqual(
+        expect.arrayContaining([
+          {
+            name: "filesystem.patch",
+            status: "completed",
+            count: 1
+          }
+        ])
+      );
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
 });
 
 function nodeCommand(script: string): string {
@@ -1206,6 +1302,96 @@ function editReadmeTransport(): CodexDirectTransport {
       });
     }
   };
+}
+
+function patchDocsTransport(): CodexDirectTransport {
+  return {
+    createResponse() {
+      return Promise.resolve({
+        id: "resp_local_agent_pending_patch_1",
+        status: "completed",
+        outputText: "",
+        toolCalls: [
+          {
+            id: "call_patch_docs",
+            name: "apply_patch",
+            arguments: JSON.stringify({
+              replacements: [
+                {
+                  path: "docs/notes.txt",
+                  search: "before",
+                  replace: "after"
+                }
+              ]
+            })
+          }
+        ],
+        finishReason: "tool_calls",
+        outputItems: []
+      });
+    }
+  };
+}
+
+function rejectingTransport(): CodexDirectTransport {
+  return {
+    createResponse() {
+      throw new Error("model transport must not be used for approved pending patch resume");
+    }
+  };
+}
+
+function countTaskToolCalls(
+  stateDb: string,
+  taskId: string,
+  actionType: string
+): number {
+  const database = openRunsteadDatabase(stateDb);
+
+  try {
+    const row = database
+      .prepare(
+        `
+        SELECT COUNT(*) AS count
+        FROM tool_calls
+        WHERE task_id = ? AND action_type = ?
+      `
+      )
+      .get(taskId, actionType) as { count: number };
+
+    return row.count;
+  } finally {
+    database.close();
+  }
+}
+
+function readApprovalAction(stateDb: string, approvalId: string): {
+  context: {
+    pendingPatch?: unknown;
+  };
+} {
+  const database = openRunsteadDatabase(stateDb);
+
+  try {
+    const row = database
+      .prepare(
+        `
+        SELECT pd.action_json
+        FROM approvals a
+        JOIN policy_decisions pd ON pd.id = a.policy_decision_id
+        WHERE a.id = ?
+      `
+      )
+      .get(approvalId) as { action_json: string };
+
+    return JSON.parse(row.action_json) as {
+      context: {
+        pendingPatch?: unknown;
+      };
+    };
+  } finally {
+    database.close();
+  }
 }
 
 function escapeRegex(value: string): string {

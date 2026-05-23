@@ -105,6 +105,27 @@ export interface CodexDirectWorkerResult {
   };
 }
 
+export interface CodexDirectPendingPatchResume {
+  approvalId: string;
+  policyDecisionId: string;
+  action: ActionEnvelope;
+  pendingPatch: CodexDirectPendingPatchPayload;
+}
+
+export interface CodexDirectPendingPatchResumeOptions {
+  cwd: string;
+  stateDb: string;
+  database: RunsteadDatabase;
+  policy: PolicyProfile;
+  goal: Goal;
+  task: Task;
+  model: string;
+  modelProviderResourceId?: string;
+  evidenceDir: string;
+  pendingPatch: CodexDirectPendingPatchResume;
+  now?: Date;
+}
+
 export type CodexDirectBudgetReason = "turns" | "tool_calls" | "failed_tool_calls";
 
 export interface CodexDirectBudgetSummary {
@@ -309,6 +330,140 @@ export async function runCodexDirectWorker(
       failedToolCalls
     });
   }
+}
+
+export async function runCodexDirectPendingPatchResume(
+  options: CodexDirectPendingPatchResumeOptions
+): Promise<CodexDirectWorkerResult> {
+  const workerRun = startWorkerRun({
+    database: options.database,
+    task: options.task,
+    workerType: CODEX_DIRECT_WORKER_KIND,
+    enforcementLevel: "hard_proxy_tool_calls",
+    ...(options.now === undefined ? {} : { now: options.now })
+  });
+
+  try {
+    await runGovernedToolAction({
+      ...governedToolOptions({ ...options, workerRun }),
+      action: options.pendingPatch.action,
+      run: async () => {
+        const value = await applyWorkspacePatch(options.cwd, {
+          ...(options.pendingPatch.pendingPatch.patch === undefined
+            ? {}
+            : { patch: options.pendingPatch.pendingPatch.patch }),
+          ...(options.pendingPatch.pendingPatch.replacements === undefined
+            ? {}
+            : { replacements: options.pendingPatch.pendingPatch.replacements })
+        });
+
+        return {
+          value,
+          output: {
+            mode: value.mode,
+            filesTouched: value.filesTouched,
+            applied: value.applied,
+            approvalId: options.pendingPatch.approvalId,
+            policyDecisionId: options.pendingPatch.policyDecisionId,
+            resume: "approved_pending_patch"
+          }
+        };
+      }
+    });
+
+    return completedWorkerResult({
+      options,
+      workerRun,
+      status: "completed",
+      exitCode: 0,
+      summary:
+        "Applied approved pending patch without regenerating model output.",
+      toolCalls: 1,
+      failedToolCalls: 0,
+      warnings: [
+        `Resumed from approved pending patch ${options.pendingPatch.approvalId}.`
+      ]
+    });
+  } catch (error) {
+    if (error instanceof ToolActionApprovalRequiredError) {
+      return completedWorkerResult({
+        options,
+        workerRun,
+        status: "waiting_approval",
+        exitCode: 2,
+        summary: error.message,
+        toolCalls: 1,
+        failedToolCalls: 0,
+        approval: {
+          id: error.approval.id,
+          actionId: error.approval.actionId,
+          policyDecisionId: error.policyDecision.id,
+          reason: error.approval.reason
+        }
+      });
+    }
+
+    if (error instanceof ToolActionDeniedError) {
+      return completedWorkerResult({
+        options,
+        workerRun,
+        status: "blocked",
+        exitCode: 3,
+        summary: error.message,
+        toolCalls: 1,
+        failedToolCalls: 0
+      });
+    }
+
+    return completedWorkerResult({
+      options,
+      workerRun,
+      status: "failed",
+      exitCode: 1,
+      summary: error instanceof Error ? error.message : String(error),
+      toolCalls: 1,
+      failedToolCalls: 1
+    });
+  }
+}
+
+export function readApprovedCodexDirectPendingPatch(
+  database: RunsteadDatabase,
+  approvalId: string
+): CodexDirectPendingPatchResume | undefined {
+  const row = database
+    .prepare(
+      `
+      SELECT a.id AS approval_id, a.policy_decision_id, pd.action_json
+      FROM approvals a
+      JOIN policy_decisions pd ON pd.id = a.policy_decision_id
+      WHERE a.id = ? AND a.status = 'approved'
+    `
+    )
+    .get(approvalId) as
+    | {
+        approval_id: string;
+        policy_decision_id: string;
+        action_json: string;
+      }
+    | undefined;
+
+  if (row === undefined) {
+    return undefined;
+  }
+
+  const action = parsePendingPatchAction(row.action_json);
+
+  if (action === undefined) {
+    return undefined;
+  }
+
+  return {
+    approvalId: row.approval_id,
+    policyDecisionId: row.policy_decision_id,
+    action,
+    pendingPatch: action.context.pendingPatch
+  };
 }
 
 async function runGovernedModelInference(
@@ -1847,7 +2002,10 @@ function codexDirectBudgetWarning(budget: CodexDirectBudgetSummary): string {
 }
 
 function completedWorkerResult(input: {
-  options: CodexDirectWorkerOptions;
+  options: Pick<
+    CodexDirectWorkerOptions,
+    "database" | "model" | "modelProviderResourceId" | "now"
+  >;
   workerRun: WorkerRun;
   status: CodexDirectWorkerResult["status"];
   exitCode: number;
@@ -1956,7 +2114,10 @@ function parseToolArguments(value: string): Record<string, unknown> {
 }
 
 function governedToolOptions(
-  options: CodexDirectWorkerOptions & { workerRun: WorkerRun }
+  options: Pick<
+    CodexDirectWorkerOptions,
+    "cwd" | "stateDb" | "database" | "policy" | "task" | "now"
+  > & { workerRun: WorkerRun }
 ) {
   return {
     cwd: options.cwd,
@@ -2336,6 +2497,12 @@ interface CodexDirectPendingPatchPayload extends CodexDirectPatchApprovalMetadat
   }[];
 }
 
+type ActionEnvelopeWithPendingPatch = ActionEnvelope & {
+  context: NonNullable<ActionEnvelope["context"]> & {
+    pendingPatch: CodexDirectPendingPatchPayload;
+  };
+};
+
 function codexDirectPatchApprovalMetadata(input: {
   cwd: string;
   filesTouched: string[];
@@ -2405,6 +2572,170 @@ function codexDirectPendingPatchPayload(input: {
       ? {}
       : { replacements: input.replacements })
   };
+}
+
+function parsePendingPatchAction(
+  actionJson: string
+): ActionEnvelopeWithPendingPatch | undefined {
+  let parsed: unknown;
+
+  try {
+    parsed = JSON.parse(actionJson) as unknown;
+  } catch {
+    return undefined;
+  }
+
+  if (!isRecord(parsed) || parsed.actionType !== "filesystem.patch") {
+    return undefined;
+  }
+
+  const context = isRecord(parsed.context) ? parsed.context : undefined;
+  const pendingPatch = parseCodexDirectPendingPatchPayload(context?.pendingPatch);
+
+  if (
+    typeof parsed.actionId !== "string" ||
+    typeof parsed.actionType !== "string" ||
+    pendingPatch === undefined
+  ) {
+    return undefined;
+  }
+
+  let resource: ActionEnvelope["resource"];
+
+  if (isRecord(parsed.resource)) {
+    if (typeof parsed.resource.type !== "string") {
+      return undefined;
+    }
+
+    resource = {
+      type: parsed.resource.type,
+      ...(typeof parsed.resource.id === "string" ? { id: parsed.resource.id } : {}),
+      ...(typeof parsed.resource.path === "string"
+        ? { path: parsed.resource.path }
+        : {})
+    };
+  }
+
+  return {
+    actionId: parsed.actionId,
+    actionType: parsed.actionType,
+    ...(resource === undefined ? {} : { resource }),
+    context: {
+      ...(context ?? {}),
+      pendingPatch
+    }
+  };
+}
+
+function parseCodexDirectPendingPatchPayload(
+  value: unknown
+): CodexDirectPendingPatchPayload | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const mode = value.mode;
+  const dependencyImpact = isRecord(value.dependencyImpact)
+    ? value.dependencyImpact
+    : undefined;
+  const filesTouched = stringArray(value.filesTouched);
+  const dependencyFiles = stringArray(dependencyImpact?.files);
+
+  if (
+    (mode !== "unified_diff" && mode !== "replacements") ||
+    filesTouched === undefined ||
+    dependencyImpact === undefined ||
+    dependencyFiles === undefined ||
+    typeof dependencyImpact.kind !== "string" ||
+    typeof value.diffHash !== "string" ||
+    typeof value.riskSummary !== "string" ||
+    typeof value.canonicalSignature !== "string"
+  ) {
+    return undefined;
+  }
+
+  if (mode === "unified_diff") {
+    return typeof value.patch === "string"
+      ? {
+          mode,
+          filesTouched,
+          diffHash: value.diffHash,
+          dependencyImpact: {
+            kind:
+              dependencyImpact.kind === "dependency_files_touched"
+                ? "dependency_files_touched"
+                : "none",
+            files: dependencyFiles
+          },
+          riskSummary: value.riskSummary,
+          canonicalSignature: value.canonicalSignature,
+          patch: value.patch
+        }
+      : undefined;
+  }
+
+  const replacements = replacementArray(value.replacements);
+
+  return replacements === undefined
+    ? undefined
+    : {
+        mode,
+        filesTouched,
+        diffHash: value.diffHash,
+        dependencyImpact: {
+          kind:
+            dependencyImpact.kind === "dependency_files_touched"
+              ? "dependency_files_touched"
+              : "none",
+          files: dependencyFiles
+        },
+        riskSummary: value.riskSummary,
+        canonicalSignature: value.canonicalSignature,
+        replacements
+      };
+}
+
+function stringArray(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  const strings = value.filter(
+    (item): item is string => typeof item === "string" && item.length > 0
+  );
+
+  return strings.length === value.length ? strings : undefined;
+}
+
+function replacementArray(
+  value: unknown
+): CodexDirectPendingPatchPayload["replacements"] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  const replacements: NonNullable<CodexDirectPendingPatchPayload["replacements"]> =
+    [];
+
+  for (const item of value) {
+    if (
+      !isRecord(item) ||
+      typeof item.path !== "string" ||
+      typeof item.search !== "string" ||
+      typeof item.replace !== "string"
+    ) {
+      return undefined;
+    }
+
+    replacements.push({
+      path: item.path,
+      search: item.search,
+      replace: item.replace,
+      ...(item.replaceAll === undefined ? {} : { replaceAll: item.replaceAll === true })
+    });
+  }
+
+  return replacements;
 }
 
 function isDependencyFilePath(path: string): boolean {
