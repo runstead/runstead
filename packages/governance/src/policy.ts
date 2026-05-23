@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { isAbsolute, relative } from "node:path";
+import { isAbsolute, posix, relative } from "node:path";
 
 export type PolicyDecision = "allow" | "deny" | "require_approval";
 export type PolicyRisk = "low" | "medium" | "high" | "critical";
@@ -809,7 +809,7 @@ function matchPathCondition(
       return {
         required: true,
         matched: true,
-        path: candidatePath.original
+        path: candidatePath.normalized
       };
     }
   }
@@ -902,12 +902,11 @@ function actionPaths(
 function normalizePolicyPath(path: string, cwd: string | undefined): string {
   const workspacePath =
     cwd !== undefined && isAbsolute(path) ? relative(cwd, path) : path;
+  const normalized = posix.normalize(
+    workspacePath.replaceAll("\\", "/").replace(/\/+/g, "/")
+  );
 
-  return workspacePath
-    .replaceAll("\\", "/")
-    .replace(/^\.\/+/, "")
-    .replace(/\/+/g, "/")
-    .replace(/\/$/, "");
+  return normalized === "." ? "" : normalized.replace(/^\.\/+/, "").replace(/\/$/, "");
 }
 
 function matchesPathPattern(path: string, pattern: string): boolean {
