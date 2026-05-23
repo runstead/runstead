@@ -104,3 +104,45 @@ fixtures:
       - launch_security_baseline_clean
       - ci_detected
       - rollback_ready
+  - id: security-review-gate
+    description: Launch fixture for protected paths, dependency risk, privacy notes, and security review evidence.
+    path: security-review-gate
+    task_type: inspect_repo_readiness
+    goal_template: build-mvp
+    tags:
+      - launch
+      - security
+      - governance
+    acceptance_contracts:
+      - protected_paths_reviewed
+      - dependency_risk_recorded
+      - privacy_notes_current
+      - security_gate_blocks_without_review
+  - id: customer-support-workflow
+    description: Scale fixture for support triage, recurring workflow ownership, customer evidence, and founder handoff.
+    path: customer-support-workflow
+    task_type: triage_support_evidence
+    goal_template: scale-ops
+    tags:
+      - scale
+      - support
+      - workflow
+    acceptance_contracts:
+      - support_categories_aggregated
+      - recurring_triage_owner_recorded
+      - customer_evidence_linked
+      - founder_handoff_ready
+  - id: data-migration-readiness
+    description: Launch fixture for schema migration, rollback, data integrity checks, and observability evidence.
+    path: data-migration-readiness
+    task_type: inspect_repo_readiness
+    goal_template: build-mvp
+    tags:
+      - launch
+      - migration
+      - data
+    acceptance_contracts:
+      - migration_plan_recorded
+      - rollback_plan_recorded
+      - data_integrity_check_defined
+      - observability_signal_defined

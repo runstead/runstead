@@ -1,0 +1,18 @@
+{
+  "tickets": [
+    {
+      "id": "SUP-101",
+      "category": "onboarding_confusion",
+      "customer": "design-partner-a",
+      "summary": "User cannot tell whether imported tasks were saved.",
+      "severity": "medium"
+    },
+    {
+      "id": "SUP-102",
+      "category": "missing_export",
+      "customer": "beta-team-b",
+      "summary": "Workspace owner requested CSV export before inviting team.",
+      "severity": "low"
+    }
+  ]
+}

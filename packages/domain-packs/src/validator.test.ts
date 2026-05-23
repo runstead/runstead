@@ -74,7 +74,10 @@ describe("validateDomainPackDir", () => {
       "ops-handoff-smoke",
       "dogfood-saas",
       "broken-launch-repo",
-      "existing-mature-repo"
+      "existing-mature-repo",
+      "security-review-gate",
+      "customer-support-workflow",
+      "data-migration-readiness"
     ]);
     expect(result.evals.map((evaluation) => evaluation.id)).toEqual([
       "tiny-todo",
@@ -83,7 +86,10 @@ describe("validateDomainPackDir", () => {
       "ops-handoff-smoke",
       "dogfood-saas",
       "broken-launch-repo",
-      "existing-mature-repo"
+      "existing-mature-repo",
+      "security-review-gate",
+      "customer-support-workflow",
+      "data-migration-readiness"
     ]);
     expect(result.domain?.schemaVersion).toBe(1);
     expect(result.domain?.repoTemplates?.map((template) => template.id)).toEqual([

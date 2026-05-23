@@ -53,3 +53,24 @@ benchmarks:
       - launch_security_baseline_clean
       - ci_detected
       - rollback_ready
+  - id: security-review-gate
+    fixture: security-review-gate
+    acceptance_contracts:
+      - protected_paths_reviewed
+      - dependency_risk_recorded
+      - privacy_notes_current
+      - security_gate_blocks_without_review
+  - id: customer-support-workflow
+    fixture: customer-support-workflow
+    acceptance_contracts:
+      - support_categories_aggregated
+      - recurring_triage_owner_recorded
+      - customer_evidence_linked
+      - founder_handoff_ready
+  - id: data-migration-readiness
+    fixture: data-migration-readiness
+    acceptance_contracts:
+      - migration_plan_recorded
+      - rollback_plan_recorded
+      - data_integrity_check_defined
+      - observability_signal_defined
