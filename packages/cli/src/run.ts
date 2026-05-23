@@ -38,6 +38,13 @@ const RUN_ONCE_SUPPORTED_TASK_TYPES = [
   "ci_repair",
   "manual_review"
 ];
+const STARTUP_INTERNAL_TASK_TYPES = new Set([
+  "generate_agent_context",
+  "define_measurement_framework",
+  "inspect_repo_readiness",
+  "startup_remediation",
+  "run_mvp_verifiers"
+]);
 
 export interface RunOnceOptions {
   cwd?: string;
@@ -337,11 +344,19 @@ export function pickNextQueuedTask(cwd = process.cwd()): Task | undefined {
     .tasks.filter(
       (task) =>
         task.status === "queued" &&
+        !isStartupInternalTask(task) &&
         (task.type !== "ci_repair" ||
           isCiRepairPullRequestResumeTask(task) ||
           isRunnableCiRepairTask(task))
     )
     .sort((left, right) => left.createdAt.localeCompare(right.createdAt))[0];
+}
+
+function isStartupInternalTask(task: Task): boolean {
+  return (
+    task.domain === "ai-native-startup" &&
+    STARTUP_INTERNAL_TASK_TYPES.has(task.type)
+  );
 }
 
 function isRunnableCiRepairTask(task: Task): boolean {

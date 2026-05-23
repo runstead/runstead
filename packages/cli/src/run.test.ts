@@ -8,6 +8,7 @@ import { describe, expect, it } from "vitest";
 
 import { createGoal } from "./goals.js";
 import { initRunstead } from "./init.js";
+import { installDomainPack } from "./domain-pack-install.js";
 import { createLocalAgentTask, LOCAL_AGENT_TASK_TYPE } from "./local-agent.js";
 import { setRunsteadConfigValue } from "./config.js";
 import { formatRunOnceReport, runOnce, runOnceExitCode } from "./run.js";
@@ -646,6 +647,58 @@ describe("runOnce", () => {
       });
       expect(formatRunOnceReport(result)).toContain("Blocked: unsupported_task_type");
       expect(runOnceExitCode(result)).toBe(1);
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("ignores queued startup internal tasks instead of blocking them", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-run-startup-internal-"));
+
+    try {
+      await initRunstead({ cwd: workspace });
+      await installDomainPack({
+        cwd: workspace,
+        ref: "ai-native-startup",
+        now: new Date("2026-05-14T07:55:00.000Z")
+      });
+      const goal = await createGoal({
+        cwd: workspace,
+        domain: "ai-native-startup",
+        template: "build-mvp",
+        now: new Date("2026-05-14T08:00:00.000Z")
+      });
+      const task = goal.generatedTasks.find(
+        (candidate) => candidate.type === "generate_agent_context"
+      );
+
+      if (task === undefined) {
+        throw new Error("Expected startup goal to generate agent context task");
+      }
+
+      const result = await runOnce({
+        cwd: workspace,
+        now: new Date("2026-05-14T08:02:00.000Z")
+      });
+
+      expect(result).toEqual({
+        cwd: workspace,
+        ranTask: false,
+        reason: "no_queued_task"
+      });
+
+      const database = openRunsteadDatabase(goal.stateDb);
+
+      try {
+        const row = database
+          .prepare("SELECT status, output_json FROM tasks WHERE id = ?")
+          .get(task.id) as { status: string; output_json: string | null };
+
+        expect(row.status).toBe("queued");
+        expect(row.output_json).toBeNull();
+      } finally {
+        database.close();
+      }
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }
