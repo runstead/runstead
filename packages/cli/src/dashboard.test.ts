@@ -1,11 +1,12 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import type { Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sqlite";
 import { describe, expect, it } from "vitest";
 
-import { buildDashboard } from "./dashboard.js";
+import { buildDashboard, serveDashboard } from "./dashboard.js";
 
 describe("buildDashboard", () => {
   it("writes a static dashboard and records an audit event", async () => {
@@ -506,4 +507,57 @@ describe("buildDashboard", () => {
       await rm(workspace, { force: true, recursive: true });
     }
   });
+
+  it("serves the generated dashboard over local HTTP", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-dashboard-serve-"));
+    const root = join(workspace, ".runstead");
+    const stateDb = join(root, "state.db");
+
+    try {
+      await mkdir(root, { recursive: true });
+      await writeFile(
+        join(root, "config.yaml"),
+        "version: 1\ndomain: repo-maintenance\n",
+        "utf8"
+      );
+      openRunsteadDatabase(stateDb).close();
+
+      const served = await serveDashboard({
+        cwd: workspace,
+        host: "127.0.0.1",
+        port: 0,
+        now: new Date("2026-05-23T02:00:00.000Z")
+      });
+
+      try {
+        const html = await fetch(served.url);
+        const data = await fetch(`${served.url}/state.json`);
+        const missing = await fetch(`${served.url}/missing`);
+
+        await expect(html.text()).resolves.toContain("Runstead Dashboard");
+        await expect(data.text()).resolves.toContain(
+          '"generatedAt": "2026-05-23T02:00:00.000Z"'
+        );
+        expect(missing.status).toBe(404);
+        expect(served.port).toBeGreaterThan(0);
+      } finally {
+        await closeServer(served.server);
+      }
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
 });
+
+function closeServer(server: Server): Promise<void> {
+  return new Promise((resolveClose, rejectClose) => {
+    server.close((error) => {
+      if (error === undefined) {
+        resolveClose();
+        return;
+      }
+
+      rejectClose(error);
+    });
+  });
+}

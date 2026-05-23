@@ -90,6 +90,12 @@ The final surface answers:
 - Which evidence ids, source artifacts, timestamps, git SHA, and command output
   support the verdict?
 
+Serve the same state as a local dashboard:
+
+```bash
+runstead dashboard serve --cwd /path/to/mvp
+```
+
 ## UI Smoke
 
 `startup ready` looks for:

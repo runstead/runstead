@@ -701,6 +701,50 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
       console.log(`Dashboard data: ${result.dataPath}`);
     });
 
+  dashboard
+    .command("serve")
+    .description("Build and serve the local dashboard over HTTP.")
+    .option("--cwd <path>", "Workspace directory")
+    .option("--output <path>", "Dashboard output directory")
+    .option("--host <host>", "Host interface to bind", "127.0.0.1")
+    .option("--port <port>", "Port to bind", "4173")
+    .option("--actor <id>", "RBAC subject for dashboard generation", "local-admin")
+    .action(
+      async (options: {
+        cwd?: string;
+        output?: string;
+        host: string;
+        port: string;
+        actor: string;
+      }) => {
+        const { checkPermission } = await import("./rbac.js");
+        const permission = await checkPermission({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          subject: options.actor,
+          permission: "dashboard.manage"
+        });
+
+        if (permission.decision !== "allow") {
+          throw new Error(
+            `Subject ${options.actor} cannot serve dashboard: ${permission.reason}`
+          );
+        }
+
+        const port = parseDashboardPort(options.port);
+        const { serveDashboard } = await import("./dashboard.js");
+        const result = await serveDashboard({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          ...(options.output === undefined ? {} : { outputDir: options.output }),
+          host: options.host,
+          port
+        });
+
+        console.log(`Dashboard URL: ${result.url}`);
+        console.log(`Dashboard HTML: ${result.build.htmlPath}`);
+        console.log(`Dashboard data: ${result.build.dataPath}`);
+      }
+    );
+
   const rbac = program.command("rbac").description("Manage local RBAC. Experimental.");
 
   rbac
@@ -4267,6 +4311,16 @@ function parseOptionalInteger(
   }
 
   return parsed;
+}
+
+function parseDashboardPort(value: string): number {
+  const port = parseRequiredInteger(value, "--port");
+
+  if (port < 0 || port > 65_535) {
+    throw new Error("--port must be between 0 and 65535");
+  }
+
+  return port;
 }
 
 function parseRequiredInteger(value: string, optionName: string): number {

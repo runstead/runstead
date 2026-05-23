@@ -110,6 +110,12 @@ If the run is interrupted, resume the same readiness run:
 runstead startup ready --cwd /path/to/mvp --resume <run-id>
 ```
 
+Build and serve the local evidence dashboard:
+
+```bash
+runstead dashboard serve --cwd /path/to/mvp
+```
+
 For a repo-local example, run the todo golden path fixture:
 
 ```bash

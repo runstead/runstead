@@ -1,3 +1,9 @@
+import {
+  createServer,
+  type IncomingMessage,
+  type Server,
+  type ServerResponse
+} from "node:http";
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
@@ -17,6 +23,11 @@ export interface BuildDashboardOptions {
   now?: Date;
 }
 
+export interface ServeDashboardOptions extends BuildDashboardOptions {
+  host?: string;
+  port?: number;
+}
+
 export interface BuildDashboardResult {
   root: string;
   stateDb: string;
@@ -25,6 +36,14 @@ export interface BuildDashboardResult {
   dataPath: string;
   snapshot: DashboardSnapshot;
   event: RunsteadEvent;
+}
+
+export interface ServeDashboardResult {
+  build: BuildDashboardResult;
+  server: Server;
+  host: string;
+  port: number;
+  url: string;
 }
 
 export interface DashboardSnapshot {
@@ -239,6 +258,109 @@ export async function buildDashboard(
   } finally {
     database.close();
   }
+}
+
+export async function serveDashboard(
+  options: ServeDashboardOptions = {}
+): Promise<ServeDashboardResult> {
+  const build = await buildDashboard(options);
+  const host = options.host ?? "127.0.0.1";
+  const requestedPort = options.port ?? 4173;
+  const server = createServer((request, response) => {
+    void serveDashboardRequest({ build, host, request, response });
+  });
+
+  await listen(server, requestedPort, host);
+
+  const port = serverPort(server);
+
+  return {
+    build,
+    server,
+    host,
+    port,
+    url: `http://${urlHost(host)}:${port}`
+  };
+}
+
+function listen(server: Server, port: number, host: string): Promise<void> {
+  return new Promise((resolveListen, rejectListen) => {
+    const onError = (error: Error): void => {
+      server.off("listening", onListening);
+      rejectListen(error);
+    };
+    const onListening = (): void => {
+      server.off("error", onError);
+      resolveListen();
+    };
+
+    server.once("error", onError);
+    server.once("listening", onListening);
+    server.listen(port, host);
+  });
+}
+
+function serverPort(server: Server): number {
+  const address = server.address();
+
+  if (typeof address === "object" && address !== null) {
+    return address.port;
+  }
+
+  throw new Error("Dashboard server did not expose a TCP port");
+}
+
+async function serveDashboardRequest(input: {
+  build: BuildDashboardResult;
+  host: string;
+  request: IncomingMessage;
+  response: ServerResponse;
+}): Promise<void> {
+  const requestUrl = new URL(input.request.url ?? "/", `http://${input.host}`);
+  const pathname = requestUrl.pathname;
+  const target =
+    pathname === "/" || pathname === "/index.html"
+      ? {
+          path: input.build.htmlPath,
+          contentType: "text/html; charset=utf-8"
+        }
+      : pathname === "/state.json"
+        ? {
+            path: input.build.dataPath,
+            contentType: "application/json; charset=utf-8"
+          }
+        : undefined;
+
+  if (target === undefined) {
+    input.response.writeHead(404, {
+      "content-type": "text/plain; charset=utf-8"
+    });
+    input.response.end("Not found");
+    return;
+  }
+
+  try {
+    const body = await readFile(target.path);
+
+    input.response.writeHead(200, {
+      "cache-control": "no-store",
+      "content-type": target.contentType
+    });
+    input.response.end(body);
+  } catch (error) {
+    input.response.writeHead(500, {
+      "content-type": "text/plain; charset=utf-8"
+    });
+    input.response.end(error instanceof Error ? error.message : String(error));
+  }
+}
+
+function urlHost(host: string): string {
+  if (host === "0.0.0.0") {
+    return "127.0.0.1";
+  }
+
+  return host.includes(":") ? `[${host}]` : host;
 }
 
 function readDashboardSnapshot(
