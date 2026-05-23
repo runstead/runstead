@@ -124,6 +124,8 @@ ${nativeWorkerStartPolicyRuleYaml(profile)}
 
 ${modelInferencePolicyRuleYaml(profile)}
 
+${trustedLocalMvpPatchPolicyRuleYaml(profile)}
+
   - id: allow_verifier_commands
     when:
       action_type:
@@ -224,7 +226,10 @@ ${modelInferencePolicyRuleYaml(profile)}
 
   - id: require_approval_dependency_file_commit
     when:
-      action_type: git.commit
+      action_type:
+        in:
+          - git.commit
+          - filesystem.patch
       path:
         matches_any:
           - package.json
@@ -338,6 +343,28 @@ function modelInferencePolicyRuleYaml(profile: InitPolicyProfile): string {
       action_type: model.inference.request
     decision: require_approval
     risk: high`;
+}
+
+function trustedLocalMvpPatchPolicyRuleYaml(profile: InitPolicyProfile): string {
+  if (profile !== "trusted-local") {
+    return "";
+  }
+
+  return `  - id: allow_trusted_local_mvp_workspace_patch
+    when:
+      action_type: filesystem.patch
+      path:
+        matches_any:
+          - src/**
+          - tests/**
+          - README.md
+          - index.html
+          - scripts/**
+    decision: allow
+    risk: medium
+    obligations:
+      - verify_diff_scope
+      - run_local_verifiers`;
 }
 
 export async function initRunstead(

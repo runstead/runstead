@@ -170,6 +170,28 @@ describe("initRunstead", () => {
           }
         }
       });
+      const localMvpPatch = evaluatePolicy({
+        policy,
+        action: {
+          actionId: "act_mvp_patch",
+          actionType: "filesystem.patch",
+          context: {
+            cwd: workspace,
+            filesTouched: ["src/index.ts", "tests/index.test.ts", "README.md"]
+          }
+        }
+      });
+      const dependencyPatch = evaluatePolicy({
+        policy,
+        action: {
+          actionId: "act_dependency_patch",
+          actionType: "filesystem.patch",
+          context: {
+            cwd: workspace,
+            filesTouched: ["src/index.ts", "package.json"]
+          }
+        }
+      });
       const publish = evaluatePolicy({
         policy,
         action: {
@@ -206,6 +228,16 @@ describe("initRunstead", () => {
         risk: "medium"
       });
       expect(dependencyCommit).toMatchObject({
+        decision: "require_approval",
+        risk: "high",
+        ruleId: "require_approval_dependency_file_commit"
+      });
+      expect(localMvpPatch).toMatchObject({
+        decision: "allow",
+        risk: "medium",
+        ruleId: "allow_trusted_local_mvp_workspace_patch"
+      });
+      expect(dependencyPatch).toMatchObject({
         decision: "require_approval",
         risk: "high",
         ruleId: "require_approval_dependency_file_commit"
