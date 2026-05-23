@@ -11,9 +11,11 @@ import { createProgram } from "./index.js";
 import { initRunstead } from "./init.js";
 import { checkStartupGate } from "./startup-evidence.js";
 import {
+  classifyStartupUiValidationFailure,
   executeStartupUiValidation,
   recordStartupUiValidation,
-  summarizeStartupUiValidationFailure
+  summarizeStartupUiValidationFailure,
+  startupUiValidationRepairHint
 } from "./startup-ui-validation.js";
 
 describe("startup UI validation evidence", () => {
@@ -41,6 +43,46 @@ describe("startup UI validation evidence", () => {
       })
     ).toBe(
       "user action click selector \"button[type='submit']\" failed: button did not become enabled"
+    );
+  });
+
+  it("classifies selector failures and suggests stable product test ids", () => {
+    const execution = {
+      runner: "browser_flow_smoke" as const,
+      responseStatus: 200,
+      responseOk: true,
+      expectedText: [{ text: "Todo MVP", found: true }],
+      flowActions: [
+        {
+          type: "fill" as const,
+          status: "fail" as const,
+          summary: "No matching selector found",
+          expected: "Runstead smoke todo"
+        }
+      ]
+    };
+
+    expect(classifyStartupUiValidationFailure(execution)).toBe("selector_unstable");
+    expect(startupUiValidationRepairHint(execution)).toContain(
+      'data-testid="todo-input"'
+    );
+    expect(startupUiValidationRepairHint(execution)).toContain(
+      'data-testid="todo-search"'
+    );
+  });
+
+  it("classifies missing expected text as a product gap", () => {
+    const execution = {
+      runner: "browser_flow_smoke" as const,
+      responseStatus: 200,
+      responseOk: true,
+      expectedText: [{ text: "Search", found: false }],
+      flowActions: []
+    };
+
+    expect(classifyStartupUiValidationFailure(execution)).toBe("product_gap");
+    expect(startupUiValidationRepairHint(execution)).toContain(
+      "missing user-visible product state"
     );
   });
 

@@ -763,6 +763,31 @@ describe("startup readiness run model", () => {
         "click",
         "expectPersisted"
       ]);
+      expect(steps[0]).toMatchObject({
+        type: "fill",
+        selectors: expect.arrayContaining([
+          "[data-testid='todo-input']",
+          "#todo-input",
+          "input[name='todo']"
+        ])
+      });
+      expect(
+        steps[0]?.type === "fill"
+          ? steps[0].selectors?.indexOf("#todo-input")
+          : -1
+      ).toBeLessThan(
+        steps[0]?.type === "fill"
+          ? (steps[0].selectors?.indexOf("input[placeholder*='todo' i]") ?? -1)
+          : -1
+      );
+      expect(steps[4]).toMatchObject({
+        type: "fill",
+        selectors: expect.arrayContaining([
+          "[data-testid='todo-search']",
+          "#todo-search",
+          "input[name='search']"
+        ])
+      });
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }

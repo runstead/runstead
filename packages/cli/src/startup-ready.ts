@@ -28,8 +28,10 @@ import {
 } from "./startup-founder-flow.js";
 import { generateStartupCompleteProductCheck } from "./startup-complete-check.js";
 import {
+  classifyStartupUiValidationFailure,
   executeStartupUiValidation,
   summarizeStartupUiValidationFailure,
+  startupUiValidationRepairHint,
   type StartupUiFlowAction
 } from "./startup-ui-validation.js";
 import {
@@ -173,7 +175,9 @@ export interface StartupReadyUiSmokeCheckResult {
   status: "passed" | "failed";
   evidenceId?: string;
   artifact?: string;
+  failureCategory?: string;
   failureSummary?: string;
+  repairHint?: string;
   blockers: string[];
 }
 
@@ -878,15 +882,25 @@ export async function executeStartupReadyUiSmoke(input: {
       const failureSummary = result.failed
         ? summarizeStartupUiValidationFailure(result.execution)
         : undefined;
+      const failureCategory = result.failed
+        ? classifyStartupUiValidationFailure(result.execution)
+        : undefined;
+      const repairHint = result.failed
+        ? startupUiValidationRepairHint(result.execution)
+        : undefined;
 
       checks.push({
         name: check.name,
         status: result.failed ? "failed" : "passed",
         evidenceId: result.evidence.evidence.id,
         artifact: result.domArtifact,
+        ...(failureCategory === undefined ? {} : { failureCategory }),
         ...(failureSummary === undefined ? {} : { failureSummary }),
+        ...(repairHint === undefined ? {} : { repairHint }),
         blockers: result.failed
-          ? [`UI smoke check failed: ${check.name}: ${failureSummary}`]
+          ? [
+              `UI smoke check failed: ${check.name}: ${failureCategory ?? "unknown"}: ${failureSummary}; suggested patch: ${repairHint}`
+            ]
           : []
       });
     } catch (error) {
@@ -1051,8 +1065,18 @@ export async function inferStartupReadyUiSmokeFlowActions(
     {
       type: "fill",
       selectors: [
+        "[data-testid='new-todo-input']",
         "[data-testid='todo-input']",
+        "[data-testid='new-task-input']",
         "[data-testid='task-input']",
+        "#todo-input",
+        "#task-input",
+        "input[name='todo']",
+        "input[name='task']",
+        "input[aria-label*='add' i][aria-label*='todo' i]",
+        "input[aria-label*='add' i][aria-label*='task' i]",
+        "input[placeholder*='add' i][placeholder*='todo' i]",
+        "input[placeholder*='add' i][placeholder*='task' i]",
         "input[placeholder*='todo' i]",
         "input[placeholder*='task' i]",
         "input[type='text']",
@@ -1089,6 +1113,12 @@ export async function inferStartupReadyUiSmokeFlowActions(
       selectors: [
         "[data-testid='todo-search']",
         "[data-testid='task-search']",
+        "#todo-search",
+        "#task-search",
+        "input[name='todo-search']",
+        "input[name='task-search']",
+        "input[name='search']",
+        "input[aria-label*='search' i]",
         "input[placeholder*='search' i]",
         "input[type='search']"
       ],
