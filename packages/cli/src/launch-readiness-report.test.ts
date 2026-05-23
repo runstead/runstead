@@ -64,6 +64,12 @@ describe("generateLaunchReadinessReport", () => {
 
       try {
         projectTask(database, {
+          ...measurementTask,
+          id: "task_old_measurement_blocked",
+          status: "blocked",
+          updatedAt: "2026-05-14T03:10:00.000Z"
+        });
+        projectTask(database, {
           ...verifierTask,
           status: "completed",
           updatedAt: "2026-05-14T03:20:00.000Z"
@@ -117,6 +123,7 @@ describe("generateLaunchReadinessReport", () => {
       expect(markdown).toContain("CI configuration is missing [source: repo:ci_detection]");
       expect(markdown).toContain("ev_launch_report_command_001");
       expect(markdown).toContain("measurement framework");
+      expect(markdown).not.toContain("task_old_measurement_blocked");
 
       const auditDatabase = openRunsteadDatabase(initialized.stateDb);
 
@@ -164,7 +171,7 @@ describe("generateLaunchReadinessReport", () => {
           blockers: result.blockers,
           summary: {
             blockers: result.blockers.length,
-            tasks: 4
+            tasks: 5
           }
         });
         expect(payload.trustSummary?.conclusion).toContain("Not launch-ready");
