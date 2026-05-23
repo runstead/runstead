@@ -10,6 +10,7 @@ import {
   type StartupGateCheckResult,
   type StartupGateStage
 } from "./startup-evidence.js";
+import { startupVerdictReady } from "./startup-verdict.js";
 
 export interface StartupStatusOptions {
   cwd?: string;
@@ -375,14 +376,7 @@ function topBlockers(
 function readinessVerdictReady(
   readiness: StartupStatusReadinessVerdict | undefined
 ): readiness is StartupStatusReadinessVerdict {
-  return (
-    readiness !== undefined &&
-    [
-      "local_launch_ready",
-      "staging_launch_ready",
-      "public_launch_ready"
-    ].includes(readiness.verdict)
-  );
+  return readiness !== undefined && startupVerdictReady(readiness.verdict);
 }
 
 function readLatestStartupReadinessVerdict(

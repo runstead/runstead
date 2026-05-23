@@ -14,6 +14,7 @@ import {
   type StartupGateStage
 } from "./startup-evidence.js";
 import { getStartupStatus } from "./startup-status.js";
+import { startupVerdictReady } from "./startup-verdict.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -201,7 +202,7 @@ function effectiveStartupCiGate(
     return gate;
   }
 
-  if (readinessVerdictReady(readiness.verdict) && readiness.blockers.length === 0) {
+  if (startupVerdictReady(readiness.verdict) && readiness.blockers.length === 0) {
     return {
       ...gate,
       passed: true,
@@ -246,14 +247,6 @@ async function readLatestStartupCiReadiness(input: {
   } catch {
     return undefined;
   }
-}
-
-function readinessVerdictReady(verdict: string): boolean {
-  return [
-    "local_launch_ready",
-    "staging_launch_ready",
-    "public_launch_ready"
-  ].includes(verdict);
 }
 
 export function formatStartupCiSummary(result: GenerateStartupCiSummaryResult): string {

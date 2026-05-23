@@ -36,6 +36,10 @@ import {
   checkStartupGate,
   type StartupGateStage
 } from "./startup-evidence.js";
+import {
+  evaluateStartupVerdict,
+  type StartupVerdictResult
+} from "./startup-verdict.js";
 
 const execFileAsync = promisify(execFile);
 const DEFAULT_UI_SMOKE_TIMEOUT_MS = 20_000;
@@ -1819,6 +1823,11 @@ async function writeStartupReadinessDecisionReport(
   const markdownPath = join(reportDir, `startup-readiness-run-${run.id}.md`);
   const jsonPath = join(reportDir, `startup-readiness-run-${run.id}.json`);
   const decisions = startupReadinessDecisionMatrix(run);
+  const verdict = evaluateStartupReadinessVerdict({
+    run,
+    evidenceTiers: run.evidenceTiers,
+    evidenceTypes: run.evidenceTypes
+  });
   const payload = {
     schemaVersion: 1,
     generatedAt: now.toISOString(),
@@ -1836,6 +1845,19 @@ async function writeStartupReadinessDecisionReport(
       completedAt: run.completedAt,
       gitHead: run.gitHead,
       dirtyState: run.dirtyState
+    },
+    verdict: {
+      requested: {
+        target: verdict.target,
+        verdict: verdict.verdict,
+        canLaunch: verdict.canLaunch,
+        blockers: verdict.blockers,
+        warnings: verdict.warnings,
+        evidenceRefs: verdict.evidenceRefs,
+        staleEvidenceRefs: verdict.staleEvidenceRefs,
+        supersededEvidenceRefs: verdict.supersededEvidenceRefs
+      },
+      targetReadiness: verdict.targetReadiness
     },
     decisions,
     evidence: {
@@ -2132,99 +2154,13 @@ export function evaluateStartupReadinessVerdict(input: {
   run: Pick<StartupReadinessRun, "target" | "phases">;
   evidenceTiers: StartupReadinessEvidenceTier[];
   evidenceTypes?: string[];
-}): { verdict: StartupReadinessVerdict; blockers: string[] } {
-  const phaseBlockers = input.run.phases
-    .filter((phase) => phase.status === "blocked" || phase.status === "failed")
-    .map((phase) => `${phase.title} is ${phase.status}`);
-  const tierBlockers = missingStartupReadinessEvidenceBlockers({
+}): StartupVerdictResult {
+  return evaluateStartupVerdict({
     target: input.run.target,
     phases: input.run.phases,
     evidenceTiers: input.evidenceTiers,
     evidenceTypes: input.evidenceTypes ?? []
-  });
-  const blockers = unique([...phaseBlockers, ...tierBlockers]);
-  const ready = blockers.length === 0;
-
-  if (input.run.target === "local") {
-    return {
-      verdict: ready ? "local_launch_ready" : "local_launch_blocked",
-      blockers
-    };
-  }
-
-  if (input.run.target === "staging") {
-    return {
-      verdict: ready ? "staging_launch_ready" : "staging_launch_blocked",
-      blockers
-    };
-  }
-
-  return {
-    verdict: ready ? "public_launch_ready" : "public_launch_blocked",
-    blockers
-  };
-}
-
-function missingStartupReadinessEvidenceBlockers(input: {
-  target: StartupReadyTarget;
-  phases: StartupReadinessRunPhase[];
-  evidenceTiers: StartupReadinessEvidenceTier[];
-  evidenceTypes: string[];
-}): string[] {
-  const tiers = new Set(input.evidenceTiers);
-  const evidenceTypes = new Set(input.evidenceTypes);
-  const requiresUiSmoke = input.phases.some((phase) => phase.id === "ui_smoke");
-  const blockers = [
-    ...(tiers.has("local_command")
-      ? []
-      : ["local command verifier evidence is required"])
-  ];
-
-  if (requiresUiSmoke && !tiers.has("synthetic_smoke")) {
-    blockers.push("synthetic UI smoke evidence is required");
-  }
-
-  if (input.target === "local") {
-    return blockers;
-  }
-
-  if (!tiers.has("ci_verified")) {
-    blockers.push("CI-verified evidence is required for staging or production");
-  }
-
-  if (input.target === "staging") {
-    if (!tiers.has("staging_deployment")) {
-      blockers.push("staging deployment evidence is required");
-    }
-
-    return blockers;
-  }
-
-  if (!tiers.has("production_deployment")) {
-    blockers.push("production deployment evidence is required");
-  }
-
-  if (!tiers.has("real_user_analytics")) {
-    blockers.push("real-user analytics evidence is required");
-  }
-
-  if (!tiers.has("support_ticket")) {
-    blockers.push("support or feedback triage evidence is required");
-  }
-
-  if (!tiers.has("security_scan")) {
-    blockers.push("security scan evidence is required");
-  }
-
-  if (!evidenceTypes.has("startup_rollback_plan")) {
-    blockers.push("rollback-plan evidence is required");
-  }
-
-  if (!evidenceTypes.has("startup_observability")) {
-    blockers.push("observability evidence is required");
-  }
-
-  return blockers;
+  }) as StartupVerdictResult;
 }
 
 async function collectRecordedStartupReadinessEvidence(cwd: string): Promise<{

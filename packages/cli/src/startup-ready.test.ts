@@ -117,6 +117,9 @@ describe("startup readiness run model", () => {
       const decisionReport = result.run.reportPaths.find((path) =>
         path.endsWith(`startup-readiness-run-${result.run.id}.md`)
       );
+      const decisionJson = result.run.reportPaths.find((path) =>
+        path.endsWith(`startup-readiness-run-${result.run.id}.json`)
+      );
 
       expect(result.run.status).toBe("completed");
       expect(result.run.phases.map((phase) => [phase.id, phase.status])).toEqual([
@@ -154,6 +157,9 @@ describe("startup readiness run model", () => {
       );
       await expect(readFile(decisionReport ?? "", "utf8")).resolves.toContain(
         "| Local demo | yes | local_launch_ready |"
+      );
+      await expect(readFile(decisionJson ?? "", "utf8")).resolves.toContain(
+        '"targetReadiness"'
       );
       expect(persisted).toEqual(result.run);
     } finally {
