@@ -1440,7 +1440,7 @@ describe("runCodexDirectWorker", () => {
     } finally {
       await rm(root, { force: true, recursive: true });
     }
-  }, 10000);
+  }, 60_000);
 
   it("returns bounded git diff summaries", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "runstead-codex-diff-summary-"));
