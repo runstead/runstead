@@ -9,7 +9,8 @@ The current implementation keeps the package graph intentionally small:
 - `@runstead/governance`: policy evaluation, action risk scoring, and reusable
   governance primitives
 - `@runstead/runtime`: task execution semantics, worker lifecycle result mapping,
-  and storage/lock/artifact backend contracts shared by concrete runners
+  storage/lock/artifact backend contracts, and provider-neutral tool-call
+  adapter primitives shared by concrete runners
 - `@runstead/state-sqlite`: SQLite schema and state-store adapter
 - `@runstead/domain-packs`: built-in `repo-maintenance` pack and validation
 - `@runstead/skills`: skill package contracts, candidate scaffolding, and tests
@@ -21,8 +22,10 @@ M1/M2 implementations inside `@runstead/cli` while their interfaces harden.
 Policy and risk primitives have moved into `@runstead/governance`; task
 execution semantics and worker lifecycle result mapping have moved into
 `@runstead/runtime`, along with backend contracts for event append concurrency,
-lock managers, artifact stores, and local `RUNSTEAD_HOME` layout. Split the
-remaining runtime surfaces out when reuse across runtimes requires it:
+lock managers, artifact stores, local `RUNSTEAD_HOME` layout, and standard
+tool-call adapter primitives for Codex Responses and OpenAI-compatible chat
+completion shapes. Split the remaining runtime surfaces out when reuse across
+runtimes requires it:
 
 - `@runstead/tools`
 - `@runstead/verifiers`
