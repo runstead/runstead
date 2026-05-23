@@ -114,6 +114,7 @@ describe("generateLaunchReadinessReport", () => {
       expect(markdown).toContain("## Verifier Status");
       expect(markdown).toContain("## Governance Boundary");
       expect(markdown).toContain("## Release Blockers");
+      expect(markdown).toContain("CI configuration is missing [source: repo:ci_detection]");
       expect(markdown).toContain("ev_launch_report_command_001");
       expect(markdown).toContain("measurement framework");
 
@@ -492,10 +493,12 @@ describe("generateLaunchReadinessReport", () => {
       });
       expect(json).toContain('"schemaVersion": 1');
       expect(json).toContain('"trustSummary"');
-      expect(result.markdown).toContain("Command evidence records: 2");
+      expect(result.markdown).toContain("Current command evidence records: 0");
+      expect(result.markdown).toContain("Stale command evidence records: 2");
+      expect(result.markdown).toContain("## Stale Evidence Appendix");
       expect(result.markdown).toContain("code_state=stale");
       expect(result.markdown).toContain(
-        "verifier evidence was recorded against stale code state"
+        "2 verifier evidence records recorded against stale code state; see stale evidence appendix"
       );
       expect(result.markdown).toContain("## Trust Summary");
       expect(result.markdown).toContain("## Metric Evidence Confidence");

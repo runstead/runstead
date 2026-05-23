@@ -433,9 +433,16 @@ function formatLaunchReadinessReport(input: {
     "",
     evidenceProvenance(input.data),
     "",
+    "## Stale Evidence Appendix",
+    "",
+    staleEvidenceAppendix(input.data),
+    "",
     "## Release Blockers",
     "",
-    listOrNone(input.blockers, (blocker) => `- ${blocker}`),
+    listOrNone(
+      input.blockers,
+      (blocker) => `- ${blocker} [source: ${blockerSource(input.data, blocker)}]`
+    ),
     "",
     "## Risk Register",
     "",
@@ -671,14 +678,14 @@ function verifierStatus(data: LaunchReadinessReportData): string {
   const verifierTasks = data.tasks.filter(
     (task) => task.type === "run_mvp_verifiers" || task.type === "run_local_verifiers"
   );
-  const commandEvidence = data.evidence.filter(
-    (item) => item.type === "command_output"
-  );
+  const commandEvidence = currentCommandEvidence(data);
+  const staleEvidence = staleCommandEvidence(data);
 
   return [
     `- Verifier tasks: ${formatTaskCounts(verifierTasks)}`,
     `- Current code fingerprint: ${formatCurrentCodeFingerprint(data.currentCodeState)}`,
-    `- Command evidence records: ${commandEvidence.length}`,
+    `- Current command evidence records: ${commandEvidence.length}`,
+    `- Stale command evidence records: ${staleEvidence.length} (see appendix)`,
     ...commandEvidence.map(
       (item) =>
         `- ${item.id}: ${item.summary ?? item.uri} (${item.created_at}; ${commandEvidenceGovernance(item)}; ${commandEvidenceCodeState(data, item)})`
@@ -686,10 +693,27 @@ function verifierStatus(data: LaunchReadinessReportData): string {
   ].join("\n");
 }
 
+function currentCommandEvidence(data: LaunchReadinessReportData): EvidenceReportRow[] {
+  return data.evidence
+    .filter((item) => item.type === "command_output")
+    .filter((item) => !isStaleCommandEvidence(data, item));
+}
+
+function staleCommandEvidence(data: LaunchReadinessReportData): EvidenceReportRow[] {
+  return data.evidence
+    .filter((item) => item.type === "command_output")
+    .filter((item) => isStaleCommandEvidence(data, item));
+}
+
+function isStaleCommandEvidence(
+  data: LaunchReadinessReportData,
+  item: EvidenceReportRow
+): boolean {
+  return commandEvidenceCodeState(data, item).startsWith("code_state=stale");
+}
+
 function governanceBoundary(data: LaunchReadinessReportData): string {
-  const commandEvidence = data.evidence.filter(
-    (item) => item.type === "command_output"
-  );
+  const commandEvidence = currentCommandEvidence(data);
 
   return [
     "- Governance level: Level 1 wrapped execution for external workers; `codex_direct` is the hard-proxy path.",
@@ -786,14 +810,13 @@ function testCoverageGaps(data: LaunchReadinessReportData): string {
 }
 
 function staleCommandEvidenceGaps(data: LaunchReadinessReportData): string[] {
-  return data.evidence
-    .filter((item) => item.type === "command_output")
-    .filter((item) =>
-      commandEvidenceCodeState(data, item).startsWith("code_state=stale")
-    )
-    .map(
-      (item) => `${item.id}: verifier evidence was recorded against stale code state`
-    );
+  const stale = staleCommandEvidence(data);
+
+  return stale.length === 0
+    ? []
+    : [
+        `${stale.length} verifier evidence record${stale.length === 1 ? "" : "s"} recorded against stale code state; see stale evidence appendix`
+      ];
 }
 
 function dependencyAndSecurityRisk(data: LaunchReadinessReportData): string {
@@ -900,10 +923,22 @@ function structuredStartupArtifacts(data: LaunchReadinessReportData): string {
 
 function evidenceProvenance(data: LaunchReadinessReportData): string {
   const rows = data.evidence.filter(
-    (item) => item.type === "command_output" || item.type.startsWith("startup_")
+    (item) =>
+      (item.type === "command_output" && !isStaleCommandEvidence(data, item)) ||
+      item.type.startsWith("startup_")
   );
 
   return listOrNone(rows, (item) => `- ${item.id}: ${evidenceSourceSummary(item)}`);
+}
+
+function staleEvidenceAppendix(data: LaunchReadinessReportData): string {
+  const rows = staleCommandEvidence(data);
+
+  return listOrNone(
+    rows,
+    (item) =>
+      `- ${item.id}: ${item.summary ?? item.uri} (${commandEvidenceCodeState(data, item)}; ${commandEvidenceGovernance(item)}; ${evidenceSourceSummary(item)})`
+  );
 }
 
 function evidenceSourceSummary(item: EvidenceReportRow): string {
@@ -1024,6 +1059,7 @@ function missingEvidenceRows(data: LaunchReadinessReportData): {
 }
 
 function riskSource(data: LaunchReadinessReportData, risk: string): string {
+  if (risk.startsWith("task ")) return blockerSource(data, risk);
   if (risk.includes("test command")) return "package.json scripts";
   if (risk.includes("lint command")) return "package.json scripts";
   if (risk.includes("typecheck command")) return "package.json scripts";
@@ -1053,8 +1089,60 @@ function riskSource(data: LaunchReadinessReportData, risk: string): string {
   return "launch readiness analysis";
 }
 
+function blockerSource(data: LaunchReadinessReportData, blocker: string): string {
+  const taskMatch = /^task (?<id>\S+) \((?<type>[^)]+)\) is (?<status>\S+)/.exec(
+    blocker
+  );
+
+  if (taskMatch?.groups !== undefined) {
+    return `task:${taskMatch.groups.id} type=${taskMatch.groups.type} status=${taskMatch.groups.status}`;
+  }
+
+  if (blocker.startsWith("approval ")) {
+    const approvalId = blocker.split(/\s+/)[1] ?? "unknown";
+
+    return `approval:${approvalId}`;
+  }
+
+  if (data.gate.blockers.includes(blocker)) {
+    return "phase:launch gate=startup_evidence";
+  }
+
+  if (blocker.includes("test command")) return "repo:package_json script=test";
+  if (blocker.includes("lint command")) return "repo:package_json script=lint";
+  if (blocker.includes("typecheck command")) {
+    return "repo:package_json script=typecheck";
+  }
+  if (blocker.includes("build command")) return "repo:package_json script=build";
+  if (blocker.includes("CI configuration")) return "repo:ci_detection";
+  if (blocker.includes("protected path")) return "repo:git_status protected_path_scan";
+  if (blocker.includes("verifier")) return evidenceSource(data, "command_output");
+  if (blocker.includes("measurement")) {
+    return evidenceSource(data, "startup_measurement_framework");
+  }
+  if (blocker.includes("repo readiness")) {
+    return evidenceSource(data, "startup_repo_readiness");
+  }
+  if (blocker.includes("security baseline")) {
+    return evidenceSource(data, "startup_security_baseline");
+  }
+  if (blocker.includes("migration")) return evidenceSource(data, "startup_migration_plan");
+  if (blocker.includes("rollback")) return evidenceSource(data, "startup_rollback_plan");
+  if (blocker.includes("observability")) {
+    return evidenceSource(data, "startup_observability");
+  }
+  if (blocker.includes("founder bottleneck")) {
+    return evidenceSource(data, "startup_founder_bottleneck");
+  }
+
+  return "report:launch_readiness_analysis";
+}
+
 function evidenceSource(data: LaunchReadinessReportData, type: string): string {
-  const evidence = data.evidence.find((item) => item.type === type);
+  const evidence =
+    type === "command_output"
+      ? currentCommandEvidence(data)[0] ?? staleCommandEvidence(data)[0]
+      : data.evidence.find((item) => item.type === type);
 
   return evidence === undefined ? "missing evidence" : `${evidence.id} ${evidence.uri}`;
 }
@@ -1120,7 +1208,7 @@ function unresolvedTaskBlockers(
   return data.tasks
     .filter((task) => ["failed", "blocked", "waiting_approval"].includes(task.status))
     .filter((task) => !taskBlockerResolvedByEvidence(task, data))
-    .map((task) => `${task.type} is ${task.status}`);
+    .map((task) => `task ${task.id} (${task.type}) is ${task.status}`);
 }
 
 function taskBlockerResolvedByEvidence(
