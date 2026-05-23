@@ -8,7 +8,8 @@ import { startupOnboard } from "./startup-founder-flow.js";
 import {
   listStartupSourceConnectorDefinitions,
   recordStartupSourceEvidence,
-  STARTUP_SOURCE_CONNECTORS
+  STARTUP_SOURCE_CONNECTORS,
+  verifyStartupSourceEvidence
 } from "./startup-source-connectors.js";
 
 describe("startup source connectors", () => {
@@ -136,6 +137,187 @@ describe("startup source connectors", () => {
         (definition) => definition.connector === "github_actions"
       )?.recommendedPayloadFields
     ).not.toContain("mutated");
+  });
+
+  it("verifies deployment source over HTTP before recording launch evidence", async () => {
+    const workspace = join(tmpdir(), `runstead-startup-source-verify-${process.pid}`);
+    const fetchCalls: {
+      input: string;
+      method?: string;
+    }[] = [];
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await mkdir(workspace, { recursive: true });
+      await writeFile(
+        join(workspace, "package.json"),
+        `${JSON.stringify({ name: "source-verify-fixture", private: true }, null, 2)}\n`,
+        "utf8"
+      );
+      await startupOnboard({
+        cwd: workspace,
+        now: new Date("2026-05-14T00:00:00.000Z")
+      });
+
+      const result = await verifyStartupSourceEvidence({
+        cwd: workspace,
+        connector: "deployment",
+        uri: "https://staging.example.com/health",
+        expectStatus: 200,
+        expectText: ["Launch OK"],
+        fetch: (input, init) => {
+          fetchCalls.push({
+            input,
+            ...(init?.method === undefined ? {} : { method: init.method })
+          });
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            text: () => Promise.resolve("ready Launch OK")
+          });
+        },
+        now: new Date("2026-05-14T00:15:00.000Z")
+      });
+      const artifact = JSON.parse(await readFile(result.artifactPath, "utf8")) as {
+        evidenceType: string;
+        content: string;
+      };
+      const content = JSON.parse(artifact.content) as {
+        status: string;
+        payload: {
+          verification: {
+            status: string;
+            statusCode: number;
+            expectedStatus: number;
+            textChecks: {
+              text: string;
+              matched: boolean;
+            }[];
+          };
+        };
+      };
+
+      expect(fetchCalls).toEqual([
+        {
+          input: "https://staging.example.com/health",
+          method: "GET"
+        }
+      ]);
+      expect(result.evidence.type).toBe("startup_release_plan");
+      expect(result.verification).toMatchObject({
+        status: "passed",
+        ok: true,
+        statusCode: 200,
+        expectedStatus: 200,
+        textChecks: [
+          {
+            text: "Launch OK",
+            matched: true
+          }
+        ]
+      });
+      expect(artifact.evidenceType).toBe("release_plan");
+      expect(content).toMatchObject({
+        status: "passed",
+        payload: {
+          verification: {
+            status: "passed",
+            statusCode: 200,
+            expectedStatus: 200,
+            textChecks: [
+              {
+                text: "Launch OK",
+                matched: true
+              }
+            ]
+          }
+        }
+      });
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("records failed verification when status or expected text does not match", async () => {
+    const workspace = join(
+      tmpdir(),
+      `runstead-startup-source-verify-failed-${process.pid}`
+    );
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await mkdir(workspace, { recursive: true });
+      await writeFile(
+        join(workspace, "package.json"),
+        `${JSON.stringify({ name: "source-verify-failed-fixture", private: true }, null, 2)}\n`,
+        "utf8"
+      );
+      await startupOnboard({
+        cwd: workspace,
+        now: new Date("2026-05-14T00:00:00.000Z")
+      });
+
+      const result = await verifyStartupSourceEvidence({
+        cwd: workspace,
+        connector: "observability",
+        uri: "https://status.example.com/alerts",
+        expectStatus: 200,
+        expectText: ["all clear"],
+        fetch: () =>
+          Promise.resolve({
+            ok: false,
+            status: 503,
+            text: () => Promise.resolve("degraded")
+          }),
+        now: new Date("2026-05-14T00:15:00.000Z")
+      });
+      const artifact = JSON.parse(await readFile(result.artifactPath, "utf8")) as {
+        content: string;
+      };
+      const content = JSON.parse(artifact.content) as {
+        status: string;
+        payload: {
+          verification: {
+            status: string;
+            responseExcerpt: string;
+            textChecks: {
+              matched: boolean;
+            }[];
+          };
+        };
+      };
+
+      expect(result.evidence.type).toBe("startup_observability");
+      expect(result.verification).toMatchObject({
+        status: "failed",
+        ok: false,
+        statusCode: 503,
+        expectedStatus: 200,
+        textChecks: [
+          {
+            text: "all clear",
+            matched: false
+          }
+        ],
+        responseExcerpt: "degraded"
+      });
+      expect(content).toMatchObject({
+        status: "failed",
+        payload: {
+          verification: {
+            status: "failed",
+            responseExcerpt: "degraded",
+            textChecks: [
+              {
+                matched: false
+              }
+            ]
+          }
+        }
+      });
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
   });
 
   it("rejects connector payloads that are not JSON objects", async () => {

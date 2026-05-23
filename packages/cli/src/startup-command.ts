@@ -631,6 +631,93 @@ export function registerStartupCommands(program: Command): void {
       }
     );
 
+  startupSource
+    .command("verify")
+    .description(
+      "Verify a live GitHub, deployment, analytics, support, billing, or security source before recording evidence."
+    )
+    .option("--cwd <path>", "Workspace directory")
+    .requiredOption(
+      "--connector <kind>",
+      "Connector: github_actions, github_pr, github_issue, deployment, observability, analytics, billing, support, dependency"
+    )
+    .requiredOption("--source-uri <uri>", "Canonical source URI to verify")
+    .option("--summary <text>", "Evidence summary")
+    .option("--method <method>", "HTTP method to use for verification", "GET")
+    .option("--expect-status <status>", "Expected HTTP status", "200")
+    .option(
+      "--expect-text <text>",
+      "Response text that must be present; repeat for multiple checks",
+      collectValues,
+      []
+    )
+    .option("--captured-at <iso>", "Timestamp when the source was captured")
+    .option("--freshness-days <days>", "Maximum acceptable source age in days")
+    .option("--source-hash <hash>", "Optional hash of the captured source payload")
+    .option("--trust <level>", "Source trust level: low, medium, high, authoritative")
+    .option("--goal <id>", "Associated goal id")
+    .option("--actor <id>", "RBAC subject for source evidence writes", "local-admin")
+    .action(
+      async (options: {
+        cwd?: string;
+        connector: string;
+        sourceUri: string;
+        summary?: string;
+        method: string;
+        expectStatus: string;
+        expectText: string[];
+        capturedAt?: string;
+        freshnessDays?: string;
+        sourceHash?: string;
+        trust?: string;
+        goal?: string;
+        actor: string;
+      }) => {
+        await requireRbacPermission({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          actor: options.actor,
+          permission: "evidence.write",
+          action: "verify startup source evidence"
+        });
+
+        const { verifyStartupSourceEvidence } =
+          await import("./startup-source-connectors.js");
+        const result = await verifyStartupSourceEvidence({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          connector: options.connector,
+          uri: options.sourceUri,
+          ...(options.summary === undefined ? {} : { summary: options.summary }),
+          method: options.method,
+          expectStatus: parsePositiveInteger(options.expectStatus, "--expect-status"),
+          expectText: options.expectText,
+          ...(options.capturedAt === undefined
+            ? {}
+            : { capturedAt: options.capturedAt }),
+          ...(options.freshnessDays === undefined
+            ? {}
+            : {
+                freshnessDays: parsePositiveInteger(
+                  options.freshnessDays,
+                  "--freshness-days"
+                )
+              }),
+          ...(options.sourceHash === undefined
+            ? {}
+            : { sourceHash: options.sourceHash }),
+          ...(options.trust === undefined ? {} : { trustLevel: options.trust }),
+          ...(options.goal === undefined ? {} : { goalId: options.goal })
+        });
+
+        console.log(`Verified source evidence: ${result.evidence.id}`);
+        console.log(`Connector: ${result.connector}`);
+        console.log(
+          `Verification: ${result.verification.status} http=${result.verification.statusCode} expected=${result.verification.expectedStatus}`
+        );
+        console.log(`Evidence type: startup_${result.evidenceType}`);
+        console.log(`Artifact: ${result.artifactPath}`);
+      }
+    );
+
   startupMeasurement
     .command("snapshot")
     .description("Record a metric snapshot from analytics, query, CSV, or manual data.")

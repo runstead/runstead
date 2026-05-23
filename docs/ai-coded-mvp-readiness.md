@@ -217,7 +217,14 @@ runstead startup evidence add --cwd /path/to/mvp --type traffic_gate --summary "
 runstead startup evidence add --cwd /path/to/mvp --type post_launch_watch --summary "..." --source docs/post-launch-watch.md --gate launch
 runstead startup source list
 runstead startup source record --cwd /path/to/mvp --connector deployment --source-uri https://staging.example.com --summary "Staging deployment smoke passed" --status pass
+runstead startup source verify --cwd /path/to/mvp --connector deployment --source-uri https://staging.example.com/health --expect-status 200 --expect-text "ok"
 ```
+
+`startup source verify` is the preferred escape hatch for staging and
+production integrations because it performs a live HTTP check before recording
+the evidence artifact. Use it for deployment health URLs, observability status
+pages, analytics exports, billing health endpoints, support queues, or scanner
+reports that can expose a stable URL.
 
 After stronger evidence is recorded, rerun the same gate:
 
