@@ -103,6 +103,29 @@ describe("startup UI validation evidence", () => {
       );
       expect(cliOutput).toContain("Recorded UI validation evidence:");
       expect(cliOutput).toContain("Failed: no");
+
+      await recordStartupUiValidation({
+        cwd: workspace,
+        url: "http://localhost:3000",
+        viewport: "390x844",
+        screenshot: "file:.runstead/evidence/mobile-home-fixed.png",
+        domStatus: "pass",
+        accessibilityStatus: "pass",
+        responsiveStatus: "pass",
+        criticalFlow: "add todo",
+        criticalFlowStatus: "pass",
+        goalId: created.goal.id,
+        now: new Date("2026-05-14T03:30:00.000Z")
+      });
+      const clearedGate = await checkStartupGate({
+        cwd: workspace,
+        stage: "launch",
+        now: new Date("2026-05-14T03:40:00.000Z")
+      });
+
+      expect(clearedGate.blockers).not.toContain(
+        "frontend UI validation failed: UI validation failed for http://localhost:3000 390x844"
+      );
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }
