@@ -1139,9 +1139,57 @@ async function runChromeDevtoolsBrowserFlow(
       connection.close();
     }
   } finally {
-    child.kill("SIGTERM");
-    await rm(userDataDir, { force: true, recursive: true });
+    await cleanupChromeDevtoolsProfile(child, userDataDir, consoleMessages);
   }
+}
+
+async function cleanupChromeDevtoolsProfile(
+  child: ChildProcess,
+  userDataDir: string,
+  consoleMessages: string[]
+): Promise<void> {
+  if (child.exitCode === null && child.signalCode === null) {
+    child.kill("SIGTERM");
+  }
+
+  await waitForChildProcessExit(child, 1_000);
+
+  try {
+    await rm(userDataDir, {
+      force: true,
+      maxRetries: 5,
+      recursive: true,
+      retryDelay: 100
+    });
+  } catch (error) {
+    consoleMessages.push(
+      `[warn] failed to clean Chrome profile ${userDataDir}: ${
+        error instanceof Error ? error.message : String(error)
+      }`
+    );
+  }
+}
+
+function waitForChildProcessExit(
+  child: ChildProcess,
+  timeoutMs: number
+): Promise<void> {
+  if (child.exitCode !== null || child.signalCode !== null) {
+    return Promise.resolve();
+  }
+
+  return new Promise((resolve) => {
+    const done = () => {
+      clearTimeout(timer);
+      child.off("close", done);
+      child.off("exit", done);
+      resolve();
+    };
+    const timer = setTimeout(done, timeoutMs);
+
+    child.once("close", done);
+    child.once("exit", done);
+  });
 }
 
 async function resolveChromeExecutable(): Promise<string> {
