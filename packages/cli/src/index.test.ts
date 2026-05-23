@@ -501,6 +501,7 @@ describe("cli entrypoint", () => {
         "--cwd",
         "--dependency-policy",
         "--max-attempts",
+        "--max-turns",
         "--model",
         "--prompt",
         "--worker"

@@ -270,6 +270,7 @@ export function registerStartupCommands(program: Command): void {
       []
     )
     .option("--max-attempts <count>", "Maximum bounded MVP repair attempts", "2")
+    .option("--max-turns <count>", "Maximum codex_direct turns per MVP attempt", "24")
     .action(
       async (options: {
         cwd?: string;
@@ -279,6 +280,7 @@ export function registerStartupCommands(program: Command): void {
         dependencyPolicy: string;
         allowDependency: string[];
         maxAttempts: string;
+        maxTurns: string;
       }) => {
         const {
           formatStartupDependencyApprovalBoundary,
@@ -305,6 +307,7 @@ export function registerStartupCommands(program: Command): void {
           dependencyPolicy: dependencyApproval.policy,
           allowedDependencies: dependencyApproval.allowedDependencies,
           maxAttempts: parsePositiveInteger(options.maxAttempts, "--max-attempts"),
+          maxTurns: parsePositiveInteger(options.maxTurns, "--max-turns"),
           onWorkerProgress: logWrappedWorkerProgress
         });
 

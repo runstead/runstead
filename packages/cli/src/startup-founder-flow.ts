@@ -59,6 +59,7 @@ export interface StartupBuildMvpOptions extends StartupFounderFlowOptions {
   dependencyPolicy?: string;
   allowedDependencies?: string[];
   maxAttempts?: number;
+  maxTurns?: number;
   workerRunner?: WorkerProcessRunner;
   onWorkerProgress?: RunLocalAgentTaskOptions["onWorkerProgress"];
   workerProgressIntervalMs?: number;
@@ -70,6 +71,7 @@ export interface StartupBuildMvpResult {
   localAgentTaskId: string;
   status: RunLocalAgentTaskResult["status"];
   summary: string;
+  maxTurns: number;
   dependencyApproval: StartupDependencyApprovalBoundary;
   verifierRun: StartupMvpVerifierRun;
   attempts: StartupBuildMvpAttempt[];
@@ -138,6 +140,8 @@ type StartupMvpVerifierTaskStatus =
   | "blocked"
   | "waiting_approval";
 
+const DEFAULT_STARTUP_BUILD_MVP_MAX_TURNS = 24;
+
 export async function startupOnboard(
   options: StartupFounderFlowOptions = {}
 ): Promise<StartupOnboardResult> {
@@ -199,6 +203,7 @@ export async function startupBuildMvp(
   const cwd = resolve(options.cwd ?? process.cwd());
   const worker = options.worker ?? "codex_cli";
   const maxAttempts = normalizeStartupBuildMvpMaxAttempts(options.maxAttempts);
+  const maxTurns = normalizeStartupBuildMvpMaxTurns(options.maxTurns);
   const dependencyApproval = resolveStartupDependencyApprovalBoundary({
     ...(options.dependencyPolicy === undefined
       ? {}
@@ -233,6 +238,7 @@ export async function startupBuildMvp(
       checkpoint: true,
       approvalRequired: dependencyApproval.approvalRequired,
       verifierCommands: await verifierCommands(cwd, options.now),
+      maxTurns,
       ...(options.model === undefined ? {} : { model: options.model }),
       ...(options.now === undefined ? {} : { now: options.now })
     });
@@ -295,6 +301,7 @@ export async function startupBuildMvp(
     localAgentTaskId: finalAttempt.localAgentTaskId,
     status: finalAttempt.status,
     summary: finalAttempt.summary,
+    maxTurns,
     dependencyApproval,
     verifierRun: finalAttempt.verifierRun,
     attempts,
@@ -409,6 +416,7 @@ export function formatStartupBuildMvp(result: StartupBuildMvpResult): string {
     `Task: ${result.localAgentTaskId}`,
     `Status: ${result.status}`,
     `Summary: ${result.summary}`,
+    `Max turns: ${result.maxTurns}`,
     `Dependency policy: ${formatStartupDependencyApprovalBoundary(result.dependencyApproval)}`,
     `Attempts: ${result.attempts.length}`,
     `Verifier run: ${formatStartupMvpVerifierRun(result.verifierRun)}`,
@@ -645,6 +653,18 @@ function normalizeStartupBuildMvpMaxAttempts(value: number | undefined): number 
 
   if (!Number.isInteger(value) || value < 1 || value > 5) {
     throw new Error("Startup MVP maxAttempts must be an integer between 1 and 5");
+  }
+
+  return value;
+}
+
+function normalizeStartupBuildMvpMaxTurns(value: number | undefined): number {
+  if (value === undefined) {
+    return DEFAULT_STARTUP_BUILD_MVP_MAX_TURNS;
+  }
+
+  if (!Number.isInteger(value) || value < 1 || value > 100) {
+    throw new Error("Startup MVP maxTurns must be an integer between 1 and 100");
   }
 
   return value;
