@@ -14,6 +14,15 @@ import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
+import {
+  classifyRuntimeStartupUiValidationFailure,
+  runtimeStartupUiValidationInfraStatus,
+  runtimeStartupUiValidationRepairHint,
+  type RuntimeStartupUiValidationExecutionEvidence,
+  type RuntimeStartupUiValidationFailureCategory,
+  type RuntimeStartupUiValidationStatus
+} from "@runstead/runtime";
+
 import { requireRunsteadStateDb } from "./runstead-root.js";
 import {
   startStartupDevServer,
@@ -25,13 +34,9 @@ import {
   type StartupEvidenceSourceInput
 } from "./startup-evidence.js";
 
-export type StartupUiValidationStatus = "pass" | "fail" | "not_run";
+export type StartupUiValidationStatus = RuntimeStartupUiValidationStatus;
 export type StartupUiValidationFailureCategory =
-  | "product_gap"
-  | "selector_unstable"
-  | "browser_runtime"
-  | "network"
-  | "unknown";
+  RuntimeStartupUiValidationFailureCategory;
 
 export interface RecordStartupUiValidationOptions {
   cwd?: string;
@@ -79,19 +84,8 @@ export interface ExecuteStartupUiValidationResult extends RecordStartupUiValidat
   execution: StartupUiValidationExecutionEvidence;
 }
 
-export interface StartupUiValidationExecutionEvidence {
-  runner: "http_dom_smoke" | "browser_flow_smoke";
-  responseStatus: number;
-  responseOk: boolean;
-  expectedText: StartupUiValidationTextCheck[];
-  flowActions?: StartupUiFlowActionResult[];
-  artifacts?: StartupUiValidationExecutionArtifacts;
-  error?: string;
-  failureCategory?: StartupUiValidationFailureCategory;
-  retryCount?: number;
-  retryReason?: string;
-  server?: StartupUiValidationServerEvidence;
-}
+export type StartupUiValidationExecutionEvidence =
+  RuntimeStartupUiValidationExecutionEvidence;
 
 export interface StartupUiValidationTextCheck {
   text: string;
@@ -177,114 +171,10 @@ export function summarizeStartupUiValidationFailure(
   return execution.error ?? "one or more UI validation checks failed";
 }
 
-export function classifyStartupUiValidationFailure(
-  execution: StartupUiValidationExecutionEvidence
-): StartupUiValidationFailureCategory {
-  if (execution.failureCategory !== undefined) {
-    return execution.failureCategory;
-  }
-
-  const failedAction = execution.flowActions?.find(
-    (action) => action.status === "fail"
-  );
-  const text = [
-    execution.error ?? "",
-    failedAction?.summary ?? "",
-    failedAction?.selector ?? ""
-  ]
-    .join(" ")
-    .toLowerCase();
-
-  if (
-    text.includes("no matching selector") ||
-    text.includes("strict mode violation") ||
-    text.includes("selector")
-  ) {
-    return "selector_unstable";
-  }
-
-  if (
-    text.includes("chrome") ||
-    text.includes("devtools") ||
-    text.includes("playwright") ||
-    text.includes("browser") ||
-    text.includes("executable") ||
-    text.includes("profile")
-  ) {
-    return "browser_runtime";
-  }
-
-  if (
-    text.includes("econnrefused") ||
-    text.includes("connection refused") ||
-    text.includes("timed out") ||
-    text.includes("page did not load")
-  ) {
-    return "network";
-  }
-
-  if (execution.expectedText.some((item) => !item.found)) {
-    return "product_gap";
-  }
-
-  if (!execution.responseOk) {
-    return execution.responseStatus === 0 ? "network" : "product_gap";
-  }
-
-  return failedAction === undefined ? "unknown" : "product_gap";
-}
-
-export function startupUiValidationRepairHint(
-  execution: StartupUiValidationExecutionEvidence
-): string {
-  const category = classifyStartupUiValidationFailure(execution);
-  const failedAction = execution.flowActions?.find(
-    (action) => action.status === "fail"
-  );
-
-  if (category === "selector_unstable") {
-    if (failedAction?.type === "fill") {
-      return "Add stable data-testid attributes such as data-testid=\"todo-input\" on the add-task input and data-testid=\"todo-search\" on the search input, then reference them from .runstead/startup/ui-smoke.yaml.";
-    }
-
-    if (failedAction?.type === "click") {
-      return "Add stable data-testid attributes such as data-testid=\"add-todo\", data-testid=\"todo-item\", or data-testid=\"filter-active\" to the clicked control and update the UI smoke selectors.";
-    }
-
-    return "Replace broad selectors with stable data-testid selectors in .runstead/startup/ui-smoke.yaml.";
-  }
-
-  if (category === "product_gap") {
-    return "Implement the missing user-visible product state or expected text, then rerun UI smoke.";
-  }
-
-  if (category === "browser_runtime") {
-    return "Check Playwright/Chrome availability or RUNSTEAD_CHROME_PATH; product code should not be treated as failed until the browser runtime is healthy.";
-  }
-
-  if (category === "network") {
-    return "Check the dev server command, port, and readiness URL before changing product code.";
-  }
-
-  return "Inspect the DOM artifact and update the product flow or UI smoke config with a narrower assertion.";
-}
-
-export function startupUiValidationInfraStatus(
-  execution: StartupUiValidationExecutionEvidence | undefined
-): StartupUiValidationStatus {
-  if (execution === undefined) {
-    return "not_run";
-  }
-
-  if (
-    classifyStartupUiValidationFailure(execution) === "browser_runtime" ||
-    classifyStartupUiValidationFailure(execution) === "network"
-  ) {
-    return "fail";
-  }
-
-  return "pass";
-}
+export const classifyStartupUiValidationFailure =
+  classifyRuntimeStartupUiValidationFailure;
+export const startupUiValidationRepairHint = runtimeStartupUiValidationRepairHint;
+export const startupUiValidationInfraStatus = runtimeStartupUiValidationInfraStatus;
 
 export interface StartupUiValidationExecutionArtifacts {
   dom?: string;
@@ -498,8 +388,11 @@ async function executeBrowserFlowValidation(
       flowActions: options.flowActions,
       timeoutMs: options.timeoutMs ?? 20_000
     };
-    const { result: browser, retryCount, retryReason } =
-      await runStartupUiBrowserRunnerWithRetry(runner, browserInput);
+    const {
+      result: browser,
+      retryCount,
+      retryReason
+    } = await runStartupUiBrowserRunnerWithRetry(runner, browserInput);
     const domAsset = await persistStartupUiTextAsset({
       cwd: options.cwd,
       prefix: "dom",
@@ -915,7 +808,9 @@ function textChecks(
   }));
 }
 
-function startupUiFlowActionFailureSummary(action: StartupUiFlowActionResult): string {
+function startupUiFlowActionFailureSummary(
+  action: NonNullable<StartupUiValidationExecutionEvidence["flowActions"]>[number]
+): string {
   const selector =
     action.selector === undefined || action.selector.length === 0
       ? ""
