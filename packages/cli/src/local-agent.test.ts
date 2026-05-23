@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { openRunsteadDatabase } from "@runstead/state-sqlite";
 import { describe, expect, it } from "vitest";
 
-import { decideApproval } from "./approvals.js";
+import { decideApproval, showApproval } from "./approvals.js";
 import type { CodexDirectTransport } from "./codex-direct-worker.js";
 import type { CodexResponsesRequest } from "./codex-responses-transport.js";
 import { setRunsteadConfigValue } from "./config.js";
@@ -1163,6 +1163,9 @@ describe("local agent task primitives", () => {
         throw new Error("Expected patch approval");
       }
 
+      expect(showApproval({ cwd: workspace, id: waiting.approval.id }).task?.id).toBe(
+        created.task.id
+      );
       const modelCallsBefore = countTaskToolCalls(
         created.stateDb,
         created.task.id,

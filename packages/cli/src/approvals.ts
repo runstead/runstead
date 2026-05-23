@@ -47,6 +47,7 @@ export interface ShowApprovalOptions {
 export interface ShowApprovalResult {
   approval: ApprovalRequest;
   policyDecision?: PolicyDecisionRecord;
+  task?: Task;
   stateDb: string;
 }
 
@@ -207,10 +208,12 @@ export function showApproval(options: ShowApprovalOptions): ShowApprovalResult {
 
     const approval = rowToApproval(row);
     const policyDecision = findPolicyDecision(database, approval.policyDecisionId);
+    const task = taskForApproval(database, approval);
 
     return {
       approval,
       ...(policyDecision === undefined ? {} : { policyDecision }),
+      ...(task === undefined ? {} : { task }),
       stateDb
     };
   } finally {

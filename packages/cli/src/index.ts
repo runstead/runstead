@@ -2079,6 +2079,7 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
       console.log(`Requested by: ${result.approval.requestedBy ?? "unknown"}`);
       console.log(`Expires: ${result.approval.expiresAt ?? "none"}`);
       console.log(`Decided by: ${result.approval.decidedBy ?? "none"}`);
+      console.log(`Task: ${result.task?.id ?? "none"}`);
 
       if (result.policyDecision !== undefined) {
         console.log(`Policy: ${result.policyDecision.policyId}`);
@@ -2101,18 +2102,19 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
               : metadata.filesTouched.join(", ")
           }`
         );
-      console.log(
-        `Dependency impact: ${metadata.dependencyImpact.kind}${
-          metadata.dependencyImpact.files.length === 0
-            ? ""
-            : ` (${metadata.dependencyImpact.files.join(", ")})`
-        }`
-      );
-      console.log(`Risk class: ${metadata.riskClass ?? "unknown"}`);
-      console.log(`Diff hash: ${metadata.diffHash ?? "unknown"}`);
+        console.log(
+          `Dependency impact: ${metadata.dependencyImpact.kind}${
+            metadata.dependencyImpact.files.length === 0
+              ? ""
+              : ` (${metadata.dependencyImpact.files.join(", ")})`
+          }`
+        );
+        console.log(`Risk class: ${metadata.riskClass ?? "unknown"}`);
+        console.log(`Diff hash: ${metadata.diffHash ?? "unknown"}`);
         console.log(
           `Canonical signature: ${metadata.canonicalSignature ?? "unknown"}`
         );
+        console.log(`Grant reuse: ${approvalGrantReuseSummary(metadata)}`);
         console.log(`Risk summary: ${metadata.riskSummary ?? "unknown"}`);
         console.log(
           `Obligations: ${
@@ -2137,7 +2139,10 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
         options: { cwd?: string; actor: string; decidedBy?: string }
       ) => {
         const actor = options.decidedBy ?? options.actor;
-        const { decideApproval } = await import("./approvals.js");
+        const { approvalActionMetadata, decideApproval, showApproval } =
+          await import("./approvals.js");
+        const shown = showApproval({ ...options, id });
+        const metadata = approvalActionMetadata(shown.policyDecision);
         const result = await decideApproval({
           ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
           id,
@@ -2146,6 +2151,65 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
         });
 
         console.log(`Approved: ${result.approval.id}`);
+        console.log(`Task: ${shown.task?.id ?? "none"}`);
+        console.log(`Grant reuse: ${approvalGrantReuseSummary(metadata)}`);
+        if (shown.task !== undefined) {
+          console.log(`Resume: runstead agent resume ${shown.task.id}`);
+        }
+      }
+    );
+
+  approval
+    .command("approve-and-resume")
+    .description("Approve a pending approval request and resume its local agent task.")
+    .argument("<id>", "Approval id")
+    .option("--cwd <path>", "Workspace directory")
+    .option("--actor <id>", "RBAC subject for approval and task execution", "local-admin")
+    .option("--decided-by <id>", "Approver id")
+    .action(
+      async (
+        id: string,
+        options: { cwd?: string; actor: string; decidedBy?: string }
+      ) => {
+        const actor = options.decidedBy ?? options.actor;
+        await requireRbacPermission({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          actor,
+          permission: "task.run",
+          action: "resume local agent tasks"
+        });
+
+        const { approvalActionMetadata, decideApproval, showApproval } =
+          await import("./approvals.js");
+        const { formatLocalAgentRunReport, localAgentRunExitCode, runLocalAgentTask } =
+          await import("./local-agent.js");
+        const shown = showApproval({ ...options, id });
+        const metadata = approvalActionMetadata(shown.policyDecision);
+        const result = await decideApproval({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          id,
+          decision: "approved",
+          decidedBy: actor
+        });
+
+        console.log(`Approved: ${result.approval.id}`);
+        console.log(`Grant reuse: ${approvalGrantReuseSummary(metadata)}`);
+
+        if (shown.task === undefined) {
+          console.log("Resume: skipped; no local agent task is associated with this approval.");
+          return;
+        }
+
+        const resumed = await runLocalAgentTask({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          taskId: shown.task.id
+        });
+        const exitCode = localAgentRunExitCode(resumed);
+
+        console.log(formatLocalAgentRunReport(resumed));
+        if (exitCode !== 0) {
+          process.exitCode = exitCode;
+        }
       }
     );
 
@@ -4373,6 +4437,26 @@ function approvalResourceSummary(action: unknown): string {
         : undefined;
 
   return identifier === undefined ? type : `${type}:${identifier}`;
+}
+
+function approvalGrantReuseSummary(metadata: {
+  canonicalSignature?: string;
+  riskClass?: string;
+  filesTouched: string[];
+  diffHash?: string;
+}): string {
+  if (metadata.canonicalSignature === undefined) {
+    return "same action id only";
+  }
+
+  const files =
+    metadata.filesTouched.length === 0
+      ? "unknown files"
+      : metadata.filesTouched.join(", ");
+  const risk = metadata.riskClass ?? "unknown risk";
+  const diff = metadata.diffHash ?? "unknown diff";
+
+  return `equivalent ${risk} actions touching ${files} with diff ${diff} can reuse canonical signature ${metadata.canonicalSignature}`;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

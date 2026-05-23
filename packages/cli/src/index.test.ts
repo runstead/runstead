@@ -357,7 +357,13 @@ describe("cli entrypoint", () => {
       (command) => command.name() === "approval"
     );
 
-    for (const commandName of ["list", "show", "approve", "deny"]) {
+    for (const commandName of [
+      "list",
+      "show",
+      "approve",
+      "approve-and-resume",
+      "deny"
+    ]) {
       const command = approval?.commands.find((item) => item.name() === commandName);
 
       expect(command?.options.map((option) => option.long)).toContain("--actor");
