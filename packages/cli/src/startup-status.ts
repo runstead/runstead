@@ -1,5 +1,5 @@
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { openRunsteadDatabase } from "@runstead/state-sqlite";
@@ -24,8 +24,17 @@ export interface StartupStatusResult {
   generatedAt: string;
   currentStage: StartupGateStage;
   gates: StartupStatusGate[];
+  readiness?: StartupStatusReadinessVerdict;
   evidence: StartupStatusEvidenceSummary;
   nextAction: StartupStatusNextAction;
+}
+
+export interface StartupStatusReadinessVerdict {
+  runId: string;
+  target: string;
+  verdict: string;
+  blockers: string[];
+  completedAt?: string;
 }
 
 export interface StartupStatusGate {
@@ -110,6 +119,7 @@ export async function getStartupStatus(
     stateDb: resolvedState.stateDb,
     generatedAt
   });
+  const readiness = readLatestStartupReadinessVerdict(resolvedState.root);
   const gates: StartupStatusGate[] = gateResults.map((gate) => ({
     stage: gate.stage,
     status: gate.passed ? "passed" : "blocked",
@@ -122,10 +132,11 @@ export async function getStartupStatus(
     stateDb: resolvedState.stateDb,
     domain,
     generatedAt,
-    currentStage: currentStartupStage(gates),
+    currentStage: currentStartupStage(gates, readiness),
     gates,
+    ...(readiness === undefined ? {} : { readiness }),
     evidence,
-    nextAction: nextStartupAction(gates, evidence)
+    nextAction: nextStartupAction(gates, evidence, readiness)
   };
 }
 
@@ -135,6 +146,11 @@ export function formatStartupStatus(result: StartupStatusResult): string {
     `Root: ${result.root}`,
     `Domain: ${result.domain}`,
     `Current stage: ${result.currentStage}`,
+    ...(result.readiness === undefined
+      ? []
+      : [
+          `Readiness verdict: ${result.readiness.verdict} (${result.readiness.runId})`
+        ]),
     `Evidence: ${result.evidence.total} record${result.evidence.total === 1 ? "" : "s"}`,
     ...(result.evidence.latest === undefined
       ? []
@@ -154,7 +170,7 @@ export function formatStartupStatus(result: StartupStatusResult): string {
     `  ${result.nextAction.reason}`,
     "",
     "Top blockers:",
-    listOrNone(topBlockers(result.gates), (blocker) => `- ${blocker}`)
+    listOrNone(topBlockers(result.gates, result.readiness), (blocker) => `- ${blocker}`)
   ].join("\n");
 }
 
@@ -266,7 +282,14 @@ function staleSource(
     : undefined;
 }
 
-function currentStartupStage(gates: StartupStatusGate[]): StartupGateStage {
+function currentStartupStage(
+  gates: StartupStatusGate[],
+  readiness: StartupStatusReadinessVerdict | undefined
+): StartupGateStage {
+  if (readinessVerdictReady(readiness)) {
+    return readiness?.target === "local" ? "launch" : "scale";
+  }
+
   const mvpGate = gates.find((gate) => gate.stage === "mvp");
   const launchGate = gates.find((gate) => gate.stage === "launch");
   const scaleGate = gates.find((gate) => gate.stage === "scale");
@@ -288,8 +311,16 @@ function currentStartupStage(gates: StartupStatusGate[]): StartupGateStage {
 
 function nextStartupAction(
   gates: StartupStatusGate[],
-  evidence: StartupStatusEvidenceSummary
+  evidence: StartupStatusEvidenceSummary,
+  readiness: StartupStatusReadinessVerdict | undefined
 ): StartupStatusNextAction {
+  if (readinessVerdictReady(readiness)) {
+    return {
+      command: "runstead startup ready --stage launch",
+      reason: `Latest startup readiness run ${readiness.runId} reported ${readiness.verdict}.`
+    };
+  }
+
   const mvpGate = gates.find((gate) => gate.stage === "mvp");
   const launchGate = gates.find((gate) => gate.stage === "launch");
   const scaleGate = gates.find((gate) => gate.stage === "scale");
@@ -328,10 +359,87 @@ function nextStartupAction(
   };
 }
 
-function topBlockers(gates: StartupStatusGate[]): string[] {
+function topBlockers(
+  gates: StartupStatusGate[],
+  readiness: StartupStatusReadinessVerdict | undefined
+): string[] {
+  if (readinessVerdictReady(readiness)) {
+    return [];
+  }
+
   return gates.flatMap((gate) =>
     gate.blockers.slice(0, 3).map((blocker) => `${gate.stage}: ${blocker}`)
   );
+}
+
+function readinessVerdictReady(
+  readiness: StartupStatusReadinessVerdict | undefined
+): readiness is StartupStatusReadinessVerdict {
+  return (
+    readiness !== undefined &&
+    [
+      "local_launch_ready",
+      "staging_launch_ready",
+      "public_launch_ready"
+    ].includes(readiness.verdict)
+  );
+}
+
+function readLatestStartupReadinessVerdict(
+  root: string
+): StartupStatusReadinessVerdict | undefined {
+  const runsDir = join(root, "startup", "runs");
+
+  if (!existsSync(runsDir)) {
+    return undefined;
+  }
+
+  const runs = readdirSync(runsDir)
+    .filter((name) => name.endsWith(".json"))
+    .map((name) => readStartupReadinessRunVerdict(join(runsDir, name)))
+    .filter((run): run is StartupStatusReadinessVerdict => run !== undefined)
+    .sort((left, right) =>
+      readinessVerdictTime(right).localeCompare(readinessVerdictTime(left))
+    );
+
+  return runs[0];
+}
+
+function readStartupReadinessRunVerdict(
+  path: string
+): StartupStatusReadinessVerdict | undefined {
+  try {
+    const parsed = JSON.parse(readFileSync(path, "utf8")) as unknown;
+
+    if (
+      !isRecord(parsed) ||
+      typeof parsed.id !== "string" ||
+      typeof parsed.target !== "string" ||
+      typeof parsed.verdict !== "string"
+    ) {
+      return undefined;
+    }
+
+    return {
+      runId: parsed.id,
+      target: parsed.target,
+      verdict: parsed.verdict,
+      blockers: Array.isArray(parsed.verdictBlockers)
+        ? parsed.verdictBlockers.filter(
+            (blocker): blocker is string => typeof blocker === "string"
+          )
+        : [],
+      ...(typeof parsed.completedAt === "string"
+        ? { completedAt: parsed.completedAt }
+        : {})
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+function readinessVerdictTime(run: StartupStatusReadinessVerdict): string {
+  return run.completedAt ?? "";
 }
 
 function listOrNone<T>(items: T[], formatter: (item: T) => string): string {

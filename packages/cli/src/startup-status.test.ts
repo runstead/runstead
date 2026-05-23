@@ -80,4 +80,54 @@ describe("startup status", () => {
       await rm(workspace, { force: true, recursive: true });
     }
   });
+
+  it("uses the latest startup ready verdict to avoid stale gate status conflicts", async () => {
+    const workspace = join(
+      tmpdir(),
+      `runstead-startup-status-ready-${process.pid}`
+    );
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await mkdir(workspace, { recursive: true });
+      const onboard = await startupOnboard({
+        cwd: workspace,
+        now: new Date("2026-05-14T00:00:00.000Z")
+      });
+
+      await mkdir(join(onboard.root, "startup", "runs"), { recursive: true });
+      await writeFile(
+        join(onboard.root, "startup", "runs", "run_ready.json"),
+        `${JSON.stringify(
+          {
+            id: "run_ready",
+            target: "local",
+            verdict: "local_launch_ready",
+            verdictBlockers: [],
+            completedAt: "2026-05-14T01:00:00.000Z"
+          },
+          null,
+          2
+        )}\n`,
+        "utf8"
+      );
+
+      const status = await getStartupStatus({
+        cwd: workspace,
+        now: new Date("2026-05-14T01:05:00.000Z")
+      });
+      const formatted = formatStartupStatus(status);
+
+      expect(status.currentStage).toBe("launch");
+      expect(status.readiness).toMatchObject({
+        runId: "run_ready",
+        verdict: "local_launch_ready"
+      });
+      expect(status.nextAction.reason).toContain("local_launch_ready");
+      expect(formatted).toContain("Readiness verdict: local_launch_ready");
+      expect(formatted).toContain("Top blockers:\n- none");
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
 });
