@@ -124,6 +124,66 @@ describe("startup readiness run model", () => {
     }
   });
 
+  it("splits dirty state by product, generated context, and dependency source", async () => {
+    const workspace = join(
+      tmpdir(),
+      `runstead-startup-ready-dirty-breakdown-${process.pid}`
+    );
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await mkdir(join(workspace, "src"), { recursive: true });
+      await git(workspace, "init");
+      await git(workspace, "config", "user.email", "runstead@example.com");
+      await git(workspace, "config", "user.name", "Runstead Test");
+      await writeFile(
+        join(workspace, "package.json"),
+        `${JSON.stringify({ name: "dirty-breakdown-fixture" }, null, 2)}\n`,
+        "utf8"
+      );
+      await writeFile(join(workspace, "src", "app.js"), "export const app = 1;\n");
+      await git(workspace, "add", ".");
+      await git(workspace, "commit", "-m", "initial app");
+      await writeFile(
+        join(workspace, "package.json"),
+        `${JSON.stringify(
+          { name: "dirty-breakdown-fixture", scripts: { test: "node -v" } },
+          null,
+          2
+        )}\n`,
+        "utf8"
+      );
+      await writeFile(join(workspace, "src", "app.js"), "export const app = 2;\n");
+      await writeFile(join(workspace, "AGENTS.json"), '{"generated":true}\n');
+
+      const { run } = await createStartupReadinessRun({
+        cwd: workspace,
+        stage: "mvp",
+        target: "local",
+        now: new Date("2026-05-22T01:06:00.000Z")
+      });
+      const formatted = formatStartupReadinessRun(run);
+
+      expect(run.dirtyState).toBe("dirty");
+      expect(run.dirtyBreakdown).toMatchObject({
+        productDirty: true,
+        runsteadGeneratedDirty: true,
+        dependencyDirty: true,
+        ignoredRuntimeDirty: false,
+        unknownDirty: false,
+        productFiles: ["src/app.js"],
+        runsteadGeneratedFiles: ["AGENTS.json"],
+        dependencyFiles: ["package.json"]
+      });
+      expect(formatted).toContain("Dirty categories:");
+      expect(formatted).toContain("product:1");
+      expect(formatted).toContain("runstead_generated:1");
+      expect(formatted).toContain("dependency:1");
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
   it("marks command evidence stale after the code fingerprint changes", async () => {
     const workspace = join(
       tmpdir(),

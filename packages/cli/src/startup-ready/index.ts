@@ -108,6 +108,18 @@ export type StartupReadinessPhaseStatus =
   | "failed"
   | "skipped";
 export type StartupReadinessDirtyState = "clean" | "dirty" | "unknown";
+export interface StartupReadinessDirtyBreakdown {
+  productDirty: boolean;
+  runsteadGeneratedDirty: boolean;
+  ignoredRuntimeDirty: boolean;
+  dependencyDirty: boolean;
+  unknownDirty: boolean;
+  productFiles: string[];
+  runsteadGeneratedFiles: string[];
+  ignoredRuntimeFiles: string[];
+  dependencyFiles: string[];
+  unknownFiles: string[];
+}
 export const STARTUP_READINESS_EVIDENCE_TIERS = [
   "synthetic_smoke",
   "local_manual",
@@ -236,6 +248,7 @@ export interface StartupReadinessRun {
   completedAt?: string;
   gitHead?: string;
   dirtyState: StartupReadinessDirtyState;
+  dirtyBreakdown?: StartupReadinessDirtyBreakdown;
   codeFingerprint?: string;
 }
 
@@ -566,6 +579,7 @@ export async function createStartupReadinessRun(
     startedAt,
     ...(codeState.gitHead === undefined ? {} : { gitHead: codeState.gitHead }),
     dirtyState: codeState.dirtyState,
+    dirtyBreakdown: codeState.dirtyBreakdown,
     codeFingerprint: codeState.fingerprint
   };
 
@@ -718,6 +732,7 @@ export function formatStartupReadinessRun(run: StartupReadinessRun): string {
     `Verdict blockers: ${run.verdictBlockers.length === 0 ? "none" : run.verdictBlockers.join("; ")}`,
     `Git head: ${run.gitHead ?? "unknown"}`,
     `Dirty state: ${run.dirtyState}`,
+    `Dirty categories: ${formatStartupDirtyBreakdown(run.dirtyBreakdown)}`,
     `Code fingerprint: ${run.codeFingerprint ?? "unknown"}`,
     "",
     "Launch decision:",
@@ -2471,6 +2486,7 @@ async function finalizeRun(
     supersededEvidenceRefs: recordedEvidence.supersededEvidenceRefs,
     ...(codeState.gitHead === undefined ? {} : { gitHead: codeState.gitHead }),
     dirtyState: codeState.dirtyState,
+    dirtyBreakdown: codeState.dirtyBreakdown,
     codeFingerprint: codeState.fingerprint,
     verdict: verdict.verdict,
     verdictBlockers: verdict.blockers,
@@ -2515,6 +2531,9 @@ async function writeStartupReadinessDecisionReport(
       completedAt: run.completedAt,
       gitHead: run.gitHead,
       dirtyState: run.dirtyState,
+      ...(run.dirtyBreakdown === undefined
+        ? {}
+        : { dirtyBreakdown: run.dirtyBreakdown }),
       codeFingerprint: run.codeFingerprint
     },
     verdict: {
@@ -2806,6 +2825,7 @@ function formatStartupReadinessDecisionMarkdown(input: {
     completedAt: string | undefined;
     gitHead: string | undefined;
     dirtyState: StartupReadinessDirtyState;
+    dirtyBreakdown?: StartupReadinessDirtyBreakdown;
     codeFingerprint: string | undefined;
   };
   decisions: {
@@ -2897,6 +2917,7 @@ function formatStartupReadinessDecisionMarkdown(input: {
     "",
     `- Git SHA: ${input.run.gitHead ?? "unknown"}`,
     `- Dirty state: ${input.run.dirtyState}`,
+    `- Dirty categories: ${formatStartupDirtyBreakdown(input.run.dirtyBreakdown)}`,
     `- Code fingerprint: ${input.run.codeFingerprint ?? "unknown"}`,
     `- Started: ${input.run.startedAt}`,
     `- Completed: ${input.run.completedAt ?? "not completed"}`,
@@ -2928,6 +2949,30 @@ function formatStartupPhaseExecution(
   return execution === undefined
     ? "none"
     : `implementation=${execution.implementation}<br>verification=${execution.verification}<br>agentCompletion=${execution.agentCompletion}`;
+}
+
+function formatStartupDirtyBreakdown(
+  breakdown: StartupReadinessDirtyBreakdown | undefined
+): string {
+  if (breakdown === undefined) {
+    return "unknown";
+  }
+
+  const categories = [
+    breakdown.productDirty ? `product:${breakdown.productFiles.length}` : undefined,
+    breakdown.runsteadGeneratedDirty
+      ? `runstead_generated:${breakdown.runsteadGeneratedFiles.length}`
+      : undefined,
+    breakdown.ignoredRuntimeDirty
+      ? `runtime:${breakdown.ignoredRuntimeFiles.length}`
+      : undefined,
+    breakdown.dependencyDirty
+      ? `dependency:${breakdown.dependencyFiles.length}`
+      : undefined,
+    breakdown.unknownDirty ? `unknown:${breakdown.unknownFiles.length}` : undefined
+  ].filter((item): item is string => item !== undefined);
+
+  return categories.length === 0 ? "clean" : categories.join(", ");
 }
 
 export function buildStartupReadyGuidedFlow(
@@ -4094,6 +4139,7 @@ function startupReadinessRunsDir(root: string): string {
 async function collectStartupReadyCodeState(cwd: string): Promise<{
   gitHead?: string;
   dirtyState: StartupReadinessDirtyState;
+  dirtyBreakdown: StartupReadinessDirtyBreakdown;
   fingerprint: string;
 }> {
   const codeState = await collectCommandVerifierCodeState(cwd);
@@ -4101,6 +4147,7 @@ async function collectStartupReadyCodeState(cwd: string): Promise<{
   return {
     ...startupReadyGitHead(codeState),
     dirtyState: startupReadyDirtyState(codeState),
+    dirtyBreakdown: startupReadyDirtyBreakdown(codeState),
     fingerprint: codeState.fingerprint
   };
 }
@@ -4125,6 +4172,109 @@ function startupReadyDirtyState(
   }
 
   return codeState.dirty ? "dirty" : "clean";
+}
+
+function startupReadyDirtyBreakdown(
+  codeState: CommandVerifierCodeState
+): StartupReadinessDirtyBreakdown {
+  if (!codeState.available) {
+    return {
+      productDirty: false,
+      runsteadGeneratedDirty: false,
+      ignoredRuntimeDirty: false,
+      dependencyDirty: false,
+      unknownDirty: true,
+      productFiles: [],
+      runsteadGeneratedFiles: [],
+      ignoredRuntimeFiles: [],
+      dependencyFiles: [],
+      unknownFiles: []
+    };
+  }
+
+  const productFiles: string[] = [];
+  const runsteadGeneratedFiles: string[] = [];
+  const ignoredRuntimeFiles: string[] = [];
+  const dependencyFiles: string[] = [];
+  const unknownFiles: string[] = [];
+
+  for (const entry of codeState.changedFiles) {
+    const path = entry.path;
+
+    if (startupReadyRunsteadGeneratedPath(path)) {
+      runsteadGeneratedFiles.push(path);
+      continue;
+    }
+
+    if (startupReadyIgnoredRuntimePath(path)) {
+      ignoredRuntimeFiles.push(path);
+      continue;
+    }
+
+    if (startupReadyDependencyPath(path)) {
+      dependencyFiles.push(path);
+      continue;
+    }
+
+    if (path.length === 0) {
+      unknownFiles.push(path);
+      continue;
+    }
+
+    productFiles.push(path);
+  }
+
+  return {
+    productDirty: productFiles.length > 0,
+    runsteadGeneratedDirty: runsteadGeneratedFiles.length > 0,
+    ignoredRuntimeDirty: ignoredRuntimeFiles.length > 0,
+    dependencyDirty: dependencyFiles.length > 0,
+    unknownDirty: unknownFiles.length > 0,
+    productFiles,
+    runsteadGeneratedFiles,
+    ignoredRuntimeFiles,
+    dependencyFiles,
+    unknownFiles
+  };
+}
+
+function startupReadyRunsteadGeneratedPath(path: string): boolean {
+  return (
+    path === "AGENTS.json" ||
+    path === "CLAUDE.json" ||
+    path === "CODEX.json" ||
+    path === "MEASUREMENT.json" ||
+    path === "AGENTS.md" ||
+    path === "CLAUDE.md" ||
+    path === "CODEX.md" ||
+    path === "MEASUREMENT.md"
+  );
+}
+
+function startupReadyIgnoredRuntimePath(path: string): boolean {
+  return (
+    path === ".runstead" ||
+    path.startsWith(".runstead/") ||
+    path === "dist" ||
+    path.startsWith("dist/") ||
+    path === "coverage" ||
+    path.startsWith("coverage/") ||
+    path === ".playwright-mcp" ||
+    path.startsWith(".playwright-mcp/")
+  );
+}
+
+function startupReadyDependencyPath(path: string): boolean {
+  return (
+    path === "package.json" ||
+    path.endsWith("/package.json") ||
+    path === "pnpm-lock.yaml" ||
+    path === "package-lock.json" ||
+    path === "npm-shrinkwrap.json" ||
+    path === "yarn.lock" ||
+    path === "bun.lock" ||
+    path === "bun.lockb"
+  );
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
