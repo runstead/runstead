@@ -35,6 +35,7 @@
     "@runstead/evidence": "workspace:*",
     "@runstead/governance": "workspace:*",
     "@runstead/runtime": "workspace:*",
+    "@runstead/sdk": "workspace:*",
     "@runstead/skills": "workspace:*",
     "@runstead/state-sqlite": "workspace:*",
     "@runstead/tools": "workspace:*",

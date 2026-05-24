@@ -392,6 +392,72 @@ describe("startup readiness run model", () => {
     }
   });
 
+  it("loads SDK extension requirements into startup readiness planning", async () => {
+    const workspace = join(tmpdir(), `runstead-startup-ready-extension-${process.pid}`);
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await mkdir(workspace, { recursive: true });
+      const initialized = await initRunstead({
+        cwd: workspace,
+        profile: "trusted-local"
+      });
+      await mkdir(join(initialized.root, "extensions"), { recursive: true });
+      await writeFile(
+        join(initialized.root, "extensions", "growth-readiness.json"),
+        `${JSON.stringify(
+          {
+            schemaVersion: 1,
+            id: "growth-readiness",
+            version: "0.1.0",
+            name: "Growth readiness",
+            description: "Growth readiness checks for launch.",
+            domains: ["ai-native-startup"],
+            facets: [
+              {
+                name: "activation-metric",
+                title: "Activation metric",
+                description: "Activation evidence is required before launch.",
+                appliesToTargets: ["local"],
+                requiredEvidenceTypes: ["startup_metric_snapshot"]
+              }
+            ],
+            gates: [
+              {
+                id: "local-growth",
+                stage: "launch",
+                target: "local",
+                requiredFacets: ["activation-metric"]
+              }
+            ]
+          },
+          null,
+          2
+        )}\n`,
+        "utf8"
+      );
+
+      const plan = await planStartupReady({
+        cwd: workspace,
+        stage: "launch",
+        target: "local",
+        now: new Date("2026-05-22T01:20:30.000Z")
+      });
+      const launchReport = plan.phases.find((phase) => phase.id === "launch_report");
+      const formatted = formatStartupReadyPlan(plan);
+
+      expect(plan.extensions.loaded).toEqual(["growth-readiness"]);
+      expect(launchReport?.blockers).toEqual(
+        expect.arrayContaining([
+          "extension growth-readiness/activation-metric requires startup_metric_snapshot evidence"
+        ])
+      );
+      expect(formatted).toContain("Extensions: growth-readiness");
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
   it("explains first-run context ingest and refresh behavior in plans", async () => {
     const workspace = join(
       tmpdir(),

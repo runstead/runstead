@@ -8,7 +8,8 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import {
   createReadinessRunSnapshotEvent,
-  readinessRunGovernanceProfile as runtimeReadinessRunGovernanceProfile
+  readinessRunGovernanceProfile as runtimeReadinessRunGovernanceProfile,
+  type ReadinessEvidenceRequirement
 } from "@runstead/runtime";
 import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sqlite";
 
@@ -17,6 +18,11 @@ import type { LocalAgentWorkerKind } from "./local-agent.js";
 import { requireRunsteadStateDb, resolveRunsteadRoot } from "./runstead-root.js";
 import { generateStartupCiSummary } from "./startup-ci-integration.js";
 import { detectStartupDevServerCommand } from "./startup-dev-server.js";
+import {
+  loadStartupReadinessExtensions,
+  startupReadinessExtensionEvidenceRequirements,
+  startupReadinessExtensionRequirementBlockers
+} from "./startup-extension-loader.js";
 import { executeStartupReadyUiSmoke } from "./startup-ready-ui-smoke.js";
 import {
   formatStartupWorkerGovernanceNotice,
@@ -155,7 +161,14 @@ export interface StartupReadyPlan {
   worker: LocalAgentWorkerKind;
   governanceProfile: ResolvedStartupWorkerGovernanceProfile;
   runsteadInitialized: boolean;
+  extensions: StartupReadyPlanExtensions;
   phases: StartupReadyPlanPhase[];
+}
+
+export interface StartupReadyPlanExtensions {
+  discoveredPaths: string[];
+  loaded: string[];
+  issues: string[];
 }
 
 export interface StartupReadyPlanPhase {
@@ -179,6 +192,7 @@ export interface StartupReadinessRun {
   evidenceIds: string[];
   evidenceTiers: StartupReadinessEvidenceTier[];
   evidenceTypes: string[];
+  evidenceRequirements: ReadinessEvidenceRequirement[];
   verdict: StartupReadinessVerdict;
   verdictBlockers: string[];
   reportPaths: string[];
@@ -251,18 +265,29 @@ export async function planStartupReady(
   });
   const worker = governance.worker;
   const now = options.now ?? new Date();
-  const [root, inspection, devServer, recordedEvidence, gate, docs] = await Promise.all(
-    [
+  const [root, inspection, devServer, recordedEvidence, gate, docs, extensions] =
+    await Promise.all([
       resolveRunsteadRoot(cwd),
       collectRepoInspection(cwd, now.toISOString()),
       inspectStartupReadyDevServer(cwd),
       collectRecordedStartupReadinessEvidence(cwd),
       inspectStartupReadyGate(cwd, startupReadyStageToGateStage(stage), now),
-      inspectStartupReadyDocs(cwd, now)
-    ]
-  );
+      inspectStartupReadyDocs(cwd, now),
+      loadStartupReadinessExtensions({ cwd })
+    ]);
   const evidenceTypes = new Set(recordedEvidence.evidenceTypes);
   const evidenceTiers = new Set(recordedEvidence.evidenceTiers);
+  const extensionRequirements = startupReadinessExtensionEvidenceRequirements(
+    extensions.extensions,
+    { stage }
+  );
+  const extensionBlockers = startupReadinessExtensionRequirementBlockers({
+    issues: extensions.issues,
+    requirements: extensionRequirements,
+    target,
+    evidenceTiers: recordedEvidence.evidenceTiers,
+    evidenceTypes: recordedEvidence.evidenceTypes
+  });
 
   return {
     cwd,
@@ -271,6 +296,11 @@ export async function planStartupReady(
     worker,
     governanceProfile: governance.profile,
     runsteadInitialized: root.source !== "missing",
+    extensions: {
+      discoveredPaths: extensions.discoveredPaths,
+      loaded: extensions.extensions.map((extension) => extension.contract.extensionId),
+      issues: extensions.issues
+    },
     phases: [
       planPhase(
         "onboard",
@@ -308,7 +338,8 @@ export async function planStartupReady(
       ]),
       planPhase("launch_report", "Launch report", [
         ...deploymentPlanBlockers(evidenceTiers, target),
-        ...targetOperationalEvidencePlanBlockers(evidenceTypes, evidenceTiers, target)
+        ...targetOperationalEvidencePlanBlockers(evidenceTypes, evidenceTiers, target),
+        ...extensionBlockers
       ]),
       planPhase("complete_check", "Complete product check", [
         ...gate.blockers,
@@ -438,6 +469,7 @@ export async function createStartupReadinessRun(
     evidenceIds: [],
     evidenceTiers: [],
     evidenceTypes: [],
+    evidenceRequirements: [],
     verdict: "not_evaluated",
     verdictBlockers: [],
     reportPaths: [],
@@ -463,6 +495,7 @@ export async function readStartupReadinessRun(input: {
   return {
     run: withStartupReadinessGuidance({
       ...parsed,
+      evidenceRequirements: parsed.evidenceRequirements ?? [],
       governanceProfile: startupReadinessRunGovernanceProfile(parsed)
     }),
     path
@@ -530,6 +563,12 @@ export function formatStartupReadyPlan(plan: StartupReadyPlan): string {
     `Governance profile: ${plan.governanceProfile}`,
     formatStartupWorkerGovernanceNotice(plan.worker, plan.governanceProfile),
     `Runstead initialized: ${plan.runsteadInitialized ? "yes" : "no"}`,
+    `Extensions: ${
+      plan.extensions.loaded.length === 0 ? "none" : plan.extensions.loaded.join(", ")
+    }`,
+    ...(plan.extensions.issues.length === 0
+      ? []
+      : plan.extensions.issues.map((issue) => `Extension issue: ${issue}`)),
     "",
     "Phases:",
     ...plan.phases.flatMap((phase, index) => [
@@ -1467,10 +1506,33 @@ async function finalizeRun(
     ...recordedEvidence.evidenceTiers,
     ...(options.extraEvidenceTiers ?? [])
   ]);
+  const extensions = await loadStartupReadinessExtensions({ cwd: run.cwd });
+  const extensionRequirements = startupReadinessExtensionEvidenceRequirements(
+    extensions.extensions,
+    { stage: run.stage }
+  );
+  const runForVerdict =
+    extensions.issues.length === 0
+      ? run
+      : {
+          ...run,
+          phases: [
+            ...run.phases,
+            {
+              id: "extensions",
+              title: "Extension loader",
+              status: "blocked" as const,
+              evidenceIds: [],
+              artifacts: extensions.discoveredPaths,
+              blockers: extensions.issues
+            }
+          ]
+        };
   const verdict = evaluateStartupReadinessVerdict({
-    run,
+    run: runForVerdict,
     evidenceTiers,
-    evidenceTypes: recordedEvidence.evidenceTypes
+    evidenceTypes: recordedEvidence.evidenceTypes,
+    evidenceRequirements: extensionRequirements
   });
   const phaseStatuses = run.phases.map((phase) => phase.status);
   const status = phaseStatuses.includes("failed")
@@ -1484,6 +1546,7 @@ async function finalizeRun(
     status,
     evidenceTiers,
     evidenceTypes: recordedEvidence.evidenceTypes,
+    evidenceRequirements: extensionRequirements,
     verdict: verdict.verdict,
     verdictBlockers: verdict.blockers,
     completedAt: now.toISOString()
@@ -1502,7 +1565,8 @@ async function writeStartupReadinessDecisionReport(
   const verdict = evaluateStartupReadinessVerdict({
     run,
     evidenceTiers: run.evidenceTiers,
-    evidenceTypes: run.evidenceTypes
+    evidenceTypes: run.evidenceTypes,
+    evidenceRequirements: run.evidenceRequirements
   });
   const payload = {
     schemaVersion: 1,
@@ -1685,7 +1749,8 @@ function startupReadinessDecision(input: {
       phases: input.run.phases
     },
     evidenceTiers: input.run.evidenceTiers,
-    evidenceTypes: input.run.evidenceTypes
+    evidenceTypes: input.run.evidenceTypes,
+    evidenceRequirements: input.run.evidenceRequirements
   });
 
   return {
@@ -2223,12 +2288,14 @@ export function evaluateStartupReadinessVerdict(input: {
   run: Pick<StartupReadinessRun, "target" | "phases">;
   evidenceTiers: StartupReadinessEvidenceTier[];
   evidenceTypes?: string[];
+  evidenceRequirements?: ReadinessEvidenceRequirement[];
 }): StartupVerdictResult {
   return evaluateStartupVerdict({
     target: input.run.target,
     phases: input.run.phases,
     evidenceTiers: input.evidenceTiers,
-    evidenceTypes: input.evidenceTypes ?? []
+    evidenceTypes: input.evidenceTypes ?? [],
+    evidenceRequirements: input.evidenceRequirements ?? []
   });
 }
 

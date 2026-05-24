@@ -70,6 +70,40 @@ describe("readiness plan runtime", () => {
     });
   });
 
+  it("applies extension evidence requirements to target verdicts", () => {
+    const plan = compileReadinessPlan({
+      target: "local",
+      stage: "launch",
+      phases: [
+        {
+          id: "verifiers",
+          title: "Run verifiers",
+          status: "passed",
+          evidenceIds: ["ev_test"]
+        }
+      ],
+      evidenceTiers: ["local_command"],
+      evidenceTypes: ["command_output"],
+      evidenceRequirements: [
+        {
+          source: "extension",
+          sourceId: "growth-readiness/activation-metric",
+          targets: ["local"],
+          evidenceTiers: [],
+          evidenceTypes: ["startup_metric_snapshot"]
+        }
+      ]
+    });
+
+    expect(evaluateCompiledReadinessPlan(plan)).toMatchObject({
+      target: "local",
+      verdict: "local_launch_blocked",
+      blockers: [
+        "extension growth-readiness/activation-metric requires startup_metric_snapshot evidence"
+      ]
+    });
+  });
+
   it("keeps verdict readiness predicates target agnostic", () => {
     expect(readinessVerdictReady("local_launch_ready")).toBe(true);
     expect(readinessVerdictReady("staging_launch_ready")).toBe(true);

@@ -92,6 +92,9 @@ importers:
       '@runstead/runtime':
         specifier: workspace:*
         version: link:../runtime
+      '@runstead/sdk':
+        specifier: workspace:*
+        version: link:../sdk
       '@runstead/skills':
         specifier: workspace:*
         version: link:../skills

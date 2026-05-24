@@ -109,6 +109,19 @@ The compiled contract resolves gate facet references, flattens required secrets
 and evidence requirements, and rejects invalid references such as a gate that
 requires an unknown facet.
 
+## Startup Readiness Loader
+
+`runstead startup ready` discovers extension manifests under
+`.runstead/extensions`. A manifest may be a direct `.json`, `.yaml`, or `.yml`
+file, or a directory containing `runstead-extension.{json,yaml,yml}` or
+`extension.{json,yaml,yml}`.
+
+Loaded manifests are compiled with `compileRunsteadExtensionRuntime`. Contracts
+whose `domains` include `ai-native-startup` contribute their compiled evidence
+requirements to the readiness engine, so extension facets and gates can block a
+local, staging, or production verdict when their required evidence types or tiers
+are missing.
+
 ## Boundaries
 
 The SDK does not execute collectors, verifiers, or workers. It describes and

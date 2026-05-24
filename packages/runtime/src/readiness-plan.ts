@@ -43,6 +43,15 @@ export interface ReadinessPlanPhase {
   blockers?: string[];
 }
 
+export interface ReadinessEvidenceRequirement {
+  source: string;
+  sourceId: string;
+  targets: ReadinessTarget[];
+  evidenceTiers: string[];
+  evidenceTypes: string[];
+  blockers?: string[];
+}
+
 export interface ReadinessFacet {
   kind: ReadinessFacetKind;
   key: string;
@@ -60,6 +69,7 @@ export interface CompileReadinessPlanInput {
   evidenceTypes?: string[];
   staleEvidenceRefs?: string[];
   supersededEvidenceRefs?: string[];
+  evidenceRequirements?: ReadinessEvidenceRequirement[];
 }
 
 export interface CompiledReadinessPlan {
@@ -72,6 +82,7 @@ export interface CompiledReadinessPlan {
   evidenceTypes: string[];
   staleEvidenceRefs: string[];
   supersededEvidenceRefs: string[];
+  evidenceRequirements: ReadinessEvidenceRequirement[];
 }
 
 export interface ReadinessVerdictDecision {
@@ -141,6 +152,9 @@ export function compileReadinessPlan(
   const evidenceTypes = uniqueStrings(input.evidenceTypes ?? []);
   const staleEvidenceRefs = uniqueStrings(input.staleEvidenceRefs ?? []);
   const supersededEvidenceRefs = uniqueStrings(input.supersededEvidenceRefs ?? []);
+  const evidenceRequirements = (input.evidenceRequirements ?? []).map(
+    copyEvidenceRequirement
+  );
   const facets: ReadinessFacet[] = [
     ...input.phases.map((phase) => readinessPhaseFacet(phase)),
     ...evidenceTiers.map((tier) => readinessEvidenceFacet("evidence_tier", tier)),
@@ -166,7 +180,8 @@ export function compileReadinessPlan(
     evidenceTiers,
     evidenceTypes,
     staleEvidenceRefs,
-    supersededEvidenceRefs
+    supersededEvidenceRefs,
+    evidenceRequirements
   };
 }
 
@@ -272,7 +287,17 @@ function evaluateReadinessTargetVerdict(
     evidenceTiers: plan.evidenceTiers,
     evidenceTypes: plan.evidenceTypes
   });
-  const blockers = uniqueStrings([...phaseBlockers, ...tierBlockers]);
+  const requirementBlockers = missingEvidenceRequirementBlockers({
+    target,
+    evidenceTiers: plan.evidenceTiers,
+    evidenceTypes: plan.evidenceTypes,
+    requirements: plan.evidenceRequirements
+  });
+  const blockers = uniqueStrings([
+    ...phaseBlockers,
+    ...tierBlockers,
+    ...requirementBlockers
+  ]);
   const warnings = uniqueStrings([
     ...plan.staleEvidenceRefs.map(
       (ref) => `stale evidence is excluded from readiness verdict: ${ref}`
@@ -293,6 +318,45 @@ function evaluateReadinessTargetVerdict(
     staleEvidenceRefs: plan.staleEvidenceRefs,
     supersededEvidenceRefs: plan.supersededEvidenceRefs
   };
+}
+
+function missingEvidenceRequirementBlockers(input: {
+  target: ReadinessTarget;
+  evidenceTiers: string[];
+  evidenceTypes: string[];
+  requirements: ReadinessEvidenceRequirement[];
+}): string[] {
+  const tiers = new Set(input.evidenceTiers);
+  const types = new Set(input.evidenceTypes);
+
+  return input.requirements.flatMap((requirement) => {
+    if (!requirement.targets.includes(input.target)) {
+      return [];
+    }
+
+    const missingTiers = requirement.evidenceTiers.filter((tier) => !tiers.has(tier));
+    const missingTypes = requirement.evidenceTypes.filter((type) => !types.has(type));
+    const missing = [...missingTiers, ...missingTypes];
+
+    if (missing.length === 0 && (requirement.blockers ?? []).length === 0) {
+      return [];
+    }
+
+    if ((requirement.blockers ?? []).length > 0) {
+      return requirement.blockers ?? [];
+    }
+
+    return [
+      ...missingTiers.map(
+        (tier) =>
+          `${requirement.source} ${requirement.sourceId} requires ${tier} evidence tier`
+      ),
+      ...missingTypes.map(
+        (type) =>
+          `${requirement.source} ${requirement.sourceId} requires ${type} evidence`
+      )
+    ];
+  });
 }
 
 function missingReadinessEvidenceBlockers(input: {
@@ -454,4 +518,19 @@ function normalizeReadinessFacetStatus(status: string): ReadinessFacetStatus {
 
 function uniqueStrings(values: string[]): string[] {
   return [...new Set(values)];
+}
+
+function copyEvidenceRequirement(
+  requirement: ReadinessEvidenceRequirement
+): ReadinessEvidenceRequirement {
+  return {
+    source: requirement.source,
+    sourceId: requirement.sourceId,
+    targets: [...requirement.targets],
+    evidenceTiers: [...requirement.evidenceTiers],
+    evidenceTypes: [...requirement.evidenceTypes],
+    ...(requirement.blockers === undefined
+      ? {}
+      : { blockers: [...requirement.blockers] })
+  };
 }

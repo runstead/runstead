@@ -2,6 +2,7 @@ import {
   compileReadinessPlan,
   evaluateCompiledReadinessPlan,
   readinessVerdictReady,
+  type ReadinessEvidenceRequirement,
   type ReadinessEvidenceTier,
   type ReadinessPlanPhase,
   type ReadinessTarget,
@@ -22,6 +23,7 @@ export interface StartupVerdictInput {
   evidenceTypes?: string[];
   staleEvidenceRefs?: string[];
   supersededEvidenceRefs?: string[];
+  evidenceRequirements?: ReadinessEvidenceRequirement[];
 }
 
 export type StartupVerdictDecision = ReadinessVerdictDecision;
