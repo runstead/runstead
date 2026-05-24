@@ -858,11 +858,14 @@ async function executeStartupReadyRun(
       options,
       greenPath
     });
+    const verifierPhase = await startupReadyVerifierPhaseUpdate(run, build, options);
     const buildPhaseStatus = startupBuildMvpPhaseExecutionStatus(
       build.status,
       build.execution
     );
-    const buildWarnings = startupBuildMvpPhaseExecutionWarnings(build.execution);
+    const buildWarnings = startupBuildMvpPhaseExecutionWarnings(build.execution, {
+      verifiedByCurrentEvidence: verifierPhase.verifiedByCurrentEvidence
+    });
 
     updatePhase(run, "build_mvp", {
       status: buildPhaseStatus,
@@ -884,7 +887,7 @@ async function executeStartupReadyRun(
                 : "review MVP gate blockers and continue launch readiness"
           : "review worker output and resume startup readiness"
     });
-    updatePhase(run, "verifiers", verifierPhaseUpdate(build.verifierRun));
+    updatePhase(run, "verifiers", verifierPhase.update);
     await refreshStartupReadyCurrentContext(run, options);
     collectRunEvidence(run);
     await writeStartupReadinessRun(run);
@@ -2055,6 +2058,247 @@ function verifierPhaseUpdate(
   };
 }
 
+async function startupReadyVerifierPhaseUpdate(
+  run: StartupReadinessRun,
+  build: StartupReadyMvpBuildExecution,
+  options: StartupReadyOptions
+): Promise<{
+  update: Partial<StartupReadinessRunPhase>;
+  verifiedByCurrentEvidence: boolean;
+}> {
+  if (build.verifierRun.status !== "skipped") {
+    return {
+      update: verifierPhaseUpdate(build.verifierRun),
+      verifiedByCurrentEvidence: false
+    };
+  }
+
+  const currentEvidence = await collectCurrentStartupReadyVerifierEvidence(run.cwd, {
+    ...(options.now === undefined ? {} : { now: options.now })
+  });
+
+  if (currentEvidence.expectedVerifierNames.length === 0) {
+    return {
+      update: verifierPhaseUpdate(build.verifierRun),
+      verifiedByCurrentEvidence: false
+    };
+  }
+
+  const blockers = [
+    ...currentEvidence.failed.map(
+      (evidence) => `${evidence.verifier} verifier evidence failed for current code fingerprint`
+    ),
+    ...currentEvidence.missingVerifierNames.map(
+      (verifier) => `${verifier} verifier evidence is missing for current code fingerprint`
+    )
+  ];
+
+  if (blockers.length > 0) {
+    return {
+      update: {
+        status: "blocked",
+        evidenceIds: currentEvidence.passed.map((evidence) => evidence.evidenceId),
+        blockers,
+        warnings:
+          currentEvidence.passed.length === 0
+            ? []
+            : [
+                "partial current verifier evidence recovered after worker completion failure"
+              ],
+        nextAction:
+          "run missing or failing verifier evidence for the current code fingerprint and resume startup readiness"
+      },
+      verifiedByCurrentEvidence: false
+    };
+  }
+
+  return {
+    update: {
+      status: "passed",
+      evidenceIds: currentEvidence.passed.map((evidence) => evidence.evidenceId),
+      blockers: [],
+      warnings: [
+        "verified despite agent completion failure using current code fingerprint verifier evidence"
+      ],
+      nextAction:
+        "current verifier evidence proves the MVP; continue launch readiness"
+    },
+    verifiedByCurrentEvidence: true
+  };
+}
+
+interface CurrentStartupReadyVerifierEvidence {
+  expectedVerifierNames: string[];
+  passed: CurrentStartupReadyVerifierEvidenceMatch[];
+  failed: CurrentStartupReadyVerifierEvidenceMatch[];
+  missingVerifierNames: string[];
+}
+
+interface CurrentStartupReadyVerifierEvidenceMatch {
+  verifier: string;
+  evidenceId: string;
+  command: string;
+  exitCode: number | null;
+  timedOut: boolean;
+  forceKilled: boolean;
+  createdAt: string;
+}
+
+async function collectCurrentStartupReadyVerifierEvidence(
+  cwd: string,
+  options: { now?: Date } = {}
+): Promise<CurrentStartupReadyVerifierEvidence> {
+  const expectedVerifierNames = unique(
+    (await startupReadyVerifierCommands(cwd, options.now)).map((command) => command.name)
+  );
+
+  if (expectedVerifierNames.length === 0) {
+    return {
+      expectedVerifierNames,
+      passed: [],
+      failed: [],
+      missingVerifierNames: []
+    };
+  }
+
+  const codeState = await collectCommandVerifierCodeState(cwd);
+  const expected = new Set(expectedVerifierNames);
+  const latestByVerifier = new Map<string, CurrentStartupReadyVerifierEvidenceMatch>();
+
+  try {
+    const state = await requireRunsteadStateDb(cwd);
+    const database = openRunsteadDatabase(state.stateDb);
+
+    try {
+      const rows = database
+        .prepare(
+          `
+          SELECT id, type, uri, summary, created_at AS createdAt
+          FROM evidence
+          WHERE type = 'command_output'
+          `
+        )
+        .all() as unknown as StartupReadinessEvidenceRow[];
+      const artifacts = await Promise.all(
+        rows.map((row) => readStartupReadinessEvidenceArtifact(row.uri))
+      );
+
+      rows.forEach((row, index) => {
+        const match = currentStartupReadyVerifierEvidenceMatch({
+          row,
+          artifact: artifacts[index],
+          expected,
+          codeFingerprint: codeState.fingerprint
+        });
+
+        if (match === undefined) {
+          return;
+        }
+
+        const current = latestByVerifier.get(match.verifier);
+
+        if (
+          current === undefined ||
+          Date.parse(match.createdAt) > Date.parse(current.createdAt) ||
+          (match.createdAt === current.createdAt &&
+            match.evidenceId.localeCompare(current.evidenceId) > 0)
+        ) {
+          latestByVerifier.set(match.verifier, match);
+        }
+      });
+    } finally {
+      database.close();
+    }
+  } catch {
+    return {
+      expectedVerifierNames,
+      passed: [],
+      failed: [],
+      missingVerifierNames: expectedVerifierNames
+    };
+  }
+
+  const passed: CurrentStartupReadyVerifierEvidenceMatch[] = [];
+  const failed: CurrentStartupReadyVerifierEvidenceMatch[] = [];
+  const missingVerifierNames: string[] = [];
+
+  expectedVerifierNames.forEach((verifier) => {
+    const match = latestByVerifier.get(verifier);
+
+    if (match === undefined) {
+      missingVerifierNames.push(verifier);
+      return;
+    }
+
+    if (match.exitCode === 0 && match.timedOut === false && match.forceKilled === false) {
+      passed.push(match);
+      return;
+    }
+
+    failed.push(match);
+  });
+
+  return {
+    expectedVerifierNames,
+    passed,
+    failed,
+    missingVerifierNames
+  };
+}
+
+function currentStartupReadyVerifierEvidenceMatch(input: {
+  row: StartupReadinessEvidenceRow;
+  artifact: unknown;
+  expected: Set<string>;
+  codeFingerprint: string;
+}): CurrentStartupReadyVerifierEvidenceMatch | undefined {
+  if (!isRecord(input.artifact)) {
+    return undefined;
+  }
+
+  const verifier = stringValue(input.artifact.verifier);
+
+  if (verifier === undefined || !input.expected.has(verifier)) {
+    return undefined;
+  }
+
+  const codeState = input.artifact.codeState;
+
+  if (
+    !isRecord(codeState) ||
+    stringValue(codeState.fingerprint) !== input.codeFingerprint
+  ) {
+    return undefined;
+  }
+
+  const result = input.artifact.result;
+
+  if (!isRecord(result)) {
+    return undefined;
+  }
+
+  const exitCode =
+    typeof result.exitCode === "number"
+      ? result.exitCode
+      : result.exitCode === null
+        ? null
+        : undefined;
+
+  if (exitCode === undefined || typeof result.timedOut !== "boolean") {
+    return undefined;
+  }
+
+  return {
+    verifier,
+    evidenceId: input.row.id,
+    command: stringValue(input.artifact.command) ?? "",
+    exitCode,
+    timedOut: result.timedOut,
+    forceKilled: result.forceKilled === true,
+    createdAt: input.row.createdAt
+  };
+}
+
 type StartupBuildMvpResultStatus = Awaited<
   ReturnType<typeof startupBuildMvp>
 >["status"];
@@ -2077,14 +2321,22 @@ export function startupBuildMvpPhaseExecutionStatus(
 }
 
 function startupBuildMvpPhaseExecutionWarnings(
-  execution: RuntimeExecutionSemantics
+  execution: RuntimeExecutionSemantics,
+  options: { verifiedByCurrentEvidence?: boolean } = {}
 ): string[] {
-  return execution.verification === "passed" &&
+  return unique([
+    ...(execution.verification === "passed" && execution.agentCompletion !== "completed"
+      ? [
+          `MVP verification passed after agent completion reported ${execution.agentCompletion}`
+        ]
+      : []),
+    ...(options.verifiedByCurrentEvidence === true &&
     execution.agentCompletion !== "completed"
-    ? [
-        `MVP verification passed after agent completion reported ${execution.agentCompletion}`
-      ]
-    : [];
+      ? [
+          `MVP verified despite agent completion failure using current code fingerprint evidence`
+        ]
+      : [])
+  ]);
 }
 
 function phaseStatus(

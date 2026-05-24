@@ -29,6 +29,7 @@ import {
   runStartupReady,
   startupBuildMvpPhaseExecutionStatus,
   type StartupReadyProgressEvent,
+  type StartupReadinessRun,
   type StartupReadinessRunPhase
 } from "./startup-ready.js";
 
@@ -403,6 +404,185 @@ describe("startup readiness run model", () => {
           )
         )
       ).toBe(true);
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  }, 60_000);
+
+  it("reuses current verifier evidence after a force-build worker failure", async () => {
+    const workspace = join(
+      tmpdir(),
+      `runstead-startup-ready-recover-verifiers-${process.pid}`
+    );
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await mkdir(workspace, { recursive: true });
+      await git(workspace, "init");
+      await git(workspace, "config", "user.email", "runstead@example.com");
+      await git(workspace, "config", "user.name", "Runstead Test");
+      await writeStartupReadyStableFixture(workspace);
+      await git(workspace, "add", ".");
+      await git(workspace, "commit", "-m", "initial startup app");
+      await initRunstead({ cwd: workspace, profile: "trusted-local" });
+      const readinessRun = await createStartupReadinessRun({
+        cwd: workspace,
+        stage: "mvp",
+        target: "local",
+        worker: "codex_cli",
+        now: new Date("2026-05-22T01:15:00.000Z")
+      });
+      markStartupReadyPhasesPassed(readinessRun.run, [
+        "onboard",
+        "context",
+        "measurement"
+      ]);
+      await writeFile(
+        readinessRun.path,
+        `${JSON.stringify(readinessRun.run, null, 2)}\n`,
+        "utf8"
+      );
+
+      const database = openRunsteadDatabase(join(workspace, ".runstead", "state.db"));
+      const evidenceIds: string[] = [];
+
+      try {
+        for (const command of startupReadyVerifierCommandsFixture()) {
+          const stored = await storeCommandVerifierEvidence({
+            cwd: workspace,
+            runsteadRoot: join(workspace, ".runstead"),
+            database,
+            task: startupReadyVerifierTask(),
+            command,
+            now: new Date("2026-05-22T01:16:00.000Z")
+          });
+
+          evidenceIds.push(stored.evidence.id);
+        }
+      } finally {
+        database.close();
+      }
+
+      const result = await runStartupReady({
+        cwd: workspace,
+        resumeRunId: readinessRun.run.id,
+        forceBuild: true,
+        maxAttempts: 1,
+        workerRunner: () =>
+          Promise.resolve({
+            stdout: "",
+            stderr: "final model request failed",
+            exitCode: 1
+          }),
+        now: new Date("2026-05-22T01:17:00.000Z")
+      });
+      const buildPhase = result.run.phases.find((phase) => phase.id === "build_mvp");
+      const verifierPhase = result.run.phases.find((phase) => phase.id === "verifiers");
+      const decisionReport = result.run.reportPaths.find((path) =>
+        path.endsWith(`startup-readiness-run-${result.run.id}.md`)
+      );
+
+      expect(buildPhase?.warnings).toEqual(
+        expect.arrayContaining([
+          expect.stringContaining("MVP verified despite agent completion failure")
+        ])
+      );
+      expect(verifierPhase).toMatchObject({
+        status: "passed",
+        evidenceIds,
+        blockers: []
+      });
+      expect(verifierPhase?.warnings).toEqual(
+        expect.arrayContaining([
+          expect.stringContaining("verified despite agent completion failure")
+        ])
+      );
+      await expect(readFile(decisionReport ?? "", "utf8")).resolves.toContain(
+        evidenceIds.join(", ")
+      );
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  }, 60_000);
+
+  it("blocks recovered verifier phase with a precise missing current evidence name", async () => {
+    const workspace = join(
+      tmpdir(),
+      `runstead-startup-ready-missing-recovered-verifier-${process.pid}`
+    );
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await mkdir(workspace, { recursive: true });
+      await git(workspace, "init");
+      await git(workspace, "config", "user.email", "runstead@example.com");
+      await git(workspace, "config", "user.name", "Runstead Test");
+      await writeStartupReadyStableFixture(workspace);
+      await git(workspace, "add", ".");
+      await git(workspace, "commit", "-m", "initial startup app");
+      await initRunstead({ cwd: workspace, profile: "trusted-local" });
+      const readinessRun = await createStartupReadinessRun({
+        cwd: workspace,
+        stage: "mvp",
+        target: "local",
+        worker: "codex_cli",
+        now: new Date("2026-05-22T01:18:00.000Z")
+      });
+      markStartupReadyPhasesPassed(readinessRun.run, [
+        "onboard",
+        "context",
+        "measurement"
+      ]);
+      await writeFile(
+        readinessRun.path,
+        `${JSON.stringify(readinessRun.run, null, 2)}\n`,
+        "utf8"
+      );
+
+      const database = openRunsteadDatabase(join(workspace, ".runstead", "state.db"));
+      const evidenceIds: string[] = [];
+
+      try {
+        for (const command of startupReadyVerifierCommandsFixture().filter(
+          (item) => item.name !== "build"
+        )) {
+          const stored = await storeCommandVerifierEvidence({
+            cwd: workspace,
+            runsteadRoot: join(workspace, ".runstead"),
+            database,
+            task: startupReadyVerifierTask(),
+            command,
+            now: new Date("2026-05-22T01:19:00.000Z")
+          });
+
+          evidenceIds.push(stored.evidence.id);
+        }
+      } finally {
+        database.close();
+      }
+
+      const result = await runStartupReady({
+        cwd: workspace,
+        resumeRunId: readinessRun.run.id,
+        forceBuild: true,
+        maxAttempts: 1,
+        workerRunner: () =>
+          Promise.resolve({
+            stdout: "",
+            stderr: "final model request failed",
+            exitCode: 1
+          }),
+        now: new Date("2026-05-22T01:20:00.000Z")
+      });
+      const verifierPhase = result.run.phases.find((phase) => phase.id === "verifiers");
+
+      expect(verifierPhase).toMatchObject({
+        status: "blocked",
+        evidenceIds,
+        blockers: [
+          "build verifier evidence is missing for current code fingerprint"
+        ]
+      });
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }
@@ -1874,6 +2054,60 @@ async function insertLegacyStartupMetricSnapshot(input: {
   } finally {
     database.close();
   }
+}
+
+async function writeStartupReadyStableFixture(workspace: string): Promise<void> {
+  await writeFile(
+    join(workspace, "package.json"),
+    `${JSON.stringify(
+      {
+        name: "startup-ready-stable-fixture",
+        private: true,
+        scripts: {
+          test: 'node -e "process.exit(0)"',
+          lint: 'node -e "process.exit(0)"',
+          typecheck: 'node -e "process.exit(0)"',
+          build: 'node -e "process.exit(0)"'
+        }
+      },
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
+  await writeFile(join(workspace, "index.html"), "<h1>Todo MVP</h1>\n", "utf8");
+  await writeFile(join(workspace, ".gitignore"), ".runstead/\n", "utf8");
+  await writeFile(join(workspace, "AGENTS.md"), "# Agent Context\n", "utf8");
+  await writeFile(join(workspace, "CLAUDE.md"), "# Claude Context\n", "utf8");
+  await writeFile(join(workspace, "CODEX.md"), "# Codex Context\n", "utf8");
+  await writeFile(join(workspace, "MEASUREMENT.md"), "# Measurement\n", "utf8");
+}
+
+function startupReadyVerifierCommandsFixture(): { name: string; command: string }[] {
+  return [
+    { name: "test", command: 'node -e "process.exit(0)"' },
+    { name: "lint", command: 'node -e "process.exit(0)"' },
+    { name: "typecheck", command: 'node -e "process.exit(0)"' },
+    { name: "build", command: 'node -e "process.exit(0)"' }
+  ];
+}
+
+function markStartupReadyPhasesPassed(
+  run: StartupReadinessRun,
+  phaseIds: string[]
+): void {
+  const ids = new Set(phaseIds);
+
+  run.phases = run.phases.map((phase) =>
+    ids.has(phase.id)
+      ? {
+          ...phase,
+          status: "passed",
+          blockers: [],
+          nextAction: "test fixture precondition satisfied"
+        }
+      : phase
+  );
 }
 
 async function git(cwd: string, ...args: string[]): Promise<void> {
