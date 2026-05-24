@@ -452,6 +452,9 @@ describe("cli entrypoint", () => {
       (command) => command.name() === "build-mvp"
     );
     const evidenceAdd = evidence?.commands.find((command) => command.name() === "add");
+    const evidenceManualChange = evidence?.commands.find(
+      (command) => command.name() === "manual-change"
+    );
     const gate = startup?.commands.find((command) => command.name() === "gate");
     const gateCheck = gate?.commands.find((command) => command.name() === "check");
     const gateTest = gate?.commands.find((command) => command.name() === "test");
@@ -662,6 +665,22 @@ describe("cli entrypoint", () => {
         "--source",
         "--summary",
         "--type"
+      ])
+    );
+    expect(evidenceManualChange?.options.map((option) => option.long)).toEqual(
+      expect.arrayContaining([
+        "--actor",
+        "--blocker",
+        "--command",
+        "--cwd",
+        "--diff-summary",
+        "--evidence",
+        "--file",
+        "--gate",
+        "--goal",
+        "--operator",
+        "--reason",
+        "--source"
       ])
     );
     expect(artifact?.commands.map((command) => command.name())).toEqual(

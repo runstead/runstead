@@ -478,6 +478,18 @@ describe("generateLaunchReadinessReport", () => {
             undefined
           ],
           [
+            "startup_manual_change",
+            "manual package script fix recorded",
+            {
+              changeSource: "operator",
+              actor: "founder",
+              reason: "Agent omitted package scripts during MVP repair",
+              diffSummary: "Added test, lint, typecheck, and build scripts",
+              commandsRerun: ["pnpm test", "pnpm run build"],
+              evidenceRefs: ["ev_codex_direct_command_001"]
+            }
+          ],
+          [
             "startup_decision",
             "accepted debt decision recorded",
             {
@@ -580,6 +592,13 @@ describe("generateLaunchReadinessReport", () => {
       expect(result.markdown).toContain("codex_direct governed verifier evidence");
       expect(result.markdown).toContain("`codex_direct` is the hard-proxy path");
       expect(result.markdown).toContain("## Evidence Provenance");
+      expect(result.markdown).toContain("## Change Authorship");
+      expect(result.markdown).toContain("Agent change evidence: 2");
+      expect(result.markdown).toContain("Operator change evidence: 1");
+      expect(result.markdown).toContain("actor=founder");
+      expect(result.markdown).toContain(
+        'diff="Added test, lint, typecheck, and build scripts"'
+      );
       expect(result.markdown).toContain("## Frontend UI Validation");
       expect(result.markdown).toContain("url=http://localhost:3000");
       const uiSection = markdownSection(

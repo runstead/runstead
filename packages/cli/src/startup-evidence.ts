@@ -56,6 +56,7 @@ export const STARTUP_EVIDENCE_TYPES = [
   "post_launch_watch",
   "remediation_failure",
   "team_collaboration",
+  "manual_change",
   "complete_product_check"
 ] as const;
 
@@ -103,6 +104,21 @@ export interface AddStartupHypothesisOptions {
   status?: StartupHypothesisStatus;
   sourceRefs?: string[];
   goalId?: string;
+  now?: Date;
+}
+
+export interface RecordStartupManualChangeOptions {
+  cwd?: string;
+  operator: string;
+  reason: string;
+  diffSummary: string;
+  filesTouched?: string[];
+  commandsRerun?: string[];
+  evidenceRefs?: string[];
+  sourceRefs?: string[];
+  goalId?: string;
+  gate?: StartupGateStage;
+  blocker?: string;
   now?: Date;
 }
 
@@ -395,6 +411,45 @@ export async function addStartupHypothesis(
       2
     ),
     ...(options.goalId === undefined ? {} : { goalId: options.goalId }),
+    ...(options.now === undefined ? {} : { now: options.now })
+  });
+}
+
+export async function recordStartupManualChange(
+  options: RecordStartupManualChangeOptions
+): Promise<AddStartupEvidenceResult> {
+  const content = {
+    changeSource: "operator",
+    actor: options.operator,
+    reason: options.reason,
+    diffSummary: options.diffSummary,
+    filesTouched: options.filesTouched ?? [],
+    commandsRerun: options.commandsRerun ?? [],
+    evidenceRefs: options.evidenceRefs ?? []
+  };
+
+  return addStartupEvidence({
+    ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+    type: "manual_change",
+    summary: `Operator ${options.operator}: ${options.diffSummary}`,
+    sourceRefs: options.sourceRefs ?? [],
+    sources: [
+      {
+        kind: "manual",
+        uri: `operator:${options.operator}`,
+        ...(options.now === undefined
+          ? {}
+          : { capturedAt: options.now.toISOString() }),
+        trustLevel: "medium",
+        provenance: {
+          reason: options.reason
+        }
+      }
+    ],
+    content: JSON.stringify(content, null, 2),
+    ...(options.goalId === undefined ? {} : { goalId: options.goalId }),
+    ...(options.gate === undefined ? {} : { gate: options.gate }),
+    ...(options.blocker === undefined ? {} : { blocker: options.blocker }),
     ...(options.now === undefined ? {} : { now: options.now })
   });
 }

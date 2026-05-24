@@ -14,11 +14,76 @@ import {
   addStartupHypothesis,
   checkStartupGate,
   formatStartupGateCheckResult,
+  recordStartupManualChange,
   recordStartupGateDecision,
   type StartupEvidenceArtifact
 } from "./startup-evidence.js";
 
 describe("startup evidence ledger", () => {
+  it("records operator manual changes as first-class startup evidence", async () => {
+    const workspace = join(
+      tmpdir(),
+      `runstead-startup-evidence-manual-change-${process.pid}`
+    );
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await initRunstead({ cwd: workspace });
+
+      const result = await recordStartupManualChange({
+        cwd: workspace,
+        operator: "founder",
+        reason: "Agent omitted package scripts during MVP repair",
+        diffSummary: "Added test, lint, typecheck, and build scripts",
+        filesTouched: ["package.json"],
+        commandsRerun: ["pnpm test", "pnpm run build"],
+        evidenceRefs: ["ev_verifier_after_manual_fix"],
+        gate: "launch",
+        blocker: "passing verifier command evidence is missing",
+        now: new Date("2026-05-14T01:00:00.000Z")
+      });
+      const artifact = JSON.parse(
+        await readFile(result.artifactPath, "utf8")
+      ) as StartupEvidenceArtifact;
+      const content = JSON.parse(artifact.content ?? "{}") as {
+        changeSource?: string;
+        actor?: string;
+        diffSummary?: string;
+        commandsRerun?: string[];
+        evidenceRefs?: string[];
+      };
+
+      expect(result.evidence).toMatchObject({
+        type: "startup_manual_change",
+        subjectType: "startup",
+        summary: "Operator founder: Added test, lint, typecheck, and build scripts"
+      });
+      expect(artifact).toMatchObject({
+        evidenceType: "manual_change",
+        associations: {
+          gate: "launch",
+          blocker: "passing verifier command evidence is missing"
+        },
+        sources: [
+          {
+            kind: "manual",
+            uri: "operator:founder",
+            trustLevel: "medium"
+          }
+        ]
+      });
+      expect(content).toMatchObject({
+        changeSource: "operator",
+        actor: "founder",
+        diffSummary: "Added test, lint, typecheck, and build scripts",
+        commandsRerun: ["pnpm test", "pnpm run build"],
+        evidenceRefs: ["ev_verifier_after_manual_fix"]
+      });
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
   it("rejects malformed metric snapshot evidence before it reaches launch gates", async () => {
     const workspace = join(
       tmpdir(),

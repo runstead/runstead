@@ -452,6 +452,10 @@ function formatLaunchReadinessReport(input: {
     "",
     evidenceProvenance(input.data),
     "",
+    "## Change Authorship",
+    "",
+    changeAuthorship(input.data),
+    "",
     "## Stale Evidence Appendix",
     "",
     staleEvidenceAppendix(input.data),
@@ -835,8 +839,8 @@ function commandEvidenceCurrentKey(
     codeState === undefined
       ? data.currentCodeState.fingerprint
       : (stringValue(codeState.fingerprint) ?? "missing");
-  const verifier = stringValue(artifact?.["verifier"]) ?? item.summary ?? item.id;
-  const command = stringValue(artifact?.["command"]) ?? "unknown";
+  const verifier = stringValue(artifact?.verifier) ?? item.summary ?? item.id;
+  const command = stringValue(artifact?.command) ?? "unknown";
 
   return [
     "command_output",
@@ -1093,6 +1097,47 @@ function evidenceProvenance(data: LaunchReadinessReportData): string {
   );
 
   return listOrNone(rows, (item) => `- ${item.id}: ${evidenceSourceSummary(item)}`);
+}
+
+function changeAuthorship(data: LaunchReadinessReportData): string {
+  const currentEvidence = currentEvidenceRows(data);
+  const operatorChanges = currentEvidence.filter(
+    (item) => item.type === "startup_manual_change"
+  );
+  const agentEvidence = currentEvidence.filter(
+    (item) =>
+      item.type === "command_output" ||
+      item.task_type === "local_agent_task" ||
+      item.summary?.toLowerCase().includes("codex") === true
+  );
+
+  return [
+    `- Agent change evidence: ${agentEvidence.length}`,
+    `- Operator change evidence: ${operatorChanges.length}`,
+    ...operatorChanges.map((item) => `- Operator: ${manualChangeSummary(item)}`)
+  ].join("\n");
+}
+
+function manualChangeSummary(item: EvidenceReportRow): string {
+  const content = parsedEvidenceContent(item.uri);
+
+  if (!isRecord(content)) {
+    return `${item.id}: ${item.summary ?? item.uri}`;
+  }
+
+  const actor = stringValue(content.actor) ?? "unknown";
+  const reason = stringValue(content.reason) ?? "unspecified";
+  const diffSummary = stringValue(content.diffSummary) ?? item.summary ?? "change";
+  const commands = stringArrayValue(content.commandsRerun);
+  const evidenceRefs = stringArrayValue(content.evidenceRefs);
+
+  return [
+    `${item.id}: actor=${actor}`,
+    `diff="${diffSummary}"`,
+    `reason="${reason}"`,
+    `commands=${commands.length === 0 ? "none" : commands.join(",")}`,
+    `evidenceRefs=${evidenceRefs.length === 0 ? "none" : evidenceRefs.join(",")}`
+  ].join(" ");
 }
 
 function staleEvidenceAppendix(data: LaunchReadinessReportData): string {
@@ -1547,6 +1592,12 @@ function isRecord(value: unknown): value is JsonObject {
 
 function stringValue(value: unknown): string | undefined {
   return typeof value === "string" && value.trim().length > 0 ? value : undefined;
+}
+
+function stringArrayValue(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string")
+    : [];
 }
 
 function readPreviousLaunchReadinessEvent(

@@ -240,10 +240,15 @@ runstead startup evidence add --cwd /path/to/mvp --type error_budget --summary "
 runstead startup evidence add --cwd /path/to/mvp --type migration_validation --summary "..." --source docs/migration-validation.md --gate launch
 runstead startup evidence add --cwd /path/to/mvp --type traffic_gate --summary "..." --source docs/traffic-gate.md --gate launch
 runstead startup evidence add --cwd /path/to/mvp --type post_launch_watch --summary "..." --source docs/post-launch-watch.md --gate launch
+runstead startup evidence manual-change --cwd /path/to/mvp --operator founder --reason "agent omitted package scripts" --diff-summary "added test/lint/typecheck/build scripts" --file package.json --command "pnpm test" --evidence ev_after_fix --gate launch
 runstead startup source list
 runstead startup source record --cwd /path/to/mvp --connector deployment --source-uri https://staging.example.com --summary "Staging deployment smoke passed" --status pass
 runstead startup source verify --cwd /path/to/mvp --connector deployment --source-uri https://staging.example.com/health --expect-status 200 --expect-text "ok"
 ```
+
+`startup evidence manual-change` is for operator interventions that happen
+outside an agent loop. Launch reports show these records under Change
+Authorship, separate from agent and verifier evidence.
 
 `startup source verify` is the preferred escape hatch for staging and
 production integrations because it performs a live HTTP check before recording
