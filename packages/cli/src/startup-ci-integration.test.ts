@@ -217,18 +217,194 @@ describe("startup CI integration", () => {
         remoteActions: {
           status: string;
           reason?: string;
+          diagnosis?: string;
+          setupAction?: string;
         };
       };
 
       expect(result.releaseDecision.status).toBe("allow_release");
       expect(result.remoteActions).toMatchObject({
         status: "not_configured",
-        reason: "remote_ci_not_applicable_until_initial_commit"
+        reason: "remote_ci_not_applicable_until_initial_commit",
+        diagnosis: "no_initial_commit"
       });
+      expect(result.remoteActions.setupAction).toContain("initial commit");
       expect(json.releaseDecision.status).toBe("allow_release");
       expect(json.releaseDecision.warnings.join("\n")).toContain(
         "remote_ci_not_applicable_until_initial_commit"
       );
+      expect(json.remoteActions.diagnosis).toBe("no_initial_commit");
+      expect(json.remoteActions.setupAction).toContain("initial commit");
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("keeps unauthenticated remote CI unknown as a local-target warning", async () => {
+    const workspace = join(
+      tmpdir(),
+      `runstead-startup-ci-remote-404-local-${process.pid}`
+    );
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await initRunstead({ cwd: workspace });
+      await execFileAsync("git", ["init"], { cwd: workspace });
+      await execFileAsync(
+        "git",
+        ["remote", "add", "origin", "https://github.com/acme/widgets.git"],
+        { cwd: workspace }
+      );
+      await execFileAsync("git", ["commit", "--allow-empty", "-m", "init"], {
+        cwd: workspace,
+        env: {
+          ...process.env,
+          GIT_AUTHOR_NAME: "Runstead Test",
+          GIT_AUTHOR_EMAIL: "runstead@example.com",
+          GIT_COMMITTER_NAME: "Runstead Test",
+          GIT_COMMITTER_EMAIL: "runstead@example.com"
+        }
+      });
+      await installDomainPack({
+        cwd: workspace,
+        ref: "ai-native-startup",
+        now: new Date("2026-05-14T01:00:00.000Z")
+      });
+
+      const result = await generateStartupCiSummary({
+        cwd: workspace,
+        stage: "launch",
+        readiness: {
+          target: "local",
+          verdict: "local_launch_ready",
+          blockers: []
+        },
+        fetch: () =>
+          Promise.resolve({
+            ok: false,
+            status: 404,
+            json: () => Promise.resolve({ message: "Not Found" }),
+            text: () => Promise.resolve("Not Found")
+          }),
+        now: new Date("2026-05-14T01:10:00.000Z")
+      });
+      const json = JSON.parse(await readFile(result.jsonPath, "utf8")) as {
+        releaseDecision: {
+          status: string;
+          warnings: string[];
+          blockers: string[];
+        };
+        remoteActions: {
+          status: string;
+          reason?: string;
+          diagnosis?: string;
+          setupAction?: string;
+        };
+      };
+      const markdown = await readFile(result.markdownPath, "utf8");
+
+      expect(result.releaseDecision.status).toBe("allow_release");
+      expect(result.remoteActions).toMatchObject({
+        status: "unknown",
+        reason: "GitHub Actions API returned HTTP 404",
+        diagnosis: "private_or_unauthenticated"
+      });
+      expect(json.releaseDecision.status).toBe("allow_release");
+      expect(json.releaseDecision.blockers).toEqual([]);
+      expect(json.releaseDecision.warnings.join("\n")).toContain(
+        "local target treats remote GitHub Actions as advisory"
+      );
+      expect(json.remoteActions.setupAction).toContain("GITHUB_TOKEN");
+      expect(markdown).toContain("Likely cause: private_or_unauthenticated");
+      expect(markdown).toContain("Setup action:");
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("blocks production readiness when remote CI is unauthenticated or private", async () => {
+    const workspace = join(
+      tmpdir(),
+      `runstead-startup-ci-remote-404-production-${process.pid}`
+    );
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await initRunstead({ cwd: workspace });
+      await execFileAsync("git", ["init"], { cwd: workspace });
+      await execFileAsync(
+        "git",
+        ["remote", "add", "origin", "https://github.com/acme/widgets.git"],
+        { cwd: workspace }
+      );
+      await execFileAsync("git", ["commit", "--allow-empty", "-m", "init"], {
+        cwd: workspace,
+        env: {
+          ...process.env,
+          GIT_AUTHOR_NAME: "Runstead Test",
+          GIT_AUTHOR_EMAIL: "runstead@example.com",
+          GIT_COMMITTER_NAME: "Runstead Test",
+          GIT_COMMITTER_EMAIL: "runstead@example.com"
+        }
+      });
+      await installDomainPack({
+        cwd: workspace,
+        ref: "ai-native-startup",
+        now: new Date("2026-05-14T01:00:00.000Z")
+      });
+
+      const result = await generateStartupCiSummary({
+        cwd: workspace,
+        stage: "launch",
+        readiness: {
+          target: "production",
+          verdict: "public_launch_ready",
+          blockers: []
+        },
+        fetch: () =>
+          Promise.resolve({
+            ok: false,
+            status: 404,
+            json: () => Promise.resolve({ message: "Not Found" }),
+            text: () => Promise.resolve("Not Found")
+          }),
+        now: new Date("2026-05-14T01:10:00.000Z")
+      });
+      const json = JSON.parse(await readFile(result.jsonPath, "utf8")) as {
+        releaseDecision: {
+          status: string;
+          blockers: string[];
+          externalChecks: {
+            id: string;
+            status: string;
+            blocker?: string;
+          }[];
+        };
+        remoteActions: {
+          status: string;
+          diagnosis?: string;
+        };
+      };
+
+      expect(result.releaseDecision.status).toBe("block_release");
+      expect(result.remoteActions).toMatchObject({
+        status: "unknown",
+        diagnosis: "private_or_unauthenticated"
+      });
+      expect(json.releaseDecision.status).toBe("block_release");
+      expect(json.releaseDecision.blockers.join("\n")).toContain(
+        "production target requires confirmed remote GitHub Actions"
+      );
+      expect(json.releaseDecision.blockers.join("\n")).toContain(
+        "private_or_unauthenticated"
+      );
+      expect(json.releaseDecision.externalChecks).toMatchObject([
+        {
+          id: "github_actions",
+          status: "failed"
+        }
+      ]);
+      expect(json.remoteActions.diagnosis).toBe("private_or_unauthenticated");
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }

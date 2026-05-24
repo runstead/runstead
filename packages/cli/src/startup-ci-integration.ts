@@ -6,6 +6,7 @@ import { promisify } from "node:util";
 import { createRunsteadId, type RunsteadEvent } from "@runstead/core";
 import {
   compileReadinessReleaseDecision,
+  type ReadinessTarget,
   type ReadinessExternalCheck,
   type ReadinessReleaseDecision
 } from "@runstead/runtime";
@@ -29,6 +30,7 @@ export interface GenerateStartupCiSummaryOptions {
   checkName?: string;
   outputDir?: string;
   readiness?: {
+    target?: string;
     verdict: string;
     blockers: string[];
   };
@@ -58,6 +60,16 @@ export interface StartupGitHubCheckRunSummary {
   summary: string;
 }
 
+export type StartupGitHubActionsRemoteDiagnosis =
+  | "no_github_remote"
+  | "not_github_remote"
+  | "no_initial_commit"
+  | "private_or_unauthenticated"
+  | "actions_disabled_or_not_found"
+  | "no_token_or_fetch_unavailable"
+  | "api_network_error"
+  | "no_workflow_run_for_head";
+
 export interface StartupGitHubActionsRemoteStatus {
   status: "passed" | "failed" | "pending" | "not_configured" | "unknown";
   repository?: string;
@@ -71,6 +83,8 @@ export interface StartupGitHubActionsRemoteStatus {
   failedJobLogUrl?: string;
   failedJobLogExcerpt?: string;
   reason?: string;
+  diagnosis?: StartupGitHubActionsRemoteDiagnosis;
+  setupAction?: string;
 }
 
 export interface StartupReleaseGateSummary {
@@ -118,10 +132,11 @@ export async function generateStartupCiSummary(
     cwd,
     ...(options.fetch === undefined ? {} : { fetch: options.fetch })
   });
+  const remoteCiTarget = readinessTargetForRemoteCi(readiness);
   const releaseDecision = compileReadinessReleaseDecision({
     gate,
     ...(readiness === undefined ? {} : { readiness }),
-    externalChecks: [remoteActionsReadinessCheck(remoteActions)]
+    externalChecks: [remoteActionsReadinessCheck(remoteActions, remoteCiTarget)]
   });
   const finalGate = startupGateFromReleaseDecision(gate, releaseDecision);
   const checkRun = startupCheckRunSummary({
@@ -209,7 +224,8 @@ export async function generateStartupCiSummary(
 }
 
 function remoteActionsReadinessCheck(
-  remoteActions: StartupGitHubActionsRemoteStatus
+  remoteActions: StartupGitHubActionsRemoteStatus,
+  target: ReadinessTarget
 ): ReadinessExternalCheck {
   if (remoteActions.status === "failed") {
     return {
@@ -228,18 +244,38 @@ function remoteActionsReadinessCheck(
   }
 
   if (remoteActions.status === "not_configured") {
+    const message = remoteActionsDiagnosticMessage(remoteActions);
+
+    if (target !== "local") {
+      return {
+        id: "github_actions",
+        status: "failed",
+        blocker: `${message}; ${target} target requires confirmed remote GitHub Actions.`
+      };
+    }
+
     return {
       id: "github_actions",
       status: "not_configured",
-      warning: `remote GitHub Actions status is not configured: ${remoteActions.reason}`
+      warning: `${message}; local target treats remote GitHub Actions as advisory.`
     };
   }
 
   if (remoteActions.status === "unknown") {
+    const message = remoteActionsDiagnosticMessage(remoteActions);
+
+    if (target !== "local") {
+      return {
+        id: "github_actions",
+        status: "failed",
+        blocker: `${message}; ${target} target requires confirmed remote GitHub Actions.`
+      };
+    }
+
     return {
       id: "github_actions",
       status: "unknown",
-      warning: `remote GitHub Actions status is unknown: ${remoteActions.reason}`
+      warning: `${message}; local target treats remote GitHub Actions as advisory.`
     };
   }
 
@@ -247,6 +283,56 @@ function remoteActionsReadinessCheck(
     id: "github_actions",
     status: "passed"
   };
+}
+
+function readinessTargetForRemoteCi(
+  readiness:
+    | {
+        target?: string;
+        verdict: string;
+      }
+    | undefined
+): ReadinessTarget {
+  if (
+    readiness?.target === "local" ||
+    readiness?.target === "staging" ||
+    readiness?.target === "production"
+  ) {
+    return readiness.target;
+  }
+
+  if (readiness?.verdict.startsWith("local_")) {
+    return "local";
+  }
+
+  if (readiness?.verdict.startsWith("staging_")) {
+    return "staging";
+  }
+
+  if (readiness?.verdict.startsWith("public_")) {
+    return "production";
+  }
+
+  return "production";
+}
+
+function remoteActionsDiagnosticMessage(
+  remoteActions: StartupGitHubActionsRemoteStatus
+): string {
+  const availability =
+    remoteActions.status === "not_configured" ? "not configured" : "unknown";
+  const details = [
+    `remote GitHub Actions status is ${availability}`,
+    remoteActions.reason === undefined ? undefined : `reason: ${remoteActions.reason}`,
+    remoteActions.diagnosis === undefined
+      ? undefined
+      : `likely cause: ${remoteActions.diagnosis}`,
+    remoteActions.setupAction === undefined
+      ? undefined
+      : `setup action: ${remoteActions.setupAction}`
+  ].filter((part): part is string => part !== undefined);
+
+  return details.join("; ");
 }
 
 function startupGateFromReleaseDecision(
@@ -268,6 +354,12 @@ export function formatStartupCiSummary(result: GenerateStartupCiSummaryResult): 
     `Check: ${result.checkRun.name}`,
     `Conclusion: ${result.checkRun.conclusion}`,
     `Remote GitHub Actions: ${result.remoteActions.status}`,
+    ...(result.remoteActions.diagnosis === undefined
+      ? []
+      : [`Remote CI diagnosis: ${result.remoteActions.diagnosis}`]),
+    ...(result.remoteActions.setupAction === undefined
+      ? []
+      : [`Remote CI setup action: ${result.remoteActions.setupAction}`]),
     `Release gate: ${result.releaseGate.status}`,
     `JSON artifact: ${result.jsonPath}`,
     `PR comment: ${result.markdownPath}`
@@ -317,6 +409,9 @@ function formatStartupPrComment(input: {
       ? "- none"
       : input.gate.warnings.map((warning) => `- ${warning}`).join("\n"),
     "",
+    "### Remote CI Diagnosis",
+    formatRemoteActionsDiagnosis(input.remoteActions),
+    "",
     "### Remote Failure Log",
     input.remoteActions.failedJobLogExcerpt === undefined
       ? "- none"
@@ -351,7 +446,13 @@ async function inspectGitHubActionsRemoteStatus(input: {
       reason:
         repository.remoteUrl === undefined
           ? "GitHub remote is missing"
-          : "origin remote is not a GitHub repository"
+          : "origin remote is not a GitHub repository",
+      diagnosis:
+        repository.remoteUrl === undefined ? "no_github_remote" : "not_github_remote",
+      setupAction:
+        repository.remoteUrl === undefined
+          ? "Add a GitHub origin remote and push the branch before relying on remote CI."
+          : "Set origin to a GitHub repository or configure a supported remote CI integration."
     };
   }
 
@@ -361,7 +462,10 @@ async function inspectGitHubActionsRemoteStatus(input: {
     return {
       status: "not_configured",
       repository: `${repository.repository.owner}/${repository.repository.repo}`,
-      reason: "remote_ci_not_applicable_until_initial_commit"
+      reason: "remote_ci_not_applicable_until_initial_commit",
+      diagnosis: "no_initial_commit",
+      setupAction:
+        "Create and push an initial commit before relying on remote GitHub Actions."
     };
   }
 
@@ -372,7 +476,10 @@ async function inspectGitHubActionsRemoteStatus(input: {
       status: "unknown",
       repository: `${repository.repository.owner}/${repository.repository.repo}`,
       headSha,
-      reason: "fetch API is unavailable"
+      reason: "fetch API is unavailable",
+      diagnosis: "no_token_or_fetch_unavailable",
+      setupAction:
+        "Run CI summary in a Node runtime with fetch support or provide an authenticated GitHub fetch implementation."
     };
   }
 
@@ -389,11 +496,13 @@ async function inspectGitHubActionsRemoteStatus(input: {
     });
 
     if (!response.ok) {
+      const diagnosis = await diagnoseGitHubActionsHttpResponse(response);
+
       return {
         status: "unknown",
         repository: `${repository.repository.owner}/${repository.repository.repo}`,
         headSha,
-        reason: `GitHub Actions API returned HTTP ${response.status}`
+        ...diagnosis
       };
     }
 
@@ -405,7 +514,10 @@ async function inspectGitHubActionsRemoteStatus(input: {
         status: "unknown",
         repository: `${repository.repository.owner}/${repository.repository.repo}`,
         headSha,
-        reason: "no GitHub Actions workflow run was found for HEAD"
+        reason: "no GitHub Actions workflow run was found for HEAD",
+        diagnosis: "no_workflow_run_for_head",
+        setupAction:
+          "Push this commit and run the GitHub Actions workflow for HEAD before staging or production release gates."
       };
     }
 
@@ -446,8 +558,63 @@ async function inspectGitHubActionsRemoteStatus(input: {
       status: "unknown",
       repository: `${repository.repository.owner}/${repository.repository.repo}`,
       headSha,
-      reason: error instanceof Error ? error.message : String(error)
+      reason: error instanceof Error ? error.message : String(error),
+      diagnosis: "api_network_error",
+      setupAction:
+        "Retry the GitHub Actions status lookup and check GitHub API/network availability."
     };
+  }
+}
+
+async function diagnoseGitHubActionsHttpResponse(
+  response: Awaited<ReturnType<FetchLike>>
+): Promise<
+  Pick<StartupGitHubActionsRemoteStatus, "reason" | "diagnosis" | "setupAction">
+> {
+  const bodyText = await safeResponseText(response);
+  const lowerBody = bodyText.toLowerCase();
+
+  if (
+    response.status === 410 ||
+    (lowerBody.includes("actions") &&
+      (lowerBody.includes("disabled") || lowerBody.includes("not enabled")))
+  ) {
+    return {
+      reason: `GitHub Actions API returned HTTP ${response.status}`,
+      diagnosis: "actions_disabled_or_not_found",
+      setupAction:
+        "Enable GitHub Actions for the repository and make sure at least one workflow runs on this branch."
+    };
+  }
+
+  if ([401, 403, 404].includes(response.status)) {
+    return {
+      reason: `GitHub Actions API returned HTTP ${response.status}`,
+      diagnosis: "private_or_unauthenticated",
+      setupAction:
+        "Authenticate GitHub API access with GITHUB_TOKEN or GH_TOKEN and confirm the repository exists and is accessible."
+    };
+  }
+
+  return {
+    reason: `GitHub Actions API returned HTTP ${response.status}`,
+    diagnosis: "api_network_error",
+    setupAction:
+      "Retry the GitHub Actions status lookup and inspect the GitHub API response for this repository."
+  };
+}
+
+async function safeResponseText(
+  response: Awaited<ReturnType<FetchLike>>
+): Promise<string> {
+  if (response.text === undefined) {
+    return "";
+  }
+
+  try {
+    return await response.text();
+  } catch {
+    return "";
   }
 }
 
@@ -596,10 +763,34 @@ function formatRemoteActionsStatus(status: StartupGitHubActionsRemoteStatus): st
     status.failedJobName === undefined
       ? undefined
       : `failed_job=${status.failedJobName}`,
-    status.reason === undefined ? undefined : `reason=${status.reason}`
+    status.reason === undefined ? undefined : `reason=${status.reason}`,
+    status.diagnosis === undefined ? undefined : `diagnosis=${status.diagnosis}`,
+    status.setupAction === undefined ? undefined : `setup=${status.setupAction}`
   ]
     .filter((part): part is string => part !== undefined)
     .join("; ");
+}
+
+function formatRemoteActionsDiagnosis(
+  status: StartupGitHubActionsRemoteStatus
+): string {
+  if (
+    status.reason === undefined &&
+    status.diagnosis === undefined &&
+    status.setupAction === undefined
+  ) {
+    return "- none";
+  }
+
+  return [
+    status.reason === undefined ? undefined : `- Reason: ${status.reason}`,
+    status.diagnosis === undefined ? undefined : `- Likely cause: ${status.diagnosis}`,
+    status.setupAction === undefined
+      ? undefined
+      : `- Setup action: ${status.setupAction}`
+  ]
+    .filter((line): line is string => line !== undefined)
+    .join("\n");
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
