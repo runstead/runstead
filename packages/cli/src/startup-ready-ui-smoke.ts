@@ -10,7 +10,8 @@ import {
   executeStartupUiValidation,
   summarizeStartupUiValidationFailure,
   startupUiValidationRepairHint,
-  type StartupUiFlowAction
+  type StartupUiFlowAction,
+  type StartupUiValidationExecutionEvidence
 } from "./startup-ui-validation.js";
 
 const DEFAULT_UI_SMOKE_TIMEOUT_MS = 20_000;
@@ -58,6 +59,7 @@ export interface StartupReadyUiSmokeCheckResult {
   failureCategory?: string;
   failureSummary?: string;
   repairHint?: string;
+  failedAction?: NonNullable<StartupUiValidationExecutionEvidence["flowActions"]>[number];
   blockers: string[];
 }
 
@@ -111,6 +113,9 @@ export async function executeStartupReadyUiSmoke(input: {
       const repairHint = result.failed
         ? startupUiValidationRepairHint(result.execution)
         : undefined;
+      const failedAction = result.failed
+        ? result.execution.flowActions?.find((action) => action.status === "fail")
+        : undefined;
 
       checks.push({
         name: check.name,
@@ -120,6 +125,7 @@ export async function executeStartupReadyUiSmoke(input: {
         ...(failureCategory === undefined ? {} : { failureCategory }),
         ...(failureSummary === undefined ? {} : { failureSummary }),
         ...(repairHint === undefined ? {} : { repairHint }),
+        ...(failedAction === undefined ? {} : { failedAction }),
         blockers: result.failed
           ? [
               `UI smoke check failed: ${check.name}: ${failureCategory ?? "unknown"}: ${failureSummary}; suggested patch: ${repairHint}`

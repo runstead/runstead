@@ -1094,6 +1094,119 @@ describe("startup readiness run model", () => {
     }
   }, 60_000);
 
+  it("runs a bounded MVP repair once when UI smoke fails", async () => {
+    const workspace = join(tmpdir(), `runstead-startup-ready-ui-repair-${process.pid}`);
+    const port = await availablePort();
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await mkdir(join(workspace, ".runstead", "startup"), { recursive: true });
+      await initRunstead({ cwd: workspace, profile: "trusted-local" });
+      await writeFile(
+        join(workspace, "package.json"),
+        `${JSON.stringify(
+          {
+            name: "startup-ready-ui-repair-fixture",
+            private: true,
+            scripts: {
+              test: 'node -e "process.exit(0)"',
+              lint: 'node -e "process.exit(0)"',
+              typecheck: 'node -e "process.exit(0)"',
+              build: 'node -e "process.exit(0)"'
+            }
+          },
+          null,
+          2
+        )}\n`,
+        "utf8"
+      );
+      await writeFile(
+        join(workspace, "server.mjs"),
+        startupReadyUiRepairServer("Todo MVP"),
+        "utf8"
+      );
+      await writeFile(
+        join(workspace, ".runstead", "startup", "ui-smoke.yaml"),
+        [
+          "schemaVersion: 1",
+          "server:",
+          "  command: node server.mjs",
+          `  port: ${port}`,
+          `  url: http://127.0.0.1:${port}`,
+          "  timeoutMs: 5000",
+          "checks:",
+          "  - name: home",
+          `    url: http://127.0.0.1:${port}`,
+          "    viewport: desktop",
+          "    expectText:",
+          "      - Todo MVP",
+          "      - Todo repaired",
+          "    flow: load repaired todo app",
+          ""
+        ].join("\n"),
+        "utf8"
+      );
+      let workerCalls = 0;
+      let repairPrompt = "";
+
+      const result = await runStartupReady({
+        cwd: workspace,
+        stage: "launch",
+        target: "local",
+        worker: "codex_cli",
+        maxAttempts: 1,
+        workerRunner: async (_command, args) => {
+          workerCalls += 1;
+
+          if (workerCalls === 2) {
+            repairPrompt = args.join("\n");
+            await writeFile(
+              join(workspace, "server.mjs"),
+              startupReadyUiRepairServer("Todo MVP Todo repaired"),
+              "utf8"
+            );
+          }
+
+          return {
+            stdout: JSON.stringify({
+              summary:
+                workerCalls === 1
+                  ? "built launch fixture"
+                  : "repaired UI smoke fixture",
+              files_changed: workerCalls === 1 ? [] : ["server.mjs"],
+              commands_run: [],
+              risks: [],
+              needs_approval: false,
+              approval_reason: null
+            }),
+            stderr: "",
+            exitCode: 0
+          };
+        },
+        now: new Date("2026-05-22T01:35:00.000Z")
+      });
+      const uiPhase = result.run.phases.find((phase) => phase.id === "ui_smoke");
+      const repairArtifact = uiPhase?.artifacts.find((artifact) =>
+        artifact.includes("ui-smoke-repair-")
+      );
+
+      expect(workerCalls).toBe(2);
+      expect(repairPrompt).toContain("Repair the product or UI smoke configuration");
+      expect(repairPrompt).toContain('expected text was not visible: "Todo repaired"');
+      expect(uiPhase).toMatchObject({
+        status: "passed",
+        blockers: [],
+        nextAction: "automatic UI smoke repair passed; continue launch readiness"
+      });
+      expect(repairArtifact).toBeDefined();
+      await expect(readFile(repairArtifact ?? "", "utf8")).resolves.toContain(
+        '"failureCategory": "product_gap"'
+      );
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  }, 60_000);
+
   it("infers non-empty default UI smoke text from project metadata", async () => {
     const workspace = join(tmpdir(), `runstead-startup-ready-ui-text-${process.pid}`);
 
@@ -1337,6 +1450,19 @@ function evidenceCount(workspace: string, type: string): number {
   } finally {
     database.close();
   }
+}
+
+function startupReadyUiRepairServer(text: string): string {
+  return [
+    "import http from 'node:http';",
+    `const html = ${JSON.stringify(`<!doctype html><html><head><title>${text}</title></head><body><main><h1>${text}</h1><button>Add todo</button></main></body></html>`)};`,
+    "const server = http.createServer((_request, response) => {",
+    "  response.writeHead(200, { 'content-type': 'text/html' });",
+    "  response.end(html);",
+    "});",
+    "server.listen(Number(process.env.PORT), '127.0.0.1');",
+    "process.on('SIGTERM', () => server.close(() => process.exit(0)));"
+  ].join("\n");
 }
 
 interface StartupReadinessSnapshotEventPayload {

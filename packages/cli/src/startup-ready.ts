@@ -24,7 +24,11 @@ import {
   startupReadinessExtensionPolicyBlockers,
   startupReadinessExtensionRequirementBlockers
 } from "./startup-extension-loader.js";
-import { executeStartupReadyUiSmoke } from "./startup-ready-ui-smoke.js";
+import {
+  executeStartupReadyUiSmoke,
+  type StartupReadyUiSmokeCheckResult,
+  type StartupReadyUiSmokeRunResult
+} from "./startup-ready-ui-smoke.js";
 import {
   formatStartupWorkerGovernanceNotice,
   resolveStartupWorkerGovernance,
@@ -798,20 +802,39 @@ async function executeStartupReadyRun(
       status: "started",
       message: "running local UI smoke checks"
     });
-    const uiSmoke = await executeStartupReadyUiSmoke({
+    let uiSmoke = await executeStartupReadyUiSmoke({
       cwd: run.cwd,
       ...(options.now === undefined ? {} : { now: options.now })
     });
+    const uiSmokeRepair =
+      uiSmoke.status === "blocked"
+        ? await attemptStartupReadyUiSmokeRepair(run, options, uiSmoke)
+        : undefined;
+
+    if (uiSmokeRepair !== undefined) {
+      uiSmoke = uiSmokeRepair.uiSmoke;
+
+      if (uiSmokeRepair.verifierUpdate !== undefined) {
+        updatePhase(run, "verifiers", uiSmokeRepair.verifierUpdate);
+      }
+    }
 
     updatePhase(run, "ui_smoke", {
       status: uiSmoke.status,
       evidenceIds: uiSmoke.evidenceIds,
-      artifacts: uiSmoke.artifacts,
-      blockers: uiSmoke.blockers,
+      artifacts: unique([...(uiSmokeRepair?.artifacts ?? []), ...uiSmoke.artifacts]),
+      blockers:
+        uiSmoke.status === "passed"
+          ? []
+          : unique([...(uiSmokeRepair?.blockers ?? []), ...uiSmoke.blockers]),
       nextAction:
         uiSmoke.status === "passed"
-          ? "continue launch readiness"
-          : "fix UI smoke config or product flow and rerun startup ready"
+          ? uiSmokeRepair === undefined
+            ? "continue launch readiness"
+            : "automatic UI smoke repair passed; continue launch readiness"
+          : uiSmokeRepair === undefined
+            ? "fix UI smoke config or product flow and rerun startup ready"
+            : "automatic UI smoke repair attempted; review repair artifact or resume startup ready"
     });
     collectRunEvidence(run);
     await writeStartupReadinessRun(run);
@@ -910,6 +933,175 @@ async function executeStartupReadyRun(
     await writeStartupReadinessRun(run);
     emitStartupReadyPhaseResult(run, options, "complete_check");
   }
+}
+
+interface StartupReadyUiSmokeRepairAttempt {
+  uiSmoke: StartupReadyUiSmokeRunResult;
+  artifacts: string[];
+  blockers: string[];
+  verifierUpdate?: Partial<StartupReadinessRunPhase>;
+}
+
+async function attemptStartupReadyUiSmokeRepair(
+  run: StartupReadinessRun,
+  options: StartupReadyOptions,
+  uiSmoke: StartupReadyUiSmokeRunResult
+): Promise<StartupReadyUiSmokeRepairAttempt | undefined> {
+  const target = startupReadyUiSmokeRepairTarget(uiSmoke);
+
+  if (target === undefined) {
+    return undefined;
+  }
+
+  const repairArtifact = await writeStartupReadyUiSmokeRepairRequest({
+    run,
+    uiSmoke,
+    target,
+    ...(options.now === undefined ? {} : { now: options.now })
+  });
+
+  emitStartupReadyProgress(run, options, {
+    phaseId: "ui_smoke",
+    status: "started",
+    message: "attempting automatic UI smoke repair with bounded MVP repair loop",
+    artifacts: [repairArtifact]
+  });
+
+  const build = await startupBuildMvp({
+    cwd: run.cwd,
+    worker: run.worker,
+    dependencyPolicy: "deny-new",
+    maxAttempts: 1,
+    prompt: startupReadyUiSmokeRepairPrompt({
+      run,
+      uiSmoke,
+      target,
+      repairArtifact
+    }),
+    ...(options.workerRunner === undefined
+      ? {}
+      : { workerRunner: options.workerRunner }),
+    ...(options.now === undefined ? {} : { now: options.now })
+  });
+  const verifierUpdate = verifierPhaseUpdate(build.verifierRun);
+  const repaired =
+    startupBuildMvpPhaseExecutionStatus(build.status) === "passed" &&
+    verifierUpdate.status === "passed";
+  const rerun = repaired
+    ? await executeStartupReadyUiSmoke({
+        cwd: run.cwd,
+        ...(options.now === undefined ? {} : { now: options.now })
+      })
+    : uiSmoke;
+
+  return {
+    uiSmoke: rerun,
+    artifacts: unique([...uiSmoke.artifacts, repairArtifact]),
+    blockers: repaired
+      ? []
+      : [
+          `automatic UI smoke repair did not produce a verified repair: worker=${build.status}; verifiers=${build.verifierRun.status}`
+        ],
+    verifierUpdate: mergeStartupVerifierPhaseUpdate(run, verifierUpdate)
+  };
+}
+
+function startupReadyUiSmokeRepairTarget(
+  uiSmoke: StartupReadyUiSmokeRunResult
+): StartupReadyUiSmokeCheckResult | undefined {
+  return uiSmoke.checks.find((check) => {
+    if (check.status !== "failed") {
+      return false;
+    }
+
+    return (
+      check.failureCategory !== "browser_runtime" &&
+      check.failureCategory !== "network"
+    );
+  });
+}
+
+async function writeStartupReadyUiSmokeRepairRequest(input: {
+  run: StartupReadinessRun;
+  uiSmoke: StartupReadyUiSmokeRunResult;
+  target: StartupReadyUiSmokeCheckResult;
+  now?: Date;
+}): Promise<string> {
+  const root = await resolveRunsteadRoot(input.run.cwd);
+  const dir = join(root.root, "startup");
+  const path = join(dir, `ui-smoke-repair-${input.run.id}.json`);
+
+  await mkdir(dir, { recursive: true });
+  await writeFile(
+    path,
+    `${JSON.stringify(
+      {
+        schemaVersion: 1,
+        runId: input.run.id,
+        phase: "ui_smoke",
+        configPath: input.uiSmoke.configPath,
+        check: input.target.name,
+        failureCategory: input.target.failureCategory ?? "unknown",
+        failureSummary: input.target.failureSummary ?? "unknown",
+        failedAction: input.target.failedAction ?? null,
+        domArtifact: input.target.artifact ?? null,
+        repairHint: input.target.repairHint ?? null,
+        generatedAt: (input.now ?? new Date()).toISOString()
+      },
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
+
+  return path;
+}
+
+function startupReadyUiSmokeRepairPrompt(input: {
+  run: StartupReadinessRun;
+  uiSmoke: StartupReadyUiSmokeRunResult;
+  target: StartupReadyUiSmokeCheckResult;
+  repairArtifact: string;
+}): string {
+  return [
+    "Repair the product or UI smoke configuration for a failed Runstead UI smoke check.",
+    "Keep the patch scoped to the failing UI flow. Do not add or upgrade dependencies.",
+    "Prefer stable product selectors such as data-testid for core todo interactions.",
+    "",
+    `Run: ${input.run.id}`,
+    `UI smoke config: ${input.uiSmoke.configPath}`,
+    `Repair artifact: ${input.repairArtifact}`,
+    `Check: ${input.target.name}`,
+    `Failure category: ${input.target.failureCategory ?? "unknown"}`,
+    `Failure summary: ${input.target.failureSummary ?? "unknown"}`,
+    `DOM snapshot artifact: ${input.target.artifact ?? "unavailable"}`,
+    `Repair hint: ${input.target.repairHint ?? "none"}`,
+    "",
+    "Failed action:",
+    JSON.stringify(input.target.failedAction ?? null, null, 2),
+    "",
+    "After applying the smallest repair, leave test/lint/typecheck/build verifiers green. Runstead will rerun UI smoke automatically."
+  ].join("\n");
+}
+
+function mergeStartupVerifierPhaseUpdate(
+  run: StartupReadinessRun,
+  update: Partial<StartupReadinessRunPhase>
+): Partial<StartupReadinessRunPhase> {
+  const current = run.phases.find((phase) => phase.id === "verifiers");
+
+  return {
+    ...update,
+    evidenceIds: unique([
+      ...(current?.evidenceIds ?? []),
+      ...(update.evidenceIds ?? [])
+    ]),
+    artifacts: unique([...(current?.artifacts ?? []), ...(update.artifacts ?? [])]),
+    blockers:
+      update.status === "passed"
+        ? []
+        : unique([...(current?.blockers ?? []), ...(update.blockers ?? [])])
+  };
 }
 
 function emitStartupReadyPhaseResult(
