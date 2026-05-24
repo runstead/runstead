@@ -164,6 +164,15 @@ importers:
         specifier: 'catalog:'
         version: 4.4.3
 
+  packages/state-postgres:
+    dependencies:
+      '@runstead/core':
+        specifier: workspace:*
+        version: link:../core
+      '@runstead/runtime':
+        specifier: workspace:*
+        version: link:../runtime
+
   packages/state-sqlite:
     dependencies:
       '@runstead/core':

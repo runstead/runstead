@@ -1,7 +1,16 @@
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
-import type { Evidence, JsonObject, RunsteadEvent, Task } from "@runstead/core";
+import type {
+  ApprovalRequest,
+  Evidence,
+  JsonObject,
+  PolicyDecisionRecord,
+  RunsteadEvent,
+  Task,
+  ToolCall,
+  WorkerRun
+} from "@runstead/core";
 
 export interface RuntimeStorageIdentity {
   backend: "sqlite" | "postgres" | "memory" | "custom";
@@ -34,6 +43,22 @@ export type RuntimeProjectionMutation =
   | {
       type: "evidence";
       value: Evidence;
+    }
+  | {
+      type: "policyDecision";
+      value: PolicyDecisionRecord;
+    }
+  | {
+      type: "approval";
+      value: ApprovalRequest;
+    }
+  | {
+      type: "workerRun";
+      value: WorkerRun;
+    }
+  | {
+      type: "toolCall";
+      value: ToolCall;
     }
   | {
       type: "custom";
@@ -73,6 +98,7 @@ export interface RuntimeLockLease {
   resource: string;
   owner: string;
   token: string;
+  fencingToken?: string;
   expiresAt: string;
   release(): Promise<void>;
   renew(ttlMs: number): Promise<RuntimeLockLease>;
