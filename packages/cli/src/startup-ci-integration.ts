@@ -359,9 +359,9 @@ async function inspectGitHubActionsRemoteStatus(input: {
 
   if (headSha === undefined) {
     return {
-      status: "unknown",
+      status: "not_configured",
       repository: `${repository.repository.owner}/${repository.repository.repo}`,
-      reason: "git HEAD is unavailable"
+      reason: "remote_ci_not_applicable_until_initial_commit"
     };
   }
 

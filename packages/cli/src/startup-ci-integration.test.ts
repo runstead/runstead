@@ -179,6 +179,61 @@ describe("startup CI integration", () => {
     }
   });
 
+  it("treats a GitHub remote without an initial commit as not applicable", async () => {
+    const workspace = join(tmpdir(), `runstead-startup-ci-no-head-${process.pid}`);
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await initRunstead({ cwd: workspace });
+      await execFileAsync("git", ["init"], { cwd: workspace });
+      await execFileAsync(
+        "git",
+        ["remote", "add", "origin", "git@github.com:acme/widgets.git"],
+        { cwd: workspace }
+      );
+      await installDomainPack({
+        cwd: workspace,
+        ref: "ai-native-startup",
+        now: new Date("2026-05-14T01:00:00.000Z")
+      });
+
+      const result = await generateStartupCiSummary({
+        cwd: workspace,
+        stage: "launch",
+        readiness: {
+          verdict: "local_launch_ready",
+          blockers: []
+        },
+        fetch: () => {
+          throw new Error("GitHub API should not be called without HEAD");
+        },
+        now: new Date("2026-05-14T01:10:00.000Z")
+      });
+      const json = JSON.parse(await readFile(result.jsonPath, "utf8")) as {
+        releaseDecision: {
+          status: string;
+          warnings: string[];
+        };
+        remoteActions: {
+          status: string;
+          reason?: string;
+        };
+      };
+
+      expect(result.releaseDecision.status).toBe("allow_release");
+      expect(result.remoteActions).toMatchObject({
+        status: "not_configured",
+        reason: "remote_ci_not_applicable_until_initial_commit"
+      });
+      expect(json.releaseDecision.status).toBe("allow_release");
+      expect(json.releaseDecision.warnings.join("\n")).toContain(
+        "remote_ci_not_applicable_until_initial_commit"
+      );
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
   it("blocks release and stores failed GitHub Actions job log excerpts", async () => {
     const workspace = join(
       tmpdir(),

@@ -3309,29 +3309,28 @@ function startupReadinessRunsDir(root: string): string {
 async function inspectGitState(
   cwd: string
 ): Promise<{ head?: string; dirtyState: StartupReadinessDirtyState }> {
-  try {
-    const [head, status] = await Promise.all([
-      execFileAsync("git", ["rev-parse", "--verify", "HEAD"], {
-        cwd,
-        encoding: "utf8",
-        timeout: 5_000
-      }),
-      execFileAsync("git", ["status", "--short"], {
-        cwd,
-        encoding: "utf8",
-        timeout: 5_000
-      })
-    ]);
+  const [head, status] = await Promise.all([
+    execFileAsync("git", ["rev-parse", "--verify", "HEAD"], {
+      cwd,
+      encoding: "utf8",
+      timeout: 5_000
+    }).catch(() => undefined),
+    execFileAsync("git", ["status", "--short"], {
+      cwd,
+      encoding: "utf8",
+      timeout: 5_000
+    }).catch(() => undefined)
+  ]);
 
-    return {
-      head: head.stdout.trim(),
-      dirtyState: status.stdout.trim().length === 0 ? "clean" : "dirty"
-    };
-  } catch {
-    return {
-      dirtyState: "unknown"
-    };
-  }
+  return {
+    ...(head === undefined ? {} : { head: head.stdout.trim() }),
+    dirtyState:
+      status === undefined
+        ? "unknown"
+        : status.stdout.trim().length === 0
+          ? "clean"
+          : "dirty"
+  };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
