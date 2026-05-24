@@ -132,6 +132,8 @@ describe("startup founder flow", () => {
       const build = await startupBuildMvp({
         cwd: workspace,
         worker: "codex_cli",
+        appTemplate: "static-todo",
+        appType: "local-first-web",
         dependencyPolicy: "allow-listed",
         allowedDependencies: ["runtime:react", "dev:vitest"],
         now: new Date("2026-05-14T04:00:00.000Z"),
@@ -175,6 +177,11 @@ describe("startup founder flow", () => {
       expect(workerPrompt).toContain("lint: npm run lint");
       expect(workerPrompt).toContain("typecheck: npm run typecheck");
       expect(workerPrompt).toContain("build: npm run build");
+      expect(workerPrompt).toContain("Scaffold profile:");
+      expect(workerPrompt).toContain("- app_template: static-todo");
+      expect(workerPrompt).toContain("- app_type: local-first-web");
+      expect(workerPrompt).toContain("data-testid=new-todo-input");
+      expect(workerPrompt).toContain("Persist todos in localStorage");
       expect(workerPrompt).toContain("Dependency approval policy: allow-listed.");
       expect(workerPrompt).toContain(
         "Allowed dependency additions: runtime:react, dev:vitest."

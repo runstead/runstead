@@ -34,6 +34,12 @@ import {
   prepareStartupRepoOnboarding,
   type StartupRepoOnboardingResult
 } from "./startup-repo-onboarding.js";
+import {
+  resolveStartupScaffoldProfile,
+  type StartupAppType,
+  type StartupScaffoldProfile,
+  type StartupScaffoldTemplate
+} from "./startup-scaffold-profile.js";
 import type { RunTaskVerifierCommandResult } from "./verifier-runner.js";
 import type { WorkerProcessRunner } from "./wrapped-worker.js";
 
@@ -51,6 +57,9 @@ export interface StartupFounderFlowOptions {
   day30Metric?: string;
   falsePositiveMetric?: string;
   target?: LaunchReadinessTarget;
+  appTemplate?: StartupScaffoldTemplate;
+  appType?: StartupAppType;
+  scaffoldProfile?: StartupScaffoldProfile;
   now?: Date;
 }
 
@@ -244,9 +253,16 @@ export async function startupBuildMvp(
       : { policy: options.dependencyPolicy }),
     allowedDependencies: options.allowedDependencies ?? []
   });
+  const scaffoldProfile =
+    options.scaffoldProfile ??
+    resolveStartupScaffoldProfile({
+      ...(options.appTemplate === undefined ? {} : { template: options.appTemplate }),
+      ...(options.appType === undefined ? {} : { appType: options.appType })
+    });
   const basePrompt = await startupBuildMvpPromptWithDependencyBoundary({
     cwd,
     ...(options.prompt === undefined ? {} : { prompt: options.prompt }),
+    ...(scaffoldProfile === undefined ? {} : { scaffoldProfile }),
     dependencyApproval
   });
   const init = await initStartup({
@@ -617,14 +633,34 @@ function parseStartupDependencyApprovalPolicy(
 async function startupBuildMvpPromptWithDependencyBoundary(input: {
   cwd: string;
   prompt?: string;
+  scaffoldProfile?: StartupScaffoldProfile;
   dependencyApproval: StartupDependencyApprovalBoundary;
 }): Promise<string> {
   return [
     input.prompt ?? (await defaultBuildMvpPrompt(input.cwd)),
+    ...startupScaffoldProfilePromptLines(input.scaffoldProfile),
     "",
     "Dependency approval boundary:",
     input.dependencyApproval.workerInstruction
   ].join("\n");
+}
+
+function startupScaffoldProfilePromptLines(
+  profile: StartupScaffoldProfile | undefined
+): string[] {
+  if (profile === undefined) {
+    return [];
+  }
+
+  return [
+    "",
+    "Scaffold profile:",
+    `- id: ${profile.id}`,
+    `- title: ${profile.title}`,
+    ...(profile.template === undefined ? [] : [`- app_template: ${profile.template}`]),
+    ...(profile.appType === undefined ? [] : [`- app_type: ${profile.appType}`]),
+    ...profile.promptLines.map((line) => `- ${line}`)
+  ];
 }
 
 function verifierRunFromLocalAgentRun(

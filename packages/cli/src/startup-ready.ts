@@ -30,6 +30,12 @@ import {
   type StartupReadyUiSmokeRunResult
 } from "./startup-ready-ui-smoke.js";
 import {
+  resolveStartupScaffoldProfile,
+  type StartupAppType,
+  type StartupScaffoldProfile,
+  type StartupScaffoldTemplate
+} from "./startup-scaffold-profile.js";
+import {
   formatStartupWorkerGovernanceNotice,
   resolveStartupWorkerGovernance,
   startupBuildMvp,
@@ -123,6 +129,8 @@ export interface StartupReadyOptions {
   interactive?: boolean;
   guided?: boolean;
   interactiveAnswers?: Partial<StartupReadyInteractiveAnswers>;
+  appTemplate?: StartupScaffoldTemplate;
+  appType?: StartupAppType;
   maxAttempts?: number;
   workerRunner?: StartupBuildMvpOptions["workerRunner"];
   onProgress?: (event: StartupReadyProgressEvent) => void;
@@ -165,6 +173,7 @@ export interface StartupReadyPlan {
   target: StartupReadyTarget;
   worker: LocalAgentWorkerKind;
   governanceProfile: ResolvedStartupWorkerGovernanceProfile;
+  scaffoldProfile?: StartupScaffoldProfile;
   runsteadInitialized: boolean;
   extensions: StartupReadyPlanExtensions;
   phases: StartupReadyPlanPhase[];
@@ -192,6 +201,7 @@ export interface StartupReadinessRun {
   target: StartupReadyTarget;
   worker: LocalAgentWorkerKind;
   governanceProfile: ResolvedStartupWorkerGovernanceProfile;
+  scaffoldProfile?: StartupScaffoldProfile;
   status: StartupReadinessRunStatus;
   phases: StartupReadinessRunPhase[];
   evidenceIds: string[];
@@ -271,6 +281,10 @@ export async function planStartupReady(
       : { governanceProfile: options.governanceProfile })
   });
   const worker = governance.worker;
+  const scaffoldProfile = resolveStartupScaffoldProfile({
+    ...(options.appTemplate === undefined ? {} : { template: options.appTemplate }),
+    ...(options.appType === undefined ? {} : { appType: options.appType })
+  });
   const now = options.now ?? new Date();
   const [root, inspection, devServer, recordedEvidence, gate, docs, extensions] =
     await Promise.all([
@@ -309,6 +323,7 @@ export async function planStartupReady(
     target,
     worker,
     governanceProfile: governance.profile,
+    ...(scaffoldProfile === undefined ? {} : { scaffoldProfile }),
     runsteadInitialized: root.source !== "missing",
     extensions: {
       discoveredPaths: extensions.discoveredPaths,
@@ -383,6 +398,12 @@ export async function runStartupReady(
           target: resumed.run.target,
           worker: resumed.run.worker,
           governanceProfile: startupReadinessRunGovernanceProfile(resumed.run),
+          ...(resumed.run.scaffoldProfile?.template === undefined
+            ? {}
+            : { appTemplate: resumed.run.scaffoldProfile.template }),
+          ...(resumed.run.scaffoldProfile?.appType === undefined
+            ? {}
+            : { appType: resumed.run.scaffoldProfile.appType }),
           ...(options.now === undefined ? {} : { now: options.now })
         });
   const persisted = resumed ?? (await createStartupReadinessRun(options));
@@ -471,6 +492,9 @@ export async function createStartupReadinessRun(
     target: plan.target,
     worker: plan.worker,
     governanceProfile: plan.governanceProfile,
+    ...(plan.scaffoldProfile === undefined
+      ? {}
+      : { scaffoldProfile: plan.scaffoldProfile }),
     status: "planned",
     phases: plan.phases.map((phase) => ({
       id: phase.id,
@@ -581,6 +605,11 @@ export function formatStartupReadyPlan(plan: StartupReadyPlan): string {
     `Worker: ${plan.worker}`,
     `Governance profile: ${plan.governanceProfile}`,
     formatStartupWorkerGovernanceNotice(plan.worker, plan.governanceProfile),
+    ...(plan.scaffoldProfile === undefined
+      ? []
+      : [
+          `Scaffold profile: ${plan.scaffoldProfile.id} (${plan.scaffoldProfile.title})`
+        ]),
     `Runstead initialized: ${plan.runsteadInitialized ? "yes" : "no"}`,
     `Extensions: ${
       plan.extensions.loaded.length === 0 ? "none" : plan.extensions.loaded.join(", ")
@@ -622,6 +651,11 @@ export function formatStartupReadinessRun(run: StartupReadinessRun): string {
       run.worker,
       startupReadinessRunGovernanceProfile(run)
     ),
+    ...(run.scaffoldProfile === undefined
+      ? []
+      : [
+          `Scaffold profile: ${run.scaffoldProfile.id} (${run.scaffoldProfile.title})`
+        ]),
     "",
     ...run.phases.map(
       (phase, index) => `${index + 1}. ${phase.title.padEnd(28)} ${phase.status}`
@@ -762,11 +796,18 @@ async function executeStartupReadyRun(
       status: "started",
       message: "running bounded MVP build or repair loop"
     });
+    const scaffoldArtifact =
+      run.scaffoldProfile === undefined
+        ? undefined
+        : await writeStartupScaffoldProfileArtifact(run);
     const build = await startupBuildMvp({
       cwd: run.cwd,
       worker: run.worker,
       dependencyPolicy: "deny-new",
       maxAttempts: options.maxAttempts ?? 2,
+      ...(run.scaffoldProfile === undefined
+        ? {}
+        : { scaffoldProfile: run.scaffoldProfile }),
       ...(options.workerRunner === undefined
         ? {}
         : { workerRunner: options.workerRunner }),
@@ -776,6 +817,7 @@ async function executeStartupReadyRun(
 
     updatePhase(run, "build_mvp", {
       status: buildPhaseStatus,
+      artifacts: scaffoldArtifact === undefined ? [] : [scaffoldArtifact],
       blockers:
         buildPhaseStatus === "passed"
           ? build.gate.blockers
@@ -957,6 +999,36 @@ function startupCompleteProductArtifacts(
   ]);
 }
 
+async function writeStartupScaffoldProfileArtifact(
+  run: StartupReadinessRun
+): Promise<string | undefined> {
+  if (run.scaffoldProfile === undefined) {
+    return undefined;
+  }
+
+  const root = await resolveRunsteadRoot(run.cwd);
+  const path = join(root.root, "startup", "scaffold-profile.json");
+
+  await mkdir(join(root.root, "startup"), { recursive: true });
+  await writeFile(
+    path,
+    `${JSON.stringify(
+      {
+        schemaVersion: 1,
+        runId: run.id,
+        target: run.target,
+        worker: run.worker,
+        profile: run.scaffoldProfile
+      },
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
+
+  return path;
+}
+
 async function attemptStartupReadyUiSmokeRepair(
   run: StartupReadinessRun,
   options: StartupReadyOptions,
@@ -987,6 +1059,9 @@ async function attemptStartupReadyUiSmokeRepair(
     worker: run.worker,
     dependencyPolicy: "deny-new",
     maxAttempts: 1,
+    ...(run.scaffoldProfile === undefined
+      ? {}
+      : { scaffoldProfile: run.scaffoldProfile }),
     prompt: startupReadyUiSmokeRepairPrompt({
       run,
       uiSmoke,
@@ -1825,6 +1900,9 @@ async function writeStartupReadinessDecisionReport(
       target: run.target,
       worker: run.worker,
       workerGovernance: formatStartupWorkerGovernanceNotice(run.worker),
+      ...(run.scaffoldProfile === undefined
+        ? {}
+        : { scaffoldProfile: run.scaffoldProfile }),
       status: run.status,
       verdict: run.verdict,
       verdictBlockers: run.verdictBlockers,
@@ -2112,6 +2190,7 @@ function formatStartupReadinessDecisionMarkdown(input: {
     target: StartupReadyTarget;
     worker: LocalAgentWorkerKind;
     workerGovernance: string;
+    scaffoldProfile?: StartupScaffoldProfile;
     status: StartupReadinessRunStatus;
     verdict: StartupReadinessVerdict;
     verdictBlockers: string[];
@@ -2161,6 +2240,11 @@ function formatStartupReadinessDecisionMarkdown(input: {
     `Requested target: ${input.run.target}`,
     `Worker: ${input.run.worker}`,
     input.run.workerGovernance,
+    ...(input.run.scaffoldProfile === undefined
+      ? []
+      : [
+          `Scaffold profile: ${input.run.scaffoldProfile.id} (${input.run.scaffoldProfile.title})`
+        ]),
     `Status: ${input.run.status}`,
     `Verdict: ${input.run.verdict}`,
     "",
@@ -2295,7 +2379,13 @@ export function buildStartupReadyOperatorCommands(
     `--stage ${run.stage}`,
     `--target ${run.target}`,
     `--worker ${run.worker}`,
-    `--governance ${governanceProfile}`
+    `--governance ${governanceProfile}`,
+    ...(run.scaffoldProfile?.template === undefined
+      ? []
+      : [`--app-template ${run.scaffoldProfile.template}`]),
+    ...(run.scaffoldProfile?.appType === undefined
+      ? []
+      : [`--app-type ${run.scaffoldProfile.appType}`])
   ].join(" ");
   const commands: StartupReadyOperatorCommand[] = [
     {

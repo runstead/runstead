@@ -1024,6 +1024,8 @@ describe("startup readiness run model", () => {
         stage: "launch",
         target: "local",
         worker: "codex_cli",
+        appTemplate: "static-todo",
+        appType: "local-first-web",
         maxAttempts: 1,
         workerRunner: () =>
           Promise.resolve({
@@ -1044,11 +1046,26 @@ describe("startup readiness run model", () => {
       const completePhase = result.run.phases.find(
         (phase) => phase.id === "complete_check"
       );
+      const buildPhase = result.run.phases.find((phase) => phase.id === "build_mvp");
 
       expect(uiPhase).toMatchObject({
         status: "passed",
         blockers: []
       });
+      expect(result.run.scaffoldProfile).toMatchObject({
+        id: "static-todo",
+        template: "static-todo",
+        appType: "local-first-web"
+      });
+      expect(
+        result.run.operatorCommands.find((command) => command.kind === "rerun")
+          ?.command
+      ).toContain("--app-template static-todo");
+      expect(buildPhase?.artifacts).toEqual(
+        expect.arrayContaining([
+          join(workspace, ".runstead", "startup", "scaffold-profile.json")
+        ])
+      );
       expect(result.run.verdict).toBe("local_launch_ready");
       expect(result.run.verdictBlockers).toEqual([]);
       expect(uiPhase?.evidenceIds).toHaveLength(2);

@@ -180,6 +180,14 @@ export function registerStartupCommands(program: Command): void {
       "--guided",
       "Print and persist guided next steps for missing evidence and launch blockers"
     )
+    .option(
+      "--app-template <template>",
+      "Built-in scaffold template for empty repos, currently static-todo"
+    )
+    .option(
+      "--app-type <type>",
+      "Built-in app profile, currently local-first-web"
+    )
     .option("--max-attempts <count>", "Maximum bounded MVP repair attempts", "2")
     .action(
       async (options: {
@@ -195,6 +203,8 @@ export function registerStartupCommands(program: Command): void {
         refreshContext?: boolean;
         interactive?: boolean;
         guided?: boolean;
+        appTemplate?: string;
+        appType?: string;
         maxAttempts: string;
       }) => {
         const {
@@ -207,6 +217,8 @@ export function registerStartupCommands(program: Command): void {
           planStartupReady,
           runStartupReady
         } = await import("./startup-ready.js");
+        const { parseStartupAppType, parseStartupScaffoldTemplate } =
+          await import("./startup-scaffold-profile.js");
         const target = parseStartupReadyTarget(options.target);
         const common = {
           ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
@@ -222,6 +234,12 @@ export function registerStartupCommands(program: Command): void {
           refreshContext: options.refreshContext === true,
           interactive: options.interactive === true,
           guided: options.guided === true,
+          ...(options.appTemplate === undefined
+            ? {}
+            : { appTemplate: parseStartupScaffoldTemplate(options.appTemplate) }),
+          ...(options.appType === undefined
+            ? {}
+            : { appType: parseStartupAppType(options.appType) }),
           maxAttempts: parsePositiveInteger(options.maxAttempts, "--max-attempts"),
           onProgress: (event: StartupReadyProgressEvent) => {
             console.error(formatStartupReadyProgress(event));
