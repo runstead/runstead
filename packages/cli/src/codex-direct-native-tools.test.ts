@@ -53,6 +53,46 @@ describe("codex direct native tools", () => {
     ).toEqual(["package.json", "src/app.js", "src/main.js", "src/old.js"]);
   });
 
+  it("infers touched files from non-standard git diff path headers", () => {
+    expect(
+      inferWorkspacePatchTouchedFiles({
+        patch: [
+          "diff --git /dev/null src/App.tsx",
+          "new file mode 100644",
+          "index 0000000..1111111",
+          "@@ -0,0 +1 @@",
+          "+export function App() { return null; }"
+        ].join("\n")
+      })
+    ).toEqual(["src/App.tsx"]);
+
+    expect(
+      inferWorkspacePatchTouchedFiles({
+        patch: [
+          'diff --git "a/src/my file.ts" "b/src/my file.ts"',
+          "index 1111111..2222222 100644",
+          "@@ -1 +1 @@",
+          "-old",
+          "+new"
+        ].join("\n")
+      })
+    ).toEqual(["src/my file.ts"]);
+
+    expect(
+      inferWorkspacePatchTouchedFiles({
+        patch: [
+          "diff --git a/src/old.ts b/src/new.ts",
+          "similarity index 92%",
+          "rename from src/old.ts",
+          "rename to src/new.ts",
+          "@@ -1 +1 @@",
+          "-old",
+          "+new"
+        ].join("\n")
+      })
+    ).toEqual(["src/old.ts", "src/new.ts"]);
+  });
+
   it("reports symlink escapes for multi-file reads and rejects structured patches", async () => {
     const root = await mkdtemp(join(tmpdir(), "runstead-native-tools-"));
 

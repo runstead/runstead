@@ -1030,21 +1030,19 @@ function parseUnifiedDiffTouchedFiles(patch: string): string[] {
         paths.push(path);
       }
     } else if (line.startsWith("diff --git ")) {
-      const parts = line.split(/\s+/);
-      const left = parts[2];
-      const right = parts[3];
+      for (const path of parseGitDiffHeaderPaths(line)) {
+        paths.push(path);
+      }
+    } else if (
+      line.startsWith("rename from ") ||
+      line.startsWith("rename to ") ||
+      line.startsWith("copy from ") ||
+      line.startsWith("copy to ")
+    ) {
+      const path = normalizeDiffPath(diffMetadataPath(line));
 
-      for (const path of [left, right]) {
-        const normalized =
-          path?.startsWith("a/") === true
-            ? normalizeDiffPath(path, "a/")
-            : path?.startsWith("b/") === true
-              ? normalizeDiffPath(path, "b/")
-              : undefined;
-
-        if (normalized !== undefined) {
-          paths.push(normalized);
-        }
+      if (path !== undefined) {
+        paths.push(path);
       }
     }
   }
@@ -1075,17 +1073,97 @@ function parseCodexApplyPatchTouchedFiles(patch: string): string[] {
   return uniqueStrings(paths);
 }
 
-function normalizeDiffPath(path: string, prefix: "a/" | "b/"): string | undefined {
-  if (path === "/dev/null") {
+function parseGitDiffHeaderPaths(line: string): string[] {
+  const tokens = splitGitDiffHeaderArgs(line.slice("diff --git ".length));
+  const [left, right] = tokens;
+
+  return [left, right]
+    .map((path) => (path === undefined ? undefined : normalizeDiffPath(path)))
+    .filter((path): path is string => path !== undefined);
+}
+
+function splitGitDiffHeaderArgs(value: string): string[] {
+  const tokens: string[] = [];
+  let index = 0;
+
+  while (index < value.length) {
+    while (/\s/.test(value[index] ?? "")) {
+      index += 1;
+    }
+
+    if (index >= value.length) {
+      break;
+    }
+
+    if (value[index] === "\"") {
+      const start = index;
+      index += 1;
+
+      while (index < value.length) {
+        if (value[index] === "\\" && index + 1 < value.length) {
+          index += 2;
+          continue;
+        }
+
+        if (value[index] === "\"") {
+          index += 1;
+          break;
+        }
+
+        index += 1;
+      }
+
+      tokens.push(unquoteGitPath(value.slice(start, index)));
+      continue;
+    }
+
+    const start = index;
+
+    while (index < value.length && !/\s/.test(value[index] ?? "")) {
+      index += 1;
+    }
+
+    tokens.push(value.slice(start, index));
+  }
+
+  return tokens;
+}
+
+function normalizeDiffPath(path: string, prefix?: "a/" | "b/"): string | undefined {
+  const unquoted = diffPathToken(path);
+
+  if (unquoted === "/dev/null") {
     return undefined;
   }
 
-  const unquoted = path.startsWith('"') ? unquoteGitPath(path) : path;
-  const withoutPrefix = unquoted.startsWith(prefix)
+  const withoutPrefix =
+    prefix !== undefined && unquoted.startsWith(prefix)
     ? unquoted.slice(prefix.length)
-    : unquoted;
+    : unquoted.startsWith("a/") || unquoted.startsWith("b/")
+      ? unquoted.slice(2)
+      : unquoted;
 
   return normalizePath(withoutPrefix);
+}
+
+function diffPathToken(path: string): string {
+  const trimmed = path.trim();
+
+  if (trimmed.startsWith('"')) {
+    return splitGitDiffHeaderArgs(trimmed)[0] ?? trimmed;
+  }
+
+  return trimmed.split("\t", 1)[0] ?? trimmed;
+}
+
+function diffMetadataPath(line: string): string {
+  for (const prefix of ["rename from ", "rename to ", "copy from ", "copy to "]) {
+    if (line.startsWith(prefix)) {
+      return line.slice(prefix.length).trim();
+    }
+  }
+
+  return line.trim();
 }
 
 function unquoteGitPath(path: string): string {
