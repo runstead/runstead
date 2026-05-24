@@ -29,6 +29,10 @@ export interface ActionContext {
   riskSummary?: string;
   riskClass?: string;
   canonicalSignature?: string;
+  approvalGrant?: {
+    mode: "single_use" | "scoped_until_expiry";
+    scope: string;
+  };
   pendingPatch?: {
     mode: "unified_diff" | "replacements";
     filesTouched: string[];

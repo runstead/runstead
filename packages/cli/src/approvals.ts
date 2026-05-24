@@ -90,6 +90,7 @@ export interface ApprovedApprovalGrant {
   match: ApprovalGrantMatchKind;
   approvedActionId: string;
   canonicalSignature?: string;
+  reuse: "single_use" | "scoped_until_expiry";
 }
 
 export interface ExpireApprovalGrantOptions {
@@ -362,6 +363,7 @@ export function findApprovedApprovalGrantForAction(
       approval,
       match: grantMatch.match,
       approvedActionId: row.action_id,
+      reuse: grantMatch.reuse,
       ...(grantMatch.canonicalSignature === undefined
         ? {}
         : { canonicalSignature: grantMatch.canonicalSignature })
@@ -723,9 +725,17 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function approvedApprovalGrantMatch(
   row: ApprovedApprovalRow,
   options: FindApprovedApprovalOptions
-): { match: ApprovalGrantMatchKind; canonicalSignature?: string } | undefined {
+):
+  | {
+      match: ApprovalGrantMatchKind;
+      canonicalSignature?: string;
+      reuse: "single_use" | "scoped_until_expiry";
+    }
+  | undefined {
+  const reuse = approvalActionGrantReuse(row.action_json);
+
   if (row.action_id === options.actionId) {
-    return { match: "action_id" };
+    return { match: "action_id", reuse };
   }
 
   const canonicalSignature = approvalActionCanonicalSignature(row.action_json);
@@ -736,7 +746,8 @@ function approvedApprovalGrantMatch(
   ) {
     return {
       match: "canonical_signature",
-      canonicalSignature
+      canonicalSignature,
+      reuse
     };
   }
 
@@ -759,5 +770,27 @@ function approvalActionCanonicalSignature(
       : undefined;
   } catch {
     return undefined;
+  }
+}
+
+function approvalActionGrantReuse(
+  actionJson: string | null
+): "single_use" | "scoped_until_expiry" {
+  if (actionJson === null) {
+    return "single_use";
+  }
+
+  try {
+    const action = JSON.parse(actionJson) as unknown;
+    const context = isRecord(action) && isRecord(action.context) ? action.context : {};
+    const approvalGrant = isRecord(context.approvalGrant)
+      ? context.approvalGrant
+      : {};
+
+    return approvalGrant.mode === "scoped_until_expiry"
+      ? "scoped_until_expiry"
+      : "single_use";
+  } catch {
+    return "single_use";
   }
 }

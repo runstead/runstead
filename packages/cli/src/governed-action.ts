@@ -168,6 +168,7 @@ export async function runGovernedToolAction<T>(
           approvalId: approvedGrant.approval.id,
           approvalGrant: "used",
           approvalGrantMatch: approvedGrant.match,
+          approvalGrantReuse: approvedGrant.reuse,
           approvalGrantActionId: approvedGrant.approvedActionId,
           ...(approvedGrant.canonicalSignature === undefined
             ? {}
@@ -179,7 +180,7 @@ export async function runGovernedToolAction<T>(
     recordedPolicy.entry
   ];
 
-  if (approvedGrant !== undefined) {
+  if (approvedGrant !== undefined && approvedGrant.reuse === "single_use") {
     const expiredGrant = createApprovalExpirationTransition({
       database: options.database,
       approval: approvedGrant.approval,

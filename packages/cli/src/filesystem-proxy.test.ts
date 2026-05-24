@@ -7,8 +7,12 @@ import type { Task } from "@runstead/core";
 import { openRunsteadDatabase } from "@runstead/state-sqlite";
 import { describe, expect, it } from "vitest";
 
+import { decideApproval, showApproval } from "./approvals.js";
 import { createGoal } from "./goals.js";
-import { ToolActionDeniedError } from "./governed-action.js";
+import {
+  ToolActionApprovalRequiredError,
+  ToolActionDeniedError
+} from "./governed-action.js";
 import { initRunstead } from "./init.js";
 import { loadPolicyProfileFromFile } from "./policy-loader.js";
 import {
@@ -145,6 +149,141 @@ describe("filesystem proxy", () => {
         decision: "allow",
         ruleId: "allow_src_write"
       });
+    } finally {
+      fixture?.database.close();
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("reuses a task-scoped approval grant for safe scaffold writes", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-fs-scaffold-"));
+    let fixture: FilesystemProxyFixture | undefined;
+
+    try {
+      fixture = await setupFilesystemProxyFixture(workspace);
+
+      await expect(
+        writeGovernedWorkspaceFile({
+          ...fixture,
+          path: "src/App.tsx",
+          content: "export function App() { return null; }\n",
+          createDirs: true,
+          requestedBy: "test"
+        })
+      ).rejects.toBeInstanceOf(ToolActionApprovalRequiredError);
+
+      const approval = fixture.database
+        .prepare(
+          `
+          SELECT a.id, pd.action_json
+          FROM approvals a
+          JOIN policy_decisions pd ON pd.id = a.policy_decision_id
+          WHERE a.action_id LIKE 'act_filesystem_write_%'
+        `
+        )
+        .get() as { id: string; action_json: string } | undefined;
+
+      if (approval === undefined) {
+        throw new Error("Expected scaffold write approval");
+      }
+
+      const approvedAction = JSON.parse(approval.action_json) as {
+        context?: {
+          filesTouched?: string[];
+          canonicalSignature?: string;
+          approvalGrant?: { mode?: string; scope?: string };
+        };
+      };
+
+      expect(approvedAction.context).toMatchObject({
+        filesTouched: ["src/App.tsx"],
+        approvalGrant: {
+          mode: "scoped_until_expiry",
+          scope: `safe_cwd_scaffold_write_v1:${fixture.task.id}`
+        }
+      });
+      expect(approvedAction.context?.canonicalSignature).toMatch(/^[a-f0-9]{64}$/);
+
+      await decideApproval({
+        cwd: workspace,
+        id: approval.id,
+        decision: "approved",
+        decidedBy: "local-admin",
+        now: new Date("2026-05-15T00:02:00.000Z")
+      });
+
+      const firstWrite = await writeGovernedWorkspaceFile({
+        ...fixture,
+        path: "src/App.tsx",
+        content: "export function App() { return null; }\n",
+        createDirs: true,
+        requestedBy: "test"
+      });
+      const secondWrite = await writeGovernedWorkspaceFile({
+        ...fixture,
+        path: "src/main.tsx",
+        content: "import { App } from './App';\n",
+        createDirs: true,
+        requestedBy: "test"
+      });
+
+      expect(firstWrite.toolCall.output).toMatchObject({
+        approvalId: approval.id,
+        approvalGrant: "used",
+        approvalGrantReuse: "scoped_until_expiry"
+      });
+      expect(secondWrite.toolCall.output).toMatchObject({
+        approvalId: approval.id,
+        approvalGrant: "used",
+        approvalGrantMatch: "canonical_signature",
+        approvalGrantReuse: "scoped_until_expiry"
+      });
+      expect(showApproval({ cwd: workspace, id: approval.id }).approval.status).toBe(
+        "approved"
+      );
+    } finally {
+      fixture?.database.close();
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("does not mint scaffold grants for dependency manifests", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-fs-scaffold-"));
+    let fixture: FilesystemProxyFixture | undefined;
+
+    try {
+      fixture = await setupFilesystemProxyFixture(workspace);
+
+      await expect(
+        writeGovernedWorkspaceFile({
+          ...fixture,
+          path: "package.json",
+          content: "{\"scripts\":{}}\n",
+          requestedBy: "test"
+        })
+      ).rejects.toBeInstanceOf(ToolActionApprovalRequiredError);
+
+      const row = fixture.database
+        .prepare(
+          `
+          SELECT pd.action_json
+          FROM approvals a
+          JOIN policy_decisions pd ON pd.id = a.policy_decision_id
+          WHERE a.action_id LIKE 'act_filesystem_write_%'
+        `
+        )
+        .get() as { action_json: string } | undefined;
+
+      if (row === undefined) {
+        throw new Error("Expected package write approval");
+      }
+
+      const action = JSON.parse(row.action_json) as {
+        context?: { canonicalSignature?: string; approvalGrant?: unknown };
+      };
+
+      expect(action.context?.canonicalSignature).toBeUndefined();
+      expect(action.context?.approvalGrant).toBeUndefined();
     } finally {
       fixture?.database.close();
       await rm(workspace, { force: true, recursive: true });

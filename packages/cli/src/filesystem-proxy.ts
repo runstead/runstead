@@ -15,7 +15,32 @@ import {
   runGovernedToolAction,
   type RunGovernedToolActionResult
 } from "./governed-action.js";
-import type { ActionEnvelope, PolicyProfile } from "./policy.js";
+import type { ActionContext, ActionEnvelope, PolicyProfile } from "./policy.js";
+
+const SCAFFOLD_WRITE_GRANT_VERSION = "safe_cwd_scaffold_write_v1";
+const DEPENDENCY_FILE_NAMES = new Set([
+  "package.json",
+  "pnpm-lock.yaml",
+  "package-lock.json",
+  "npm-shrinkwrap.json",
+  "yarn.lock",
+  "bun.lock",
+  "bun.lockb",
+  "requirements.txt",
+  "poetry.lock",
+  "uv.lock",
+  "go.mod",
+  "go.sum",
+  "Cargo.toml",
+  "Cargo.lock"
+]);
+const UNSAFE_SCAFFOLD_PREFIXES = [
+  ".git/",
+  ".runstead/",
+  "node_modules/",
+  "dist/",
+  "build/"
+];
 
 export interface GovernedFilesystemOptions {
   cwd: string;
@@ -97,7 +122,8 @@ export async function writeGovernedWorkspaceFile(
     action: filesystemAction({
       actionType: "filesystem.write",
       cwd: options.cwd,
-      path: target.relativePath
+      path: target.relativePath,
+      taskId: options.task.id
     }),
     run: async () => {
       if (options.createDirs === true) {
@@ -137,6 +163,7 @@ function filesystemAction(input: {
   actionType: "filesystem.read" | "filesystem.write";
   cwd: string;
   path: string;
+  taskId?: string;
 }): ActionEnvelope {
   return {
     actionId: stableActionId(input.actionType, [input.cwd, input.path]),
@@ -145,10 +172,72 @@ function filesystemAction(input: {
       type: "file",
       path: input.path
     },
-    context: {
-      cwd: input.cwd
+    context: filesystemActionContext(input)
+  };
+}
+
+function filesystemActionContext(input: {
+  actionType: "filesystem.read" | "filesystem.write";
+  cwd: string;
+  path: string;
+  taskId?: string;
+}): ActionContext {
+  const base: ActionContext = {
+    cwd: input.cwd,
+    filesTouched: [input.path],
+    ...(input.actionType === "filesystem.write"
+      ? { sideEffects: ["write_workspace"] }
+      : {})
+  };
+
+  if (
+    input.actionType !== "filesystem.write" ||
+    input.taskId === undefined ||
+    !isSafeScaffoldWritePath(input.path)
+  ) {
+    return base;
+  }
+
+  return {
+    ...base,
+    riskClass: "safe_scaffold_write",
+    riskSummary:
+      "task-scoped cwd scaffold file write; excludes dependency, secret, protected runtime, and Runstead state paths",
+    canonicalSignature: stableActionSignature("filesystem.write.scaffold", [
+      input.cwd,
+      input.taskId,
+      SCAFFOLD_WRITE_GRANT_VERSION
+    ]),
+    approvalGrant: {
+      mode: "scoped_until_expiry",
+      scope: `${SCAFFOLD_WRITE_GRANT_VERSION}:${input.taskId}`
     }
   };
+}
+
+function isSafeScaffoldWritePath(path: string): boolean {
+  const normalized = path.replaceAll("\\", "/").replace(/^\.\/+/, "");
+  const segments = normalized.split("/").filter(Boolean);
+  const fileName = segments.at(-1);
+
+  if (segments.length === 0 || fileName === undefined) {
+    return false;
+  }
+
+  if (
+    DEPENDENCY_FILE_NAMES.has(fileName) ||
+    isEnvFileName(fileName) ||
+    UNSAFE_SCAFFOLD_PREFIXES.some((prefix) => normalized.startsWith(prefix)) ||
+    segments.some((segment) => segment === "secrets" || segment === ".runstead")
+  ) {
+    return false;
+  }
+
+  return true;
+}
+
+function isEnvFileName(fileName: string): boolean {
+  return fileName === ".env" || fileName.startsWith(".env.");
 }
 
 async function workspaceTarget(
@@ -242,4 +331,10 @@ function stableActionId(prefix: string, parts: unknown[]): string {
     .slice(0, 12);
 
   return `act_${prefix.replaceAll(".", "_")}_${hash}`;
+}
+
+function stableActionSignature(prefix: string, parts: unknown[]): string {
+  return createHash("sha256")
+    .update(JSON.stringify([prefix, ...parts]))
+    .digest("hex");
 }
