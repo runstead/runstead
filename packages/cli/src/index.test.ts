@@ -754,8 +754,15 @@ describe("cli entrypoint", () => {
       (command) => command.name() === "dashboard"
     );
     const build = dashboard?.commands.find((command) => command.name() === "build");
+    const serve = dashboard?.commands.find((command) => command.name() === "serve");
 
     expect(build?.options.map((option) => option.long)).toContain("--actor");
+    expect(serve?.options.map((option) => option.long)).toContain("--actor");
+    expect(serve?.options.map((option) => option.long)).toContain(
+      "--enable-operator-api"
+    );
+    expect(serve?.options.map((option) => option.long)).toContain("--operator-token");
+    expect(serve?.options.map((option) => option.long)).toContain("--csrf-token");
   });
 
   it("exposes RBAC actor selection on webhook serving", () => {

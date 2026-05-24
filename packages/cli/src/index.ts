@@ -709,6 +709,12 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     .option("--host <host>", "Host interface to bind", "127.0.0.1")
     .option("--port <port>", "Port to bind", "4173")
     .option("--actor <id>", "RBAC subject for dashboard generation", "local-admin")
+    .option(
+      "--enable-operator-api",
+      "Enable protected local mutating Operator Console endpoints"
+    )
+    .option("--operator-token <token>", "Operator API session token")
+    .option("--csrf-token <token>", "Operator API CSRF token")
     .action(
       async (options: {
         cwd?: string;
@@ -716,6 +722,9 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
         host: string;
         port: string;
         actor: string;
+        enableOperatorApi?: boolean;
+        operatorToken?: string;
+        csrfToken?: string;
       }) => {
         const { checkPermission } = await import("./rbac.js");
         const permission = await checkPermission({
@@ -736,12 +745,23 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
           ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
           ...(options.output === undefined ? {} : { outputDir: options.output }),
           host: options.host,
-          port
+          port,
+          enableOperatorApi: options.enableOperatorApi === true,
+          ...(options.operatorToken === undefined
+            ? {}
+            : { sessionToken: options.operatorToken }),
+          ...(options.csrfToken === undefined ? {} : { csrfToken: options.csrfToken }),
+          actor: options.actor
         });
 
         console.log(`Dashboard URL: ${result.url}`);
         console.log(`Dashboard HTML: ${result.build.htmlPath}`);
         console.log(`Dashboard data: ${result.build.dataPath}`);
+        if (result.operatorApi !== undefined) {
+          console.log("Operator API: enabled");
+          console.log(`Operator API session token: ${result.operatorApi.sessionToken}`);
+          console.log(`Operator API CSRF token: ${result.operatorApi.csrfToken}`);
+        }
       }
     );
 

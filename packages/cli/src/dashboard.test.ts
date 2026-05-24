@@ -383,14 +383,16 @@ describe("buildDashboard", () => {
         pendingApprovals: [
           {
             id: "appr_001",
-            risk: "high",
-            command: expect.stringContaining("approve-and-resume appr_001")
+            risk: "high"
           }
         ],
-        blockerCount: expect.any(Number),
-        staleEvidenceCount: 0,
-        recommendedCommand: expect.stringContaining("approve-and-resume")
+        staleEvidenceCount: 0
       });
+      expect(snapshot.operator.pendingApprovals[0]?.command).toContain(
+        "approve-and-resume appr_001"
+      );
+      expect(typeof snapshot.operator.blockerCount).toBe("number");
+      expect(snapshot.operator.recommendedCommand).toContain("approve-and-resume");
       expect(snapshot.operator.actions.map((action) => action.id)).toEqual([
         "daemon-approval-resume",
         "approval-appr_001",
@@ -596,6 +598,226 @@ describe("buildDashboard", () => {
         expect(served.port).toBeGreaterThan(0);
       } finally {
         await closeServer(served.server);
+      }
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("keeps mutating operator endpoints disabled by default", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-dashboard-api-off-"));
+    const root = join(workspace, ".runstead");
+    const stateDb = join(root, "state.db");
+
+    try {
+      await mkdir(root, { recursive: true });
+      await writeFile(
+        join(root, "config.yaml"),
+        "version: 1\ndomain: repo-maintenance\n",
+        "utf8"
+      );
+      openRunsteadDatabase(stateDb).close();
+
+      const served = await serveDashboard({
+        cwd: workspace,
+        host: "127.0.0.1",
+        port: 0,
+        now: new Date("2026-05-23T02:10:00.000Z")
+      });
+
+      try {
+        const response = await fetch(`${served.url}/evidence/manual`, {
+          method: "POST",
+          body: JSON.stringify({
+            type: "manual_change",
+            summary: "Operator checked launch notes"
+          })
+        });
+        const body = (await response.json()) as { error: string };
+
+        expect(response.status).toBe(404);
+        expect(body.error).toBe("operator_api_disabled");
+        expect(served.operatorApi).toBeUndefined();
+      } finally {
+        await closeServer(served.server);
+      }
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("requires operator API session, CSRF, and same-origin checks", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-dashboard-api-auth-"));
+    const root = join(workspace, ".runstead");
+    const stateDb = join(root, "state.db");
+
+    try {
+      await mkdir(root, { recursive: true });
+      await writeFile(
+        join(root, "config.yaml"),
+        "version: 1\ndomain: repo-maintenance\n",
+        "utf8"
+      );
+      openRunsteadDatabase(stateDb).close();
+
+      const served = await serveDashboard({
+        cwd: workspace,
+        host: "127.0.0.1",
+        port: 0,
+        enableOperatorApi: true,
+        sessionToken: "session-123",
+        csrfToken: "csrf-123",
+        now: new Date("2026-05-23T02:15:00.000Z")
+      });
+
+      try {
+        const noAuth = await fetch(`${served.url}/evidence/manual`, {
+          method: "POST",
+          body: JSON.stringify({ summary: "Manual launch check" })
+        });
+        const noCsrf = await fetch(`${served.url}/evidence/manual`, {
+          method: "POST",
+          headers: {
+            authorization: "Bearer session-123"
+          },
+          body: JSON.stringify({ summary: "Manual launch check" })
+        });
+        const crossOrigin = await fetch(`${served.url}/evidence/manual`, {
+          method: "POST",
+          headers: {
+            authorization: "Bearer session-123",
+            "x-runstead-csrf-token": "csrf-123",
+            origin: "https://example.invalid"
+          },
+          body: JSON.stringify({ summary: "Manual launch check" })
+        });
+        const noAuthBody = (await noAuth.json()) as { error: string };
+        const noCsrfBody = (await noCsrf.json()) as { error: string };
+        const crossOriginBody = (await crossOrigin.json()) as { error: string };
+
+        expect(served.operatorApi).toMatchObject({
+          enabled: true,
+          sessionToken: "session-123",
+          csrfToken: "csrf-123"
+        });
+        expect(noAuth.status).toBe(403);
+        expect(noAuthBody.error).toBe("invalid_session");
+        expect(noCsrf.status).toBe(403);
+        expect(noCsrfBody.error).toBe("invalid_csrf");
+        expect(crossOrigin.status).toBe(403);
+        expect(crossOriginBody.error).toBe("origin_denied");
+      } finally {
+        await closeServer(served.server);
+      }
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("approves pending approvals through the operator API and audits the action", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-dashboard-api-approve-"));
+    const root = join(workspace, ".runstead");
+    const stateDb = join(root, "state.db");
+
+    try {
+      await mkdir(root, { recursive: true });
+      await writeFile(
+        join(root, "config.yaml"),
+        "version: 1\ndomain: repo-maintenance\n",
+        "utf8"
+      );
+      const database = openRunsteadDatabase(stateDb);
+
+      try {
+        appendEventAndProject(database, {
+          event: {
+            eventId: "evt_dashboard_api_approval",
+            type: "approval.requested",
+            aggregateType: "approval",
+            aggregateId: "appr_console",
+            payload: {
+              actionId: "act_console"
+            },
+            createdAt: "2026-05-23T02:20:00.000Z"
+          },
+          projection: {
+            type: "approval",
+            value: {
+              id: "appr_console",
+              policyDecisionId: "poldec_console",
+              actionId: "act_console",
+              status: "pending",
+              risk: "medium",
+              reason: "Console approval fixture",
+              createdAt: "2026-05-23T02:20:00.000Z",
+              updatedAt: "2026-05-23T02:20:00.000Z"
+            }
+          }
+        });
+      } finally {
+        database.close();
+      }
+
+      const served = await serveDashboard({
+        cwd: workspace,
+        host: "127.0.0.1",
+        port: 0,
+        enableOperatorApi: true,
+        sessionToken: "session-approve",
+        csrfToken: "csrf-approve",
+        now: new Date("2026-05-23T02:21:00.000Z")
+      });
+
+      try {
+        const response = await fetch(`${served.url}/approvals/appr_console/approve`, {
+          method: "POST",
+          headers: {
+            authorization: "Bearer session-approve",
+            "x-runstead-csrf-token": "csrf-approve"
+          },
+          body: "{}"
+        });
+        const body = (await response.json()) as {
+          ok: boolean;
+          result: {
+            approvalId: string;
+            status: string;
+          };
+        };
+
+        expect(response.status).toBe(200);
+        expect(body).toMatchObject({
+          ok: true,
+          result: {
+            approvalId: "appr_console",
+            status: "approved"
+          }
+        });
+      } finally {
+        await closeServer(served.server);
+      }
+
+      const verified = openRunsteadDatabase(stateDb);
+
+      try {
+        const approval = verified
+          .prepare("SELECT status FROM approvals WHERE id = ?")
+          .get("appr_console") as { status: string };
+        const audit = verified
+          .prepare(
+            `
+            SELECT COUNT(*) AS count
+            FROM events
+            WHERE type = 'dashboard.operator_action.completed'
+              AND aggregate_id = 'appr_console'
+          `
+          )
+          .get() as { count: number };
+
+        expect(approval.status).toBe("approved");
+        expect(audit.count).toBe(1);
+      } finally {
+        verified.close();
       }
     } finally {
       await rm(workspace, { force: true, recursive: true });
