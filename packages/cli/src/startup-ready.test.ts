@@ -1064,12 +1064,29 @@ describe("startup readiness run model", () => {
         ])
       );
       expect(completePhase).toBeDefined();
+      expect(completePhase?.status).toBe("passed");
       expect(completePhase?.artifacts).toEqual(
         expect.arrayContaining([
           join(workspace, ".runstead", "reports", "startup-complete-product-check.md"),
           join(workspace, ".runstead", "reports", "startup-complete-product-check.json")
         ])
       );
+      const ciSummary = JSON.parse(
+        await readFile(
+          join(workspace, ".runstead", "reports", "runstead-startup-ci-summary.json"),
+          "utf8"
+        )
+      ) as {
+        releaseDecision: {
+          status: string;
+          readinessVerdict?: string;
+        };
+      };
+
+      expect(ciSummary.releaseDecision).toMatchObject({
+        status: "allow_release",
+        readinessVerdict: "local_launch_ready"
+      });
       expect(evidenceCount(workspace, "startup_metric_snapshot")).toBeGreaterThan(1);
       expect(evidenceCount(workspace, "startup_migration_plan")).toBeGreaterThan(1);
     } finally {

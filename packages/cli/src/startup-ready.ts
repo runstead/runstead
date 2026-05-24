@@ -880,9 +880,14 @@ async function executeStartupReadyRun(
       status: "started",
       message: "running complete product readiness check"
     });
+    const provisional = await finalizeRun(run, options.now ?? new Date());
     const complete = await generateStartupCompleteProductCheck({
       cwd: run.cwd,
       target: run.target,
+      readiness: {
+        verdict: provisional.verdict,
+        blockers: provisional.verdictBlockers
+      },
       ...(options.now === undefined ? {} : { now: options.now })
     });
 

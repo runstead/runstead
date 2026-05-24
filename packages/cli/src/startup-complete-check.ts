@@ -46,6 +46,10 @@ export interface GenerateStartupCompleteProductCheckOptions {
   cwd?: string;
   domain?: string;
   target?: LaunchReadinessTarget;
+  readiness?: {
+    verdict: string;
+    blockers: string[];
+  };
   now?: Date;
 }
 
@@ -152,7 +156,13 @@ export async function generateStartupCompleteProductCheck(
     target,
     now
   });
-  const ci = await generateStartupCiSummary({ cwd, domain, stage: "launch", now });
+  const ci = await generateStartupCiSummary({
+    cwd,
+    domain,
+    stage: "launch",
+    ...(options.readiness === undefined ? {} : { readiness: options.readiness }),
+    now
+  });
   const dashboard = await buildDashboard({ cwd, now });
   const diagnostics = await generateOpsDiagnosticsBundle({
     cwd,
