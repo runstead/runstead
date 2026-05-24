@@ -2126,6 +2126,47 @@ export function registerStartupCommands(program: Command): void {
       console.log(formatStartupArtifactShow(result));
     });
 
+  startupArtifact
+    .command("hygiene")
+    .description(
+      "Write a latest-artifacts view and retention report for startup artifacts."
+    )
+    .option("--cwd <path>", "Workspace directory")
+    .option("--retention-days <days>", "Age threshold for unreferenced prune candidates", "30")
+    .option("--prune", "Delete unreferenced artifacts older than the retention window")
+    .option("--actor <id>", "RBAC subject for artifact hygiene", "local-admin")
+    .action(
+      async (options: {
+        cwd?: string;
+        retentionDays: string;
+        prune?: boolean;
+        actor: string;
+      }) => {
+        await requireRbacPermission({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          actor: options.actor,
+          permission: options.prune === true ? "evidence.write" : "evidence.read",
+          action:
+            options.prune === true
+              ? "prune startup artifacts"
+              : "inspect startup artifact hygiene"
+        });
+
+        const { formatStartupArtifactHygiene, manageStartupArtifactHygiene } =
+          await import("./startup-artifact-hygiene.js");
+        const result = await manageStartupArtifactHygiene({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          retentionDays: parsePositiveInteger(
+            options.retentionDays,
+            "--retention-days"
+          ),
+          prune: options.prune === true
+        });
+
+        console.log(formatStartupArtifactHygiene(result));
+      }
+    );
+
   startup
     .command("complete-check")
     .description(
