@@ -6,6 +6,7 @@ export interface StartupScaffoldProfile {
   appType?: StartupAppType;
   id: string;
   title: string;
+  appOwnedPaths: string[];
   promptLines: string[];
 }
 
@@ -23,6 +24,13 @@ export function resolveStartupScaffoldProfile(input: {
       appType: input.appType ?? "local-first-web",
       id: "static-todo",
       title: "Static local-first todo app",
+      appOwnedPaths: [
+        "index.html",
+        "styles.css",
+        "app.js",
+        "server.js",
+        "scripts/*.js"
+      ],
       promptLines: [
         "Build a polished static local-first todo application.",
         "Use plain HTML, CSS, and browser JavaScript unless the repo already has a framework.",
@@ -40,6 +48,17 @@ export function resolveStartupScaffoldProfile(input: {
     appType,
     id: appType,
     title: "Local-first web app",
+    appOwnedPaths: [
+      "index.html",
+      "styles.css",
+      "app.js",
+      "server.js",
+      "src/**",
+      "app/**",
+      "components/**",
+      "public/**",
+      "scripts/*.js"
+    ],
     promptLines: [
       "Build a local-first web MVP with durable browser-state behavior.",
       "Keep the implementation install-free unless the repo already has dependencies.",

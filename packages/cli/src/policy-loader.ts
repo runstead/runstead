@@ -25,6 +25,7 @@ const PolicyRuleYamlSchema = z.object({
   when: z.object({
     action_type: ActionTypeYamlSchema.optional(),
     resource_id: StringOrInYamlSchema.optional(),
+    risk_class: StringOrInYamlSchema.optional(),
     path: MatchesAnyYamlSchema.optional(),
     command: MatchesAnyYamlSchema.optional(),
     side_effects: ContainsAnyYamlSchema.optional()
@@ -55,6 +56,7 @@ const ActionEnvelopeYamlSchema = z.object({
       cwd: z.string().min(1).optional(),
       command: z.string().min(1).optional(),
       files_touched: z.array(z.string().min(1)).optional(),
+      risk_class: z.string().min(1).optional(),
       network_domains: z.array(z.string().min(1)).optional(),
       secrets_requested: z.array(z.string().min(1)).optional(),
       side_effects: z.array(z.string().min(1)).optional()
@@ -90,6 +92,9 @@ export function parsePolicyProfileYaml(input: unknown): PolicyProfile {
         ...(rule.when.resource_id === undefined
           ? {}
           : { resourceId: stringOrInFromYaml(rule.when.resource_id) }),
+        ...(rule.when.risk_class === undefined
+          ? {}
+          : { riskClass: stringOrInFromYaml(rule.when.risk_class) }),
         ...(rule.when.path === undefined
           ? {}
           : { path: { matchesAny: rule.when.path.matches_any } }),
@@ -172,6 +177,9 @@ export function parseActionEnvelopeYaml(input: unknown): ActionEnvelope {
             ...(parsed.context.files_touched === undefined
               ? {}
               : { filesTouched: parsed.context.files_touched }),
+            ...(parsed.context.risk_class === undefined
+              ? {}
+              : { riskClass: parsed.context.risk_class }),
             ...(parsed.context.network_domains === undefined
               ? {}
               : { networkDomains: parsed.context.network_domains }),

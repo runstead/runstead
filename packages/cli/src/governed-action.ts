@@ -125,6 +125,7 @@ export async function runGovernedToolAction<T>(
           database: options.database,
           actionId: preflight.action.actionId,
           ...approvalGrantSignatureOption(preflight.action),
+          ...approvalGrantScopeOption(preflight.action),
           ...(options.now === undefined ? {} : { now: options.now })
         })
       : undefined;
@@ -172,7 +173,10 @@ export async function runGovernedToolAction<T>(
           approvalGrantActionId: approvedGrant.approvedActionId,
           ...(approvedGrant.canonicalSignature === undefined
             ? {}
-            : { approvalGrantCanonicalSignature: approvedGrant.canonicalSignature })
+            : { approvalGrantCanonicalSignature: approvedGrant.canonicalSignature }),
+          ...(approvedGrant.approvalGrantScope === undefined
+            ? {}
+            : { approvalGrantScope: approvedGrant.approvalGrantScope })
         };
 
   const initialEntries: AppendEventAndProjectInput[] = [
@@ -180,7 +184,7 @@ export async function runGovernedToolAction<T>(
     recordedPolicy.entry
   ];
 
-  if (approvedGrant !== undefined && approvedGrant.reuse === "single_use") {
+  if (approvedGrant?.reuse === "single_use") {
     const expiredGrant = createApprovalExpirationTransition({
       database: options.database,
       approval: approvedGrant.approval,
@@ -235,5 +239,15 @@ function approvalGrantSignatureOption(
 
   return typeof signature === "string" && signature.length > 0
     ? { canonicalSignature: signature }
+    : {};
+}
+
+function approvalGrantScopeOption(
+  action: ActionEnvelope
+): { approvalGrantScope: string } | object {
+  const scope = action.context?.approvalGrant?.scope;
+
+  return typeof scope === "string" && scope.length > 0
+    ? { approvalGrantScope: scope }
     : {};
 }

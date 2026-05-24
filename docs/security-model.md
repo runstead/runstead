@@ -63,7 +63,8 @@ Runstead treats these as separate boundaries:
   support systems, and CI logs are external evidence sources. Runstead records
   source URIs, summaries, hashes, and freshness metadata when available.
 - **Human approval boundary:** approvals convert a policy block into a durable
-  human decision. Approval grants are single-use and are expired when consumed.
+  human decision. Approval grants may be single-use, or scoped until expiry when
+  the action declares a narrow reusable scope such as a task-owned scaffold patch.
 
 ## Approval And Resume
 
@@ -73,9 +74,12 @@ files, dependency impact, diff hash, risk class, risk summary, pending patch
 payload, and canonical signature.
 
 When the model regenerates an equivalent governed action after approval,
-Runstead may consume an approved grant by either exact action id or canonical
-signature. Tool-call output records which match type was used so audit export
-can explain why the resumed action did not ask for a second approval.
+Runstead may consume an approved grant by exact action id, canonical signature,
+or a scoped approval grant. Scoped grants are only issued by action contracts
+that declare a narrow scope, for example a `codex_direct` scaffold app patch
+bound to one task id and scaffold profile. Tool-call output records which match
+type was used so audit export can explain why the resumed action did not ask
+for a second approval.
 
 ## Secrets
 

@@ -51,7 +51,11 @@ import {
   ToolActionApprovalRequiredError,
   ToolActionDeniedError
 } from "./governed-action.js";
-import type { ActionEnvelope, PolicyProfile } from "./policy.js";
+import {
+  matchesPolicyPathPattern,
+  type ActionEnvelope,
+  type PolicyProfile
+} from "./policy.js";
 import {
   finishWorkerRun,
   startWorkerRun,
@@ -1874,6 +1878,7 @@ async function runGovernedApplyPatch(
   const filesTouched = codexDirectPatchFilesTouched(options);
   const approvalMetadata = codexDirectPatchApprovalMetadata({
     cwd: options.cwd,
+    task: options.task,
     filesTouched,
     ...(options.patch === undefined ? {} : { patch: options.patch }),
     ...(options.replacements === undefined
@@ -2628,6 +2633,9 @@ function filesystemPatchAction(input: {
       dependencyImpact: input.approvalMetadata.dependencyImpact,
       riskSummary: input.approvalMetadata.riskSummary,
       canonicalSignature: input.approvalMetadata.canonicalSignature,
+      ...(input.approvalMetadata.approvalGrant === undefined
+        ? {}
+        : { approvalGrant: input.approvalMetadata.approvalGrant }),
       pendingPatch: input.pendingPatch,
       sideEffects: ["write_workspace"]
     }
@@ -2869,15 +2877,72 @@ function codexDirectPatchFilesTouched(input: {
   return inferWorkspacePatchTouchedFiles(input);
 }
 
+interface CodexDirectTaskScaffoldProfile {
+  id: string;
+  appOwnedPaths: string[];
+}
+
+const SCAFFOLD_APP_PATCH_PROTECTED_PATH_PATTERNS = [
+  ".env",
+  ".env.*",
+  "**/secrets/**",
+  ".git/**",
+  ".runstead/**",
+  "infra/prod/**",
+  "node_modules/**",
+  "dist/**",
+  "build/**"
+];
+
+function codexDirectTaskScaffoldProfile(
+  task: Task
+): CodexDirectTaskScaffoldProfile | undefined {
+  const profile = task.input.scaffoldProfile;
+
+  if (!isRecord(profile) || typeof profile.id !== "string") {
+    return undefined;
+  }
+
+  const appOwnedPaths = stringArray(profile.appOwnedPaths);
+
+  if (appOwnedPaths === undefined || appOwnedPaths.length === 0) {
+    return undefined;
+  }
+
+  return {
+    id: profile.id,
+    appOwnedPaths
+  };
+}
+
+function isScaffoldAppOwnedPatchPath(
+  path: string,
+  appOwnedPaths: string[]
+): boolean {
+  if (
+    SCAFFOLD_APP_PATCH_PROTECTED_PATH_PATTERNS.some((pattern) =>
+      matchesPolicyPathPattern(path, pattern)
+    )
+  ) {
+    return false;
+  }
+
+  return appOwnedPaths.some((pattern) => matchesPolicyPathPattern(path, pattern));
+}
+
 interface CodexDirectPatchApprovalMetadata {
   diffHash: string;
-  riskClass: "workspace_patch" | "dependency_patch";
+  riskClass: "workspace_patch" | "dependency_patch" | "scaffold_app_patch";
   dependencyImpact: {
     kind: "none" | "dependency_files_touched";
     files: string[];
   };
   riskSummary: string;
   canonicalSignature: string;
+  approvalGrant?: {
+    mode: "scoped_until_expiry";
+    scope: string;
+  };
 }
 
 interface CodexDirectPendingPatchPayload extends CodexDirectPatchApprovalMetadata {
@@ -2906,6 +2971,7 @@ type ActionEnvelopeWithPendingPatch = ActionEnvelope & {
 
 function codexDirectPatchApprovalMetadata(input: {
   cwd: string;
+  task: Task;
   filesTouched: string[];
   patch?: string;
   replacements?: {
@@ -2930,14 +2996,26 @@ function codexDirectPatchApprovalMetadata(input: {
         : ("dependency_files_touched" as const),
     files: dependencyFiles
   };
+  const scaffoldProfile = codexDirectTaskScaffoldProfile(input.task);
+  const scaffoldAppPatch =
+    dependencyFiles.length === 0 &&
+    scaffoldProfile !== undefined &&
+    sortedFiles.length > 0 &&
+    sortedFiles.every((file) =>
+      isScaffoldAppOwnedPatchPath(file, scaffoldProfile.appOwnedPaths)
+    );
   const riskClass =
-    dependencyFiles.length === 0
-      ? ("workspace_patch" as const)
-      : ("dependency_patch" as const);
+    dependencyFiles.length > 0
+      ? ("dependency_patch" as const)
+      : scaffoldAppPatch
+        ? ("scaffold_app_patch" as const)
+        : ("workspace_patch" as const);
   const riskSummary =
-    dependencyFiles.length === 0
-      ? `Patch touches ${sortedFiles.length} workspace file${sortedFiles.length === 1 ? "" : "s"} with no dependency file impact.`
-      : `Patch touches dependency files: ${dependencyFiles.join(", ")}.`;
+    dependencyFiles.length > 0
+      ? `Patch touches dependency files: ${dependencyFiles.join(", ")}.`
+      : scaffoldAppPatch
+        ? `Patch touches ${sortedFiles.length} app-owned scaffold file${sortedFiles.length === 1 ? "" : "s"} for ${scaffoldProfile.id}.`
+        : `Patch touches ${sortedFiles.length} workspace file${sortedFiles.length === 1 ? "" : "s"} with no dependency file impact.`;
   const canonicalSignature = sha256({
     actionType: "filesystem.patch",
     cwd: input.cwd,
@@ -2945,13 +3023,21 @@ function codexDirectPatchApprovalMetadata(input: {
     diffHash,
     riskClass
   });
+  const approvalGrant =
+    scaffoldAppPatch && scaffoldProfile !== undefined
+      ? {
+          mode: "scoped_until_expiry" as const,
+          scope: `task:${input.task.id}:scaffold:${scaffoldProfile.id}:app_owned_patch`
+        }
+      : undefined;
 
   return {
     diffHash,
     riskClass,
     dependencyImpact,
     riskSummary,
-    canonicalSignature
+    canonicalSignature,
+    ...(approvalGrant === undefined ? {} : { approvalGrant })
   };
 }
 
@@ -3217,7 +3303,11 @@ function parseCodexResponsesFunctionCallInputItem(
 function normalizePendingPatchRiskClass(
   value: string
 ): CodexDirectPatchApprovalMetadata["riskClass"] {
-  return value === "dependency_patch" ? "dependency_patch" : "workspace_patch";
+  if (value === "dependency_patch" || value === "scaffold_app_patch") {
+    return value;
+  }
+
+  return "workspace_patch";
 }
 
 function stringArray(value: unknown): string[] | undefined {

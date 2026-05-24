@@ -86,6 +86,14 @@ rules:
     decision: deny
     risk: critical
 
+  - id: require_approval_runstead_state_paths
+    when:
+      path:
+        matches_any:
+          - ".runstead/**"
+    decision: require_approval
+    risk: high
+
   - id: deny_destructive_shell
     when:
       action_type: shell.exec
@@ -101,14 +109,21 @@ rules:
   - id: allow_local_mvp_product_patch
     when:
       action_type: filesystem.patch
+      risk_class: scaffold_app_patch
       path:
         matches_any:
+          - "index.html"
+          - "styles.css"
+          - "app.js"
+          - "server.js"
+          - "scripts/*.js"
           - "src/**"
+          - "app/**"
+          - "components/**"
+          - "public/**"
           - "tests/**"
           - "test/**"
-          - "scripts/**"
           - "README.md"
-          - "index.html"
     decision: allow
     risk: medium
     obligations:

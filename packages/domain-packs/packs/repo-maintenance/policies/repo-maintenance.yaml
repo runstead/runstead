@@ -108,6 +108,38 @@ rules:
     decision: deny
     risk: critical
 
+  - id: require_approval_runstead_state_paths
+    when:
+      path:
+        matches_any:
+          - ".runstead/**"
+    decision: require_approval
+    risk: high
+
+  - id: allow_task_scoped_scaffold_app_patch
+    when:
+      action_type: filesystem.patch
+      risk_class: scaffold_app_patch
+      path:
+        matches_any:
+          - index.html
+          - styles.css
+          - app.js
+          - server.js
+          - scripts/*.js
+          - src/**
+          - app/**
+          - components/**
+          - public/**
+          - tests/**
+          - README.md
+    decision: allow
+    risk: medium
+    obligations:
+      - summarize_diff
+      - run_local_verifiers
+      - preserve_dependency_boundary
+
   - id: require_approval_dependency_change
     when:
       action_type:

@@ -80,16 +80,21 @@ export interface FindApprovedApprovalOptions {
   database: ReturnType<typeof openRunsteadDatabase>;
   actionId: string;
   canonicalSignature?: string;
+  approvalGrantScope?: string;
   now?: Date;
 }
 
-export type ApprovalGrantMatchKind = "action_id" | "canonical_signature";
+export type ApprovalGrantMatchKind =
+  | "action_id"
+  | "canonical_signature"
+  | "approval_grant_scope";
 
 export interface ApprovedApprovalGrant {
   approval: ApprovalRequest;
   match: ApprovalGrantMatchKind;
   approvedActionId: string;
   canonicalSignature?: string;
+  approvalGrantScope?: string;
   reuse: "single_use" | "scoped_until_expiry";
 }
 
@@ -366,7 +371,10 @@ export function findApprovedApprovalGrantForAction(
       reuse: grantMatch.reuse,
       ...(grantMatch.canonicalSignature === undefined
         ? {}
-        : { canonicalSignature: grantMatch.canonicalSignature })
+        : { canonicalSignature: grantMatch.canonicalSignature }),
+      ...(grantMatch.approvalGrantScope === undefined
+        ? {}
+        : { approvalGrantScope: grantMatch.approvalGrantScope })
     };
   }
 
@@ -729,6 +737,7 @@ function approvedApprovalGrantMatch(
   | {
       match: ApprovalGrantMatchKind;
       canonicalSignature?: string;
+      approvalGrantScope?: string;
       reuse: "single_use" | "scoped_until_expiry";
     }
   | undefined {
@@ -747,6 +756,20 @@ function approvedApprovalGrantMatch(
     return {
       match: "canonical_signature",
       canonicalSignature,
+      reuse
+    };
+  }
+
+  const approvalGrantScope = approvalActionGrantScope(row.action_json);
+
+  if (
+    reuse === "scoped_until_expiry" &&
+    options.approvalGrantScope !== undefined &&
+    approvalGrantScope === options.approvalGrantScope
+  ) {
+    return {
+      match: "approval_grant_scope",
+      approvalGrantScope,
       reuse
     };
   }
@@ -792,5 +815,23 @@ function approvalActionGrantReuse(
       : "single_use";
   } catch {
     return "single_use";
+  }
+}
+
+function approvalActionGrantScope(actionJson: string | null): string | undefined {
+  if (actionJson === null) {
+    return undefined;
+  }
+
+  try {
+    const action = JSON.parse(actionJson) as unknown;
+    const context = isRecord(action) && isRecord(action.context) ? action.context : {};
+    const approvalGrant = isRecord(context.approvalGrant)
+      ? context.approvalGrant
+      : {};
+
+    return typeof approvalGrant.scope === "string" ? approvalGrant.scope : undefined;
+  } catch {
+    return undefined;
   }
 }

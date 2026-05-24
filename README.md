@@ -81,7 +81,10 @@ commands, executes UI smoke when a dev server is available, writes launch and
 complete-check reports, and returns a target-aware verdict such as
 `local_launch_ready` or explicit blockers. `--app-template static-todo` is the
 built-in empty-repo scaffold profile for a local-first todo MVP; omit it for an
-existing app.
+existing app. That profile also declares app-owned files such as `index.html`,
+`styles.css`, `app.js`, `server.js`, and `scripts/*.js`, so `codex_direct` can
+classify safe scaffold patches without widening approval for dependencies,
+secrets, or `.runstead/**`.
 
 Use `--interactive` when the founder wants to supplement the generated context
 and measurement evidence before the run starts:
@@ -172,6 +175,11 @@ For an edit-heavy local MVP run, configure policy deliberately. Keep protected
 paths denied, keep dependency and external writes approval-gated, and allow
 ordinary workspace source edits only when the repo is trusted and verifier
 evidence is required afterward.
+
+In scaffolded startup runs, approved `codex_direct` patch grants can be scoped
+to the task's app-owned files. That reduces repeated approvals for the same MVP
+build loop while preserving stronger gates for dependency files and protected
+state.
 
 See [docs/codex-direct.md](docs/codex-direct.md) for architecture,
 [docs/worker-selection.md](docs/worker-selection.md) for when to use strict

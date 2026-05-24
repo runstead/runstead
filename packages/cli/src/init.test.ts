@@ -177,7 +177,8 @@ describe("initRunstead", () => {
           actionType: "filesystem.patch",
           context: {
             cwd: workspace,
-            filesTouched: ["src/index.ts", "tests/index.test.ts", "README.md"]
+            filesTouched: ["src/index.ts", "tests/index.test.ts", "README.md"],
+            riskClass: "scaffold_app_patch"
           }
         }
       });
@@ -188,7 +189,20 @@ describe("initRunstead", () => {
           actionType: "filesystem.patch",
           context: {
             cwd: workspace,
-            filesTouched: ["src/index.ts", "package.json"]
+            filesTouched: ["src/index.ts", "package.json"],
+            riskClass: "workspace_patch"
+          }
+        }
+      });
+      const runsteadStatePatch = evaluatePolicy({
+        policy,
+        action: {
+          actionId: "act_runstead_state_patch",
+          actionType: "filesystem.patch",
+          context: {
+            cwd: workspace,
+            filesTouched: [".runstead/config.json"],
+            riskClass: "workspace_patch"
           }
         }
       });
@@ -241,6 +255,11 @@ describe("initRunstead", () => {
         decision: "require_approval",
         risk: "high",
         ruleId: "require_approval_dependency_file_commit"
+      });
+      expect(runsteadStatePatch).toMatchObject({
+        decision: "require_approval",
+        risk: "high",
+        ruleId: "require_approval_runstead_state_paths"
       });
       expect(publish).toMatchObject({
         decision: "require_approval",

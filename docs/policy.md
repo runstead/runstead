@@ -37,6 +37,12 @@ trusted-local` is for trusted local workstations: it allows the built-in
 approval for dependency changes and publishing, and still denies protected
 paths.
 
+Policy rules can also match action metadata such as `risk_class`. `codex_direct`
+uses this for scaffold-aware MVP runs: a `filesystem.patch` is marked
+`scaffold_app_patch` only when every touched file is inside the task's
+app-owned scaffold paths. Trusted-local policy can allow that narrow class while
+dependency files, secrets, and `.runstead/**` remain approval-gated or denied.
+
 Some ad-hoc CLI helpers are still explicitly labeled unmanaged. They are useful
 for local diagnosis, but the product path is the governed runtime and CI repair
 orchestrator.

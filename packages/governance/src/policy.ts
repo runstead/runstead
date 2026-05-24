@@ -76,6 +76,7 @@ export interface PolicyRule {
 export interface PolicyCondition {
   actionType?: string | string[];
   resourceId?: string | string[];
+  riskClass?: string | string[];
   path?: PathMatcherCondition;
   command?: RegexMatcherCondition;
   sideEffects?: SideEffectsCondition;
@@ -104,6 +105,7 @@ export interface PolicyEvaluationResult {
   matchedPath?: string;
   matchedCommand?: string;
   matchedSideEffect?: string;
+  matchedRiskClass?: string;
 }
 
 export interface EvaluatePolicyOptions {
@@ -649,7 +651,10 @@ export function evaluatePolicy(options: EvaluatePolicyOptions): PolicyEvaluation
         : { matchedResourceId: match.resourceId }),
       ...(match.path === undefined ? {} : { matchedPath: match.path }),
       ...(match.command === undefined ? {} : { matchedCommand: match.command }),
-      ...(match.sideEffect === undefined ? {} : { matchedSideEffect: match.sideEffect })
+      ...(match.sideEffect === undefined ? {} : { matchedSideEffect: match.sideEffect }),
+      ...(match.riskClass === undefined
+        ? {}
+        : { matchedRiskClass: match.riskClass })
     };
   }
 
@@ -702,6 +707,7 @@ interface PolicyRuleMatch {
   path?: string;
   command?: string;
   sideEffect?: string;
+  riskClass?: string;
 }
 
 function matchPolicyRule(rule: PolicyRule, action: ActionEnvelope): PolicyRuleMatch {
@@ -712,6 +718,12 @@ function matchPolicyRule(rule: PolicyRule, action: ActionEnvelope): PolicyRuleMa
   const resourceIdMatch = matchResourceIdCondition(rule.when.resourceId, action);
 
   if (resourceIdMatch.required && !resourceIdMatch.matched) {
+    return { matched: false };
+  }
+
+  const riskClassMatch = matchRiskClassCondition(rule.when.riskClass, action);
+
+  if (riskClassMatch.required && !riskClassMatch.matched) {
     return { matched: false };
   }
 
@@ -738,6 +750,9 @@ function matchPolicyRule(rule: PolicyRule, action: ActionEnvelope): PolicyRuleMa
     ...(resourceIdMatch.resourceId === undefined
       ? {}
       : { resourceId: resourceIdMatch.resourceId }),
+    ...(riskClassMatch.riskClass === undefined
+      ? {}
+      : { riskClass: riskClassMatch.riskClass }),
     ...(pathMatch.path === undefined ? {} : { path: pathMatch.path }),
     ...(commandMatch.command === undefined ? {} : { command: commandMatch.command }),
     ...(sideEffectMatch.sideEffect === undefined
@@ -786,6 +801,38 @@ function matchResourceIdCondition(
         required: true,
         matched: true,
         resourceId
+      }
+    : {
+        required: true,
+        matched: false
+      };
+}
+
+function matchRiskClassCondition(
+  condition: string | string[] | undefined,
+  action: ActionEnvelope
+): { required: boolean; matched: boolean; riskClass?: string } {
+  if (condition === undefined) {
+    return {
+      required: false,
+      matched: true
+    };
+  }
+
+  const riskClass = action.context?.riskClass;
+
+  if (riskClass === undefined) {
+    return {
+      required: true,
+      matched: false
+    };
+  }
+
+  return matchesActionType(condition, riskClass)
+    ? {
+        required: true,
+        matched: true,
+        riskClass
       }
     : {
         required: true,

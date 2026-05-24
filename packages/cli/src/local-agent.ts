@@ -76,6 +76,7 @@ import {
   type WorkerProcessProgress,
   type WrappedWorkerRunResult
 } from "./wrapped-worker.js";
+import type { StartupScaffoldProfile } from "./startup-scaffold-profile.js";
 
 export const LOCAL_AGENT_TASK_TYPE = "local_agent_task";
 
@@ -102,6 +103,7 @@ export interface CreateLocalAgentTaskOptions {
   modelRequestTimeoutMs?: number;
   modelRequestHeartbeatMs?: number;
   finalizeOnBudget?: boolean;
+  scaffoldProfile?: StartupScaffoldProfile;
   gitDiffStaged?: boolean;
   gitDiffBase?: string;
   checkpoint?: boolean;
@@ -1288,6 +1290,21 @@ function localAgentTaskInput(input: {
     ...(input.options.finalizeOnBudget === undefined
       ? {}
       : { finalizeOnBudget: input.options.finalizeOnBudget }),
+    ...(input.options.scaffoldProfile === undefined
+      ? {}
+      : {
+          scaffoldProfile: {
+            id: input.options.scaffoldProfile.id,
+            title: input.options.scaffoldProfile.title,
+            ...(input.options.scaffoldProfile.template === undefined
+              ? {}
+              : { template: input.options.scaffoldProfile.template }),
+            ...(input.options.scaffoldProfile.appType === undefined
+              ? {}
+              : { appType: input.options.scaffoldProfile.appType }),
+            appOwnedPaths: input.options.scaffoldProfile.appOwnedPaths
+          }
+        }),
     ...(input.options.gitDiffStaged === undefined
       ? {}
       : { gitDiffStaged: input.options.gitDiffStaged }),

@@ -261,6 +261,9 @@ function formatPolicyProfileYaml(policy: PolicyProfile): string {
         ...(rule.when.actionType === undefined
           ? {}
           : { action_type: formatActionType(rule.when.actionType) }),
+        ...(rule.when.riskClass === undefined
+          ? {}
+          : { risk_class: formatActionType(rule.when.riskClass) }),
         ...(rule.when.path === undefined
           ? {}
           : { path: { matches_any: rule.when.path.matchesAny } }),

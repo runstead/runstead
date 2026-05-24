@@ -189,6 +189,14 @@ ${trustedLocalMvpPatchPolicyRuleYaml(profile)}
     decision: deny
     risk: critical
 
+  - id: require_approval_runstead_state_paths
+    when:
+      path:
+        matches_any:
+          - ".runstead/**"
+    decision: require_approval
+    risk: high
+
   - id: deny_destructive_shell
     when:
       action_type: shell.exec
@@ -353,13 +361,20 @@ function trustedLocalMvpPatchPolicyRuleYaml(profile: InitPolicyProfile): string 
   return `  - id: allow_trusted_local_mvp_workspace_patch
     when:
       action_type: filesystem.patch
+      risk_class: scaffold_app_patch
       path:
         matches_any:
+          - index.html
+          - styles.css
+          - app.js
+          - server.js
+          - scripts/*.js
           - src/**
+          - app/**
+          - components/**
+          - public/**
           - tests/**
           - README.md
-          - index.html
-          - scripts/**
     decision: allow
     risk: medium
     obligations:

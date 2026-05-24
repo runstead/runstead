@@ -17,7 +17,8 @@ describe("startup MVP policy", () => {
         actionId: "act_startup_product_patch",
         actionType: "filesystem.patch",
         context: {
-          filesTouched: ["src/app.ts", "tests/app.test.ts", "README.md"]
+          filesTouched: ["src/app.ts", "tests/app.test.ts", "README.md"],
+          riskClass: "scaffold_app_patch"
         }
       }
     });
@@ -27,7 +28,19 @@ describe("startup MVP policy", () => {
         actionId: "act_startup_dependency_patch",
         actionType: "filesystem.patch",
         context: {
-          filesTouched: ["src/app.ts", "package.json"]
+          filesTouched: ["src/app.ts", "package.json"],
+          riskClass: "workspace_patch"
+        }
+      }
+    });
+    const runsteadStatePatch = evaluatePolicy({
+      policy,
+      action: {
+        actionId: "act_startup_runstead_state_patch",
+        actionType: "filesystem.patch",
+        context: {
+          filesTouched: [".runstead/config.json"],
+          riskClass: "workspace_patch"
         }
       }
     });
@@ -49,6 +62,11 @@ describe("startup MVP policy", () => {
     expect(dependencyPatch).toMatchObject({
       decision: "require_approval",
       ruleId: "require_approval_for_dependency_patch"
+    });
+    expect(runsteadStatePatch).toMatchObject({
+      decision: "require_approval",
+      risk: "high",
+      ruleId: "require_approval_runstead_state_paths"
     });
     expect(push).toMatchObject({
       decision: "require_approval",

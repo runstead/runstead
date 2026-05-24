@@ -381,6 +381,137 @@ describe("runGovernedToolAction", () => {
     }
   });
 
+  it("reuses scoped approved grants for task-scoped patch batches", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-governed-scope-"));
+
+    try {
+      const initialized = await initRunstead({ cwd: workspace });
+      const task = await firstGeneratedTask(workspace);
+      const policy = await loadPolicyProfileFromFile(
+        join(initialized.root, "policies", "repo-maintenance.yaml")
+      );
+      const approvalGrantScope = `task:${task.id}:scaffold:static-todo:app_owned_patch`;
+      const firstAction = {
+        actionId: "act_scaffold_patch_first",
+        actionType: "filesystem.patch",
+        resource: {
+          type: "file",
+          path: "index.html"
+        },
+        context: {
+          filesTouched: ["index.html"],
+          riskClass: "workspace_patch",
+          approvalGrant: {
+            mode: "scoped_until_expiry" as const,
+            scope: approvalGrantScope
+          }
+        }
+      };
+      const secondAction = {
+        ...firstAction,
+        actionId: "act_scaffold_patch_second",
+        resource: {
+          type: "file",
+          path: "styles.css"
+        },
+        context: {
+          ...firstAction.context,
+          filesTouched: ["styles.css"]
+        }
+      };
+      let approvalId: string | undefined;
+
+      {
+        const database = openRunsteadDatabase(initialized.stateDb);
+
+        try {
+          const workerRun = startWorkerRun({
+            database,
+            task,
+            workerType: "test_worker",
+            enforcementLevel: "policy_enforced"
+          });
+
+          await expect(
+            runGovernedToolAction({
+              cwd: workspace,
+              stateDb: initialized.stateDb,
+              database,
+              policy,
+              task,
+              workerRun,
+              action: firstAction,
+              requestedBy: "test",
+              run: () => Promise.resolve({ value: "patched" })
+            })
+          ).rejects.toBeInstanceOf(ToolActionApprovalRequiredError);
+
+          const approval = database
+            .prepare("SELECT id FROM approvals WHERE action_id = ?")
+            .get(firstAction.actionId) as { id: string } | undefined;
+
+          approvalId = approval?.id;
+        } finally {
+          database.close();
+        }
+      }
+
+      if (approvalId === undefined) {
+        throw new Error("Expected approval id");
+      }
+
+      await decideApproval({
+        cwd: workspace,
+        id: approvalId,
+        decision: "approved",
+        decidedBy: "local-admin"
+      });
+
+      {
+        const database = openRunsteadDatabase(initialized.stateDb);
+
+        try {
+          const workerRun = startWorkerRun({
+            database,
+            task,
+            workerType: "test_worker",
+            enforcementLevel: "policy_enforced"
+          });
+          const result = await runGovernedToolAction({
+            cwd: workspace,
+            stateDb: initialized.stateDb,
+            database,
+            policy,
+            task,
+            workerRun,
+            action: secondAction,
+            requestedBy: "test",
+            run: () => Promise.resolve({ value: "patched" })
+          });
+
+          expect(result.value).toBe("patched");
+          expect(result.approval?.id).toBe(approvalId);
+          expect(result.toolCall.output).toMatchObject({
+            approvalId,
+            approvalGrant: "used",
+            approvalGrantMatch: "approval_grant_scope",
+            approvalGrantReuse: "scoped_until_expiry",
+            approvalGrantActionId: firstAction.actionId,
+            approvalGrantScope
+          });
+        } finally {
+          database.close();
+        }
+      }
+
+      expect(showApproval({ cwd: workspace, id: approvalId }).approval.status).toBe(
+        "approved"
+      );
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
   it("consumes approved grants before running approved actions", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "runstead-governed-failure-"));
 

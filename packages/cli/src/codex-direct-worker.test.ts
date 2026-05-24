@@ -746,6 +746,239 @@ describe("runCodexDirectWorker", () => {
     }
   });
 
+  it("allows scaffold-owned app patches without approving unrelated workspace writes", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-codex-scaffold-patch-"));
+
+    try {
+      await writeFile(join(workspace, "index.html"), "<h1>Before</h1>\n", "utf8");
+      await writeFile(join(workspace, "styles.css"), "body { color: black; }\n", "utf8");
+      const initialized = await initRunstead({
+        cwd: workspace,
+        createDefaultGoal: true
+      });
+      const database = openRunsteadDatabase(initialized.stateDb);
+
+      try {
+        const generatedTask = listTasks({ cwd: workspace }).tasks[0];
+
+        if (generatedTask === undefined) {
+          throw new Error("Expected generated task");
+        }
+
+        const task = {
+          ...generatedTask,
+          input: {
+            ...generatedTask.input,
+            scaffoldProfile: {
+              id: "static-todo",
+              title: "Static local-first todo app",
+              appOwnedPaths: [
+                "index.html",
+                "styles.css",
+                "app.js",
+                "server.js",
+                "scripts/*.js"
+              ]
+            }
+          }
+        };
+        const goal = showGoal({ cwd: workspace, id: task.goalId }).goal;
+        const transport = scriptedTransport([
+          {
+            outputText: "",
+            toolCalls: [
+              {
+                id: "call_apply_scaffold_patch",
+                name: "apply_patch",
+                arguments: JSON.stringify({
+                  replacements: [
+                    {
+                      path: "index.html",
+                      search: "Before",
+                      replace: "After"
+                    },
+                    {
+                      path: "styles.css",
+                      search: "black",
+                      replace: "rebeccapurple"
+                    }
+                  ]
+                })
+              }
+            ],
+            finishReason: "tool_calls",
+            outputItems: []
+          },
+          {
+            outputText: "Applied scaffold patch.",
+            toolCalls: [],
+            finishReason: "stop",
+            outputItems: []
+          }
+        ]);
+        const result = await runCodexDirectWorker({
+          cwd: workspace,
+          stateDb: initialized.stateDb,
+          database,
+          policy: scaffoldPatchPolicy,
+          goal,
+          task,
+          model: "fake-codex",
+          evidenceDir: join(initialized.root, "evidence"),
+          transport
+        });
+        const policyDecision = database
+          .prepare(
+            `
+            SELECT pd.rule_id, pd.action_json
+            FROM policy_decisions pd
+            JOIN tool_calls tc ON tc.policy_decision_id = pd.id
+            WHERE tc.action_type = ?
+          `
+          )
+          .get("filesystem.patch") as {
+          rule_id: string;
+          action_json: string;
+        };
+        const action = JSON.parse(policyDecision.action_json) as {
+          context: {
+            riskClass: string;
+            approvalGrant?: {
+              mode: string;
+              scope: string;
+            };
+            filesTouched: string[];
+          };
+        };
+
+        expect(result.status).toBe("completed");
+        await expect(readFile(join(workspace, "index.html"), "utf8")).resolves.toBe(
+          "<h1>After</h1>\n"
+        );
+        await expect(readFile(join(workspace, "styles.css"), "utf8")).resolves.toBe(
+          "body { color: rebeccapurple; }\n"
+        );
+        expect(policyDecision.rule_id).toBe("allow_task_scoped_scaffold_app_patch");
+        expect(action.context).toMatchObject({
+          riskClass: "scaffold_app_patch",
+          filesTouched: ["index.html", "styles.css"],
+          approvalGrant: {
+            mode: "scoped_until_expiry",
+            scope: `task:${task.id}:scaffold:static-todo:app_owned_patch`
+          }
+        });
+      } finally {
+        database.close();
+      }
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("keeps dependency patches outside scaffold-owned auto-approval", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-codex-scaffold-dep-"));
+
+    try {
+      await writeFile(join(workspace, "package.json"), "{\"name\":\"before\"}\n", "utf8");
+      const initialized = await initRunstead({
+        cwd: workspace,
+        createDefaultGoal: true
+      });
+      const database = openRunsteadDatabase(initialized.stateDb);
+
+      try {
+        const generatedTask = listTasks({ cwd: workspace }).tasks[0];
+
+        if (generatedTask === undefined) {
+          throw new Error("Expected generated task");
+        }
+
+        const task = {
+          ...generatedTask,
+          input: {
+            ...generatedTask.input,
+            scaffoldProfile: {
+              id: "static-todo",
+              appOwnedPaths: ["index.html", "styles.css", "app.js", "server.js"]
+            }
+          }
+        };
+        const goal = showGoal({ cwd: workspace, id: task.goalId }).goal;
+        const result = await runCodexDirectWorker({
+          cwd: workspace,
+          stateDb: initialized.stateDb,
+          database,
+          policy: scaffoldPatchPolicy,
+          goal,
+          task,
+          model: "fake-codex",
+          evidenceDir: join(initialized.root, "evidence"),
+          transport: scriptedTransport([
+            {
+              outputText: "",
+              toolCalls: [
+                {
+                  id: "call_apply_dependency_patch",
+                  name: "apply_patch",
+                  arguments: JSON.stringify({
+                    replacements: [
+                      {
+                        path: "package.json",
+                        search: "before",
+                        replace: "after"
+                      }
+                    ]
+                  })
+                }
+              ],
+              finishReason: "tool_calls",
+              outputItems: []
+            }
+          ])
+        });
+        const policyDecision = database
+          .prepare(
+            `
+            SELECT pd.rule_id, pd.action_json
+            FROM policy_decisions pd
+            JOIN tool_calls tc ON tc.policy_decision_id = pd.id
+            WHERE tc.action_type = ?
+          `
+          )
+          .get("filesystem.patch") as {
+          rule_id: string;
+          action_json: string;
+        };
+        const action = JSON.parse(policyDecision.action_json) as {
+          context: {
+            riskClass: string;
+            dependencyImpact: {
+              kind: string;
+              files: string[];
+            };
+          };
+        };
+
+        expect(result.status).toBe("waiting_approval");
+        expect(policyDecision.rule_id).toBe("require_approval_dependency_patch");
+        expect(action.context).toMatchObject({
+          riskClass: "dependency_patch",
+          dependencyImpact: {
+            kind: "dependency_files_touched",
+            files: ["package.json"]
+          }
+        });
+        await expect(readFile(join(workspace, "package.json"), "utf8")).resolves.toBe(
+          "{\"name\":\"before\"}\n"
+        );
+      } finally {
+        database.close();
+      }
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
   it("applies unified diffs through governed filesystem patch actions", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "runstead-codex-unified-patch-"));
 
@@ -2111,6 +2344,78 @@ const modelAllowedRepoMaintenancePolicy: PolicyProfile = {
       id: "allow_model_inference",
       when: {
         actionType: "model.inference.request"
+      },
+      decision: "allow",
+      risk: "medium"
+    }
+  ]
+};
+
+const scaffoldPatchPolicy: PolicyProfile = {
+  id: "scaffold_patch_policy_for_test",
+  version: 1,
+  defaultDecision: "require_approval",
+  defaultRisk: "medium",
+  rules: [
+    {
+      id: "allow_model_inference",
+      when: {
+        actionType: "model.inference.request"
+      },
+      decision: "allow",
+      risk: "medium"
+    },
+    {
+      id: "deny_secret_files",
+      when: {
+        path: {
+          matchesAny: [".env", ".env.*", "**/secrets/**", "infra/prod/**"]
+        }
+      },
+      decision: "deny",
+      risk: "critical"
+    },
+    {
+      id: "require_approval_runstead_state_paths",
+      when: {
+        path: {
+          matchesAny: [".runstead/**"]
+        }
+      },
+      decision: "require_approval",
+      risk: "high"
+    },
+    {
+      id: "require_approval_dependency_patch",
+      when: {
+        actionType: "filesystem.patch",
+        path: {
+          matchesAny: [
+            "package.json",
+            "package-lock.json",
+            "pnpm-lock.yaml",
+            "yarn.lock",
+            "bun.lockb"
+          ]
+        }
+      },
+      decision: "require_approval",
+      risk: "high"
+    },
+    {
+      id: "allow_task_scoped_scaffold_app_patch",
+      when: {
+        actionType: "filesystem.patch",
+        riskClass: "scaffold_app_patch",
+        path: {
+          matchesAny: [
+            "index.html",
+            "styles.css",
+            "app.js",
+            "server.js",
+            "scripts/*.js"
+          ]
+        }
       },
       decision: "allow",
       risk: "medium"

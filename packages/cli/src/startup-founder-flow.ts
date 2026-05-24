@@ -290,6 +290,7 @@ export async function startupBuildMvp(
       verifierCommands: await verifierCommands(cwd, options.now),
       maxTurns,
       ...(options.model === undefined ? {} : { model: options.model }),
+      ...(scaffoldProfile === undefined ? {} : { scaffoldProfile }),
       ...(options.now === undefined ? {} : { now: options.now })
     });
     const run = await runLocalAgentTask({
@@ -659,6 +660,7 @@ function startupScaffoldProfilePromptLines(
     `- title: ${profile.title}`,
     ...(profile.template === undefined ? [] : [`- app_template: ${profile.template}`]),
     ...(profile.appType === undefined ? [] : [`- app_type: ${profile.appType}`]),
+    `- app_owned_paths: ${profile.appOwnedPaths.join(", ")}`,
     ...profile.promptLines.map((line) => `- ${line}`)
   ];
 }

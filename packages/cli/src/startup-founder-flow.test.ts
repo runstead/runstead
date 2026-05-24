@@ -180,6 +180,9 @@ describe("startup founder flow", () => {
       expect(workerPrompt).toContain("Scaffold profile:");
       expect(workerPrompt).toContain("- app_template: static-todo");
       expect(workerPrompt).toContain("- app_type: local-first-web");
+      expect(workerPrompt).toContain(
+        "- app_owned_paths: index.html, styles.css, app.js, server.js, scripts/*.js"
+      );
       expect(workerPrompt).toContain("data-testid=new-todo-input");
       expect(workerPrompt).toContain("Persist todos in localStorage");
       expect(workerPrompt).toContain("Dependency approval policy: allow-listed.");
@@ -194,6 +197,33 @@ describe("startup founder flow", () => {
       expect(formatStartupBuildMvp(build)).toContain("Dependency policy: allow-listed");
       expect(build.status).toBe("completed");
       expect(build.verifierRun.status).toBe("completed");
+
+      const database = openRunsteadDatabase(join(workspace, ".runstead", "state.db"));
+
+      try {
+        const task = database
+          .prepare("SELECT input_json FROM tasks WHERE id = ?")
+          .get(build.localAgentTaskId) as { input_json: string } | undefined;
+        const input = JSON.parse(task?.input_json ?? "{}") as {
+          scaffoldProfile?: {
+            id?: string;
+            appOwnedPaths?: string[];
+          };
+        };
+
+        expect(input.scaffoldProfile).toMatchObject({
+          id: "static-todo",
+          appOwnedPaths: [
+            "index.html",
+            "styles.css",
+            "app.js",
+            "server.js",
+            "scripts/*.js"
+          ]
+        });
+      } finally {
+        database.close();
+      }
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }

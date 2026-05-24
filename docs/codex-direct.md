@@ -96,6 +96,14 @@ resource ids, while protected paths, dependency changes, publishing, and other
 external writes remain governed by their existing stricter rules. Existing
 workspaces should run `runstead upgrade` after provider allowlists change.
 
+For startup scaffold tasks, `apply_patch` also carries task-scoped metadata.
+The task input declares app-owned paths such as `index.html`, `styles.css`,
+`app.js`, `server.js`, and `scripts/*.js`. A patch is classified as
+`scaffold_app_patch` only when all touched files match those paths and none are
+protected, dependency, or Runstead state paths. Policies can allow that class or
+reuse a scoped approval grant for the same task, while unrelated workspace
+patches still fall back to normal approval behavior.
+
 ## Tool Loop
 
 The first tool set should stay small:

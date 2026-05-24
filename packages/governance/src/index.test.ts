@@ -108,4 +108,58 @@ describe("@runstead/governance", () => {
       matchedPath: ".env"
     });
   });
+
+  it("uses risk class as a policy input for scaffold-scoped patches", () => {
+    const policy = {
+      id: "policy_scaffold_patch_test",
+      version: 1,
+      defaultDecision: "require_approval" as const,
+      rules: [
+        {
+          id: "allow_scaffold_app_patch",
+          when: {
+            actionType: "filesystem.patch",
+            riskClass: "scaffold_app_patch",
+            path: {
+              matchesAny: ["index.html", "styles.css"]
+            }
+          },
+          decision: "allow" as const,
+          risk: "medium" as const
+        }
+      ]
+    };
+    const allowed = evaluatePolicy({
+      policy,
+      action: {
+        actionId: "act_scaffold_patch",
+        actionType: "filesystem.patch",
+        context: {
+          filesTouched: ["index.html"],
+          riskClass: "scaffold_app_patch"
+        }
+      }
+    });
+    const unclassified = evaluatePolicy({
+      policy,
+      action: {
+        actionId: "act_workspace_patch",
+        actionType: "filesystem.patch",
+        context: {
+          filesTouched: ["index.html"],
+          riskClass: "workspace_patch"
+        }
+      }
+    });
+
+    expect(allowed).toMatchObject({
+      decision: "allow",
+      ruleId: "allow_scaffold_app_patch",
+      matchedRiskClass: "scaffold_app_patch"
+    });
+    expect(unclassified).toMatchObject({
+      decision: "require_approval",
+      reason: "No policy rule matched"
+    });
+  });
 });
