@@ -1,4 +1,4 @@
-export const RUNSTEAD_SCHEMA_VERSION = 2;
+export const RUNSTEAD_SCHEMA_VERSION = 3;
 
 export const REQUIRED_STATE_TABLES = [
   "goals",
@@ -22,6 +22,7 @@ export const REQUIRED_STATE_INDEXES = [
   "idx_tasks_domain_status_updated",
   "idx_tasks_type_status_updated",
   "idx_tasks_status_updated",
+  "idx_tasks_status_lease",
   "idx_evidence_type_created",
   "idx_evidence_subject_type_created",
   "idx_policy_decisions_action_created",
@@ -33,7 +34,8 @@ export const REQUIRED_STATE_INDEXES = [
   "idx_tool_calls_worker_run_started",
   "idx_tool_calls_action_status_started",
   "idx_tool_calls_policy_decision",
-  "idx_worker_runs_task_status_started"
+  "idx_worker_runs_task_status_started",
+  "idx_worker_runs_status_lease"
 ];
 
 export interface RunsteadSchemaMigration {
@@ -249,6 +251,21 @@ CREATE INDEX IF NOT EXISTS idx_worker_runs_task_status_started
   ON worker_runs(task_id, status, started_at DESC, id ASC);
 `;
 
+export const stateExecutionLeasesSql = `
+ALTER TABLE tasks ADD COLUMN owner_id TEXT;
+ALTER TABLE tasks ADD COLUMN heartbeat_at TEXT;
+ALTER TABLE tasks ADD COLUMN lease_expires_at TEXT;
+ALTER TABLE worker_runs ADD COLUMN owner_id TEXT;
+ALTER TABLE worker_runs ADD COLUMN heartbeat_at TEXT;
+ALTER TABLE worker_runs ADD COLUMN lease_expires_at TEXT;
+
+CREATE INDEX IF NOT EXISTS idx_tasks_status_lease
+  ON tasks(status, lease_expires_at, updated_at DESC, id ASC);
+
+CREATE INDEX IF NOT EXISTS idx_worker_runs_status_lease
+  ON worker_runs(status, lease_expires_at, started_at DESC, id ASC);
+`;
+
 export const runsteadSchemaMigrations: RunsteadSchemaMigration[] = [
   {
     version: 1,
@@ -259,6 +276,11 @@ export const runsteadSchemaMigrations: RunsteadSchemaMigration[] = [
     version: 2,
     name: "state_query_indexes",
     sql: stateQueryIndexesSql
+  },
+  {
+    version: 3,
+    name: "state_execution_leases",
+    sql: stateExecutionLeasesSql
   }
 ];
 

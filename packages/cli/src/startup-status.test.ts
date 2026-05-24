@@ -2,11 +2,14 @@ import { mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sqlite";
 import { describe, expect, it } from "vitest";
 
+import { createGoal } from "./goals.js";
 import { addStartupEvidence } from "./startup-evidence.js";
 import { startupOnboard } from "./startup-founder-flow.js";
 import { formatStartupStatus, getStartupStatus } from "./startup-status.js";
+import { claimTask, showTask } from "./tasks.js";
 
 describe("startup status", () => {
   it("summarizes founder gates, evidence freshness, blockers, and next action", async () => {
@@ -110,6 +113,28 @@ describe("startup status", () => {
         )}\n`,
         "utf8"
       );
+      const database = openRunsteadDatabase(join(onboard.root, "state.db"));
+
+      try {
+        appendEventAndProject(database, {
+          event: {
+            eventId: "evt_startup_status_running_snapshot",
+            type: "startup_readiness.run_snapshot",
+            aggregateType: "startup_readiness_run",
+            aggregateId: "run_running",
+            payload: {
+              runId: "run_running",
+              target: "local",
+              status: "running",
+              verdict: "local_launch_blocked",
+              verdictBlockers: ["new run still in progress"]
+            },
+            createdAt: "2026-05-14T01:04:00.000Z"
+          }
+        });
+      } finally {
+        database.close();
+      }
 
       const status = await getStartupStatus({
         cwd: workspace,
@@ -125,6 +150,65 @@ describe("startup status", () => {
       expect(status.nextAction.reason).toContain("local_launch_ready");
       expect(formatted).toContain("Readiness verdict: local_launch_ready");
       expect(formatted).toContain("Top blockers:\n- none");
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("recovers stale running tasks before reporting status", async () => {
+    const workspace = join(tmpdir(), `runstead-startup-status-stale-${process.pid}`);
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await mkdir(workspace, { recursive: true });
+      await startupOnboard({
+        cwd: workspace,
+        now: new Date("2026-05-14T02:00:00.000Z")
+      });
+      const goal = await createGoal({
+        cwd: workspace,
+        domain: "repo-maintenance",
+        now: new Date("2026-05-14T02:01:00.000Z")
+      });
+      const task = goal.generatedTasks[0];
+
+      if (task === undefined) {
+        throw new Error("Expected createGoal to generate run_local_verifiers task");
+      }
+
+      claimTask({
+        cwd: workspace,
+        id: task.id,
+        now: new Date("2026-05-14T02:02:00.000Z")
+      });
+      const database = openRunsteadDatabase(goal.stateDb);
+
+      try {
+        database
+          .prepare("UPDATE tasks SET owner_id = ? WHERE id = ?")
+          .run("pid:999999999", task.id);
+      } finally {
+        database.close();
+      }
+
+      const status = await getStartupStatus({
+        cwd: workspace,
+        now: new Date("2026-05-14T02:40:00.000Z")
+      });
+      const stored = showTask({ cwd: workspace, id: task.id }).task;
+      const formatted = formatStartupStatus(status);
+
+      expect(status.execution.recoveredTasks).toMatchObject([
+        {
+          id: task.id,
+          previousStatus: "claimed",
+          status: "queued"
+        }
+      ]);
+      expect(status.execution.interruptedTasks).toEqual([]);
+      expect(stored.status).toBe("queued");
+      expect(formatted).toContain("Recovered stale tasks: 1");
+      expect(formatted).toContain("Active interrupted tasks: 0");
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }

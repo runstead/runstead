@@ -25,6 +25,8 @@ import {
 
 import type { RunsteadDatabase } from "./index.js";
 
+const EXECUTION_LEASE_MS = 30 * 60 * 1000;
+
 export type StateProjection =
   | { type: "goal"; value: Goal }
   | { type: "task"; value: Task }
@@ -198,6 +200,8 @@ function upsertGoal(database: RunsteadDatabase, goal: Goal): void {
 }
 
 function upsertTask(database: RunsteadDatabase, task: Task): void {
+  const lease = projectionExecutionLease(task.status, task.updatedAt);
+
   database
     .prepare(
       `
@@ -213,9 +217,12 @@ function upsertTask(database: RunsteadDatabase, task: Task): void {
         input_json,
         output_json,
         verifiers_json,
+        owner_id,
+        heartbeat_at,
+        lease_expires_at,
         created_at,
         updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         goal_id = excluded.goal_id,
         domain = excluded.domain,
@@ -227,6 +234,9 @@ function upsertTask(database: RunsteadDatabase, task: Task): void {
         input_json = excluded.input_json,
         output_json = excluded.output_json,
         verifiers_json = excluded.verifiers_json,
+        owner_id = excluded.owner_id,
+        heartbeat_at = excluded.heartbeat_at,
+        lease_expires_at = excluded.lease_expires_at,
         updated_at = excluded.updated_at
     `
     )
@@ -242,6 +252,9 @@ function upsertTask(database: RunsteadDatabase, task: Task): void {
       JSON.stringify(task.input),
       optionalJson(task.output),
       JSON.stringify(task.verifiers),
+      lease.ownerId,
+      lease.heartbeatAt,
+      lease.leaseExpiresAt,
       task.createdAt,
       task.updatedAt
     );
@@ -379,6 +392,8 @@ function upsertApproval(database: RunsteadDatabase, approval: ApprovalRequest): 
 }
 
 function upsertWorkerRun(database: RunsteadDatabase, workerRun: WorkerRun): void {
+  const lease = projectionExecutionLease(workerRun.status, workerRun.startedAt);
+
   database
     .prepare(
       `
@@ -389,16 +404,22 @@ function upsertWorkerRun(database: RunsteadDatabase, workerRun: WorkerRun): void
         status,
         enforcement_level,
         checkpoint_before,
+        owner_id,
+        heartbeat_at,
+        lease_expires_at,
         started_at,
         ended_at,
         output_json
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         task_id = excluded.task_id,
         worker_type = excluded.worker_type,
         status = excluded.status,
         enforcement_level = excluded.enforcement_level,
         checkpoint_before = excluded.checkpoint_before,
+        owner_id = excluded.owner_id,
+        heartbeat_at = excluded.heartbeat_at,
+        lease_expires_at = excluded.lease_expires_at,
         started_at = excluded.started_at,
         ended_at = excluded.ended_at,
         output_json = excluded.output_json
@@ -411,10 +432,37 @@ function upsertWorkerRun(database: RunsteadDatabase, workerRun: WorkerRun): void
       workerRun.status,
       workerRun.enforcementLevel,
       workerRun.checkpointBefore ?? null,
+      lease.ownerId,
+      lease.heartbeatAt,
+      lease.leaseExpiresAt,
       workerRun.startedAt,
       workerRun.endedAt ?? null,
       optionalJson(workerRun.output)
     );
+}
+
+function projectionExecutionLease(
+  status: string,
+  timestamp: string
+): { ownerId: string | null; heartbeatAt: string | null; leaseExpiresAt: string | null } {
+  if (status !== "claimed" && status !== "running") {
+    return {
+      ownerId: null,
+      heartbeatAt: null,
+      leaseExpiresAt: null
+    };
+  }
+
+  const parsed = Date.parse(timestamp);
+  const heartbeatAt = Number.isNaN(parsed)
+    ? new Date().toISOString()
+    : new Date(parsed).toISOString();
+
+  return {
+    ownerId: `pid:${process.pid}`,
+    heartbeatAt,
+    leaseExpiresAt: new Date(Date.parse(heartbeatAt) + EXECUTION_LEASE_MS).toISOString()
+  };
 }
 
 function upsertToolCall(database: RunsteadDatabase, toolCall: ToolCall): void {

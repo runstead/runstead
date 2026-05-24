@@ -68,7 +68,7 @@ describe("openRunsteadDatabase", () => {
 
       database.close();
 
-      expect(migrations).toHaveLength(2);
+      expect(migrations).toHaveLength(3);
       expect(migrations[0]).toMatchObject({
         version: 1,
         name: "initial_state_schema"
@@ -77,8 +77,13 @@ describe("openRunsteadDatabase", () => {
         version: 2,
         name: "state_query_indexes"
       });
+      expect(migrations[2]).toMatchObject({
+        version: 3,
+        name: "state_execution_leases"
+      });
       expect(migrations[0]?.checksum).toMatch(/^[a-f0-9]{64}$/);
       expect(migrations[1]?.checksum).toMatch(/^[a-f0-9]{64}$/);
+      expect(migrations[2]?.checksum).toMatch(/^[a-f0-9]{64}$/);
       expect(userVersion.user_version).toBe(RUNSTEAD_SCHEMA_VERSION);
     } finally {
       await rm(workspace, { force: true, recursive: true });
@@ -139,7 +144,9 @@ describe("openRunsteadDatabase", () => {
           "idx_approvals_status_updated",
           "idx_tool_calls_task_started",
           "idx_tool_calls_action_status_started",
-          "idx_worker_runs_task_status_started"
+          "idx_worker_runs_task_status_started",
+          "idx_tasks_status_lease",
+          "idx_worker_runs_status_lease"
         ])
       );
     } finally {
@@ -174,7 +181,7 @@ describe("openRunsteadDatabase", () => {
         "missing indexes: idx_events_type_created_id"
       );
       expect(formatRunsteadSchemaValidation(validation)).toContain(
-        "sqlite user_version 1, expected 2"
+        `sqlite user_version 1, expected ${RUNSTEAD_SCHEMA_VERSION}`
       );
     } finally {
       await rm(workspace, { force: true, recursive: true });
@@ -318,15 +325,30 @@ describe("appendEventAndProject", () => {
         .prepare("SELECT COUNT(*) AS count FROM events")
         .get() as { count: number };
       const task = database
-        .prepare("SELECT id, status FROM tasks WHERE id = ?")
-        .get("task_batch_001") as { id: string; status: string };
+        .prepare(
+          `
+          SELECT id, status, owner_id, heartbeat_at, lease_expires_at
+          FROM tasks
+          WHERE id = ?
+        `
+        )
+        .get("task_batch_001") as {
+        id: string;
+        status: string;
+        owner_id: string | null;
+        heartbeat_at: string | null;
+        lease_expires_at: string | null;
+      };
 
       database.close();
 
       expect(eventCount.count).toBe(2);
       expect(task).toEqual({
         id: "task_batch_001",
-        status: "queued"
+        status: "queued",
+        owner_id: null,
+        heartbeat_at: null,
+        lease_expires_at: null
       });
     } finally {
       await rm(workspace, { force: true, recursive: true });
@@ -651,7 +673,8 @@ describe("appendEventAndProject", () => {
       const workerRun = database
         .prepare(
           `
-          SELECT id, task_id, worker_type, status, enforcement_level, output_json
+          SELECT id, task_id, worker_type, status, enforcement_level, output_json,
+                 owner_id, heartbeat_at, lease_expires_at
           FROM worker_runs
           WHERE id = ?
         `
@@ -663,6 +686,9 @@ describe("appendEventAndProject", () => {
         status: string;
         enforcement_level: string;
         output_json: string | null;
+        owner_id: string | null;
+        heartbeat_at: string | null;
+        lease_expires_at: string | null;
       };
       const toolCall = database
         .prepare(
@@ -691,7 +717,10 @@ describe("appendEventAndProject", () => {
         worker_type: "shell_verifier",
         status: "running",
         enforcement_level: "policy_enforced",
-        output_json: null
+        output_json: null,
+        owner_id: expect.stringMatching(/^pid:\d+$/),
+        heartbeat_at: "2026-05-14T03:10:00.000Z",
+        lease_expires_at: "2026-05-14T03:40:00.000Z"
       });
       expect(toolCall).toEqual({
         id: "tc_001",

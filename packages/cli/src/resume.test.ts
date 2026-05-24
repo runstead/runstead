@@ -8,7 +8,11 @@ import { describe, expect, it } from "vitest";
 
 import { createGoal } from "./goals.js";
 import { initRunstead } from "./init.js";
-import { findInterruptedTasks, resumeInterruptedTasks } from "./resume.js";
+import {
+  findInterruptedTasks,
+  recoverStaleRunningTasks,
+  resumeInterruptedTasks
+} from "./resume.js";
 import { startToolCall, startWorkerRun } from "./runtime-audit.js";
 import { claimTask, showTask } from "./tasks.js";
 
@@ -47,6 +51,93 @@ describe("findInterruptedTasks", () => {
           reason: "claimed_or_running"
         }
       ]);
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("only recovers claimed tasks after their lease expires", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-resume-"));
+
+    try {
+      await initRunstead({ cwd: workspace });
+
+      const goal = await createGoal({
+        cwd: workspace,
+        domain: "repo-maintenance",
+        now: new Date("2026-05-14T07:05:00.000Z")
+      });
+      const task = goal.generatedTasks[0];
+
+      if (task === undefined) {
+        throw new Error("Expected createGoal to generate run_local_verifiers task");
+      }
+
+      claimTask({
+        cwd: workspace,
+        id: task.id,
+        now: new Date("2026-05-14T07:06:00.000Z")
+      });
+
+      expect(
+        findInterruptedTasks({
+          cwd: workspace,
+          onlyStale: true,
+          now: new Date("2026-05-14T07:20:00.000Z")
+        }).interruptedTasks
+      ).toEqual([]);
+      expect(
+        findInterruptedTasks({
+          cwd: workspace,
+          onlyStale: true,
+          now: new Date("2026-05-14T07:37:00.000Z")
+        }).interruptedTasks
+      ).toEqual([]);
+
+      const database = openRunsteadDatabase(goal.stateDb);
+
+      try {
+        database
+          .prepare("UPDATE tasks SET owner_id = ? WHERE id = ?")
+          .run("pid:999999999", task.id);
+      } finally {
+        database.close();
+      }
+
+      expect(
+        findInterruptedTasks({
+          cwd: workspace,
+          onlyStale: true,
+          now: new Date("2026-05-14T07:37:00.000Z")
+        }).interruptedTasks
+      ).toMatchObject([
+        {
+          task: {
+            id: task.id,
+            status: "claimed"
+          },
+          reason: "stale_lease"
+        }
+      ]);
+
+      const result = await recoverStaleRunningTasks({
+        cwd: workspace,
+        now: new Date("2026-05-14T07:37:00.000Z")
+      });
+      const stored = showTask({ cwd: workspace, id: task.id }).task;
+
+      expect(result.requeuedTasks).toMatchObject([
+        {
+          task: {
+            id: task.id,
+            status: "queued",
+            updatedAt: "2026-05-14T07:37:00.000Z"
+          },
+          previousStatus: "claimed"
+        }
+      ]);
+      expect(result.failedTasks).toEqual([]);
+      expect(stored.status).toBe("queued");
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }

@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 
 import { openRunsteadDatabase } from "@runstead/state-sqlite";
 
+import { findInterruptedTasks, recoverStaleRunningTasks } from "./resume.js";
 import { requireRunsteadStateDb } from "./runstead-root.js";
 import {
   checkStartupGate,
@@ -27,6 +28,7 @@ export interface StartupStatusResult {
   currentStage: StartupGateStage;
   gates: StartupStatusGate[];
   readiness?: StartupStatusReadinessVerdict;
+  execution: StartupStatusExecutionSummary;
   evidence: StartupStatusEvidenceSummary;
   nextAction: StartupStatusNextAction;
 }
@@ -37,6 +39,25 @@ export interface StartupStatusReadinessVerdict {
   verdict: string;
   blockers: string[];
   completedAt?: string;
+}
+
+export interface StartupStatusExecutionSummary {
+  recoveredTasks: StartupStatusRecoveredTask[];
+  interruptedTasks: StartupStatusInterruptedTask[];
+}
+
+export interface StartupStatusRecoveredTask {
+  id: string;
+  previousStatus: string;
+  status: string;
+}
+
+export interface StartupStatusInterruptedTask {
+  id: string;
+  status: string;
+  type: string;
+  updatedAt: string;
+  reason: string;
 }
 
 export interface StartupStatusGate {
@@ -101,8 +122,14 @@ export async function getStartupStatus(
 ): Promise<StartupStatusResult> {
   const cwd = resolve(options.cwd ?? process.cwd());
   const domain = options.domain ?? STARTUP_DOMAIN;
-  const generatedAt = (options.now ?? new Date()).toISOString();
+  const now = options.now ?? new Date();
+  const generatedAt = now.toISOString();
   const resolvedState = await requireRunsteadStateDb(cwd);
+  const recovered = await recoverStaleRunningTasks({
+    cwd,
+    now
+  });
+  const interrupted = findInterruptedTasks({ cwd });
   const gateResults: StartupGateCheckResult[] = [];
 
   for (const stage of STARTUP_STAGES) {
@@ -125,6 +152,7 @@ export async function getStartupStatus(
     root: resolvedState.root,
     stateDb: resolvedState.stateDb
   });
+  const execution = startupStatusExecutionSummary(recovered, interrupted);
   const gates: StartupStatusGate[] = gateResults.map((gate) => ({
     stage: gate.stage,
     status: gate.passed ? "passed" : "blocked",
@@ -140,6 +168,7 @@ export async function getStartupStatus(
     currentStage: currentStartupStage(gates, readiness),
     gates,
     ...(readiness === undefined ? {} : { readiness }),
+    execution,
     evidence,
     nextAction: nextStartupAction(gates, evidence, readiness)
   };
@@ -154,6 +183,8 @@ export function formatStartupStatus(result: StartupStatusResult): string {
     ...(result.readiness === undefined
       ? []
       : [`Readiness verdict: ${result.readiness.verdict} (${result.readiness.runId})`]),
+    `Recovered stale tasks: ${result.execution.recoveredTasks.length}`,
+    `Active interrupted tasks: ${result.execution.interruptedTasks.length}`,
     `Evidence: ${result.evidence.total} record${result.evidence.total === 1 ? "" : "s"}`,
     ...(result.evidence.latest === undefined
       ? []
@@ -175,6 +206,33 @@ export function formatStartupStatus(result: StartupStatusResult): string {
     "Top blockers:",
     listOrNone(topBlockers(result.gates, result.readiness), (blocker) => `- ${blocker}`)
   ].join("\n");
+}
+
+function startupStatusExecutionSummary(
+  recovered: Awaited<ReturnType<typeof recoverStaleRunningTasks>>,
+  interrupted: ReturnType<typeof findInterruptedTasks>
+): StartupStatusExecutionSummary {
+  return {
+    recoveredTasks: [
+      ...recovered.requeuedTasks.map((item) => ({
+        id: item.task.id,
+        previousStatus: item.previousStatus,
+        status: item.task.status
+      })),
+      ...recovered.failedTasks.map((item) => ({
+        id: item.task.id,
+        previousStatus: item.previousStatus,
+        status: item.task.status
+      }))
+    ],
+    interruptedTasks: interrupted.interruptedTasks.map((item) => ({
+      id: item.task.id,
+      status: item.task.status,
+      type: item.task.type,
+      updatedAt: item.task.updatedAt,
+      reason: item.reason
+    }))
+  };
 }
 
 function readStartupStatusEvidence(input: {

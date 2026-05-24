@@ -20,6 +20,8 @@ import {
 } from "./repo-inspection.js";
 import { requireRunsteadStateDbSync } from "./runstead-root.js";
 
+const EXECUTION_LEASE_MS = 30 * 60 * 1000;
+
 export interface ListTasksOptions {
   cwd?: string;
   goalId?: string;
@@ -356,11 +358,19 @@ export function claimTask(options: ClaimTaskOptions): ClaimTaskResult {
       .prepare(
         `
         UPDATE tasks
-        SET status = ?, updated_at = ?
+        SET status = ?, owner_id = ?, heartbeat_at = ?, lease_expires_at = ?, updated_at = ?
         WHERE id = ? AND status = ?
       `
       )
-      .run(task.status, task.updatedAt, task.id, current.status) as { changes: number };
+      .run(
+        task.status,
+        executionLeaseOwnerId(),
+        claimedAt,
+        executionLeaseExpiresAt(claimedAt),
+        task.updatedAt,
+        task.id,
+        current.status
+      ) as { changes: number };
 
     if (update.changes !== 1) {
       throw new Error(`Task ${options.id} could not be claimed atomically`);
@@ -430,6 +440,17 @@ export function blockTask(options: BlockTaskOptions): UpdateTaskResult {
     event,
     stateDb
   };
+}
+
+function executionLeaseOwnerId(): string {
+  return `pid:${process.pid}`;
+}
+
+function executionLeaseExpiresAt(heartbeatAt: string): string {
+  const parsed = Date.parse(heartbeatAt);
+  const heartbeatMs = Number.isNaN(parsed) ? Date.now() : parsed;
+
+  return new Date(heartbeatMs + EXECUTION_LEASE_MS).toISOString();
 }
 
 function resolveStateDb(cwd = process.cwd()): string {

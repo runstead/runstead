@@ -99,10 +99,31 @@ describe("task queries", () => {
         now: new Date("2026-05-14T03:11:00.000Z")
       });
       const stored = showTask({ cwd: workspace, id: task.id }).task;
+      const database = openRunsteadDatabase(goal.stateDb);
+      const lease = database
+        .prepare(
+          `
+          SELECT owner_id, heartbeat_at, lease_expires_at
+          FROM tasks
+          WHERE id = ?
+        `
+        )
+        .get(task.id) as {
+        owner_id: string;
+        heartbeat_at: string;
+        lease_expires_at: string;
+      };
+
+      database.close();
 
       expect(claimed.task.status).toBe("claimed");
       expect(claimed.task.updatedAt).toBe("2026-05-14T03:11:00.000Z");
       expect(stored.status).toBe("claimed");
+      expect(lease).toEqual({
+        owner_id: expect.stringMatching(/^pid:\d+$/),
+        heartbeat_at: "2026-05-14T03:11:00.000Z",
+        lease_expires_at: "2026-05-14T03:41:00.000Z"
+      });
       expect(claimed.event).toMatchObject({
         type: "task.claimed",
         aggregateType: "task",

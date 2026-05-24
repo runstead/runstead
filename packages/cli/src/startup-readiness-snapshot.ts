@@ -30,12 +30,16 @@ interface StartupReadinessSnapshotEventRow {
 export function readLatestStartupReadinessSnapshot(
   options: ReadLatestStartupReadinessSnapshotOptions
 ): StartupReadinessVerdictSnapshot | undefined {
-  const snapshots = [
+  const matchingSnapshots = [
     ...readStartupReadinessSnapshotEvents(options),
     ...readStartupReadinessSnapshotFiles(options)
   ]
-    .filter((snapshot) => snapshotMatchesTarget(snapshot, options))
-    .sort((left, right) =>
+    .filter((snapshot) => snapshotMatchesTarget(snapshot, options));
+  const completedSnapshots = matchingSnapshots.filter(startupReadinessRunCompleted);
+  const snapshots = (completedSnapshots.length === 0
+    ? matchingSnapshots
+    : completedSnapshots
+  ).sort((left, right) =>
       startupReadinessSnapshotTime(right).localeCompare(
         startupReadinessSnapshotTime(left)
       )
@@ -171,6 +175,12 @@ function startupReadinessSnapshotTime(
   snapshot: StartupReadinessVerdictSnapshot
 ): string {
   return snapshot.completedAt ?? snapshot.createdAt ?? "";
+}
+
+function startupReadinessRunCompleted(
+  snapshot: StartupReadinessVerdictSnapshot
+): boolean {
+  return snapshot.completedAt !== undefined || snapshot.status === "completed";
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

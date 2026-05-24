@@ -15,6 +15,7 @@ import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sql
 
 import { collectRepoInspection } from "./inspection-evidence.js";
 import type { LocalAgentWorkerKind } from "./local-agent.js";
+import { recoverStaleRunningTasks } from "./resume.js";
 import { requireRunsteadStateDb, resolveRunsteadRoot } from "./runstead-root.js";
 import { generateStartupCiSummary } from "./startup-ci-integration.js";
 import { detectStartupDevServerCommand } from "./startup-dev-server.js";
@@ -382,6 +383,8 @@ export async function planStartupReady(
 export async function runStartupReady(
   options: StartupReadyOptions = {}
 ): Promise<RunStartupReadyResult> {
+  await recoverStartupReadyStaleTasks(options);
+
   const resumed =
     options.resumeRunId === undefined
       ? undefined
@@ -476,6 +479,30 @@ export async function runStartupReady(
     ...finalPersisted,
     plan
   };
+}
+
+async function recoverStartupReadyStaleTasks(
+  options: StartupReadyOptions = {}
+): Promise<void> {
+  try {
+    await recoverStaleRunningTasks({
+      cwd: resolve(options.cwd ?? process.cwd()),
+      ...(options.now === undefined ? {} : { now: options.now })
+    });
+  } catch (error) {
+    if (!isMissingRunsteadStateError(error)) {
+      throw error;
+    }
+  }
+}
+
+function isMissingRunsteadStateError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+
+  return (
+    message.includes("Runstead is not initialized") ||
+    message.includes("Runstead state database is missing")
+  );
 }
 
 export async function createStartupReadinessRun(
