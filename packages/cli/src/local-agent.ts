@@ -942,10 +942,7 @@ function formatLocalAgentWorkerResultLines(
       `Failed tool calls: ${workerResult.failedToolCalls}`,
       ...(workerResult.interruption === undefined
         ? []
-        : [
-            `Interruption: ${workerResult.interruption.reason} after ${workerResult.interruption.timeoutMs}ms`,
-            `Retry: ${workerResult.interruption.retryCommand}`
-          ])
+        : formatCodexDirectInterruptionLines(workerResult.interruption))
     ];
   }
 
@@ -961,6 +958,22 @@ function formatLocalAgentWorkerResultLines(
     `Output valid: ${workerResult.outputValidation.valid ? "yes" : "no"}`,
     `Stdout: ${Buffer.byteLength(workerResult.stdout, "utf8")} bytes`,
     `Stderr: ${Buffer.byteLength(workerResult.stderr, "utf8")} bytes`
+  ];
+}
+
+function formatCodexDirectInterruptionLines(
+  interruption: NonNullable<CodexDirectWorkerResult["interruption"]>
+): string[] {
+  if (interruption.reason === "model_timeout") {
+    return [
+      `Interruption: ${interruption.reason} after ${interruption.timeoutMs}ms`,
+      `Retry: ${interruption.retryCommand}`
+    ];
+  }
+
+  return [
+    `Interruption: ${interruption.reason} after ${interruption.attempts} attempts`,
+    `Retry: ${interruption.retryCommand}`
   ];
 }
 

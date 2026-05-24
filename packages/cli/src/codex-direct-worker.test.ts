@@ -14,6 +14,8 @@ import {
   type CodexDirectTransport
 } from "./codex-direct-worker.js";
 import type { CodexResponsesRequest } from "./codex-responses-transport.js";
+import { exportAuditLog } from "./audit-export.js";
+import { buildDashboard } from "./dashboard.js";
 import { showGoal } from "./goals.js";
 import { initRunstead } from "./init.js";
 import type { PolicyProfile } from "./policy.js";
@@ -1975,6 +1977,16 @@ describe("runCodexDirectWorker", () => {
           maxToolCalls: 1,
           finalizeOnBudget: true
         });
+        const modelOutputs = database
+          .prepare(
+            `
+            SELECT output_json
+            FROM tool_calls
+            WHERE action_type = 'model.inference.request'
+            ORDER BY id ASC
+            `
+          )
+          .all() as { output_json: string }[];
 
         expect(result.status).toBe("completed");
         expect(result.exitCode).toBe(0);
@@ -1985,6 +1997,16 @@ describe("runCodexDirectWorker", () => {
         expect(result.budget?.reason).toBe("tool_calls");
         expect(transport.requests).toHaveLength(3);
         expect(transport.requests[2]?.tools).toBeUndefined();
+        expect(
+          modelOutputs
+            .map((row) => JSON.parse(row.output_json) as { phase?: string })
+            .filter((output) => output.phase === "conversation")
+        ).toHaveLength(2);
+        expect(
+          modelOutputs
+            .map((row) => JSON.parse(row.output_json) as { phase?: string })
+            .filter((output) => output.phase === "final_summary")
+        ).toHaveLength(1);
       } finally {
         database.close();
       }
@@ -2261,6 +2283,199 @@ describe("runCodexDirectWorker", () => {
         expect(modelToolCall.status).toBe("failed");
         expect(toolOutput.error).toContain("interrupted:model_timeout");
         expect(heartbeatCount.count).toBeGreaterThan(0);
+      } finally {
+        database.close();
+      }
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("retries transient model request failures with audit and dashboard events", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-codex-retry-"));
+
+    try {
+      const initialized = await initRunstead({
+        cwd: workspace,
+        createDefaultGoal: true
+      });
+      const database = openRunsteadDatabase(initialized.stateDb);
+
+      try {
+        const task = listTasks({ cwd: workspace }).tasks[0];
+
+        if (task === undefined) {
+          throw new Error("Expected generated task");
+        }
+
+        const goal = showGoal({ cwd: workspace, id: task.goalId }).goal;
+        const transport = delayedTransientFailureTransport({
+          delayMs: 15,
+          response: {
+            outputText: "retry recovered",
+            toolCalls: [],
+            finishReason: "stop",
+            outputItems: []
+          }
+        });
+        const result = await runCodexDirectWorker({
+          cwd: workspace,
+          stateDb: initialized.stateDb,
+          database,
+          policy: allowDirectToolsPolicy,
+          goal,
+          task,
+          model: "fake-codex",
+          evidenceDir: join(initialized.root, "evidence"),
+          transport,
+          modelRequestTimeoutMs: 200,
+          modelRequestHeartbeatMs: 5,
+          modelRequestRetryBaseDelayMs: 1,
+          modelRequestRetryMaxDelayMs: 1,
+          modelRequestRetryJitterMs: 0
+        });
+        const retryRows = database
+          .prepare(
+            `
+            SELECT payload_json
+            FROM events
+            WHERE type = 'model_request.retry'
+            ORDER BY id ASC
+            `
+          )
+          .all() as { payload_json: string }[];
+        const heartbeatCount = database
+          .prepare("SELECT COUNT(*) AS count FROM events WHERE type = ?")
+          .get("worker_run.heartbeat") as { count: number };
+        const modelToolCall = database
+          .prepare(
+            `
+            SELECT output_json
+            FROM tool_calls
+            WHERE action_type = 'model.inference.request'
+            `
+          )
+          .get() as { output_json: string };
+        const modelOutput = JSON.parse(modelToolCall.output_json) as {
+          phase?: string;
+          attempts?: number;
+          retryCount?: number;
+        };
+        const auditLog = await exportAuditLog({
+          cwd: workspace,
+          types: ["model_request.retry"]
+        });
+        const dashboard = await buildDashboard({ cwd: workspace });
+
+        expect(result).toMatchObject({
+          status: "completed",
+          summary: "retry recovered"
+        });
+        expect(transport.requests).toHaveLength(2);
+        expect(retryRows).toHaveLength(1);
+        expect(JSON.parse(retryRows[0]?.payload_json ?? "{}")).toMatchObject({
+          phase: "conversation",
+          attempt: 1,
+          nextAttempt: 2,
+          maxRetries: 2,
+          delayMs: 1,
+          reason: "fetch failed"
+        });
+        expect(heartbeatCount.count).toBeGreaterThan(1);
+        expect(modelOutput).toMatchObject({
+          phase: "conversation",
+          attempts: 2,
+          retryCount: 1
+        });
+        expect(auditLog.entries.map((entry) => entry.type)).toEqual([
+          "model_request.retry"
+        ]);
+        expect(dashboard.snapshot.events.some((event) => event.type === "model_request.retry"))
+          .toBe(true);
+      } finally {
+        database.close();
+      }
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("returns structured retry diagnostics after transient retry exhaustion", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-codex-retry-exhausted-"));
+
+    try {
+      const initialized = await initRunstead({
+        cwd: workspace,
+        createDefaultGoal: true
+      });
+      const database = openRunsteadDatabase(initialized.stateDb);
+
+      try {
+        const task = listTasks({ cwd: workspace }).tasks[0];
+
+        if (task === undefined) {
+          throw new Error("Expected generated task");
+        }
+
+        const goal = showGoal({ cwd: workspace, id: task.goalId }).goal;
+        const transport = scriptedTransportWithFailures([
+          new Error("fetch failed"),
+          new Error("ECONNRESET"),
+          new Error("fetch failed")
+        ]);
+        const result = await runCodexDirectWorker({
+          cwd: workspace,
+          stateDb: initialized.stateDb,
+          database,
+          policy: allowDirectToolsPolicy,
+          goal,
+          task,
+          model: "fake-codex",
+          evidenceDir: join(initialized.root, "evidence"),
+          transport,
+          modelRequestRetryBaseDelayMs: 1,
+          modelRequestRetryMaxDelayMs: 1,
+          modelRequestRetryJitterMs: 0
+        });
+        const retryCount = database
+          .prepare("SELECT COUNT(*) AS count FROM events WHERE type = ?")
+          .get("model_request.retry") as { count: number };
+        const workerRun = database
+          .prepare(
+            `
+            SELECT output_json
+            FROM worker_runs
+            WHERE worker_type = ?
+            `
+          )
+          .get(CODEX_DIRECT_WORKER_KIND) as { output_json: string };
+        const workerOutput = JSON.parse(workerRun.output_json) as {
+          interruption?: unknown;
+        };
+
+        expect(result).toMatchObject({
+          status: "failed",
+          execution: {
+            agentCompletion: "failed"
+          },
+          interruption: {
+            reason: "model_request_retries_exhausted",
+            phase: "conversation",
+            attempts: 3,
+            maxRetries: 2,
+            lastError: "fetch failed"
+          }
+        });
+        expect(result.warnings).toEqual(
+          expect.arrayContaining([
+            expect.stringContaining("retry budget exhausted")
+          ])
+        );
+        expect(retryCount.count).toBe(2);
+        expect(workerOutput.interruption).toMatchObject({
+          reason: "model_request_retries_exhausted",
+          attempts: 3
+        });
       } finally {
         database.close();
       }
@@ -2568,6 +2783,28 @@ function scriptedTransportWithFailures(
       }
 
       return step instanceof Error ? Promise.reject(step) : Promise.resolve(step);
+    }
+  };
+}
+
+function delayedTransientFailureTransport(input: {
+  delayMs: number;
+  response: Awaited<ReturnType<CodexDirectTransport["createResponse"]>>;
+}): CodexDirectTransport & { requests: CodexResponsesRequest[] } {
+  const requests: CodexResponsesRequest[] = [];
+
+  return {
+    requests,
+    createResponse(request) {
+      requests.push(request);
+
+      if (requests.length === 1) {
+        return new Promise((_resolve, reject) => {
+          setTimeout(() => reject(new Error("fetch failed")), input.delayMs);
+        });
+      }
+
+      return Promise.resolve(input.response);
     }
   };
 }

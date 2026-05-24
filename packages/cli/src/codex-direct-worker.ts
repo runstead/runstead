@@ -69,7 +69,12 @@ import { runShellCommand, type ShellCommandResult } from "./shell-executor.js";
 export const CODEX_DIRECT_WORKER_KIND = "codex_direct";
 export const DEFAULT_CODEX_DIRECT_MAX_TURNS = 12;
 export const DEFAULT_CODEX_DIRECT_MODEL_REQUEST_TIMEOUT_MS = 10 * 60 * 1000;
+export const DEFAULT_CODEX_DIRECT_FINAL_SUMMARY_REQUEST_TIMEOUT_MS = 2 * 60 * 1000;
 export const DEFAULT_CODEX_DIRECT_MODEL_REQUEST_HEARTBEAT_MS = 15 * 1000;
+export const DEFAULT_CODEX_DIRECT_MODEL_REQUEST_MAX_RETRIES = 2;
+export const DEFAULT_CODEX_DIRECT_MODEL_REQUEST_RETRY_BASE_DELAY_MS = 500;
+export const DEFAULT_CODEX_DIRECT_MODEL_REQUEST_RETRY_MAX_DELAY_MS = 5 * 1000;
+export const DEFAULT_CODEX_DIRECT_MODEL_REQUEST_RETRY_JITTER_MS = 250;
 const EXECUTION_LEASE_MS = 30 * 60 * 1000;
 const DEPENDENCY_FILE_NAMES = new Set([
   "package.json",
@@ -98,7 +103,12 @@ export interface CodexDirectWorkerOptions {
   maxToolCalls?: number;
   maxFailedToolCalls?: number;
   modelRequestTimeoutMs?: number;
+  modelFinalSummaryRequestTimeoutMs?: number;
   modelRequestHeartbeatMs?: number;
+  modelRequestMaxRetries?: number;
+  modelRequestRetryBaseDelayMs?: number;
+  modelRequestRetryMaxDelayMs?: number;
+  modelRequestRetryJitterMs?: number;
   finalizeOnBudget?: boolean;
   now?: Date;
 }
@@ -169,13 +179,28 @@ export interface CodexDirectBudgetSummary {
   failedToolCalls: number;
 }
 
-export interface CodexDirectInterruptionSummary {
+export type CodexDirectInterruptionSummary =
+  | CodexDirectModelTimeoutInterruptionSummary
+  | CodexDirectModelRetryExhaustedInterruptionSummary;
+
+export interface CodexDirectModelTimeoutInterruptionSummary {
   reason: "model_timeout";
   timeoutMs: number;
   elapsedMs: number;
   heartbeatCount: number;
   retryCommand: string;
 }
+
+export interface CodexDirectModelRetryExhaustedInterruptionSummary {
+  reason: "model_request_retries_exhausted";
+  phase: CodexDirectModelRequestPhase;
+  attempts: number;
+  maxRetries: number;
+  lastError: string;
+  retryCommand: string;
+}
+
+export type CodexDirectModelRequestPhase = "conversation" | "final_summary";
 
 type CodexDirectToolName =
   | "list_files"
@@ -426,6 +451,24 @@ async function runCodexDirectConversation(input: {
           "Codex Direct model request timed out; the task is recoverable with runstead resume."
         ]),
         interruption: modelTimeoutInterruption(input.options, error)
+      });
+    }
+
+    if (error instanceof CodexDirectModelRetryExhaustedError) {
+      return completedWorkerResult({
+        options: input.options,
+        workerRun: input.workerRun,
+        status: "failed",
+        exitCode: 1,
+        summary: error.message,
+        toolCalls: executedToolCalls,
+        failedToolCalls,
+        verification: verification(),
+        ...codexDirectWarningOptions([
+          ...(input.warnings ?? []),
+          "Codex Direct model request retry budget exhausted; the task is recoverable with runstead resume."
+        ]),
+        interruption: modelRetryExhaustedInterruption(input.options, error)
       });
     }
 
@@ -692,8 +735,11 @@ async function runGovernedModelInference(
   options: CodexDirectWorkerOptions & {
     workerRun: WorkerRun;
     request: CodexResponsesRequest;
+    phase?: CodexDirectModelRequestPhase;
   }
 ): Promise<CodexResponsesResult> {
+  const phase = options.phase ?? "conversation";
+
   return runGovernedToolAction({
     ...governedToolOptions(options),
     action: modelInferenceAction({
@@ -711,12 +757,23 @@ async function runGovernedModelInference(
         database: options.database,
         task: options.task,
         workerRun: options.workerRun,
-        timeoutMs:
-          options.modelRequestTimeoutMs ??
-          DEFAULT_CODEX_DIRECT_MODEL_REQUEST_TIMEOUT_MS,
+        phase,
+        timeoutMs: modelRequestTimeoutMs(options, phase),
         heartbeatMs:
           options.modelRequestHeartbeatMs ??
           DEFAULT_CODEX_DIRECT_MODEL_REQUEST_HEARTBEAT_MS,
+        maxRetries:
+          options.modelRequestMaxRetries ??
+          DEFAULT_CODEX_DIRECT_MODEL_REQUEST_MAX_RETRIES,
+        retryBaseDelayMs:
+          options.modelRequestRetryBaseDelayMs ??
+          DEFAULT_CODEX_DIRECT_MODEL_REQUEST_RETRY_BASE_DELAY_MS,
+        retryMaxDelayMs:
+          options.modelRequestRetryMaxDelayMs ??
+          DEFAULT_CODEX_DIRECT_MODEL_REQUEST_RETRY_MAX_DELAY_MS,
+        retryJitterMs:
+          options.modelRequestRetryJitterMs ??
+          DEFAULT_CODEX_DIRECT_MODEL_REQUEST_RETRY_JITTER_MS,
         request: () => options.transport.createResponse(options.request)
       });
       const value = modelRequest.value;
@@ -727,8 +784,11 @@ async function runGovernedModelInference(
           model: options.model,
           status: value.status ?? "unknown",
           finishReason: value.finishReason,
+          phase,
           elapsedMs: modelRequest.elapsedMs,
           heartbeatCount: modelRequest.heartbeatCount,
+          attempts: modelRequest.attempts,
+          retryCount: modelRequest.retryCount,
           toolCalls: value.toolCalls.length,
           outputTextBytes: Buffer.byteLength(value.outputText, "utf8")
         }
@@ -737,22 +797,45 @@ async function runGovernedModelInference(
   }).then((result) => result.value);
 }
 
+function modelRequestTimeoutMs(
+  options: CodexDirectWorkerOptions,
+  phase: CodexDirectModelRequestPhase
+): number {
+  const defaultTimeout =
+    phase === "final_summary"
+      ? DEFAULT_CODEX_DIRECT_FINAL_SUMMARY_REQUEST_TIMEOUT_MS
+      : DEFAULT_CODEX_DIRECT_MODEL_REQUEST_TIMEOUT_MS;
+  const configured =
+    phase === "final_summary"
+      ? options.modelFinalSummaryRequestTimeoutMs ?? options.modelRequestTimeoutMs
+      : options.modelRequestTimeoutMs;
+
+  return configured ?? defaultTimeout;
+}
+
 async function runModelRequestWithHeartbeat(input: {
   database: RunsteadDatabase;
   task: Task;
   workerRun: WorkerRun;
+  phase: CodexDirectModelRequestPhase;
   timeoutMs: number;
   heartbeatMs: number;
+  maxRetries: number;
+  retryBaseDelayMs: number;
+  retryMaxDelayMs: number;
+  retryJitterMs: number;
   request: () => Promise<CodexResponsesResult>;
 }): Promise<{
   value: CodexResponsesResult;
   elapsedMs: number;
   heartbeatCount: number;
+  attempts: number;
+  retryCount: number;
 }> {
   const startedAt = Date.now();
+  let attempts = 0;
+  let retryCount = 0;
   let heartbeatCount = 0;
-  let timeout: ReturnType<typeof setTimeout> | undefined;
-  let heartbeat: ReturnType<typeof setInterval> | undefined;
 
   const recordHeartbeat = (stage: "started" | "waiting"): void => {
     heartbeatCount += 1;
@@ -762,20 +845,94 @@ async function runModelRequestWithHeartbeat(input: {
       workerRun: input.workerRun,
       sequence: heartbeatCount,
       stage,
+      phase: input.phase,
       elapsedMs: Date.now() - startedAt,
       timeoutMs: input.timeoutMs
     });
   };
 
-  recordHeartbeat("started");
+  while (true) {
+    attempts += 1;
+
+    try {
+      const value = await runSingleModelRequestWithHeartbeat({
+        timeoutMs: input.timeoutMs,
+        heartbeatMs: input.heartbeatMs,
+        request: input.request,
+        recordHeartbeat,
+        currentElapsedMs: () => Date.now() - startedAt,
+        heartbeatCount: () => heartbeatCount
+      });
+
+      return {
+        value,
+        elapsedMs: Date.now() - startedAt,
+        heartbeatCount,
+        attempts,
+        retryCount
+      };
+    } catch (error) {
+      if (
+        attempts > input.maxRetries ||
+        !isTransientModelRequestError(error)
+      ) {
+        if (retryCount > 0 && isTransientModelRequestError(error)) {
+          throw new CodexDirectModelRetryExhaustedError({
+            phase: input.phase,
+            attempts,
+            maxRetries: input.maxRetries,
+            lastError: errorMessage(error)
+          });
+        }
+
+        throw error;
+      }
+
+      retryCount += 1;
+      const delayMs = modelRequestRetryDelayMs({
+        retryCount,
+        baseDelayMs: input.retryBaseDelayMs,
+        maxDelayMs: input.retryMaxDelayMs,
+        jitterMs: input.retryJitterMs
+      });
+
+      recordModelRequestRetry({
+        database: input.database,
+        task: input.task,
+        workerRun: input.workerRun,
+        phase: input.phase,
+        attempt: attempts,
+        nextAttempt: attempts + 1,
+        maxRetries: input.maxRetries,
+        reason: errorMessage(error),
+        delayMs,
+        elapsedMs: Date.now() - startedAt
+      });
+      await sleep(delayMs);
+    }
+  }
+}
+
+async function runSingleModelRequestWithHeartbeat(input: {
+  timeoutMs: number;
+  heartbeatMs: number;
+  request: () => Promise<CodexResponsesResult>;
+  recordHeartbeat: (stage: "started" | "waiting") => void;
+  currentElapsedMs: () => number;
+  heartbeatCount: () => number;
+}): Promise<CodexResponsesResult> {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  let heartbeat: ReturnType<typeof setInterval> | undefined;
+
+  input.recordHeartbeat("started");
 
   const timeoutPromise = new Promise<never>((_resolve, reject) => {
     timeout = setTimeout(() => {
       reject(
         new CodexDirectModelTimeoutError({
           timeoutMs: input.timeoutMs,
-          elapsedMs: Date.now() - startedAt,
-          heartbeatCount
+          elapsedMs: input.currentElapsedMs(),
+          heartbeatCount: input.heartbeatCount()
         })
       );
     }, input.timeoutMs);
@@ -784,19 +941,13 @@ async function runModelRequestWithHeartbeat(input: {
 
   if (input.heartbeatMs > 0) {
     heartbeat = setInterval(() => {
-      recordHeartbeat("waiting");
+      input.recordHeartbeat("waiting");
     }, input.heartbeatMs);
     heartbeat.unref?.();
   }
 
   try {
-    const value = await Promise.race([input.request(), timeoutPromise]);
-
-    return {
-      value,
-      elapsedMs: Date.now() - startedAt,
-      heartbeatCount
-    };
+    return await Promise.race([input.request(), timeoutPromise]);
   } finally {
     if (timeout !== undefined) {
       clearTimeout(timeout);
@@ -813,6 +964,7 @@ function recordModelRequestHeartbeat(input: {
   workerRun: WorkerRun;
   sequence: number;
   stage: "started" | "waiting";
+  phase: CodexDirectModelRequestPhase;
   elapsedMs: number;
   timeoutMs: number;
 }): void {
@@ -829,6 +981,7 @@ function recordModelRequestHeartbeat(input: {
         workerRunId: input.workerRun.id,
         taskId: input.task.id,
         phase: "model_inference_request",
+        requestPhase: input.phase,
         stage: input.stage,
         sequence: input.sequence,
         elapsedMs: input.elapsedMs,
@@ -857,6 +1010,94 @@ function recordModelRequestHeartbeat(input: {
     .run(heartbeatAt, leaseExpiresAt, heartbeatAt, input.task.id);
 }
 
+function recordModelRequestRetry(input: {
+  database: RunsteadDatabase;
+  task: Task;
+  workerRun: WorkerRun;
+  phase: CodexDirectModelRequestPhase;
+  attempt: number;
+  nextAttempt: number;
+  maxRetries: number;
+  reason: string;
+  delayMs: number;
+  elapsedMs: number;
+}): void {
+  const createdAt = new Date().toISOString();
+
+  appendEventAndProject(input.database, {
+    event: {
+      eventId: createRunsteadId("evt"),
+      type: "model_request.retry",
+      aggregateType: "worker_run",
+      aggregateId: input.workerRun.id,
+      payload: {
+        workerRunId: input.workerRun.id,
+        taskId: input.task.id,
+        phase: input.phase,
+        attempt: input.attempt,
+        nextAttempt: input.nextAttempt,
+        maxRetries: input.maxRetries,
+        reason: input.reason,
+        delayMs: input.delayMs,
+        elapsedMs: input.elapsedMs
+      },
+      createdAt
+    }
+  });
+}
+
+function modelRequestRetryDelayMs(input: {
+  retryCount: number;
+  baseDelayMs: number;
+  maxDelayMs: number;
+  jitterMs: number;
+}): number {
+  const exponential = input.baseDelayMs * 2 ** Math.max(0, input.retryCount - 1);
+  const capped = Math.min(exponential, input.maxDelayMs);
+  const jitter =
+    input.jitterMs <= 0 ? 0 : Math.floor(Math.random() * (input.jitterMs + 1));
+
+  return Math.max(0, capped + jitter);
+}
+
+function isTransientModelRequestError(error: unknown): boolean {
+  if (error instanceof CodexDirectModelTimeoutError) {
+    return false;
+  }
+
+  const message = errorMessage(error).toLowerCase();
+  const code = isRecord(error) && typeof error.code === "string" ? error.code : "";
+  const transientNeedles = [
+    "fetch failed",
+    "network",
+    "socket hang up",
+    "connection reset",
+    "temporarily unavailable",
+    "timeout",
+    "timed out",
+    "econnreset",
+    "etimedout",
+    "econnrefused",
+    "enotfound",
+    "eai_again",
+    "503",
+    "502",
+    "504",
+    "429"
+  ];
+
+  return transientNeedles.some((needle) =>
+    `${message} ${code.toLowerCase()}`.includes(needle)
+  );
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    const timeout = setTimeout(resolve, ms);
+    timeout.unref?.();
+  });
+}
+
 class CodexDirectModelTimeoutError extends Error {
   readonly reason = "model_timeout";
   readonly timeoutMs: number;
@@ -873,6 +1114,29 @@ class CodexDirectModelTimeoutError extends Error {
   }
 }
 
+class CodexDirectModelRetryExhaustedError extends Error {
+  readonly reason = "model_request_retries_exhausted";
+  readonly phase: CodexDirectModelRequestPhase;
+  readonly attempts: number;
+  readonly maxRetries: number;
+  readonly lastError: string;
+
+  constructor(input: {
+    phase: CodexDirectModelRequestPhase;
+    attempts: number;
+    maxRetries: number;
+    lastError: string;
+  }) {
+    super(
+      `Codex Direct model request retry budget exhausted after ${input.attempts} attempts in ${input.phase}: ${input.lastError}`
+    );
+    this.phase = input.phase;
+    this.attempts = input.attempts;
+    this.maxRetries = input.maxRetries;
+    this.lastError = input.lastError;
+  }
+}
+
 function modelTimeoutInterruption(
   options: Pick<CodexDirectWorkerOptions, "task">,
   error: CodexDirectModelTimeoutError
@@ -882,6 +1146,20 @@ function modelTimeoutInterruption(
     timeoutMs: error.timeoutMs,
     elapsedMs: error.elapsedMs,
     heartbeatCount: error.heartbeatCount,
+    retryCommand: `runstead resume && runstead agent resume ${options.task.id}`
+  };
+}
+
+function modelRetryExhaustedInterruption(
+  options: Pick<CodexDirectWorkerOptions, "task">,
+  error: CodexDirectModelRetryExhaustedError
+): CodexDirectInterruptionSummary {
+  return {
+    reason: error.reason,
+    phase: error.phase,
+    attempts: error.attempts,
+    maxRetries: error.maxRetries,
+    lastError: error.lastError,
     retryCommand: `runstead resume && runstead agent resume ${options.task.id}`
   };
 }
@@ -2319,7 +2597,8 @@ async function finalizeBudgetExceededWorkerResult(input: {
           instructions: buildCodexDirectInstructions(input.options),
           input: input.messages,
           sessionId: input.options.task.id
-        }
+        },
+        phase: "final_summary"
       });
       const summary = response.outputText || "Codex Direct worker stopped on budget.";
 
@@ -2336,6 +2615,13 @@ async function finalizeBudgetExceededWorkerResult(input: {
         budget
       });
     } catch (error) {
+      const interruption =
+        error instanceof CodexDirectModelRetryExhaustedError
+          ? modelRetryExhaustedInterruption(input.options, error)
+          : error instanceof CodexDirectModelTimeoutError
+            ? modelTimeoutInterruption(input.options, error)
+            : undefined;
+
       return completedWorkerResult({
         options: input.options,
         workerRun: input.workerRun,
@@ -2348,7 +2634,8 @@ async function finalizeBudgetExceededWorkerResult(input: {
         failedToolCalls: input.failedToolCalls,
         verification: input.verification ?? "skipped",
         warnings,
-        budget
+        budget,
+        ...(interruption === undefined ? {} : { interruption })
       });
     }
   }
@@ -3985,4 +4272,8 @@ function stableActionId(prefix: string, parts: unknown[]): string {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
