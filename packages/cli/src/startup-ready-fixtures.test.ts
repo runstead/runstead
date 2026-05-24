@@ -16,6 +16,7 @@ import { describe, expect, it } from "vitest";
 
 import { buildDashboard } from "./dashboard.js";
 import { initRunstead } from "./init.js";
+import { resumeInterruptedTasks } from "./resume.js";
 import {
   inferStartupReadyUiSmokeFlowActions,
   runStartupReady
@@ -55,6 +56,82 @@ describe("startup ready fixture matrix", () => {
       await rm(workspace, { force: true, recursive: true });
     }
   }, 60_000);
+
+  it("dogfoods empty static todo through repair, verifiers, and UI smoke", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-ready-static-todo-"));
+    const port = await availablePort();
+    let attempts = 0;
+
+    try {
+      await writeUiSmokeConfig(workspace, port, [
+        "Todo MVP",
+        "Add todo",
+        "Search todos"
+      ]);
+
+      const result = await runStartupReady({
+        cwd: workspace,
+        stage: "launch",
+        target: "local",
+        worker: "codex_cli",
+        appTemplate: "static-todo",
+        appType: "local-first-web",
+        maxAttempts: 2,
+        workerRunner: async (_command, _args, options) => {
+          attempts += 1;
+          await writeStaticTodoApp(options.cwd, port, {
+            verifierPasses: attempts > 1
+          });
+
+          return {
+            stdout: JSON.stringify({
+              summary:
+                attempts === 1
+                  ? "created static todo with failing verifier"
+                  : "repaired static todo verifier",
+              files_changed: [
+                "package.json",
+                "index.html",
+                "styles.css",
+                "app.js",
+                "server.js",
+                "scripts/test.js"
+              ],
+              commands_run: [],
+              risks: [],
+              needs_approval: false,
+              approval_reason: null
+            }),
+            stderr: "",
+            exitCode: 0
+          };
+        },
+        now: new Date("2026-05-23T00:13:00.000Z")
+      });
+      const build = result.run.phases.find((phase) => phase.id === "build_mvp");
+      const verifiers = result.run.phases.find((phase) => phase.id === "verifiers");
+      const uiSmoke = result.run.phases.find((phase) => phase.id === "ui_smoke");
+
+      expect(attempts).toBe(2);
+      expect(build?.status).toBe("passed");
+      expect(verifiers?.status).toBe("passed");
+      expect(uiSmoke?.status).toBe("passed");
+      expect(result.run.status).toBe("completed");
+      expect(result.run.verdict).toBe("local_launch_ready");
+      expect(result.run.scaffoldProfile).toMatchObject({
+        id: "static-todo",
+        appOwnedPaths: [
+          "index.html",
+          "styles.css",
+          "app.js",
+          "server.js",
+          "scripts/*.js"
+        ]
+      });
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  }, 90_000);
 
   it("runs the tiny todo golden path through launch readiness", async () => {
     await withFixture("tiny-todo", async (workspace) => {
@@ -140,6 +217,119 @@ describe("startup ready fixture matrix", () => {
     });
   }, 90_000);
 
+  it("skips the worker on a completed repo rerun", async () => {
+    await withFixture("tiny-todo", async (workspace) => {
+      const port = await availablePort();
+
+      await writeUiSmokeConfig(workspace, port, ["Todo MVP", "Add task"]);
+
+      const first = await runStartupReady({
+        cwd: workspace,
+        stage: "launch",
+        target: "local",
+        worker: "codex_cli",
+        maxAttempts: 1,
+        workerRunner: successfulWorker,
+        now: new Date("2026-05-23T00:17:30.000Z")
+      });
+      let workerCalls = 0;
+      const rerun = await runStartupReady({
+        cwd: workspace,
+        stage: "launch",
+        target: "local",
+        worker: "codex_cli",
+        maxAttempts: 1,
+        workerRunner: () => {
+          workerCalls += 1;
+          throw new Error("completed repo rerun should not call the MVP worker");
+        },
+        now: new Date("2026-05-23T00:18:00.000Z")
+      });
+      const build = rerun.run.phases.find((phase) => phase.id === "build_mvp");
+
+      expect(first.run.verdict).toBe("local_launch_ready");
+      expect(workerCalls).toBe(0);
+      expect(build?.status).toBe("passed");
+      expect(build?.nextAction).toBe("existing MVP verified; skipped worker build");
+      expect(rerun.run.verdict).toBe("local_launch_ready");
+    });
+  }, 90_000);
+
+  it("recovers stale and interrupted fixture tasks without overwriting the completed verdict", async () => {
+    await withFixture("tiny-todo", async (workspace) => {
+      const port = await availablePort();
+
+      await writeUiSmokeConfig(workspace, port, ["Todo MVP", "Add task"]);
+
+      const first = await runStartupReady({
+        cwd: workspace,
+        stage: "launch",
+        target: "local",
+        worker: "codex_cli",
+        maxAttempts: 1,
+        workerRunner: successfulWorker,
+        now: new Date("2026-05-23T00:18:30.000Z")
+      });
+
+      seedInterruptedFixtureTask(workspace, {
+        id: "task_fixture_interrupted_model_timeout",
+        status: "interrupted",
+        attempt: 1,
+        maxAttempts: 1,
+        output: {
+          summary:
+            "Codex Direct model request timed out after 20ms; runstead marked the task interrupted:model_timeout.",
+          interruption: {
+            reason: "model_timeout"
+          }
+        },
+        createdAt: "2026-05-23T00:18:40.000Z"
+      });
+
+      const resumed = await resumeInterruptedTasks({
+        cwd: workspace,
+        now: new Date("2026-05-23T00:18:45.000Z")
+      });
+
+      seedInterruptedFixtureTask(workspace, {
+        id: "task_fixture_stale_running",
+        status: "running",
+        attempt: 0,
+        maxAttempts: 1,
+        output: {
+          summary: "stale running fixture task"
+        },
+        createdAt: "2026-05-23T00:18:50.000Z",
+        leaseExpiresAt: "2026-05-23T00:18:55.000Z"
+      });
+
+      const rerun = await runStartupReady({
+        cwd: workspace,
+        stage: "launch",
+        target: "local",
+        worker: "codex_cli",
+        maxAttempts: 1,
+        workerRunner: successfulWorker,
+        now: new Date("2026-05-23T00:19:30.000Z")
+      });
+      const tasks = listTasks({ cwd: workspace }).tasks;
+      const stale = tasks.find((task) => task.id === "task_fixture_stale_running");
+      const interrupted = tasks.find(
+        (task) => task.id === "task_fixture_interrupted_model_timeout"
+      );
+
+      expect(first.run.verdict).toBe("local_launch_ready");
+      expect(resumed.requeuedTasks.map((item) => item.task.id)).toContain(
+        "task_fixture_interrupted_model_timeout"
+      );
+      expect(interrupted?.status).toBe("queued");
+      expect(stale?.status).toBe("queued");
+      expect(rerun.run.status).toBe("completed");
+      expect(rerun.run.verdict).toBe("local_launch_ready");
+      expect(rerun.run.verdictBlockers).toEqual([]);
+    });
+  }, 90_000);
+
   it("runs the todo dogfood regression fixture with legacy evidence repair", async () => {
     await withFixture("todo-dogfood-regression", async (workspace) => {
       const port = await availablePort();
@@ -160,21 +350,20 @@ describe("startup ready fixture matrix", () => {
       if (firstStep?.type !== "fill") {
         throw new Error("Expected first inferred UI smoke step to fill todo input");
       }
-      expect(firstStep.selectors).toEqual(
+      const firstStepSelectors = firstStep.selectors ?? [];
+
+      expect(firstStepSelectors).toEqual(
         expect.arrayContaining([
+          "[data-testid='new-todo-input']",
           "[data-testid='todo-input']",
-          "#todo-input",
-          "input[placeholder*='todo' i]"
+          "#todo-input"
         ])
       );
-      expect(
-        inferredSteps[0]?.type === "fill"
-          ? inferredSteps[0].selectors?.indexOf("#todo-input")
-          : -1
-      ).toBeLessThan(
-        inferredSteps[0]?.type === "fill"
-          ? (inferredSteps[0].selectors?.indexOf("input[placeholder*='todo' i]") ?? -1)
-          : -1
+      expect(firstStepSelectors).not.toContain("input[placeholder*='todo' i]");
+      expect(firstStepSelectors.indexOf("#todo-input")).toBeLessThan(
+        firstStepSelectors.indexOf(
+          "input[type='text']:not([aria-label*='search' i]):not([placeholder*='search' i])"
+        )
       );
 
       const result = await runStartupReady({
@@ -468,6 +657,197 @@ function evidenceCount(workspace: string, type: string): number {
       .get(type) as { count: number };
 
     return row.count;
+  } finally {
+    database.close();
+  }
+}
+
+async function writeStaticTodoApp(
+  workspace: string,
+  port: number,
+  options: { verifierPasses: boolean }
+): Promise<void> {
+  await mkdir(join(workspace, "scripts"), { recursive: true });
+  await writeFile(
+    join(workspace, "package.json"),
+    `${JSON.stringify(
+      {
+        name: "runstead-static-todo-fixture",
+        private: true,
+        scripts: {
+          test: "node scripts/test.js",
+          lint: "node scripts/lint.js",
+          typecheck: "node scripts/typecheck.js",
+          build: "node scripts/build.js",
+          dev: "node server.js"
+        }
+      },
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
+  await writeFile(
+    join(workspace, "index.html"),
+    [
+      "<!doctype html>",
+      "<html>",
+      "<head>",
+      "  <meta charset=\"utf-8\">",
+      "  <title>Todo MVP</title>",
+      "  <link rel=\"stylesheet\" href=\"/styles.css\">",
+      "</head>",
+      "<body>",
+      "  <main>",
+      "    <h1>Todo MVP</h1>",
+      "    <form>",
+      "      <label for=\"todo-input\">Add todo</label>",
+      "      <input id=\"todo-input\" data-testid=\"new-todo-input\" type=\"text\">",
+      "      <button data-testid=\"add-todo\" type=\"submit\">Add todo</button>",
+      "    </form>",
+      "    <label for=\"todo-search\">Search todos</label>",
+      "    <input id=\"todo-search\" data-testid=\"todo-search\" type=\"search\">",
+      "    <ul data-testid=\"todo-list\"><li data-testid=\"todo-item\">Ship Runstead</li></ul>",
+      "  </main>",
+      "  <script src=\"/app.js\"></script>",
+      "</body>",
+      "</html>",
+      ""
+    ].join("\n"),
+    "utf8"
+  );
+  await writeFile(
+    join(workspace, "styles.css"),
+    "body { font-family: system-ui, sans-serif; margin: 2rem; }\n",
+    "utf8"
+  );
+  await writeFile(
+    join(workspace, "app.js"),
+    "document.querySelector('form')?.addEventListener('submit', (event) => event.preventDefault());\n",
+    "utf8"
+  );
+  await writeFile(
+    join(workspace, "server.js"),
+    [
+      "const { createServer } = require('node:http');",
+      "const { readFile } = require('node:fs/promises');",
+      "const { extname, join } = require('node:path');",
+      `const port = Number(process.env.PORT || ${port});`,
+      "const types = { '.html': 'text/html', '.css': 'text/css', '.js': 'text/javascript' };",
+      "createServer(async (req, res) => {",
+      "  const url = req.url === '/' ? '/index.html' : req.url || '/index.html';",
+      "  const path = join(__dirname, url.replace(/^\\/+/, ''));",
+      "  try {",
+      "    res.setHeader('content-type', types[extname(path)] || 'text/plain');",
+      "    res.end(await readFile(path));",
+      "  } catch {",
+      "    res.statusCode = 404;",
+      "    res.end('not found');",
+      "  }",
+      "}).listen(port, '127.0.0.1');",
+      ""
+    ].join("\n"),
+    "utf8"
+  );
+
+  for (const script of ["lint", "typecheck", "build"]) {
+    await writeFile(join(workspace, "scripts", `${script}.js`), "process.exit(0);\n");
+  }
+
+  await writeFile(
+    join(workspace, "scripts", "test.js"),
+    options.verifierPasses
+      ? "process.exit(0);\n"
+      : "console.error('intentional first-attempt verifier failure'); process.exit(1);\n",
+    "utf8"
+  );
+}
+
+function seedInterruptedFixtureTask(
+  workspace: string,
+  input: {
+    id: string;
+    status: Task["status"];
+    attempt: number;
+    maxAttempts: number;
+    output: Task["output"];
+    createdAt: string;
+    leaseExpiresAt?: string;
+  }
+): void {
+  const goal: Goal = {
+    id: `goal_${input.id}`,
+    domain: "repo-maintenance",
+    title: `Fixture ${input.id}`,
+    status: "active",
+    priority: "medium",
+    scope: {
+      repositoryPath: workspace
+    },
+    policyRef: "policy_repo_maintenance_v1",
+    createdAt: input.createdAt,
+    updatedAt: input.createdAt
+  };
+  const task: Task = {
+    id: input.id,
+    goalId: goal.id,
+    domain: "repo-maintenance",
+    type: "local_agent_task",
+    status: input.status,
+    priority: "medium",
+    attempt: input.attempt,
+    maxAttempts: input.maxAttempts,
+    input: {
+      repositoryPath: workspace,
+      prompt: "fixture interrupted task",
+      worker: "codex_direct",
+      mode: "repair"
+    },
+    ...(input.output === undefined ? {} : { output: input.output }),
+    verifiers: [],
+    createdAt: input.createdAt,
+    updatedAt: input.createdAt
+  };
+  const database = openRunsteadDatabase(join(workspace, ".runstead", "state.db"));
+
+  try {
+    appendEventAndProject(database, {
+      event: {
+        eventId: createRunsteadId("evt"),
+        type: "goal.created",
+        aggregateType: "goal",
+        aggregateId: goal.id,
+        payload: goal,
+        createdAt: input.createdAt
+      },
+      projection: {
+        type: "goal",
+        value: goal
+      }
+    });
+    appendEventAndProject(database, {
+      event: {
+        eventId: createRunsteadId("evt"),
+        type:
+          input.status === "interrupted" ? "task.interrupted" : "task.started",
+        aggregateType: "task",
+        aggregateId: task.id,
+        payload: task,
+        createdAt: input.createdAt
+      },
+      projection: {
+        type: "task",
+        value: task
+      }
+    });
+
+    if (input.leaseExpiresAt !== undefined) {
+      database
+        .prepare(
+          "UPDATE tasks SET owner_id = ?, lease_expires_at = ?, updated_at = ? WHERE id = ?"
+        )
+        .run("pid:999999999", input.leaseExpiresAt, input.createdAt, input.id);
+    }
   } finally {
     database.close();
   }
