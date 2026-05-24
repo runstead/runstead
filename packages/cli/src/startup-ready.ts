@@ -61,6 +61,7 @@ import {
   runTaskVerifiers,
   type RunTaskVerifiersResult
 } from "./verifier-runner.js";
+import { generateStartupContext } from "./startup-automation.js";
 import {
   collectCommandVerifierCodeState,
   type CommandVerifierCodeState
@@ -878,6 +879,7 @@ async function executeStartupReadyRun(
           : "review worker output and resume startup readiness"
     });
     updatePhase(run, "verifiers", verifierPhaseUpdate(build.verifierRun));
+    await refreshStartupReadyCurrentContext(run, options);
     collectRunEvidence(run);
     await writeStartupReadinessRun(run);
     emitStartupReadyPhaseResult(run, options, "build_mvp");
@@ -1261,6 +1263,38 @@ async function hasStartupReadyApplicationSurface(cwd: string): Promise<boolean> 
   } catch {
     return false;
   }
+}
+
+async function refreshStartupReadyCurrentContext(
+  run: StartupReadinessRun,
+  options: StartupReadyOptions
+): Promise<void> {
+  if (!hasPhase(run, "context")) {
+    return;
+  }
+
+  const refreshed = await generateStartupContext({
+    cwd: run.cwd,
+    currentOnly: true,
+    ...(options.now === undefined ? {} : { now: options.now })
+  });
+  const current = run.phases.find((phase) => phase.id === "context");
+  const status =
+    current?.status === "pending" ? "passed" : current?.status;
+
+  updatePhase(run, "context", {
+    ...(status === undefined ? {} : { status }),
+    evidenceIds: unique([
+      ...(current?.evidenceIds ?? []),
+      refreshed.evidenceId
+    ]),
+    artifacts: unique([
+      ...(current?.artifacts ?? []),
+      ...refreshed.files,
+      ...refreshed.structuredFiles
+    ]),
+    blockers: current?.status === "blocked" ? current.blockers : []
+  });
 }
 
 async function attemptStartupReadyUiSmokeRepair(

@@ -53,6 +53,7 @@ export interface StartupInitResult {
 export interface GenerateStartupContextOptions {
   cwd?: string;
   force?: boolean;
+  currentOnly?: boolean;
   architecturePrinciples?: string[];
   technicalConstraints?: string[];
   acceptedDebt?: string[];
@@ -468,8 +469,89 @@ export async function generateStartupContext(
   const state = await requireRunsteadStateDb(cwd);
   const generatedAt = (options.now ?? new Date()).toISOString();
   const inspection = await collectRepoInspection(cwd, generatedAt);
+  const files: string[] = [];
+  const structuredFiles: string[] = [];
+  const contentBlocks: string[] = [];
+  let generatedCount = 0;
+  let ingestedCount = 0;
+  const contextData = {
+    contextFiles: STARTUP_CONTEXT_FILES,
+    inspection: stableRepoInspectionData(inspection),
+    architecturePrinciples: options.architecturePrinciples ?? [],
+    technicalConstraints: options.technicalConstraints ?? [],
+    acceptedDebt: options.acceptedDebt ?? []
+  };
+  await mkdir(join(state.root, "startup"), { recursive: true });
+
+  if (options.currentOnly === true) {
+    const currentPath = join(state.root, "startup", "current-agent-context.md");
+    const currentData = {
+      ...contextData,
+      contextFile: "current-agent-context.md",
+      contextScope: "current"
+    };
+    const contextGeneratedAt = await stableStartupGeneratedAt({
+      kind: "startup_agent_context",
+      markdownPath: currentPath,
+      data: currentData,
+      fallback: generatedAt
+    });
+    const context = formatStartupAgentContext({
+      generatedAt: contextGeneratedAt,
+      inspection,
+      ...(options.architecturePrinciples === undefined
+        ? {}
+        : { architecturePrinciples: options.architecturePrinciples }),
+      ...(options.technicalConstraints === undefined
+        ? {}
+        : { technicalConstraints: options.technicalConstraints }),
+      ...(options.acceptedDebt === undefined
+        ? {}
+        : { acceptedDebt: options.acceptedDebt })
+    });
+
+    await writeTextFileIfChanged(currentPath, context);
+    structuredFiles.push(
+      await writeStartupStructuredArtifact({
+        kind: "startup_agent_context",
+        generatedAt: contextGeneratedAt,
+        markdownPath: currentPath,
+        data: currentData
+      })
+    );
+
+    const evidence = await addStartupEvidence({
+      cwd,
+      type: "agent_context",
+      summary: "Refreshed current startup agent context",
+      sourceRefs: [currentPath, ...structuredFiles],
+      content: context,
+      ...(options.now === undefined ? {} : { now: options.now })
+    });
+
+    return {
+      root: state.root,
+      stateDb: state.stateDb,
+      files: [currentPath],
+      structuredFiles,
+      evidenceId: evidence.evidence.id
+    };
+  }
+
+  const summaryPath = join(state.root, "startup", "agent-context.md");
+  const summaryData = {
+    ...contextData,
+    contextFile: "agent-context.md",
+    contextScope: "initial"
+  };
+  const contextGeneratedAt = await stableStartupGeneratedAt({
+    kind: "startup_agent_context",
+    markdownPath: summaryPath,
+    data: summaryData,
+    fallback: generatedAt
+  });
   const context = formatStartupAgentContext({
-    generatedAt,
+    generatedAt: contextGeneratedAt,
     inspection,
     ...(options.architecturePrinciples === undefined
       ? {}
@@ -481,18 +563,6 @@ export async function generateStartupContext(
       ? {}
       : { acceptedDebt: options.acceptedDebt })
   });
-  const files: string[] = [];
-  const structuredFiles: string[] = [];
-  const contentBlocks: string[] = [];
-  let generatedCount = 0;
-  let ingestedCount = 0;
-  const contextData = {
-    contextFiles: STARTUP_CONTEXT_FILES,
-    inspection,
-    architecturePrinciples: options.architecturePrinciples ?? [],
-    technicalConstraints: options.technicalConstraints ?? [],
-    acceptedDebt: options.acceptedDebt ?? []
-  };
 
   for (const filename of STARTUP_CONTEXT_FILES) {
     const path = join(cwd, filename);
@@ -505,7 +575,7 @@ export async function generateStartupContext(
       ingestedCount += 1;
     } else {
       fileContent = contextForFile(filename, context);
-      await writeFile(path, fileContent, "utf8");
+      await writeTextFileIfChanged(path, fileContent);
       generatedCount += 1;
     }
 
@@ -514,30 +584,25 @@ export async function generateStartupContext(
     structuredFiles.push(
       await writeStartupStructuredArtifact({
         kind: "startup_agent_context",
-        generatedAt,
+        generatedAt: contextGeneratedAt,
         markdownPath: path,
         data: {
           ...contextData,
           contextFile: filename,
+          contextScope: "initial",
           ingested
         }
       })
     );
   }
 
-  await mkdir(join(state.root, "startup"), { recursive: true });
-  const summaryPath = join(state.root, "startup", "agent-context.md");
-
-  await writeFile(summaryPath, context, "utf8");
+  await writeTextFileIfChanged(summaryPath, context);
   structuredFiles.push(
     await writeStartupStructuredArtifact({
       kind: "startup_agent_context",
-      generatedAt,
+      generatedAt: contextGeneratedAt,
       markdownPath: summaryPath,
-      data: {
-        ...contextData,
-        contextFile: "agent-context.md"
-      }
+      data: summaryData
     })
   );
 
@@ -565,30 +630,8 @@ export async function generateMeasurementFramework(
   const cwd = resolve(options.cwd ?? process.cwd());
   const state = await requireRunsteadStateDb(cwd);
   const generatedAt = (options.now ?? new Date()).toISOString();
-  const generatedFramework = formatMeasurementFramework({
-    generatedAt,
-    ...(options.activationMetric === undefined
-      ? {}
-      : { activationMetric: options.activationMetric }),
-    ...(options.retentionMetric === undefined
-      ? {}
-      : { retentionMetric: options.retentionMetric }),
-    ...(options.day7Metric === undefined ? {} : { day7Metric: options.day7Metric }),
-    ...(options.day30Metric === undefined ? {} : { day30Metric: options.day30Metric }),
-    ...(options.falsePositiveMetric === undefined
-      ? {}
-      : { falsePositiveMetric: options.falsePositiveMetric })
-  });
   const rootPath = join(cwd, "MEASUREMENT.md");
   const rootPathExists = await exists(rootPath);
-  const framework =
-    rootPathExists && options.force !== true
-      ? await readFile(rootPath, "utf8")
-      : generatedFramework;
-
-  if (!rootPathExists || options.force === true) {
-    await writeFile(rootPath, framework, "utf8");
-  }
 
   await mkdir(join(state.root, "startup"), { recursive: true });
 
@@ -620,13 +663,44 @@ export async function generateMeasurementFramework(
         : { falsePositiveMetric: options.falsePositiveMetric })
     })
   };
+  const measurementGeneratedAt = await stableStartupGeneratedAt({
+    kind: "startup_measurement_framework",
+    markdownPath: runtimePath,
+    data: {
+      ...measurementData,
+      ingested: rootPathExists && options.force !== true
+    },
+    fallback: generatedAt
+  });
+  const generatedFramework = formatMeasurementFramework({
+    generatedAt: measurementGeneratedAt,
+    ...(options.activationMetric === undefined
+      ? {}
+      : { activationMetric: options.activationMetric }),
+    ...(options.retentionMetric === undefined
+      ? {}
+      : { retentionMetric: options.retentionMetric }),
+    ...(options.day7Metric === undefined ? {} : { day7Metric: options.day7Metric }),
+    ...(options.day30Metric === undefined ? {} : { day30Metric: options.day30Metric }),
+    ...(options.falsePositiveMetric === undefined
+      ? {}
+      : { falsePositiveMetric: options.falsePositiveMetric })
+  });
+  const framework =
+    rootPathExists && options.force !== true
+      ? await readFile(rootPath, "utf8")
+      : generatedFramework;
 
-  await writeFile(runtimePath, framework, "utf8");
+  if (!rootPathExists || options.force === true) {
+    await writeTextFileIfChanged(rootPath, framework);
+  }
+
+  await writeTextFileIfChanged(runtimePath, framework);
   const structuredFiles = await Promise.all(
     [rootPath, runtimePath].map((path) =>
       writeStartupStructuredArtifact({
         kind: "startup_measurement_framework",
-        generatedAt,
+        generatedAt: measurementGeneratedAt,
         markdownPath: path,
         data: {
           ...measurementData,
@@ -1769,9 +1843,78 @@ async function writeStartupStructuredArtifact(input: {
     data: input.data
   };
 
-  await writeFile(structuredPath, `${JSON.stringify(artifact, null, 2)}\n`, "utf8");
+  await writeTextFileIfChanged(
+    structuredPath,
+    `${JSON.stringify(artifact, null, 2)}\n`
+  );
 
   return structuredPath;
+}
+
+async function stableStartupGeneratedAt(input: {
+  kind: string;
+  markdownPath: string;
+  data: Record<string, unknown>;
+  fallback: string;
+}): Promise<string> {
+  const existing = await readStartupStructuredArtifact(
+    structuredArtifactPath(input.markdownPath)
+  );
+
+  if (
+    existing?.kind === input.kind &&
+    JSON.stringify(existing.data) === JSON.stringify(input.data)
+  ) {
+    return existing.generatedAt;
+  }
+
+  return input.fallback;
+}
+
+async function readStartupStructuredArtifact(
+  path: string
+): Promise<StartupStructuredArtifact | undefined> {
+  try {
+    const parsed = JSON.parse(await readFile(path, "utf8")) as unknown;
+
+    if (
+      isRecord(parsed) &&
+      typeof parsed.schemaVersion === "number" &&
+      typeof parsed.schema === "string" &&
+      typeof parsed.kind === "string" &&
+      typeof parsed.generatedAt === "string" &&
+      typeof parsed.markdownPath === "string" &&
+      isRecord(parsed.data)
+    ) {
+      return parsed as unknown as StartupStructuredArtifact;
+    }
+  } catch {
+    return undefined;
+  }
+
+  return undefined;
+}
+
+function stableRepoInspectionData(
+  inspection: Awaited<ReturnType<typeof collectRepoInspection>>
+): Record<string, unknown> {
+  const stableInspection = { ...inspection };
+
+  delete (stableInspection as { inspectedAt?: string }).inspectedAt;
+
+  return stableInspection;
+}
+
+async function writeTextFileIfChanged(path: string, content: string): Promise<void> {
+  try {
+    if ((await readFile(path, "utf8")) === content) {
+      return;
+    }
+  } catch {
+    // Missing files are created below.
+  }
+
+  await writeFile(path, content, "utf8");
 }
 
 function structuredArtifactPath(markdownPath: string): string {
@@ -2896,6 +3039,10 @@ function normalizeStatusPath(value: string): string {
 
 function safeTimestamp(value: string): string {
   return value.replace(/[:.]/g, "-");
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 async function findTopLevelEnvFiles(cwd: string): Promise<string[]> {

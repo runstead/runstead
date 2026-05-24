@@ -161,6 +161,112 @@ describe("startup automation", () => {
     }
   });
 
+  it("keeps generated agent context artifacts stable when semantic inputs do not change", async () => {
+    const workspace = join(
+      tmpdir(),
+      `runstead-startup-context-stable-${process.pid}`
+    );
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await initStartup({
+        cwd: workspace,
+        stage: "mvp",
+        now: new Date("2026-05-14T02:00:00.000Z")
+      });
+      const first = await generateStartupContext({
+        cwd: workspace,
+        force: true,
+        architecturePrinciples: ["Keep the MVP locally inspectable."],
+        now: new Date("2026-05-14T04:00:00.000Z")
+      });
+      const agentsBefore = await readFile(join(workspace, "AGENTS.md"), "utf8");
+      const firstStructured = await expectStructuredArtifact(
+        first.structuredFiles,
+        "AGENTS.json",
+        "startup_agent_context"
+      );
+
+      const second = await generateStartupContext({
+        cwd: workspace,
+        force: true,
+        architecturePrinciples: ["Keep the MVP locally inspectable."],
+        now: new Date("2026-05-15T04:00:00.000Z")
+      });
+      const agentsAfter = await readFile(join(workspace, "AGENTS.md"), "utf8");
+      const secondStructured = await expectStructuredArtifact(
+        second.structuredFiles,
+        "AGENTS.json",
+        "startup_agent_context"
+      );
+
+      expect(agentsAfter).toBe(agentsBefore);
+      expect(secondStructured.generatedAt).toBe(firstStructured.generatedAt);
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("refreshes current agent context without rewriting root context files", async () => {
+    const workspace = join(
+      tmpdir(),
+      `runstead-startup-context-current-${process.pid}`
+    );
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await initStartup({
+        cwd: workspace,
+        stage: "mvp",
+        now: new Date("2026-05-14T02:00:00.000Z")
+      });
+
+      const result = await generateStartupContext({
+        cwd: workspace,
+        currentOnly: true,
+        now: new Date("2026-05-14T04:00:00.000Z")
+      });
+      const currentContext = await readFile(
+        join(workspace, ".runstead", "startup", "current-agent-context.md"),
+        "utf8"
+      );
+      const structured = await expectStructuredArtifact(
+        result.structuredFiles,
+        "current-agent-context.json",
+        "startup_agent_context"
+      );
+
+      expect(result.files).toEqual([
+        join(workspace, ".runstead", "startup", "current-agent-context.md")
+      ]);
+      expect(currentContext).toContain("Startup Agent Context");
+      expect(structured.data).toMatchObject({
+        contextFile: "current-agent-context.md",
+        contextScope: "current"
+      });
+      await expect(readFile(join(workspace, "AGENTS.md"), "utf8")).rejects.toThrow();
+      await expect(readFile(join(workspace, "CLAUDE.md"), "utf8")).rejects.toThrow();
+      await expect(readFile(join(workspace, "CODEX.md"), "utf8")).rejects.toThrow();
+
+      const database = openRunsteadDatabase(result.stateDb);
+
+      try {
+        const evidence = database
+          .prepare("SELECT type, summary FROM evidence WHERE id = ?")
+          .get(result.evidenceId) as { type: string; summary: string } | undefined;
+
+        expect(evidence).toEqual({
+          type: "startup_agent_context",
+          summary: "Refreshed current startup agent context"
+        });
+      } finally {
+        database.close();
+      }
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
   it("ingests existing agent context files instead of forcing overwrite", async () => {
     const workspace = join(tmpdir(), `runstead-startup-context-ingest-${process.pid}`);
 
@@ -274,6 +380,58 @@ describe("startup automation", () => {
       } finally {
         database.close();
       }
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("keeps generated measurement artifacts stable when semantic inputs do not change", async () => {
+    const workspace = join(
+      tmpdir(),
+      `runstead-startup-measurement-stable-${process.pid}`
+    );
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await initStartup({
+        cwd: workspace,
+        stage: "mvp",
+        now: new Date("2026-05-14T02:00:00.000Z")
+      });
+      const first = await generateMeasurementFramework({
+        cwd: workspace,
+        force: true,
+        activationMetric: "User creates a todo",
+        now: new Date("2026-05-14T05:00:00.000Z")
+      });
+      const measurementBefore = await readFile(
+        join(workspace, "MEASUREMENT.md"),
+        "utf8"
+      );
+      const firstStructured = await expectStructuredArtifact(
+        first.structuredFiles,
+        "MEASUREMENT.json",
+        "startup_measurement_framework"
+      );
+
+      const second = await generateMeasurementFramework({
+        cwd: workspace,
+        force: true,
+        activationMetric: "User creates a todo",
+        now: new Date("2026-05-15T05:00:00.000Z")
+      });
+      const measurementAfter = await readFile(
+        join(workspace, "MEASUREMENT.md"),
+        "utf8"
+      );
+      const secondStructured = await expectStructuredArtifact(
+        second.structuredFiles,
+        "MEASUREMENT.json",
+        "startup_measurement_framework"
+      );
+
+      expect(measurementAfter).toBe(measurementBefore);
+      expect(secondStructured.generatedAt).toBe(firstStructured.generatedAt);
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }
@@ -922,6 +1080,7 @@ interface StructuredArtifactFixture {
   schemaVersion: number;
   schema: string;
   kind: string;
+  generatedAt: string;
   markdownPath: string;
   data: Record<string, unknown>;
 }

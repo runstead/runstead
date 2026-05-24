@@ -287,6 +287,26 @@ describe("startup readiness run model", () => {
         ["verifiers", "passed"]
       ]);
       expect(
+        result.run.phases.find((phase) => phase.id === "context")?.artifacts
+      ).toEqual(
+        expect.arrayContaining([
+          join(workspace, ".runstead", "startup", "current-agent-context.md"),
+          join(workspace, ".runstead", "startup", "current-agent-context.json")
+        ])
+      );
+      await expect(
+        readFile(
+          join(workspace, ".runstead", "startup", "current-agent-context.md"),
+          "utf8"
+        )
+      ).resolves.toContain("Startup Agent Context");
+      await expect(
+        readFile(
+          join(workspace, ".runstead", "startup", "current-agent-context.json"),
+          "utf8"
+        )
+      ).resolves.toContain('"contextScope": "current"');
+      expect(
         result.run.phases.find((phase) => phase.id === "verifiers")?.evidenceIds
       ).toHaveLength(4);
       expect(result.run.evidenceIds.length).toBeGreaterThanOrEqual(6);
