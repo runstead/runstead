@@ -147,6 +147,7 @@ interface EvidenceProvenanceArtifact {
 }
 
 interface LaunchReadinessReportData {
+  generatedAt: string;
   repo: RepoInspectionSnapshot;
   protectedPathChanges: string[];
   gate: {
@@ -185,6 +186,7 @@ export async function generateLaunchReadinessReport(
 
   try {
     const data: LaunchReadinessReportData = {
+      generatedAt,
       repo: await collectRepoInspection(cwd, generatedAt),
       protectedPathChanges: await changedProtectedPaths(cwd),
       gate: await launchGateEvaluation({
@@ -252,6 +254,10 @@ export async function generateLaunchReadinessReport(
         uri: item.uri,
         createdAt: item.created_at,
         reason: staleEvidenceReason(data, item)
+      })),
+      staleEvidenceSummary: staleEvidenceReasonGroups(data).map((group) => ({
+        reason: group.reason,
+        count: group.count
       })),
       structuredArtifacts: data.structuredArtifacts.map((item) => ({
         id: item.id,
@@ -327,7 +333,12 @@ function readLaunchReadinessData(
   domain: string
 ): Omit<
   LaunchReadinessReportData,
-  "repo" | "protectedPathChanges" | "gate" | "structuredArtifacts" | "currentCodeState"
+  | "generatedAt"
+  | "repo"
+  | "protectedPathChanges"
+  | "gate"
+  | "structuredArtifacts"
+  | "currentCodeState"
 > {
   const goals = database
     .prepare(
@@ -418,6 +429,10 @@ function formatLaunchReadinessReport(input: {
     "## Trust Summary",
     "",
     trustSummaryMarkdown(input.trustSummary, input.target),
+    "",
+    "## Evidence Freshness Summary",
+    "",
+    staleEvidenceSummary(input.data),
     "",
     "## Metric Evidence Confidence",
     "",
@@ -798,6 +813,88 @@ function staleEvidenceReason(
   return staleEvidenceReasons(data).get(item.id) ?? "not stale";
 }
 
+type StaleEvidenceReasonGroup =
+  | "freshness_expired"
+  | "code_fingerprint_mismatch"
+  | "superseded_same_subject"
+  | "other";
+
+function staleEvidenceSummary(data: LaunchReadinessReportData): string {
+  const current = currentEvidenceRows(data).length;
+  const stale = staleEvidenceRows(data).length;
+  const groups = staleEvidenceReasonGroups(data);
+
+  if (stale === 0) {
+    return [
+      `- Current evidence records: ${current}`,
+      "- Stale/superseded evidence records: 0"
+    ].join("\n");
+  }
+
+  return [
+    `- Current evidence records: ${current}`,
+    `- Stale/superseded evidence records: ${stale}`,
+    ...groups.map(
+      (group) => `- ${staleEvidenceReasonGroupLabel(group.reason)}: ${group.count}`
+    ),
+    "- Full stale evidence remains in the JSON artifact and stale evidence appendix."
+  ].join("\n");
+}
+
+function staleEvidenceReasonGroups(data: LaunchReadinessReportData): {
+  reason: StaleEvidenceReasonGroup;
+  count: number;
+}[] {
+  const counts = new Map<StaleEvidenceReasonGroup, number>();
+
+  for (const reason of staleEvidenceReasons(data).values()) {
+    const group = staleEvidenceReasonGroup(reason);
+    counts.set(group, (counts.get(group) ?? 0) + 1);
+  }
+
+  const groupOrder = [
+    "freshness_expired",
+    "code_fingerprint_mismatch",
+    "superseded_same_subject",
+    "other"
+  ] as const satisfies readonly StaleEvidenceReasonGroup[];
+
+  return groupOrder.flatMap((reason) => {
+    const count = counts.get(reason);
+
+    return count === undefined ? [] : [{ reason, count }];
+  });
+}
+
+function staleEvidenceReasonGroup(reason: string): StaleEvidenceReasonGroup {
+  if (reason.startsWith("source freshness expired")) {
+    return "freshness_expired";
+  }
+
+  if (reason.includes("code_state=stale")) {
+    return "code_fingerprint_mismatch";
+  }
+
+  if (reason.startsWith("superseded by newer")) {
+    return "superseded_same_subject";
+  }
+
+  return "other";
+}
+
+function staleEvidenceReasonGroupLabel(reason: StaleEvidenceReasonGroup): string {
+  switch (reason) {
+    case "freshness_expired":
+      return "source freshness expired";
+    case "code_fingerprint_mismatch":
+      return "stale code fingerprint";
+    case "superseded_same_subject":
+      return "superseded by newer same-subject evidence";
+    case "other":
+      return "other stale evidence";
+  }
+}
+
 function staleEvidenceReasons(data: LaunchReadinessReportData): Map<string, string> {
   const reasons = new Map<string, string>();
   const latestCommandEvidence = latestCommandEvidenceByCurrentKey(data);
@@ -806,6 +903,13 @@ function staleEvidenceReasons(data: LaunchReadinessReportData): Map<string, stri
   );
 
   for (const item of data.evidence) {
+    const freshnessReason = staleSourceFreshnessReason(data, item);
+
+    if (freshnessReason !== undefined) {
+      reasons.set(item.id, freshnessReason);
+      continue;
+    }
+
     if (item.type === "command_output" && isStaleCommandEvidence(data, item)) {
       reasons.set(
         item.id,
@@ -838,6 +942,45 @@ function staleEvidenceReasons(data: LaunchReadinessReportData): Map<string, stri
   }
 
   return reasons;
+}
+
+function staleSourceFreshnessReason(
+  data: LaunchReadinessReportData,
+  item: EvidenceReportRow
+): string | undefined {
+  const generatedAt = Date.parse(data.generatedAt);
+
+  if (Number.isNaN(generatedAt)) {
+    return undefined;
+  }
+
+  const sources = artifactSources(readEvidenceProvenanceArtifact(item.uri));
+
+  for (const source of sources) {
+    const capturedAt = stringValue(source.capturedAt);
+    const freshnessDays =
+      typeof source.freshnessDays === "number" ? source.freshnessDays : undefined;
+
+    if (capturedAt === undefined || freshnessDays === undefined) {
+      continue;
+    }
+
+    const capturedAtMs = Date.parse(capturedAt);
+
+    if (Number.isNaN(capturedAtMs)) {
+      continue;
+    }
+
+    const ageDays = Math.floor((generatedAt - capturedAtMs) / 86_400_000);
+
+    if (ageDays > freshnessDays) {
+      const kind = stringValue(source.kind) ?? "unknown";
+
+      return `source freshness expired: ${kind} source is ${ageDays}d old (freshness ${freshnessDays}d)`;
+    }
+  }
+
+  return undefined;
 }
 
 function latestCommandEvidenceByCurrentKey(

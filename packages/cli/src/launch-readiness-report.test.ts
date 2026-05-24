@@ -254,6 +254,128 @@ describe("generateLaunchReadinessReport", () => {
     }
   });
 
+  it("groups stale evidence caused by expired source freshness", async () => {
+    const workspace = join(tmpdir(), `runstead-launch-report-freshness-${process.pid}`);
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await mkdir(workspace, { recursive: true });
+      await writeFile(
+        join(workspace, "package.json"),
+        `${JSON.stringify(
+          {
+            name: "launch-report-freshness-fixture",
+            private: true,
+            scripts: {
+              test: 'node -e "process.exit(0)"',
+              lint: 'node -e "process.exit(0)"',
+              typecheck: 'node -e "process.exit(0)"',
+              build: 'node -e "process.exit(0)"'
+            }
+          },
+          null,
+          2
+        )}\n`,
+        "utf8"
+      );
+      const initialized = await initRunstead({ cwd: workspace });
+      const evidenceDir = join(workspace, ".runstead", "evidence");
+      const artifactPath = join(evidenceDir, "expired-activation.json");
+      const staleCommandArtifactPath = join(evidenceDir, "stale-command.json");
+
+      await mkdir(evidenceDir, { recursive: true });
+      await writeFile(
+        artifactPath,
+        `${JSON.stringify(
+          {
+            schemaVersion: 1,
+            sources: [
+              {
+                kind: "posthog",
+                uri: "https://posthog.example/project/1/insights/activation",
+                capturedAt: "2026-05-01T00:00:00.000Z",
+                freshnessDays: 1
+              }
+            ]
+          },
+          null,
+          2
+        )}\n`,
+        "utf8"
+      );
+      await writeFile(
+        staleCommandArtifactPath,
+        `${JSON.stringify(
+          {
+            schemaVersion: 1,
+            codeState: {
+              fingerprint: "stale-command-fingerprint"
+            },
+            verifier: "test",
+            command: "npm test"
+          },
+          null,
+          2
+        )}\n`,
+        "utf8"
+      );
+      const database = openRunsteadDatabase(initialized.stateDb);
+
+      try {
+        projectEvidence(database, {
+          id: "ev_expired_activation_metric",
+          type: "startup_metric_snapshot",
+          subjectType: "goal",
+          subjectId: "goal_freshness",
+          uri: pathToFileURL(artifactPath).href,
+          summary: "expired activation metric",
+          createdAt: "2026-05-01T00:05:00.000Z"
+        });
+        projectEvidence(database, {
+          id: "ev_stale_command_fingerprint",
+          type: "command_output",
+          subjectType: "task",
+          subjectId: "task_stale_command_fingerprint",
+          uri: pathToFileURL(staleCommandArtifactPath).href,
+          summary: "stale command fingerprint",
+          createdAt: "2026-05-01T00:10:00.000Z"
+        });
+      } finally {
+        database.close();
+      }
+
+      const result = await generateLaunchReadinessReport({
+        cwd: workspace,
+        domain: "ai-native-startup",
+        target: "local",
+        now: new Date("2026-05-14T12:30:00.000Z")
+      });
+      const parsedJson = JSON.parse(await readFile(result.jsonPath, "utf8")) as {
+        staleEvidence?: { reason?: string }[];
+        staleEvidenceSummary?: unknown[];
+      };
+
+      expect(result.markdown).toContain("- source freshness expired: 1");
+      expect(result.markdown).toContain("- stale code fingerprint: 1");
+      expect(result.markdown).toContain(
+        "source freshness expired: posthog source is 13d old (freshness 1d)"
+      );
+      expect(parsedJson.staleEvidenceSummary).toEqual(
+        expect.arrayContaining([
+          { reason: "freshness_expired", count: 1 },
+          { reason: "code_fingerprint_mismatch", count: 1 }
+        ])
+      );
+      expect(
+        (parsedJson.staleEvidence ?? []).some(
+          (item) => item.reason?.includes("source freshness expired") === true
+        )
+      ).toBe(true);
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
   it("counts wrapped worker verifier evidence for startup launch readiness", async () => {
     const workspace = join(
       tmpdir(),
@@ -604,7 +726,10 @@ describe("generateLaunchReadinessReport", () => {
         now: new Date("2026-05-14T12:05:00.000Z")
       });
       const json = await readFile(result.jsonPath, "utf8");
-      const parsedJson = JSON.parse(json) as { staleEvidence?: unknown[] };
+      const parsedJson = JSON.parse(json) as {
+        staleEvidence?: unknown[];
+        staleEvidenceSummary?: unknown[];
+      };
 
       expect(result.status).toBe("launch_ready");
       expect(result.targetStatus).toBe("public_launch_ready");
@@ -621,6 +746,11 @@ describe("generateLaunchReadinessReport", () => {
       });
       expect(json).toContain('"schemaVersion": 1');
       expect(json).toContain('"trustSummary"');
+      expect(result.markdown).toContain("## Evidence Freshness Summary");
+      expect(result.markdown).toContain("Stale/superseded evidence records: 13");
+      expect(result.markdown).toContain(
+        "superseded by newer same-subject evidence: 13"
+      );
       expect(result.markdown).toContain("Current command evidence records: 2");
       expect(result.markdown).toContain("Stale command evidence records: 1");
       expect(result.markdown).toContain("## Stale Evidence Appendix");
@@ -629,6 +759,9 @@ describe("generateLaunchReadinessReport", () => {
         "3 additional stale evidence records omitted from markdown"
       );
       expect(parsedJson.staleEvidence).toHaveLength(13);
+      expect(parsedJson.staleEvidenceSummary).toEqual(
+        expect.arrayContaining([{ reason: "superseded_same_subject", count: 13 }])
+      );
       expect(result.markdown).toContain(
         "superseded by newer evidence for startup_ui_validation:http://localhost:3000:desktop"
       );
