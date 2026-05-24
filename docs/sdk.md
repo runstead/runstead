@@ -34,7 +34,8 @@ export default defineRunsteadExtension({
       id: "posthog-activation",
       title: "PostHog activation",
       description: "Collect activation metrics from PostHog.",
-      command: "node .runstead/extensions/fixtures/runstead-extension-fixture.mjs posthog-activation",
+      command:
+        "node .runstead/extensions/fixtures/runstead-extension-fixture.mjs posthog-activation",
       adapterId: "posthog",
       targets: ["staging", "production"],
       producesEvidenceTypes: ["startup_metric_snapshot"],
@@ -70,11 +71,12 @@ An extension manifest contains:
 
 - `facets`: named readiness dimensions, such as activation metrics, rollback,
   migration, support triage, or security review.
-- `collectors`: integrations that produce evidence records from local commands
-  or adapter ids. Collector metadata includes `command`, `adapterId`,
-  `targets`, `safeForWrappedWorkers`, `qualityTier`, `defaultFreshnessDays`, and
-  `requiredSecrets`; startup readiness treats these as policy inputs when a
-  collector can satisfy an extension evidence requirement.
+- `collectors`: integrations that produce evidence records. Collector metadata
+  includes `command`, `adapterId`, `targets`, `safeForWrappedWorkers`,
+  `qualityTier`, `defaultFreshnessDays`, and `requiredSecrets`; startup
+  readiness treats these as policy inputs when a collector can satisfy an
+  extension evidence requirement. Today, CLI execution requires `command`;
+  `adapterId` is stable integration metadata for provider-specific adapters.
 - `verifiers`: commands that produce local or CI evidence.
 - `gates`: stage and target requirements that compose facets and evidence.
 
@@ -142,9 +144,11 @@ Collector policy is enforced before the verdict is allowed:
 
 When a collector declares a `command`, `runstead startup ready` runs it through
 governed local tool execution, parses JSON evidence from stdout, validates the
-evidence type against `producesEvidenceTypes`, and records startup evidence.
-Extension verifiers are appended to the existing verifier command list and run
-through the same verifier infrastructure as test/lint/typecheck/build.
+evidence type against `producesEvidenceTypes`, and records startup evidence. A
+collector with only `adapterId` is visible to planning and policy, but is skipped
+until a runtime adapter or command is supplied. Extension verifiers are appended
+to the existing verifier command list and run through the same verifier
+infrastructure as test/lint/typecheck/build.
 
 Copyable examples live under [docs/examples/extensions](examples/extensions).
 They cover PostHog activation, Vercel deployment status, Sentry error rate, and

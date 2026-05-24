@@ -33,20 +33,27 @@ Run readiness:
 runstead startup ready \
   --cwd /tmp/runstead-todo \
   --stage launch \
-  --worker codex_cli \
-  --target local
+  --target local \
+  --worker codex_direct
 ```
 
 Runstead should:
 
 - initialize `.runstead/`
 - generate `AGENTS.md`, `CLAUDE.md`, `CODEX.md`, and measurement files
-- run the bounded MVP worker loop
+- run the bounded MVP worker loop, or skip the worker when current verifier
+  evidence proves the existing app
 - run discovered verifier commands
 - start the local dev server and execute UI smoke
 - generate launch readiness and complete-product reports
 - write `startup-readiness-run-<run-id>.md`
 - return `local_launch_ready` or explicit blockers
+
+For the existing `tiny-todo` fixture, the `codex_direct` worker is selected for
+the governed boundary, but the model loop is not called when Runstead can prove
+the repo through current command verifier and UI smoke evidence. For an empty
+repo scaffold, `codex_direct` needs a configured model provider because the
+worker must actually create the app.
 
 ## Empty Repo Dogfood
 

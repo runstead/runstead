@@ -76,7 +76,8 @@ runstead startup ready \
 ```
 
 This initializes Runstead if needed, generates context and measurement
-artifacts, runs the bounded MVP build/repair loop, discovers and runs verifier
+artifacts, runs the bounded MVP build/repair loop or skips the worker when the
+current app already has fresh verifier evidence, discovers and runs verifier
 commands, executes UI smoke when a dev server is available, writes launch and
 complete-check reports, and returns a target-aware verdict such as
 `local_launch_ready` or explicit blockers. `--app-template static-todo` is the
@@ -133,7 +134,7 @@ For a repo-local example, run the todo golden path fixture:
 
 ```bash
 cp -R packages/domain-packs/packs/ai-native-startup/fixtures/tiny-todo /tmp/todo
-runstead startup ready --cwd /tmp/todo --stage launch --worker codex_cli --target local
+runstead startup ready --cwd /tmp/todo --stage launch --target local --worker codex_direct
 ```
 
 See [docs/ai-coded-mvp-readiness.md](docs/ai-coded-mvp-readiness.md) for the
@@ -283,6 +284,7 @@ pnpm format:check
 - `@runstead/cli`: command-line interface
 - `@runstead/core`: domain-agnostic control-plane contracts
 - `@runstead/state-sqlite`: SQLite state store
+- `@runstead/state-postgres`: Postgres control-plane backend adapter
 - `@runstead/domain-packs`: built-in domain packs
 - `@runstead/runtime`: reusable execution, readiness, and tool-call primitives
 - `@runstead/governance`: policy and risk primitives
@@ -316,4 +318,6 @@ pnpm format:check
 - [docs/policy.md](docs/policy.md): policy and approval model
 - [docs/verifier.md](docs/verifier.md): verifier evidence model
 - [docs/domain-packs.md](docs/domain-packs.md): domain pack structure
+- [docs/research-monitor-golden-path.md](docs/research-monitor-golden-path.md):
+  second mature domain pack workflow
 - [docs/sdk.md](docs/sdk.md): extension manifest and SDK contracts

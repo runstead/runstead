@@ -98,10 +98,16 @@ Recommended defaults:
 
 ## Audit State
 
-Runstead persists events and projections in SQLite. The state store is intended
-to be durable local audit state, not a multi-tenant security boundary.
-Runstead sets the SQLite database file and WAL/SHM sidecars to owner-only
-permissions when it opens the state store.
+Runstead's default local state store persists events and projections in
+SQLite. The state store is intended to be durable local audit state, not a
+multi-tenant security boundary. Runstead sets the SQLite database file and
+WAL/SHM sidecars to owner-only permissions when it opens the state store.
+
+`@runstead/state-postgres` provides a shared transactional backend adapter and
+conformance-tested runtime contract for team control-plane experiments. That
+package is not, by itself, an organization security boundary: team deployments
+still need configured backend profiles, runner identity, RBAC, secret
+boundaries, artifact storage, and operational ownership.
 
 The state DB records:
 
@@ -115,8 +121,9 @@ remain the operator's responsibility.
 
 ## Team Control Plane Boundary
 
-Runstead's current production-ready shape is still local workstations and CI
-jobs. A team-level deployment needs a different backend contract:
+Runstead's current production-ready product shape is still local workstations
+and CI jobs. A team-level deployment needs the shared-backend contract plus
+operational controls:
 
 - shared transactional storage instead of local SQLite
 - registered runners with heartbeat and lease ownership
@@ -125,9 +132,10 @@ jobs. A team-level deployment needs a different backend contract:
 - organization identity, RBAC, tenant isolation, and central secret boundaries
 
 `@runstead/runtime` exposes `assessTeamControlPlaneReadiness` so integrations can
-check those capabilities explicitly. A local `.runstead/state.db` can be good
-audit evidence for one workspace, but it must not be presented as an
-organization-wide, multi-tenant security boundary.
+check those capabilities explicitly, and `@runstead/state-postgres` gives a
+starting adapter for shared state. A local `.runstead/state.db` can be good audit
+evidence for one workspace, but it must not be presented as an organization-wide,
+multi-tenant security boundary.
 
 ## What Runstead Does Not Defend Against
 

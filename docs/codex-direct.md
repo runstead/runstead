@@ -34,6 +34,14 @@ If policy requires approval, approve the request and resume the same task.
 Broad "build the whole product" prompts can exhaust the direct worker's turn
 budget; a narrower repair task usually produces a cleaner evidence trail.
 
+`startup ready --worker codex_direct` can also finish without calling the model
+when the repo is already a verifiable MVP. In that green path, Runstead still
+uses the governed worker boundary in the run record, initializes state if
+needed, discovers verifier commands, runs UI smoke, writes launch and
+complete-check reports, and returns the target-aware verdict. Empty-repo
+scaffolds or actual repairs still require a configured provider because the
+direct worker must enter the model/tool loop.
+
 ## Architecture
 
 ```text

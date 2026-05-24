@@ -18,6 +18,8 @@ The current implementation keeps the package graph intentionally small:
   and external connectors
 - `@runstead/workers`: worker capability and governance-level contracts
 - `@runstead/state-sqlite`: SQLite schema and state-store adapter
+- `@runstead/state-postgres`: Postgres control-plane backend adapter for shared
+  runtime experiments
 - `@runstead/domain-packs`: built-in `repo-maintenance` pack and validation
 - `@runstead/skills`: skill package contracts, candidate scaffolding, and tests
 - `@runstead/sdk`: public extension contracts for readiness facets, evidence
@@ -48,8 +50,10 @@ package contracts, but external domain integrations should import
 `@runstead/runtime`, `@runstead/verifiers`, `@runstead/governance`, or
 `@runstead/sdk` instead of `@runstead/cli`.
 
-The current shipped backend remains local/CI-oriented: SQLite state, local
-artifacts, and a manager lock under `.runstead`. A team or organization
-deployment should use the runtime team-control-plane assessment as an
-integration contract, not as evidence that the local SQLite backend has become a
-multi-user service.
+The default shipped product path remains local/CI-oriented: SQLite state, local
+artifacts, and a manager lock under `.runstead`. `@runstead/state-postgres` now
+implements the runtime backend contract for shared transactional state, but a
+team or organization deployment still needs profile wiring, registered runners,
+identity/RBAC, central secret handling, and shared artifact storage. Use the
+runtime team-control-plane assessment as the integration contract; do not treat
+the local SQLite backend as a multi-user service.
