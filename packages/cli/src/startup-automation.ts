@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
 import { constants } from "node:fs";
 import { access, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
-import { extname, join, relative, resolve } from "node:path";
+import { dirname, extname, join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 
@@ -54,6 +54,7 @@ export interface GenerateStartupContextOptions {
   cwd?: string;
   force?: boolean;
   currentOnly?: boolean;
+  writeTrackedContext?: boolean;
   architecturePrinciples?: string[];
   technicalConstraints?: string[];
   acceptedDebt?: string[];
@@ -71,6 +72,7 @@ export interface GenerateStartupContextResult {
 export interface GenerateMeasurementFrameworkOptions {
   cwd?: string;
   force?: boolean;
+  writeTrackedContext?: boolean;
   activationMetric?: string;
   retentionMetric?: string;
   day7Metric?: string;
@@ -586,6 +588,16 @@ export async function generateStartupContext(
         kind: "startup_agent_context",
         generatedAt: contextGeneratedAt,
         markdownPath: path,
+        ...(options.writeTrackedContext === true
+          ? {}
+          : {
+              structuredPath: join(
+                state.root,
+                "startup",
+                "tracked-context",
+                structuredArtifactFileName(filename)
+              )
+            }),
         data: {
           ...contextData,
           contextFile: filename,
@@ -697,11 +709,29 @@ export async function generateMeasurementFramework(
 
   await writeTextFileIfChanged(runtimePath, framework);
   const structuredFiles = await Promise.all(
-    [rootPath, runtimePath].map((path) =>
+    [
+      {
+        markdownPath: rootPath,
+        ...(options.writeTrackedContext === true
+          ? {}
+          : {
+              structuredPath: join(
+                state.root,
+                "startup",
+                "tracked-context",
+                "MEASUREMENT.json"
+              )
+            })
+      },
+      { markdownPath: runtimePath }
+    ].map((path) =>
       writeStartupStructuredArtifact({
         kind: "startup_measurement_framework",
         generatedAt: measurementGeneratedAt,
-        markdownPath: path,
+        markdownPath: path.markdownPath,
+        ...(path.structuredPath === undefined
+          ? {}
+          : { structuredPath: path.structuredPath }),
         data: {
           ...measurementData,
           ingested: rootPathExists && options.force !== true
@@ -1831,9 +1861,11 @@ async function writeStartupStructuredArtifact(input: {
   kind: string;
   generatedAt: string;
   markdownPath: string;
+  structuredPath?: string;
   data: Record<string, unknown>;
 }): Promise<string> {
-  const structuredPath = structuredArtifactPath(input.markdownPath);
+  const structuredPath =
+    input.structuredPath ?? structuredArtifactPath(input.markdownPath);
   const artifact: StartupStructuredArtifact = {
     schemaVersion: STARTUP_STRUCTURED_ARTIFACT_SCHEMA_VERSION,
     schema: STARTUP_STRUCTURED_ARTIFACT_SCHEMA,
@@ -1843,6 +1875,7 @@ async function writeStartupStructuredArtifact(input: {
     data: input.data
   };
 
+  await mkdir(dirname(structuredPath), { recursive: true });
   await writeTextFileIfChanged(
     structuredPath,
     `${JSON.stringify(artifact, null, 2)}\n`
@@ -1921,6 +1954,12 @@ function structuredArtifactPath(markdownPath: string): string {
   return markdownPath.endsWith(".md")
     ? `${markdownPath.slice(0, -3)}.json`
     : `${markdownPath}.json`;
+}
+
+function structuredArtifactFileName(markdownFileName: string): string {
+  return markdownFileName.endsWith(".md")
+    ? `${markdownFileName.slice(0, -3)}.json`
+    : `${markdownFileName}.json`;
 }
 
 function formatMeasurementFramework(input: {

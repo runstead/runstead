@@ -53,6 +53,7 @@ export interface StartupFounderFlowOptions {
   architecturePrinciples?: string[];
   technicalConstraints?: string[];
   acceptedDebt?: string[];
+  writeTrackedContext?: boolean;
   activationMetric?: string;
   retentionMetric?: string;
   day7Metric?: string;
@@ -198,6 +199,9 @@ export async function startupOnboard(
       ...(options.acceptedDebt === undefined
         ? {}
         : { acceptedDebt: options.acceptedDebt }),
+      ...(options.writeTrackedContext === undefined
+        ? {}
+        : { writeTrackedContext: options.writeTrackedContext }),
       ...(options.now === undefined ? {} : { now: options.now })
     })
   );
@@ -218,6 +222,9 @@ export async function startupOnboard(
       ...(options.falsePositiveMetric === undefined
         ? {}
         : { falsePositiveMetric: options.falsePositiveMetric }),
+      ...(options.writeTrackedContext === undefined
+        ? {}
+        : { writeTrackedContext: options.writeTrackedContext }),
       ...(options.now === undefined ? {} : { now: options.now })
     })
   );

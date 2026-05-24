@@ -154,6 +154,7 @@ export interface StartupReadyOptions {
   writeCi?: boolean;
   ci?: boolean;
   refreshContext?: boolean;
+  writeTrackedContext?: boolean;
   interactive?: boolean;
   guided?: boolean;
   interactiveAnswers?: Partial<StartupReadyInteractiveAnswers>;
@@ -809,6 +810,9 @@ async function executeStartupReadyRun(
       cwd: run.cwd,
       writeCi: options.writeCi === true,
       force: options.refreshContext === true,
+      ...(options.writeTrackedContext === undefined
+        ? {}
+        : { writeTrackedContext: options.writeTrackedContext }),
       ...startupReadyInteractiveFounderFlowOptions(interactiveAnswers),
       ...(options.now === undefined ? {} : { now: options.now })
     });

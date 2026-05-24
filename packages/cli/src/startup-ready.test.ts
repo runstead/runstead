@@ -1138,6 +1138,130 @@ describe("startup readiness run model", () => {
     }
   });
 
+  it("does not rewrite tracked root context JSON during startup ready by default", async () => {
+    const workspace = join(
+      tmpdir(),
+      `runstead-startup-ready-context-json-stable-${process.pid}`
+    );
+    const trackedJsonFiles = [
+      "AGENTS.json",
+      "CLAUDE.json",
+      "CODEX.json",
+      "MEASUREMENT.json"
+    ];
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await mkdir(workspace, { recursive: true });
+      await writeStartupReadyStableFixture(workspace);
+      for (const file of trackedJsonFiles) {
+        await writeFile(
+          join(workspace, file),
+          `${JSON.stringify({ sentinel: file, generatedAt: "tracked" }, null, 2)}\n`,
+          "utf8"
+        );
+      }
+      await git(workspace, "init");
+      await git(workspace, "config", "user.email", "runstead@example.com");
+      await git(workspace, "config", "user.name", "Runstead Test");
+      await git(workspace, "add", ".");
+      await git(workspace, "commit", "-m", "baseline context json");
+
+      const before = await Promise.all(
+        trackedJsonFiles.map((file) => readFile(join(workspace, file), "utf8"))
+      );
+
+      await runStartupReady({
+        cwd: workspace,
+        stage: "mvp",
+        target: "local",
+        worker: "codex_cli",
+        refreshContext: true,
+        workerRunner: () =>
+          Promise.resolve({
+            stdout: JSON.stringify({
+              summary: "context JSON stability fixture",
+              files_changed: [],
+              commands_run: [],
+              risks: [],
+              needs_approval: false,
+              approval_reason: null
+            }),
+            stderr: "",
+            exitCode: 0
+          }),
+        now: new Date("2026-05-22T01:21:30.000Z")
+      });
+
+      const after = await Promise.all(
+        trackedJsonFiles.map((file) => readFile(join(workspace, file), "utf8"))
+      );
+      const jsonStatus = await gitOutput(
+        workspace,
+        "status",
+        "--short",
+        "--",
+        ...trackedJsonFiles
+      );
+
+      expect(after).toEqual(before);
+      expect(jsonStatus.trim()).toBe("");
+      await expect(
+        readFile(
+          join(workspace, ".runstead", "startup", "tracked-context", "AGENTS.json"),
+          "utf8"
+        )
+      ).resolves.toContain("startup_agent_context");
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  }, 60_000);
+
+  it("writes tracked root context JSON during startup ready when requested", async () => {
+    const workspace = join(
+      tmpdir(),
+      `runstead-startup-ready-context-json-write-${process.pid}`
+    );
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await mkdir(workspace, { recursive: true });
+      await writeStartupReadyStableFixture(workspace);
+
+      await runStartupReady({
+        cwd: workspace,
+        stage: "mvp",
+        target: "local",
+        worker: "codex_cli",
+        refreshContext: true,
+        writeTrackedContext: true,
+        workerRunner: () =>
+          Promise.resolve({
+            stdout: JSON.stringify({
+              summary: "explicit root context JSON fixture",
+              files_changed: [],
+              commands_run: [],
+              risks: [],
+              needs_approval: false,
+              approval_reason: null
+            }),
+            stderr: "",
+            exitCode: 0
+          }),
+        now: new Date("2026-05-22T01:21:45.000Z")
+      });
+
+      await expect(readFile(join(workspace, "AGENTS.json"), "utf8")).resolves.toContain(
+        "startup_agent_context"
+      );
+      await expect(
+        readFile(join(workspace, "MEASUREMENT.json"), "utf8")
+      ).resolves.toContain("startup_measurement_framework");
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  }, 60_000);
+
   it("keeps local startup readiness on the readiness wrapper profile by default", async () => {
     const workspace = join(tmpdir(), `runstead-startup-ready-local-${process.pid}`);
 
@@ -2198,6 +2322,15 @@ async function git(cwd: string, ...args: string[]): Promise<void> {
     cwd,
     maxBuffer: 1024 * 1024
   });
+}
+
+async function gitOutput(cwd: string, ...args: string[]): Promise<string> {
+  const { stdout } = await execFileAsync("git", args, {
+    cwd,
+    maxBuffer: 1024 * 1024
+  });
+
+  return stdout;
 }
 
 function startupReadyVerifierTask(): Task {

@@ -122,6 +122,14 @@ describe("startup automation", () => {
         "CODEX.json",
         "agent-context.json"
       ]);
+      expect(result.structuredFiles).toEqual(
+        expect.arrayContaining([
+          join(workspace, ".runstead", "startup", "tracked-context", "AGENTS.json"),
+          join(workspace, ".runstead", "startup", "tracked-context", "CLAUDE.json"),
+          join(workspace, ".runstead", "startup", "tracked-context", "CODEX.json")
+        ])
+      );
+      await expect(readFile(join(workspace, "AGENTS.json"), "utf8")).rejects.toThrow();
       await expectStructuredArtifact(
         result.structuredFiles,
         "agent-context.json",
@@ -162,10 +170,7 @@ describe("startup automation", () => {
   });
 
   it("keeps generated agent context artifacts stable when semantic inputs do not change", async () => {
-    const workspace = join(
-      tmpdir(),
-      `runstead-startup-context-stable-${process.pid}`
-    );
+    const workspace = join(tmpdir(), `runstead-startup-context-stable-${process.pid}`);
 
     try {
       await rm(workspace, { force: true, recursive: true });
@@ -207,11 +212,43 @@ describe("startup automation", () => {
     }
   });
 
-  it("refreshes current agent context without rewriting root context files", async () => {
+  it("can explicitly write tracked root context JSON artifacts", async () => {
     const workspace = join(
       tmpdir(),
-      `runstead-startup-context-current-${process.pid}`
+      `runstead-startup-context-tracked-json-${process.pid}`
     );
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await initStartup({
+        cwd: workspace,
+        stage: "mvp",
+        now: new Date("2026-05-14T02:00:00.000Z")
+      });
+
+      const result = await generateStartupContext({
+        cwd: workspace,
+        writeTrackedContext: true,
+        now: new Date("2026-05-14T04:10:00.000Z")
+      });
+
+      expect(result.structuredFiles).toEqual(
+        expect.arrayContaining([
+          join(workspace, "AGENTS.json"),
+          join(workspace, "CLAUDE.json"),
+          join(workspace, "CODEX.json")
+        ])
+      );
+      await expect(readFile(join(workspace, "AGENTS.json"), "utf8")).resolves.toContain(
+        "startup_agent_context"
+      );
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("refreshes current agent context without rewriting root context files", async () => {
+    const workspace = join(tmpdir(), `runstead-startup-context-current-${process.pid}`);
 
     try {
       await rm(workspace, { force: true, recursive: true });
@@ -347,6 +384,14 @@ describe("startup automation", () => {
         "MEASUREMENT.json",
         "measurement-framework.json"
       ]);
+      expect(result.structuredFiles).toEqual(
+        expect.arrayContaining([
+          join(workspace, ".runstead", "startup", "tracked-context", "MEASUREMENT.json")
+        ])
+      );
+      await expect(
+        readFile(join(workspace, "MEASUREMENT.json"), "utf8")
+      ).rejects.toThrow();
       const measurementStructured = await expectStructuredArtifact(
         result.structuredFiles,
         "measurement-framework.json",
@@ -432,6 +477,37 @@ describe("startup automation", () => {
 
       expect(measurementAfter).toBe(measurementBefore);
       expect(secondStructured.generatedAt).toBe(firstStructured.generatedAt);
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("can explicitly write tracked measurement JSON artifacts", async () => {
+    const workspace = join(
+      tmpdir(),
+      `runstead-startup-measurement-tracked-json-${process.pid}`
+    );
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await initStartup({
+        cwd: workspace,
+        stage: "mvp",
+        now: new Date("2026-05-14T02:00:00.000Z")
+      });
+
+      const result = await generateMeasurementFramework({
+        cwd: workspace,
+        writeTrackedContext: true,
+        now: new Date("2026-05-14T05:10:00.000Z")
+      });
+
+      expect(result.structuredFiles).toEqual(
+        expect.arrayContaining([join(workspace, "MEASUREMENT.json")])
+      );
+      await expect(
+        readFile(join(workspace, "MEASUREMENT.json"), "utf8")
+      ).resolves.toContain("startup_measurement_framework");
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }

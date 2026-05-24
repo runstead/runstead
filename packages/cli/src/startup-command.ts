@@ -173,6 +173,10 @@ export function registerStartupCommands(program: Command): void {
       "Regenerate startup context and measurement docs instead of ingesting existing files"
     )
     .option(
+      "--write-tracked-context",
+      "Write root structured context JSON artifacts when refreshing context"
+    )
+    .option(
       "--interactive",
       "Prompt for founder context and measurement details before generating evidence"
     )
@@ -206,6 +210,7 @@ export function registerStartupCommands(program: Command): void {
         writeCi?: boolean;
         ci?: boolean;
         refreshContext?: boolean;
+        writeTrackedContext?: boolean;
         interactive?: boolean;
         guided?: boolean;
         forceBuild?: boolean;
@@ -239,6 +244,7 @@ export function registerStartupCommands(program: Command): void {
           writeCi: options.writeCi === true,
           ci: options.ci === true,
           refreshContext: options.refreshContext === true,
+          writeTrackedContext: options.writeTrackedContext === true,
           interactive: options.interactive === true,
           guided: options.guided === true,
           forceBuild: options.forceBuild === true || options.repair === true,
