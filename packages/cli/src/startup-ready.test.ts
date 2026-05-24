@@ -205,6 +205,10 @@ describe("startup readiness run model", () => {
         "dashboard",
         "complete_check"
       ]);
+      expect(
+        result.run.operatorCommands.find((command) => command.kind === "complete_check")
+          ?.command
+      ).toContain("--target local");
       expect(formatStartupReadinessRun(result.run)).toContain("Evidence summary:");
       expect(result.run.reportPaths).toEqual(
         expect.arrayContaining([
@@ -1068,8 +1072,32 @@ describe("startup readiness run model", () => {
       expect(completePhase?.artifacts).toEqual(
         expect.arrayContaining([
           join(workspace, ".runstead", "reports", "startup-complete-product-check.md"),
-          join(workspace, ".runstead", "reports", "startup-complete-product-check.json")
+          join(workspace, ".runstead", "reports", "startup-complete-product-check.json"),
+          join(
+            workspace,
+            ".runstead",
+            "reports",
+            "launch-readiness-ai-native-startup.md"
+          ),
+          join(
+            workspace,
+            ".runstead",
+            "reports",
+            "launch-readiness-ai-native-startup.json"
+          ),
+          join(workspace, ".runstead", "reports", "runstead-startup-ci-summary.md"),
+          join(workspace, ".runstead", "reports", "runstead-startup-ci-summary.json"),
+          join(workspace, ".runstead", "dashboard", "index.html"),
+          join(workspace, ".runstead", "dashboard", "state.json")
         ])
+      );
+      expect(
+        completePhase?.artifacts.some((artifact) =>
+          artifact.includes("ops-diagnostics-")
+        )
+      ).toBe(true);
+      expect(result.run.reportPaths).toEqual(
+        expect.arrayContaining(completePhase?.artifacts ?? [])
       );
       const ciSummary = JSON.parse(
         await readFile(

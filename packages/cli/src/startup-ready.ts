@@ -914,21 +914,19 @@ async function executeStartupReadyRun(
       ...(options.now === undefined ? {} : { now: options.now })
     });
 
+    const completeArtifacts = startupCompleteProductArtifacts(complete);
+
     updatePhase(run, "complete_check", {
       status: complete.status === "complete" ? "passed" : "blocked",
       evidenceIds: [complete.evidenceId],
-      artifacts: [complete.markdownPath, complete.jsonPath],
+      artifacts: completeArtifacts,
       blockers: complete.criteria.flatMap((criterion) => criterion.missing),
       nextAction:
         complete.status === "complete"
           ? "ship with recorded evidence"
           : "resolve complete-product missing evidence and rerun startup ready"
     });
-    run.reportPaths = unique([
-      ...run.reportPaths,
-      complete.markdownPath,
-      complete.jsonPath
-    ]);
+    run.reportPaths = unique([...run.reportPaths, ...completeArtifacts]);
     collectRunEvidence(run);
     await writeStartupReadinessRun(run);
     emitStartupReadyPhaseResult(run, options, "complete_check");
@@ -940,6 +938,23 @@ interface StartupReadyUiSmokeRepairAttempt {
   artifacts: string[];
   blockers: string[];
   verifierUpdate?: Partial<StartupReadinessRunPhase>;
+}
+
+function startupCompleteProductArtifacts(
+  complete: Awaited<ReturnType<typeof generateStartupCompleteProductCheck>>
+): string[] {
+  return unique([
+    complete.markdownPath,
+    complete.jsonPath,
+    complete.surfaces.launchReportMarkdown,
+    complete.surfaces.launchReportJson,
+    complete.surfaces.ciMarkdown,
+    complete.surfaces.ciJson,
+    complete.surfaces.dashboardHtml,
+    complete.surfaces.dashboardJson,
+    complete.surfaces.diagnosticsMarkdown,
+    complete.surfaces.diagnosticsJson
+  ]);
 }
 
 async function attemptStartupReadyUiSmokeRepair(
@@ -2304,7 +2319,7 @@ export function buildStartupReadyOperatorCommands(
     {
       kind: "complete_check",
       title: "Run complete-product audit",
-      command: `runstead startup complete-check --cwd ${cwd}`,
+      command: `runstead startup complete-check --cwd ${cwd} --target ${run.target}`,
       when: "Verify launch report, CI gate, dashboard, diagnostics, remediation, evidence, and events."
     }
   ];
