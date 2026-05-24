@@ -711,14 +711,15 @@ describe("appendEventAndProject", () => {
 
       database.close();
 
-      expect(workerRun).toEqual({
+      expect(workerRun.owner_id).toMatch(/^pid:\d+$/);
+      expect({ ...workerRun, owner_id: "<runtime-owner>" }).toEqual({
         id: "wr_001",
         task_id: "task_worker_001",
         worker_type: "shell_verifier",
         status: "running",
         enforcement_level: "policy_enforced",
         output_json: null,
-        owner_id: expect.stringMatching(/^pid:\d+$/),
+        owner_id: "<runtime-owner>",
         heartbeat_at: "2026-05-14T03:10:00.000Z",
         lease_expires_at: "2026-05-14T03:40:00.000Z"
       });
