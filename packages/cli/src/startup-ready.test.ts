@@ -75,6 +75,7 @@ describe("startup readiness run model", () => {
         "build_mvp",
         "verifiers",
         "ui_smoke",
+        "extensions",
         "launch_audit",
         "launch_report",
         "complete_check"

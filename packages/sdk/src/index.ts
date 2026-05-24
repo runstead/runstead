@@ -51,6 +51,12 @@ export const RunsteadEvidenceCollectorSchema = z.object({
   id: z.string().regex(EXTENSION_ID_PATTERN),
   title: z.string().min(1),
   description: z.string().min(1),
+  command: z.string().min(1).optional(),
+  adapterId: z.string().regex(EXTENSION_ID_PATTERN).optional(),
+  targets: z
+    .array(RunsteadReadinessTargetSchema)
+    .default(["local", "staging", "production"]),
+  outputSchema: z.record(z.string(), z.unknown()).default({}),
   producesEvidenceTypes: z.array(z.string().min(1)).min(1),
   requiredSecrets: z.array(z.string().min(1)).default([]),
   safeForWrappedWorkers: z.boolean().default(false),
@@ -381,6 +387,8 @@ function copyEvidenceCollector(
 ): RunsteadEvidenceCollector {
   return {
     ...collector,
+    targets: [...collector.targets],
+    outputSchema: { ...collector.outputSchema },
     producesEvidenceTypes: [...collector.producesEvidenceTypes],
     requiredSecrets: [...collector.requiredSecrets]
   };

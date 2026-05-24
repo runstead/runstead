@@ -49,6 +49,8 @@ describe("Runstead SDK extension contracts", () => {
           id: "posthog-activation",
           title: "PostHog activation",
           description: "Collect activation metrics from PostHog.",
+          command: "npm test -- --collector posthog-activation",
+          targets: ["staging", "production"],
           producesEvidenceTypes: ["startup_metric_snapshot"],
           requiredSecrets: ["POSTHOG_API_KEY"]
         }
@@ -74,6 +76,8 @@ describe("Runstead SDK extension contracts", () => {
 
     expect(extension.collectors[0]).toMatchObject({
       id: "posthog-activation",
+      command: "npm test -- --collector posthog-activation",
+      targets: ["staging", "production"],
       safeForWrappedWorkers: false,
       qualityTier: "none"
     });
@@ -104,6 +108,12 @@ describe("Runstead SDK extension contracts", () => {
           id: "posthog-activation",
           title: "PostHog activation",
           description: "Collect activation metrics from PostHog.",
+          command: "npm test -- --collector posthog-activation",
+          adapterId: "posthog",
+          targets: ["production"],
+          outputSchema: {
+            type: "startup_metric_snapshot"
+          },
           producesEvidenceTypes: ["startup_metric_snapshot"],
           requiredSecrets: ["POSTHOG_API_KEY"],
           safeForWrappedWorkers: true,
@@ -140,6 +150,12 @@ describe("Runstead SDK extension contracts", () => {
       safeForWrappedWorkers: true
     });
     expect(runtime.collectors[0]).toMatchObject({
+      command: "npm test -- --collector posthog-activation",
+      adapterId: "posthog",
+      targets: ["production"],
+      outputSchema: {
+        type: "startup_metric_snapshot"
+      },
       qualityTier: "external_observed",
       defaultFreshnessDays: 14
     });

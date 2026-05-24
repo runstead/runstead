@@ -197,6 +197,19 @@ export function startupReadinessExtensionPolicyBlockers(input: {
   );
 }
 
+export async function startupReadinessExtensionVerifierCommands(options: {
+  cwd: string;
+}): Promise<{ name: string; command: string }[]> {
+  const loaded = await loadStartupReadinessExtensions({ cwd: options.cwd });
+
+  return loaded.extensions.flatMap(({ contract }) =>
+    contract.verifiers.map((verifier) => ({
+      name: `extension:${contract.extensionId}/${verifier.id}`,
+      command: verifier.command
+    }))
+  );
+}
+
 async function discoverExtensionManifestPaths(root: string): Promise<string[]> {
   let entries: Dirent[];
 

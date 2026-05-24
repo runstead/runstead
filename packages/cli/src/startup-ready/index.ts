@@ -19,10 +19,15 @@ import { requireRunsteadStateDb, resolveRunsteadRoot } from "../runstead-root.js
 import { generateStartupCiSummary } from "../startup-ci-integration.js";
 import { detectStartupDevServerCommand } from "../startup-dev-server.js";
 import {
+  executeStartupReadinessExtensions,
+  type StartupExtensionExecutionResult
+} from "../startup-extension-execution.js";
+import {
   loadStartupReadinessExtensions,
   startupReadinessExtensionEvidenceRequirements,
   startupReadinessExtensionPolicyBlockers,
-  startupReadinessExtensionRequirementBlockers
+  startupReadinessExtensionRequirementBlockers,
+  startupReadinessExtensionVerifierCommands
 } from "../startup-extension-loader.js";
 import {
   executeStartupReadyUiSmoke,
@@ -396,6 +401,10 @@ export async function planStartupReady(
       planPhase("ui_smoke", "UI smoke", [
         ...(devServer.ok ? [] : [devServer.blocker]),
         ...uiPlanBlockers(evidenceTypes)
+      ]),
+      planPhase("extensions", "Extension collectors/verifiers", [
+        ...extensionBlockers,
+        ...extensionPolicyBlockers
       ]),
       planPhase("launch_audit", "Launch audit/security", [
         ...ciPlanBlockers(inspection, target),
@@ -979,6 +988,39 @@ async function executeStartupReadyRun(
     emitStartupReadyPhaseResult(run, options, "ui_smoke");
   }
 
+  if (shouldRunPhase(run, "extensions")) {
+    updatePhase(run, "extensions", { status: "running" });
+    await writeStartupReadinessRun(run);
+    emitStartupReadyProgress(run, options, {
+      phaseId: "extensions",
+      status: "started",
+      message: "running extension collectors"
+    });
+    const extensions = await executeStartupReadinessExtensions({
+      cwd: run.cwd,
+      target: run.target,
+      stage: startupReadyStageToGateStage(run.stage),
+      worker: run.worker,
+      governanceProfile: run.governanceProfile,
+      ...(options.now === undefined ? {} : { now: options.now })
+    });
+
+    updatePhase(run, "extensions", {
+      status: extensions.status,
+      evidenceIds: extensions.evidenceIds,
+      artifacts: extensions.artifacts,
+      blockers: extensions.blockers,
+      warnings: startupReadyExtensionWarnings(extensions),
+      nextAction:
+        extensions.status === "passed"
+          ? "continue launch readiness"
+          : "resolve extension collector blockers and rerun startup ready"
+    });
+    collectRunEvidence(run);
+    await writeStartupReadinessRun(run);
+    emitStartupReadyPhaseResult(run, options, "extensions");
+  }
+
   if (run.target === "local" && hasPhase(run, "launch_audit")) {
     await ensureStartupReadyLocalLaunchEvidence(run, options.now ?? new Date());
   }
@@ -1270,7 +1312,7 @@ async function startupReadyVerifierCommands(
     (now ?? new Date()).toISOString()
   );
 
-  return [
+  const standard = [
     { name: "test", command: inspection.commands.test.command },
     { name: "lint", command: inspection.commands.lint.command },
     { name: "typecheck", command: inspection.commands.typecheck.command },
@@ -1278,6 +1320,9 @@ async function startupReadyVerifierCommands(
   ].flatMap((item) =>
     item.command === undefined ? [] : [{ name: item.name, command: item.command }]
   );
+  const extensionCommands = await startupReadinessExtensionVerifierCommands({ cwd });
+
+  return [...standard, ...extensionCommands];
 }
 
 function startupMvpVerifierRunFromTaskVerifiers(
@@ -2327,6 +2372,21 @@ async function startupReadyVerifierPhaseUpdate(
     },
     verifiedByCurrentEvidence: true
   };
+}
+
+function startupReadyExtensionWarnings(
+  result: StartupExtensionExecutionResult
+): string[] {
+  return unique([
+    ...result.warnings,
+    ...result.collectorResults.flatMap((collector) =>
+      collector.status === "skipped"
+        ? [
+            `extension ${collector.extensionId}/${collector.collectorId} collector skipped`
+          ]
+        : []
+    )
+  ]);
 }
 
 interface CurrentStartupReadyVerifierEvidence {
@@ -4289,6 +4349,7 @@ function phaseIncludedForStage(id: string, stage: StartupReadyStage): boolean {
   const launch = new Set([
     ...mvp,
     "ui_smoke",
+    "extensions",
     "launch_audit",
     "launch_report",
     "complete_check"
