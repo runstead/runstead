@@ -18,7 +18,7 @@ import {
   type StartupGateCheckResult,
   type StartupGateStage
 } from "./startup-evidence.js";
-import { getStartupStatus } from "./startup-status.js";
+import { readLatestStartupReadinessSnapshot } from "./startup-readiness-snapshot.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -110,11 +110,10 @@ export async function generateStartupCiSummary(
   });
   const readiness =
     options.readiness ??
-    (await readLatestStartupCiReadiness({
-      cwd,
-      domain,
-      now: new Date(checkedAt)
-    }));
+    readLatestStartupReadinessSnapshot({
+      root: resolvedState.root,
+      stateDb: resolvedState.stateDb
+    });
   const remoteActions = await inspectGitHubActionsRemoteStatus({
     cwd,
     ...(options.fetch === undefined ? {} : { fetch: options.fetch })
@@ -260,29 +259,6 @@ function startupGateFromReleaseDecision(
     blockers: decision.blockers,
     warnings: decision.warnings
   };
-}
-
-async function readLatestStartupCiReadiness(input: {
-  cwd: string;
-  domain: string;
-  now: Date;
-}): Promise<{ verdict: string; blockers: string[] } | undefined> {
-  try {
-    const status = await getStartupStatus({
-      cwd: input.cwd,
-      domain: input.domain,
-      now: input.now
-    });
-
-    return status.readiness === undefined
-      ? undefined
-      : {
-          verdict: status.readiness.verdict,
-          blockers: status.readiness.blockers
-        };
-  } catch {
-    return undefined;
-  }
 }
 
 export function formatStartupCiSummary(result: GenerateStartupCiSummaryResult): string {

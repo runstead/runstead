@@ -1,5 +1,5 @@
-import { existsSync, readFileSync, readdirSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { openRunsteadDatabase } from "@runstead/state-sqlite";
@@ -10,6 +10,7 @@ import {
   type StartupGateCheckResult,
   type StartupGateStage
 } from "./startup-evidence.js";
+import { readLatestStartupReadinessSnapshot } from "./startup-readiness-snapshot.js";
 import { startupVerdictReady } from "./startup-verdict.js";
 
 export interface StartupStatusOptions {
@@ -120,7 +121,10 @@ export async function getStartupStatus(
     stateDb: resolvedState.stateDb,
     generatedAt
   });
-  const readiness = readLatestStartupReadinessVerdict(resolvedState.root);
+  const readiness = readLatestStartupReadinessSnapshot({
+    root: resolvedState.root,
+    stateDb: resolvedState.stateDb
+  });
   const gates: StartupStatusGate[] = gateResults.map((gate) => ({
     stage: gate.stage,
     status: gate.passed ? "passed" : "blocked",
@@ -375,67 +379,6 @@ function readinessVerdictReady(
   readiness: StartupStatusReadinessVerdict | undefined
 ): readiness is StartupStatusReadinessVerdict {
   return readiness !== undefined && startupVerdictReady(readiness.verdict);
-}
-
-function readLatestStartupReadinessVerdict(
-  root: string
-): StartupStatusReadinessVerdict | undefined {
-  const runs = startupReadinessRunDirs(root)
-    .flatMap((runsDir) =>
-      readdirSync(runsDir)
-        .filter((name) => name.endsWith(".json"))
-        .map((name) => readStartupReadinessRunVerdict(join(runsDir, name)))
-    )
-    .filter((run): run is StartupStatusReadinessVerdict => run !== undefined)
-    .sort((left, right) =>
-      readinessVerdictTime(right).localeCompare(readinessVerdictTime(left))
-    );
-
-  return runs[0];
-}
-
-function startupReadinessRunDirs(root: string): string[] {
-  return [
-    join(root, "startup", "readiness-runs"),
-    join(root, "startup", "runs")
-  ].filter((path) => existsSync(path));
-}
-
-function readStartupReadinessRunVerdict(
-  path: string
-): StartupStatusReadinessVerdict | undefined {
-  try {
-    const parsed = JSON.parse(readFileSync(path, "utf8")) as unknown;
-
-    if (
-      !isRecord(parsed) ||
-      typeof parsed.id !== "string" ||
-      typeof parsed.target !== "string" ||
-      typeof parsed.verdict !== "string"
-    ) {
-      return undefined;
-    }
-
-    return {
-      runId: parsed.id,
-      target: parsed.target,
-      verdict: parsed.verdict,
-      blockers: Array.isArray(parsed.verdictBlockers)
-        ? parsed.verdictBlockers.filter(
-            (blocker): blocker is string => typeof blocker === "string"
-          )
-        : [],
-      ...(typeof parsed.completedAt === "string"
-        ? { completedAt: parsed.completedAt }
-        : {})
-    };
-  } catch {
-    return undefined;
-  }
-}
-
-function readinessVerdictTime(run: StartupStatusReadinessVerdict): string {
-  return run.completedAt ?? "";
 }
 
 function listOrNone<T>(items: T[], formatter: (item: T) => string): string {
