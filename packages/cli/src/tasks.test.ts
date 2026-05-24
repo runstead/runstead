@@ -119,8 +119,9 @@ describe("task queries", () => {
       expect(claimed.task.status).toBe("claimed");
       expect(claimed.task.updatedAt).toBe("2026-05-14T03:11:00.000Z");
       expect(stored.status).toBe("claimed");
-      expect(lease).toEqual({
-        owner_id: expect.stringMatching(/^pid:\d+$/),
+      expect(lease.owner_id).toMatch(/^pid:\d+$/);
+      expect({ ...lease, owner_id: "<runtime-owner>" }).toEqual({
+        owner_id: "<runtime-owner>",
         heartbeat_at: "2026-05-14T03:11:00.000Z",
         lease_expires_at: "2026-05-14T03:41:00.000Z"
       });
