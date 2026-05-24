@@ -15,6 +15,7 @@ import {
 import { describe, expect, it } from "vitest";
 import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sqlite";
 
+import { buildDashboard } from "./dashboard.js";
 import { initRunstead } from "./init.js";
 import { addStartupEvidence } from "./startup-evidence.js";
 import { storeCommandVerifierEvidence } from "./verifier-evidence.js";
@@ -481,12 +482,22 @@ describe("startup readiness run model", () => {
       const decisionReport = result.run.reportPaths.find((path) =>
         path.endsWith(`startup-readiness-run-${result.run.id}.md`)
       );
+      const dashboard = await buildDashboard({ cwd: workspace });
 
+      expect(result.run.verdict).toBe("local_launch_ready");
+      expect(buildPhase?.status).toBe("passed");
+      expect(buildPhase?.execution).toMatchObject({
+        implementation: "no_change_needed",
+        verification: "passed",
+        agentCompletion: "failed"
+      });
       expect(buildPhase?.warnings).toEqual(
         expect.arrayContaining([
-          expect.stringContaining("MVP verified despite agent completion failure")
+          expect.stringContaining("MVP verified despite agent completion failure"),
+          expect.stringContaining("recovered without re-running the agent")
         ])
       );
+      expect(buildPhase?.nextAction).toContain("without re-running the agent");
       expect(verifierPhase).toMatchObject({
         status: "passed",
         evidenceIds,
@@ -499,6 +510,18 @@ describe("startup readiness run model", () => {
       );
       await expect(readFile(decisionReport ?? "", "utf8")).resolves.toContain(
         evidenceIds.join(", ")
+      );
+      expect(result.run.operatorCommands[0]).toMatchObject({
+        kind: "recover",
+        title: "Recover with verifier-only evaluation"
+      });
+      expect(dashboard.snapshot.operator.actions).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            title: "Recover with verifier-only evaluation",
+            status: "ready"
+          })
+        ])
       );
     } finally {
       await rm(workspace, { force: true, recursive: true });

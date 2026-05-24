@@ -265,6 +265,7 @@ export interface StartupReadyGuidedStep {
 }
 
 export type StartupReadyOperatorCommandKind =
+  | "recover"
   | "resume"
   | "rerun"
   | "ci"
@@ -859,17 +860,25 @@ async function executeStartupReadyRun(
       greenPath
     });
     const verifierPhase = await startupReadyVerifierPhaseUpdate(run, build, options);
-    const buildPhaseStatus = startupBuildMvpPhaseExecutionStatus(
+    const initialBuildPhaseStatus = startupBuildMvpPhaseExecutionStatus(
       build.status,
       build.execution
     );
-    const buildWarnings = startupBuildMvpPhaseExecutionWarnings(build.execution, {
-      verifiedByCurrentEvidence: verifierPhase.verifiedByCurrentEvidence
+    const buildRecovery = startupReadyAutoRecoverBuildMvp({
+      status: initialBuildPhaseStatus,
+      execution: build.execution,
+      verifierPhase: verifierPhase.update
+    });
+    const buildPhaseStatus = buildRecovery.status;
+    const buildExecution = buildRecovery.execution;
+    const buildWarnings = startupBuildMvpPhaseExecutionWarnings(buildExecution, {
+      verifiedByCurrentEvidence: verifierPhase.verifiedByCurrentEvidence,
+      verifierOnlyRecovery: buildRecovery.recovered
     });
 
     updatePhase(run, "build_mvp", {
       status: buildPhaseStatus,
-      execution: build.execution,
+      execution: buildExecution,
       warnings: buildWarnings,
       artifacts: scaffoldArtifact === undefined ? [] : [scaffoldArtifact],
       blockers:
@@ -880,12 +889,16 @@ async function executeStartupReadyRun(
         buildPhaseStatus === "passed"
           ? build.agentSkipped
             ? "existing MVP verified; skipped worker build"
+            : buildRecovery.recovered
+              ? "Runstead recovered without re-running the agent; current verifier evidence proves the MVP"
             : buildWarnings.length > 0
               ? "verified MVP despite worker completion warning; continue launch readiness"
               : build.status === "completed_with_warnings"
                 ? "review MVP worker warnings and continue launch readiness"
                 : "review MVP gate blockers and continue launch readiness"
-          : "review worker output and resume startup readiness"
+          : verifierPhase.update.status === "passed"
+            ? "Runstead can recover without re-running the agent; resume this readiness run for verifier-only evaluation"
+            : "review worker output and resume startup readiness"
     });
     updatePhase(run, "verifiers", verifierPhase.update);
     await refreshStartupReadyCurrentContext(run, options);
@@ -2320,9 +2333,46 @@ export function startupBuildMvpPhaseExecutionStatus(
     : "failed";
 }
 
+function startupReadyAutoRecoverBuildMvp(input: {
+  status: "passed" | "failed";
+  execution: RuntimeExecutionSemantics;
+  verifierPhase: Partial<StartupReadinessRunPhase>;
+}): {
+  status: "passed" | "failed";
+  execution: RuntimeExecutionSemantics;
+  recovered: boolean;
+} {
+  if (
+    input.status === "passed" ||
+    input.verifierPhase.status !== "passed" ||
+    input.verifierPhase.evidenceIds === undefined ||
+    input.verifierPhase.evidenceIds.length === 0
+  ) {
+    return {
+      status: input.status,
+      execution: input.execution,
+      recovered: false
+    };
+  }
+
+  return {
+    status: "passed",
+    execution: {
+      implementation:
+        input.execution.implementation === "applied" ? "applied" : "no_change_needed",
+      verification: "passed",
+      agentCompletion: input.execution.agentCompletion
+    },
+    recovered: true
+  };
+}
+
 function startupBuildMvpPhaseExecutionWarnings(
   execution: RuntimeExecutionSemantics,
-  options: { verifiedByCurrentEvidence?: boolean } = {}
+  options: {
+    verifiedByCurrentEvidence?: boolean;
+    verifierOnlyRecovery?: boolean;
+  } = {}
 ): string[] {
   return unique([
     ...(execution.verification === "passed" && execution.agentCompletion !== "completed"
@@ -2334,6 +2384,11 @@ function startupBuildMvpPhaseExecutionWarnings(
     execution.agentCompletion !== "completed"
       ? [
           `MVP verified despite agent completion failure using current code fingerprint evidence`
+        ]
+      : []),
+    ...(options.verifierOnlyRecovery === true
+      ? [
+          "Runstead recovered without re-running the agent using current verifier evidence"
         ]
       : [])
   ]);
@@ -2979,6 +3034,16 @@ export function buildStartupReadyOperatorCommands(
     }
   ];
 
+  if (startupReadyVerifierOnlyRecoveryAvailable(run)) {
+    commands.unshift({
+      kind: "recover",
+      title: "Recover with verifier-only evaluation",
+      command: `runstead startup ready --cwd ${cwd} --resume ${run.id}`,
+      when:
+        "Runstead can recover without re-running the agent because current verifier evidence exists."
+    });
+  }
+
   if (
     run.target !== "local" ||
     run.verdictBlockers.some((blocker) => blocker.toLowerCase().includes("ci"))
@@ -2992,6 +3057,24 @@ export function buildStartupReadyOperatorCommands(
   }
 
   return commands;
+}
+
+function startupReadyVerifierOnlyRecoveryAvailable(run: StartupReadinessRun): boolean {
+  const build = run.phases.find((phase) => phase.id === "build_mvp");
+  const verifiers = run.phases.find((phase) => phase.id === "verifiers");
+
+  if (build === undefined || verifiers?.status !== "passed") {
+    return false;
+  }
+
+  return (
+    build.status === "failed" ||
+    build.status === "blocked" ||
+    build.warnings?.some((warning) =>
+      warning.toLowerCase().includes("recovered without re-running the agent")
+    ) === true ||
+    build.nextAction?.toLowerCase().includes("without re-running the agent") === true
+  );
 }
 
 function startupReadyGuidedStepForPhase(

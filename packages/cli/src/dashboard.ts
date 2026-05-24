@@ -871,7 +871,12 @@ function buildDashboardOperatorConsole(input: {
       command: item.command,
       reason: item.when,
       source: "startup_run_command",
-      status: item.kind === "resume" && run?.status !== "completed" ? "blocked" : "info"
+      status:
+        item.kind === "recover"
+          ? "ready"
+          : item.kind === "resume" && run?.status !== "completed"
+            ? "blocked"
+            : "info"
     });
   }
 
