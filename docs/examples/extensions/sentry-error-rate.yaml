@@ -1,0 +1,36 @@
+schemaVersion: 1
+id: sentry-error-rate-readiness
+version: 0.1.0
+name: Sentry error-rate readiness
+description: Require monitored error-rate evidence before production launch.
+domains:
+  - ai-native-startup
+facets:
+  - name: error-rate
+    title: Error rate
+    description: Current Sentry error-rate signal and alerting baseline.
+    appliesToTargets:
+      - production
+    requiredEvidenceTypes:
+      - startup_observability
+collectors:
+  - id: sentry-error-rate
+    title: Sentry error rate
+    description: Collect Sentry issue/error-rate evidence or the local fixture.
+    command: node .runstead/extensions/fixtures/runstead-extension-fixture.mjs sentry-error-rate
+    adapterId: sentry
+    targets:
+      - production
+    producesEvidenceTypes:
+      - startup_observability
+    safeForWrappedWorkers: true
+    qualityTier: external_observed
+    defaultFreshnessDays: 1
+gates:
+  - id: production-error-rate
+    stage: launch
+    target: production
+    requiredFacets:
+      - error-rate
+    requiredEvidenceTypes:
+      - startup_observability

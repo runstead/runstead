@@ -1,0 +1,43 @@
+schemaVersion: 1
+id: posthog-activation-readiness
+version: 0.1.0
+name: PostHog activation readiness
+description: Require activation metric evidence before staging or production launch.
+domains:
+  - ai-native-startup
+facets:
+  - name: activation-metric
+    title: Activation metric
+    description: Activation threshold from product analytics.
+    appliesToTargets:
+      - staging
+      - production
+    requiredEvidenceTypes:
+      - startup_metric_snapshot
+collectors:
+  - id: posthog-activation
+    title: PostHog activation
+    description: Collect activation metrics from PostHog or the local fixture.
+    command: node .runstead/extensions/fixtures/runstead-extension-fixture.mjs posthog-activation
+    adapterId: posthog
+    targets:
+      - staging
+      - production
+    producesEvidenceTypes:
+      - startup_metric_snapshot
+    safeForWrappedWorkers: true
+    qualityTier: external_observed
+    defaultFreshnessDays: 7
+gates:
+  - id: staging-activation
+    stage: launch
+    target: staging
+    requiredFacets:
+      - activation-metric
+  - id: production-activation
+    stage: launch
+    target: production
+    requiredFacets:
+      - activation-metric
+    requiredEvidenceTiers:
+      - real_user_analytics

@@ -1,0 +1,51 @@
+schemaVersion: 1
+id: github-actions-ci-readiness
+version: 0.1.0
+name: GitHub Actions CI readiness
+description: Require GitHub Actions CI evidence before staging or production launch.
+domains:
+  - ai-native-startup
+facets:
+  - name: ci-status
+    title: CI status
+    description: Latest GitHub Actions status for the release branch.
+    appliesToTargets:
+      - staging
+      - production
+    requiredEvidenceTypes:
+      - startup_decision
+collectors:
+  - id: github-actions-ci
+    title: GitHub Actions CI
+    description: Collect GitHub Actions status or the local fixture.
+    command: node .runstead/extensions/fixtures/runstead-extension-fixture.mjs github-actions-ci
+    adapterId: github-actions
+    targets:
+      - staging
+      - production
+    producesEvidenceTypes:
+      - startup_decision
+    safeForWrappedWorkers: true
+    qualityTier: external_observed
+    defaultFreshnessDays: 1
+verifiers:
+  - id: ci-contract
+    command: npm test -- --runstead-extension github-actions-ci
+    evidenceTier: local_command
+    producesEvidenceTypes:
+      - command_output
+gates:
+  - id: staging-ci
+    stage: launch
+    target: staging
+    requiredFacets:
+      - ci-status
+    requiredEvidenceTiers:
+      - ci_verified
+  - id: production-ci
+    stage: launch
+    target: production
+    requiredFacets:
+      - ci-status
+    requiredEvidenceTiers:
+      - ci_verified

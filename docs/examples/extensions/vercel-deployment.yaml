@@ -1,0 +1,45 @@
+schemaVersion: 1
+id: vercel-deployment-readiness
+version: 0.1.0
+name: Vercel deployment readiness
+description: Require deployment status evidence before staging or production launch.
+domains:
+  - ai-native-startup
+facets:
+  - name: deployment-status
+    title: Deployment status
+    description: Current Vercel deployment status and rollback reference.
+    appliesToTargets:
+      - staging
+      - production
+    requiredEvidenceTypes:
+      - startup_release_plan
+collectors:
+  - id: vercel-deployment
+    title: Vercel deployment status
+    description: Collect deployment status from Vercel or the local fixture.
+    command: node .runstead/extensions/fixtures/runstead-extension-fixture.mjs vercel-deployment
+    adapterId: vercel
+    targets:
+      - staging
+      - production
+    producesEvidenceTypes:
+      - startup_release_plan
+    safeForWrappedWorkers: true
+    qualityTier: external_observed
+    defaultFreshnessDays: 3
+gates:
+  - id: staging-deployment
+    stage: launch
+    target: staging
+    requiredFacets:
+      - deployment-status
+    requiredEvidenceTiers:
+      - staging_deployment
+  - id: production-deployment
+    stage: launch
+    target: production
+    requiredFacets:
+      - deployment-status
+    requiredEvidenceTiers:
+      - production_deployment

@@ -34,8 +34,14 @@ export default defineRunsteadExtension({
       id: "posthog-activation",
       title: "PostHog activation",
       description: "Collect activation metrics from PostHog.",
+      command: "node .runstead/extensions/fixtures/runstead-extension-fixture.mjs posthog-activation",
+      adapterId: "posthog",
+      targets: ["staging", "production"],
       producesEvidenceTypes: ["startup_metric_snapshot"],
-      requiredSecrets: ["POSTHOG_API_KEY"]
+      requiredSecrets: ["POSTHOG_API_KEY"],
+      safeForWrappedWorkers: true,
+      qualityTier: "external_observed",
+      defaultFreshnessDays: 7
     }
   ],
   verifiers: [
@@ -64,10 +70,11 @@ An extension manifest contains:
 
 - `facets`: named readiness dimensions, such as activation metrics, rollback,
   migration, support triage, or security review.
-- `collectors`: integrations that produce evidence records from external
-  systems. Collector metadata includes `safeForWrappedWorkers`, `qualityTier`,
-  and `defaultFreshnessDays`; startup readiness treats these as policy inputs
-  when a collector can satisfy an extension evidence requirement.
+- `collectors`: integrations that produce evidence records from local commands
+  or adapter ids. Collector metadata includes `command`, `adapterId`,
+  `targets`, `safeForWrappedWorkers`, `qualityTier`, `defaultFreshnessDays`, and
+  `requiredSecrets`; startup readiness treats these as policy inputs when a
+  collector can satisfy an extension evidence requirement.
 - `verifiers`: commands that produce local or CI evidence.
 - `gates`: stage and target requirements that compose facets and evidence.
 
@@ -133,11 +140,22 @@ Collector policy is enforced before the verdict is allowed:
 - Evidence with expired source freshness is excluded from readiness inputs
   instead of satisfying a gate.
 
+When a collector declares a `command`, `runstead startup ready` runs it through
+governed local tool execution, parses JSON evidence from stdout, validates the
+evidence type against `producesEvidenceTypes`, and records startup evidence.
+Extension verifiers are appended to the existing verifier command list and run
+through the same verifier infrastructure as test/lint/typecheck/build.
+
+Copyable examples live under [docs/examples/extensions](examples/extensions).
+They cover PostHog activation, Vercel deployment status, Sentry error rate, and
+GitHub Actions CI with local fixture commands that require no real network
+credentials.
+
 ## Boundaries
 
-The SDK does not execute collectors, verifiers, or workers. It describes and
-compiles contracts that Runstead runtime adapters can turn into plans, policy,
-and evidence requirements.
+The SDK itself does not execute collectors, verifiers, or workers. It describes
+and compiles contracts. Runstead CLI/runtime adapters execute collector commands,
+verifier commands, and workers through governed runtime paths.
 
 Keep extension code side-effect free at declaration time. Network calls,
 credential reads, file writes, and worker execution belong in governed Runstead
