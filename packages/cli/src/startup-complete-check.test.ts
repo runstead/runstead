@@ -128,6 +128,7 @@ describe("generateStartupCompleteProductCheck", () => {
       await addLaunchQualityEvidence(workspace, "migration_plan");
       await addLaunchQualityEvidence(workspace, "rollback_plan");
       await addLaunchQualityEvidence(workspace, "observability");
+      await addLaunchQualityEvidence(workspace, "release_plan");
       await recordStartupSourceEvidence({
         cwd: workspace,
         connector: "deployment",
@@ -151,6 +152,7 @@ describe("generateStartupCompleteProductCheck", () => {
 
       const result = await generateStartupCompleteProductCheck({
         cwd: workspace,
+        target: "local",
         now: new Date("2026-05-14T02:00:00.000Z")
       });
       const markdown = await readFile(result.markdownPath, "utf8");

@@ -160,7 +160,7 @@ describe("startup dogfood fixture", () => {
         "utf8"
       );
 
-      expect(report).toContain("Status: launch_ready");
+      expect(report).toContain("Status: public_launch_ready");
       expect(report).toContain("Structured Startup Artifacts");
       expect(opsReport).toContain("readiness-summary");
     } finally {

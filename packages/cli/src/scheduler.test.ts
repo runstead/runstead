@@ -195,31 +195,45 @@ describe("scheduleDueTasks", () => {
       });
 
       const expectedScheduledTypes = [
+        "discover_sources",
         "scan_sources",
+        "evaluate_source_reliability",
         "summarize_findings",
         "triage_source_conflicts",
-        "prepare_digest_release"
+        "prepare_digest_release",
+        "archive_research_memory"
       ];
 
       expect(result.scheduledTasks.map((item) => item.type)).toEqual(
         expectedScheduledTypes
       );
-      expect(result.scheduledTasks[0]?.task).toMatchObject({
+      const scheduledDiscover = result.scheduledTasks.find(
+        (item) => item.type === "discover_sources"
+      )?.task;
+      const scheduledSummarize = result.scheduledTasks.find(
+        (item) => item.type === "summarize_findings"
+      )?.task;
+
+      expect(scheduledDiscover).toMatchObject({
         domain: "research-monitor",
-        type: "scan_sources",
+        type: "discover_sources",
         priority: "medium",
         maxAttempts: 2,
         input: {
-          taskType: "scan_sources",
+          taskType: "discover_sources",
           schedule: {
             source: "background_scheduler",
-            recurrenceType: "scan_sources",
+            recurrenceType: "discover_sources",
             lastTaskStatus: "completed"
           }
         },
-        verifiers: ["source:url_recorded", "source:freshness_checked"]
+        verifiers: [
+          "source:query_recorded",
+          "source:relevance_reason_recorded",
+          "source:inventory_candidate_recorded"
+        ]
       });
-      expect(result.scheduledTasks[1]?.task).toMatchObject({
+      expect(scheduledSummarize).toMatchObject({
         domain: "research-monitor",
         type: "summarize_findings",
         priority: "medium",
@@ -228,12 +242,13 @@ describe("scheduleDueTasks", () => {
           taskType: "summarize_findings",
           workerRouting: {
             preferred: "codex_cli",
-            fallback: ["shell"]
+            fallback: ["shell", "codex_direct"]
           }
         },
         verifiers: [
           "citation:source_linked",
           "citation:no_uncited_claims",
+          "source:reliability_scored",
           "contradiction_check:completed"
         ]
       });

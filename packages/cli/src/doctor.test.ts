@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
-import { openRunsteadDatabase } from "@runstead/state-sqlite";
+import { openRunsteadDatabase, RUNSTEAD_SCHEMA_VERSION } from "@runstead/state-sqlite";
 import { describe, expect, it } from "vitest";
 
 import { doctorRunstead } from "./doctor.js";
@@ -205,7 +205,7 @@ describe("doctorRunstead", () => {
         "missing migrations: 2"
       );
       expect(result.checks.find((check) => check.id === "state-db")?.message).toContain(
-        "sqlite user_version 1, expected 2"
+        `sqlite user_version 1, expected ${RUNSTEAD_SCHEMA_VERSION}`
       );
     } finally {
       await rm(workspace, { force: true, recursive: true });

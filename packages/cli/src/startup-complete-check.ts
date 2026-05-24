@@ -160,7 +160,11 @@ export async function generateStartupCompleteProductCheck(
     cwd,
     domain,
     stage: "launch",
-    ...(options.readiness === undefined ? {} : { readiness: options.readiness }),
+    readiness: options.readiness ?? {
+      target,
+      verdict: launchReport.targetStatus,
+      blockers: launchReport.blockers
+    },
     now
   });
   const dashboard = await buildDashboard({ cwd, now });

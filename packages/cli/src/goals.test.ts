@@ -224,10 +224,13 @@ describe("createGoal", () => {
       });
 
       const expectedRecurringTasks = [
+        "discover_sources",
         "scan_sources",
+        "evaluate_source_reliability",
         "summarize_findings",
         "triage_source_conflicts",
-        "prepare_digest_release"
+        "prepare_digest_release",
+        "archive_research_memory"
       ];
 
       expect(result.goal.scope).toMatchObject({
@@ -237,20 +240,31 @@ describe("createGoal", () => {
       expect(result.generatedTasks.map((task) => task.type)).toEqual(
         expectedRecurringTasks
       );
-      expect(result.generatedTasks[0]).toMatchObject({
+      const discoverTask = result.generatedTasks.find(
+        (task) => task.type === "discover_sources"
+      );
+      const summarizeTask = result.generatedTasks.find(
+        (task) => task.type === "summarize_findings"
+      );
+
+      expect(discoverTask).toMatchObject({
         domain: "research-monitor",
         priority: "medium",
         maxAttempts: 2,
         input: {
-          taskType: "scan_sources",
+          taskType: "discover_sources",
           workerRouting: {
             preferred: "shell",
-            fallback: ["codex_cli"]
+            fallback: ["codex_cli", "codex_direct"]
           }
         },
-        verifiers: ["source:url_recorded", "source:freshness_checked"]
+        verifiers: [
+          "source:query_recorded",
+          "source:relevance_reason_recorded",
+          "source:inventory_candidate_recorded"
+        ]
       });
-      expect(result.generatedTasks[1]).toMatchObject({
+      expect(summarizeTask).toMatchObject({
         domain: "research-monitor",
         priority: "medium",
         maxAttempts: 1,
@@ -258,12 +272,13 @@ describe("createGoal", () => {
           taskType: "summarize_findings",
           workerRouting: {
             preferred: "codex_cli",
-            fallback: ["shell"]
+            fallback: ["shell", "codex_direct"]
           }
         },
         verifiers: [
           "citation:source_linked",
           "citation:no_uncited_claims",
+          "source:reliability_scored",
           "contradiction_check:completed"
         ]
       });
