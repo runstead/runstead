@@ -1058,6 +1058,67 @@ describe("startup readiness run model", () => {
     );
   });
 
+  it("allows production target only with deployment, CI, operations, analytics, and support evidence", () => {
+    const phases: StartupReadinessRunPhase[] = [
+      {
+        id: "verifiers",
+        title: "Run verifiers",
+        status: "passed",
+        evidenceIds: ["ev_command"],
+        artifacts: [],
+        blockers: []
+      },
+      {
+        id: "ui_smoke",
+        title: "UI smoke",
+        status: "passed",
+        evidenceIds: ["ev_smoke"],
+        artifacts: [],
+        blockers: []
+      }
+    ];
+    const production = evaluateStartupReadinessVerdict({
+      run: {
+        target: "production",
+        phases
+      },
+      evidenceTiers: [
+        "local_command",
+        "synthetic_smoke",
+        "ci_verified",
+        "production_deployment",
+        "real_user_analytics",
+        "support_ticket",
+        "security_scan"
+      ],
+      evidenceTypes: [
+        "startup_repo_readiness",
+        "startup_release_plan",
+        "startup_rollback_plan",
+        "startup_rollback_drill",
+        "startup_observability",
+        "startup_monitoring_alerts",
+        "startup_error_budget",
+        "startup_migration_validation",
+        "startup_traffic_gate",
+        "startup_post_launch_watch",
+        "startup_metric_snapshot",
+        "startup_support_triage",
+        "startup_security_baseline"
+      ]
+    });
+
+    expect(production.verdict).toBe("public_launch_ready");
+    expect(production.blockers).toEqual([]);
+    expect(production.targetReadiness.local.verdict).toBe("local_launch_ready");
+    expect(production.targetReadiness.staging.verdict).toBe(
+      "staging_launch_blocked"
+    );
+    expect(production.targetReadiness.staging.blockers).toContain(
+      "staging deployment evidence is required"
+    );
+  });
+
   it("treats verified MVP worker warnings as a passed build phase", () => {
     expect(startupBuildMvpPhaseExecutionStatus("completed")).toBe("passed");
     expect(startupBuildMvpPhaseExecutionStatus("completed_with_warnings")).toBe(

@@ -129,6 +129,34 @@ describe("startup source connectors", () => {
       sourceKind: "github_actions",
       qualityTier: "external_observed"
     });
+    expect(definitions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          connector: "vercel",
+          evidenceType: "release_plan",
+          sourceKind: "vercel_deployment"
+        }),
+        expect.objectContaining({
+          connector: "fly",
+          evidenceType: "release_plan",
+          sourceKind: "fly_deployment"
+        }),
+        expect.objectContaining({
+          connector: "render",
+          evidenceType: "release_plan",
+          sourceKind: "render_deployment"
+        }),
+        expect.objectContaining({
+          connector: "sentry",
+          evidenceType: "monitoring_alerts"
+        }),
+        expect.objectContaining({
+          connector: "posthog",
+          evidenceType: "metric_snapshot",
+          sourceKind: "posthog_analytics"
+        })
+      ])
+    );
 
     github?.recommendedPayloadFields.push("mutated");
 
@@ -137,6 +165,72 @@ describe("startup source connectors", () => {
         (definition) => definition.connector === "github_actions"
       )?.recommendedPayloadFields
     ).not.toContain("mutated");
+  });
+
+  it("records target-specific deployment tiers for named hosting connectors", async () => {
+    const workspace = join(
+      tmpdir(),
+      `runstead-startup-source-target-${process.pid}`
+    );
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await mkdir(workspace, { recursive: true });
+      await writeFile(
+        join(workspace, "package.json"),
+        `${JSON.stringify({ name: "source-target-fixture", private: true }, null, 2)}\n`,
+        "utf8"
+      );
+      await startupOnboard({
+        cwd: workspace,
+        now: new Date("2026-05-14T00:00:00.000Z")
+      });
+
+      const result = await recordStartupSourceEvidence({
+        cwd: workspace,
+        connector: "vercel",
+        uri: "https://vercel.com/acme/todo/deployments/dpl_123",
+        summary: "Vercel deployment health passed",
+        status: "passed",
+        target: "staging",
+        payload: JSON.stringify({
+          environment: "preview",
+          deploymentUrl: "https://todo-git-main-acme.vercel.app",
+          commitSha: "abc123",
+          status: "READY"
+        }),
+        now: new Date("2026-05-14T00:15:00.000Z")
+      });
+      const artifact = JSON.parse(await readFile(result.artifactPath, "utf8")) as {
+        sources: {
+          provenance: {
+            target: string;
+            readinessTiers: string[];
+          };
+        }[];
+        content: string;
+      };
+      const content = JSON.parse(artifact.content) as {
+        target: string;
+        readinessTiers: string[];
+        sourceKind: string;
+      };
+
+      expect(result.evidence.type).toBe("startup_release_plan");
+      expect(result.target).toBe("staging");
+      expect(result.readinessTiers).toEqual(["staging_deployment"]);
+      expect(content).toMatchObject({
+        target: "staging",
+        readinessTiers: ["staging_deployment"],
+        sourceKind: "vercel_deployment"
+      });
+      expect(artifact.sources[0]?.provenance).toMatchObject({
+        target: "staging",
+        readinessTiers: ["staging_deployment"]
+      });
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
   });
 
   it("verifies deployment source over HTTP before recording launch evidence", async () => {
@@ -320,6 +414,67 @@ describe("startup source connectors", () => {
     }
   });
 
+  it("records production monitoring and analytics connector targets", async () => {
+    const workspace = join(
+      tmpdir(),
+      `runstead-startup-source-prod-${process.pid}`
+    );
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await mkdir(workspace, { recursive: true });
+      await writeFile(
+        join(workspace, "package.json"),
+        `${JSON.stringify({ name: "source-prod-fixture", private: true }, null, 2)}\n`,
+        "utf8"
+      );
+      await startupOnboard({
+        cwd: workspace,
+        now: new Date("2026-05-14T00:00:00.000Z")
+      });
+
+      const sentry = await verifyStartupSourceEvidence({
+        cwd: workspace,
+        connector: "sentry",
+        uri: "https://sentry.io/organizations/acme/issues/?project=todo",
+        target: "production",
+        expectStatus: 200,
+        expectText: ["no open release blockers"],
+        fetch: () =>
+          Promise.resolve({
+            ok: true,
+            status: 200,
+            text: () => Promise.resolve("no open release blockers")
+          }),
+        now: new Date("2026-05-14T00:15:00.000Z")
+      });
+      const posthog = await recordStartupSourceEvidence({
+        cwd: workspace,
+        connector: "posthog",
+        uri: "https://app.posthog.com/project/1/insights/activation",
+        summary: "Production activation funnel uses real-user analytics",
+        target: "production",
+        status: "passed",
+        payload: JSON.stringify({
+          metric: "activation",
+          value: 0.42,
+          window: "7d",
+          realUserData: true
+        }),
+        now: new Date("2026-05-14T00:20:00.000Z")
+      });
+
+      expect(sentry.evidence.type).toBe("startup_monitoring_alerts");
+      expect(sentry.target).toBe("production");
+      expect(sentry.readinessTiers).toEqual([]);
+      expect(posthog.evidence.type).toBe("startup_metric_snapshot");
+      expect(posthog.target).toBe("production");
+      expect(posthog.readinessTiers).toEqual(["real_user_analytics"]);
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
   it("rejects connector payloads that are not JSON objects", async () => {
     await expect(
       recordStartupSourceEvidence({
@@ -342,5 +497,17 @@ describe("startup source connectors", () => {
         trustLevel: "root"
       })
     ).rejects.toThrow("Unsupported source trust level");
+  });
+
+  it("rejects unknown source targets before writing evidence", async () => {
+    await expect(
+      recordStartupSourceEvidence({
+        cwd: process.cwd(),
+        connector: "vercel",
+        uri: "https://vercel.com/acme/todo/deployments/dpl_123",
+        summary: "Bad target",
+        target: "public"
+      })
+    ).rejects.toThrow("Unsupported startup source target");
   });
 });

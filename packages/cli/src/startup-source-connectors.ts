@@ -15,8 +15,13 @@ export const STARTUP_SOURCE_CONNECTORS = [
   "github_actions",
   "github_pr",
   "github_issue",
+  "vercel",
+  "fly",
+  "render",
   "deployment",
+  "sentry",
   "observability",
+  "posthog",
   "analytics",
   "billing",
   "support",
@@ -24,6 +29,7 @@ export const STARTUP_SOURCE_CONNECTORS = [
 ] as const;
 
 export type StartupSourceConnector = (typeof STARTUP_SOURCE_CONNECTORS)[number];
+export type StartupSourceTarget = "local" | "staging" | "production";
 
 export interface StartupSourceConnectorDefinition {
   connector: StartupSourceConnector;
@@ -43,6 +49,7 @@ export interface RecordStartupSourceEvidenceOptions {
   uri: string;
   summary: string;
   status?: string;
+  target?: string;
   capturedAt?: string;
   freshnessDays?: number;
   sourceHash?: string;
@@ -57,6 +64,8 @@ export interface RecordStartupSourceEvidenceResult extends AddStartupEvidenceRes
   evidenceType: StartupEvidenceType;
   definition: StartupSourceConnectorDefinition;
   qualityTier: EvidenceQualityTier;
+  target?: StartupSourceTarget;
+  readinessTiers: string[];
   payloadWarnings: string[];
 }
 
@@ -68,6 +77,7 @@ export interface VerifyStartupSourceEvidenceOptions {
   method?: string;
   expectStatus?: number;
   expectText?: string[];
+  target?: string;
   capturedAt?: string;
   freshnessDays?: number;
   sourceHash?: string;
@@ -145,6 +155,39 @@ const STARTUP_SOURCE_CONNECTOR_DEFINITIONS: StartupSourceConnectorDefinition[] =
     readinessUse: "support, feedback, or incident triage evidence"
   }),
   connectorDefinition({
+    connector: "vercel",
+    displayName: "Vercel Deployment",
+    evidenceType: "release_plan",
+    sourceKind: "vercel_deployment",
+    qualityTier: "external_observed",
+    defaultTrustLevel: "high",
+    defaultFreshnessDays: 7,
+    recommendedPayloadFields: ["environment", "deploymentUrl", "commitSha", "status"],
+    readinessUse: "Vercel staging or production deployment evidence"
+  }),
+  connectorDefinition({
+    connector: "fly",
+    displayName: "Fly.io Deployment",
+    evidenceType: "release_plan",
+    sourceKind: "fly_deployment",
+    qualityTier: "external_observed",
+    defaultTrustLevel: "high",
+    defaultFreshnessDays: 7,
+    recommendedPayloadFields: ["app", "environment", "releaseId", "status"],
+    readinessUse: "Fly.io staging or production deployment evidence"
+  }),
+  connectorDefinition({
+    connector: "render",
+    displayName: "Render Deployment",
+    evidenceType: "release_plan",
+    sourceKind: "render_deployment",
+    qualityTier: "external_observed",
+    defaultTrustLevel: "high",
+    defaultFreshnessDays: 7,
+    recommendedPayloadFields: ["service", "environment", "deployId", "status"],
+    readinessUse: "Render staging or production deployment evidence"
+  }),
+  connectorDefinition({
     connector: "deployment",
     displayName: "Deployment",
     evidenceType: "release_plan",
@@ -156,6 +199,17 @@ const STARTUP_SOURCE_CONNECTOR_DEFINITIONS: StartupSourceConnectorDefinition[] =
     readinessUse: "staging or production deployment evidence"
   }),
   connectorDefinition({
+    connector: "sentry",
+    displayName: "Sentry",
+    evidenceType: "monitoring_alerts",
+    sourceKind: "sentry_monitoring",
+    qualityTier: "external_observed",
+    defaultTrustLevel: "high",
+    defaultFreshnessDays: 7,
+    recommendedPayloadFields: ["project", "release", "alertStatus"],
+    readinessUse: "production monitoring and alert evidence"
+  }),
+  connectorDefinition({
     connector: "observability",
     displayName: "Observability",
     evidenceType: "observability",
@@ -165,6 +219,17 @@ const STARTUP_SOURCE_CONNECTOR_DEFINITIONS: StartupSourceConnectorDefinition[] =
     defaultFreshnessDays: 14,
     recommendedPayloadFields: ["dashboard", "alert", "status"],
     readinessUse: "monitoring, alert, and post-launch watch evidence"
+  }),
+  connectorDefinition({
+    connector: "posthog",
+    displayName: "PostHog",
+    evidenceType: "metric_snapshot",
+    sourceKind: "posthog_analytics",
+    qualityTier: "external_observed",
+    defaultTrustLevel: "high",
+    defaultFreshnessDays: 14,
+    recommendedPayloadFields: ["metric", "value", "window", "realUserData"],
+    readinessUse: "real-user product analytics evidence"
   }),
   connectorDefinition({
     connector: "analytics",
@@ -218,8 +283,29 @@ export async function recordStartupSourceEvidence(
   const connector = parseStartupSourceConnector(options.connector);
   const definition = requireStartupSourceConnectorDefinition(connector);
   const evidenceType = definition.evidenceType;
+  const target = parseOptionalStartupSourceTarget(options.target);
   const payload = connectorPayload(options.payload);
   const payloadWarnings = connectorPayloadWarnings(definition, payload);
+  const readinessTiers = startupSourceTargetEvidenceTiers({
+    connector,
+    definition,
+    target
+  });
+  const content = startupSourceEvidenceContent({
+    connector,
+    definition,
+    status: options.status ?? "recorded",
+    target,
+    sourceUri: options.uri,
+    sourceKind: definition.sourceKind,
+    qualityTier: definition.qualityTier,
+    trustLevel: options.trustLevel ?? definition.defaultTrustLevel,
+    freshnessDays: options.freshnessDays ?? definition.defaultFreshnessDays,
+    readinessTiers,
+    readinessUse: definition.readinessUse,
+    payloadWarnings,
+    payload
+  });
   const source = defineEvidenceSource({
     kind: definition.sourceKind,
     uri: options.uri,
@@ -246,28 +332,15 @@ export async function recordStartupSourceEvidence(
           connector,
           captureMode: "connector_ingest",
           qualityTier: definition.qualityTier,
+          ...(target === undefined ? {} : { target }),
+          readinessTiers,
           readinessUse: definition.readinessUse,
           recommendedPayloadFields: definition.recommendedPayloadFields,
           payloadWarnings
         }
       }
     ],
-    content: JSON.stringify(
-      {
-        connector,
-        status: options.status ?? "recorded",
-        sourceUri: source.uri,
-        sourceKind: source.kind,
-        qualityTier: definition.qualityTier,
-        trustLevel: source.trust ?? definition.defaultTrustLevel,
-        freshnessDays: source.freshnessDays,
-        readinessUse: definition.readinessUse,
-        payloadWarnings,
-        ...(payload === undefined ? {} : { payload })
-      },
-      null,
-      2
-    ),
+    content: JSON.stringify(content, null, 2),
     ...(options.goalId === undefined ? {} : { goalId: options.goalId }),
     ...(options.now === undefined ? {} : { now: options.now })
   });
@@ -278,6 +351,8 @@ export async function recordStartupSourceEvidence(
     evidenceType,
     definition,
     qualityTier: definition.qualityTier,
+    ...(target === undefined ? {} : { target }),
+    readinessTiers,
     payloadWarnings
   };
 }
@@ -332,6 +407,7 @@ export async function verifyStartupSourceEvidence(
       `${definition.displayName} verification ${verification.status}`,
     status: verification.status,
     ...(options.capturedAt === undefined ? {} : { capturedAt: options.capturedAt }),
+    ...(options.target === undefined ? {} : { target: options.target }),
     ...(options.freshnessDays === undefined
       ? {}
       : { freshnessDays: options.freshnessDays }),
@@ -355,6 +431,16 @@ export function parseStartupSourceConnector(value: string): StartupSourceConnect
 
   throw new Error(
     `Unsupported startup source connector ${value}. Expected one of: ${STARTUP_SOURCE_CONNECTORS.join(", ")}`
+  );
+}
+
+export function parseStartupSourceTarget(value: string): StartupSourceTarget {
+  if (value === "local" || value === "staging" || value === "production") {
+    return value;
+  }
+
+  throw new Error(
+    `Unsupported startup source target ${value}. Expected local, staging, or production`
   );
 }
 
@@ -392,6 +478,127 @@ function requireStartupSourceConnectorDefinition(
   }
 
   return definition;
+}
+
+function parseOptionalStartupSourceTarget(
+  value: string | undefined
+): StartupSourceTarget | undefined {
+  return value === undefined ? undefined : parseStartupSourceTarget(value);
+}
+
+function startupSourceTargetEvidenceTiers(input: {
+  connector: StartupSourceConnector;
+  definition: StartupSourceConnectorDefinition;
+  target: StartupSourceTarget | undefined;
+}): string[] {
+  if (input.target === undefined || input.target === "local") {
+    return [];
+  }
+
+  const tiers = [];
+
+  if (input.connector === "github_actions") {
+    tiers.push("ci_verified");
+  }
+
+  if (startupSourceConnectorIsDeployment(input.connector, input.definition)) {
+    tiers.push(
+      input.target === "staging" ? "staging_deployment" : "production_deployment"
+    );
+  }
+
+  if (
+    input.target === "production" &&
+    (input.connector === "analytics" ||
+      input.connector === "posthog" ||
+      input.connector === "billing")
+  ) {
+    tiers.push("real_user_analytics");
+  }
+
+  if (input.target === "production" && input.connector === "support") {
+    tiers.push("support_ticket");
+  }
+
+  if (input.target === "production" && input.connector === "dependency") {
+    tiers.push("security_scan");
+  }
+
+  return [...new Set(tiers)];
+}
+
+function startupSourceConnectorIsDeployment(
+  connector: StartupSourceConnector,
+  definition: StartupSourceConnectorDefinition
+): boolean {
+  return (
+    connector === "deployment" ||
+    connector === "vercel" ||
+    connector === "fly" ||
+    connector === "render" ||
+    definition.sourceKind.endsWith("_deployment")
+  );
+}
+
+function startupSourceEvidenceContent(input: {
+  connector: StartupSourceConnector;
+  definition: StartupSourceConnectorDefinition;
+  status: string;
+  target: StartupSourceTarget | undefined;
+  sourceUri: string;
+  sourceKind: string;
+  qualityTier: EvidenceQualityTier;
+  trustLevel: string;
+  freshnessDays: number;
+  readinessTiers: string[];
+  readinessUse: string;
+  payloadWarnings: string[];
+  payload: JsonObject | undefined;
+}): JsonObject {
+  const common = {
+    connector: input.connector,
+    status: input.status,
+    ...(input.target === undefined ? {} : { target: input.target }),
+    sourceUri: input.sourceUri,
+    sourceKind: input.sourceKind,
+    qualityTier: input.qualityTier,
+    readinessTiers: input.readinessTiers,
+    trustLevel: input.trustLevel,
+    freshnessDays: input.freshnessDays,
+    readinessUse: input.readinessUse,
+    payloadWarnings: input.payloadWarnings,
+    ...(input.payload === undefined ? {} : { payload: input.payload })
+  };
+
+  if (input.definition.evidenceType !== "metric_snapshot") {
+    return common;
+  }
+
+  return {
+    metric:
+      stringPayloadValue(input.payload, "metric") ??
+      `${input.connector}_source_metric`,
+    source: input.definition.displayName,
+    threshold:
+      input.payload?.threshold ??
+      stringPayloadValue(input.payload, "target") ??
+      "recorded",
+    current:
+      input.payload?.current ??
+      input.payload?.value ??
+      input.payload?.count ??
+      input.status,
+    ...common
+  };
+}
+
+function stringPayloadValue(
+  payload: JsonObject | undefined,
+  field: string
+): string | undefined {
+  const value = payload?.[field];
+
+  return typeof value === "string" && value.trim().length > 0 ? value : undefined;
 }
 
 function connectorPayload(payload: string | undefined): JsonObject | undefined {

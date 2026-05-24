@@ -242,8 +242,10 @@ runstead startup evidence add --cwd /path/to/mvp --type traffic_gate --summary "
 runstead startup evidence add --cwd /path/to/mvp --type post_launch_watch --summary "..." --source docs/post-launch-watch.md --gate launch
 runstead startup evidence manual-change --cwd /path/to/mvp --operator founder --reason "agent omitted package scripts" --diff-summary "added test/lint/typecheck/build scripts" --file package.json --command "pnpm test" --evidence ev_after_fix --gate launch
 runstead startup source list
-runstead startup source record --cwd /path/to/mvp --connector deployment --source-uri https://staging.example.com --summary "Staging deployment smoke passed" --status pass
-runstead startup source verify --cwd /path/to/mvp --connector deployment --source-uri https://staging.example.com/health --expect-status 200 --expect-text "ok"
+runstead startup source record --cwd /path/to/mvp --connector vercel --target staging --source-uri https://vercel.com/acme/todo/deployments/dpl_123 --summary "Staging deployment smoke passed" --status pass
+runstead startup source verify --cwd /path/to/mvp --connector render --target production --source-uri https://todo.onrender.com/health --expect-status 200 --expect-text "ok"
+runstead startup source record --cwd /path/to/mvp --connector posthog --target production --source-uri https://app.posthog.com/project/1/insights/activation --summary "Activation funnel uses real-user analytics" --status pass
+runstead startup source verify --cwd /path/to/mvp --connector sentry --target production --source-uri https://sentry.io/organizations/acme/issues/?project=todo --expect-status 200 --expect-text "no open release blockers"
 ```
 
 `startup evidence manual-change` is for operator interventions that happen
@@ -252,9 +254,12 @@ Authorship, separate from agent and verifier evidence.
 
 `startup source verify` is the preferred escape hatch for staging and
 production integrations because it performs a live HTTP check before recording
-the evidence artifact. Use it for deployment health URLs, observability status
-pages, analytics exports, billing health endpoints, support queues, or scanner
-reports that can expose a stable URL.
+the evidence artifact. Named deployment connectors (`vercel`, `fly`, `render`)
+and production connectors such as `sentry` and `posthog` accept `--target`, so
+their artifacts carry readiness tiers like `staging_deployment`,
+`production_deployment`, or `real_user_analytics`. Use them for deployment
+health URLs, observability status pages, analytics exports, billing health
+endpoints, support queues, or scanner reports that can expose a stable URL.
 
 After stronger evidence is recorded, rerun the same gate:
 

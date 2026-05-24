@@ -173,5 +173,6 @@ External evidence can be attached through source connector contracts:
 
 ```bash
 runstead startup source list
-runstead startup source record --cwd /tmp/runstead-todo --connector github_actions --source-uri https://github.com/acme/todo/actions/runs/1 --summary "CI passed" --status passed
+runstead startup source record --cwd /tmp/runstead-todo --connector github_actions --target staging --source-uri https://github.com/acme/todo/actions/runs/1 --summary "CI passed" --status passed
+runstead startup source verify --cwd /tmp/runstead-todo --connector vercel --target staging --source-uri https://todo-preview.vercel.app/health --expect-status 200 --expect-text "ok"
 ```

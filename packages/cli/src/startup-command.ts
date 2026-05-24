@@ -585,11 +585,15 @@ export function registerStartupCommands(program: Command): void {
     .option("--cwd <path>", "Workspace directory")
     .requiredOption(
       "--connector <kind>",
-      "Connector: github_actions, github_pr, github_issue, deployment, observability, analytics, billing, support, dependency"
+      "Connector: github_actions, github_pr, github_issue, vercel, fly, render, deployment, sentry, observability, posthog, analytics, billing, support, dependency"
     )
     .requiredOption("--source-uri <uri>", "Canonical source URI")
     .requiredOption("--summary <text>", "Evidence summary")
     .option("--status <status>", "Source status or outcome")
+    .option(
+      "--target <target>",
+      "Readiness target this source supports: local, staging, or production"
+    )
     .option("--captured-at <iso>", "Timestamp when the source was captured")
     .option("--freshness-days <days>", "Maximum acceptable source age in days")
     .option("--source-hash <hash>", "Optional hash of the captured source payload")
@@ -608,6 +612,7 @@ export function registerStartupCommands(program: Command): void {
         sourceUri: string;
         summary: string;
         status?: string;
+        target?: string;
         capturedAt?: string;
         freshnessDays?: string;
         sourceHash?: string;
@@ -631,6 +636,7 @@ export function registerStartupCommands(program: Command): void {
           uri: options.sourceUri,
           summary: options.summary,
           ...(options.status === undefined ? {} : { status: options.status }),
+          ...(options.target === undefined ? {} : { target: options.target }),
           ...(options.capturedAt === undefined
             ? {}
             : { capturedAt: options.capturedAt }),
@@ -665,7 +671,7 @@ export function registerStartupCommands(program: Command): void {
     .option("--cwd <path>", "Workspace directory")
     .requiredOption(
       "--connector <kind>",
-      "Connector: github_actions, github_pr, github_issue, deployment, observability, analytics, billing, support, dependency"
+      "Connector: github_actions, github_pr, github_issue, vercel, fly, render, deployment, sentry, observability, posthog, analytics, billing, support, dependency"
     )
     .requiredOption("--source-uri <uri>", "Canonical source URI to verify")
     .option("--summary <text>", "Evidence summary")
@@ -676,6 +682,10 @@ export function registerStartupCommands(program: Command): void {
       "Response text that must be present; repeat for multiple checks",
       collectValues,
       []
+    )
+    .option(
+      "--target <target>",
+      "Readiness target this source supports: local, staging, or production"
     )
     .option("--captured-at <iso>", "Timestamp when the source was captured")
     .option("--freshness-days <days>", "Maximum acceptable source age in days")
@@ -692,6 +702,7 @@ export function registerStartupCommands(program: Command): void {
         method: string;
         expectStatus: string;
         expectText: string[];
+        target?: string;
         capturedAt?: string;
         freshnessDays?: string;
         sourceHash?: string;
@@ -716,6 +727,7 @@ export function registerStartupCommands(program: Command): void {
           method: options.method,
           expectStatus: parsePositiveInteger(options.expectStatus, "--expect-status"),
           expectText: options.expectText,
+          ...(options.target === undefined ? {} : { target: options.target }),
           ...(options.capturedAt === undefined
             ? {}
             : { capturedAt: options.capturedAt }),

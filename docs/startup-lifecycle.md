@@ -103,7 +103,7 @@ runstead startup launch git-summary --cwd /path/to/mvp
 runstead startup evidence add --cwd /path/to/mvp --type migration_plan --summary "..." --owner founder --remediation-task "..." --acceptance-criteria "..."
 runstead startup evidence add --cwd /path/to/mvp --type rollback_plan --summary "..." --owner founder --remediation-task "..." --acceptance-criteria "..."
 runstead startup evidence add --cwd /path/to/mvp --type observability --summary "..." --owner founder --remediation-task "..." --acceptance-criteria "..."
-runstead startup source record --cwd /path/to/mvp --connector deployment --source-uri http://127.0.0.1:3000 --summary "..." --status pass
+runstead startup source record --cwd /path/to/mvp --connector vercel --target staging --source-uri https://vercel.com/acme/app/deployments/dpl_123 --summary "..." --status pass
 runstead startup gate check --cwd /path/to/mvp --stage launch
 ```
 
