@@ -1947,6 +1947,91 @@ describe("runCodexDirectWorker", () => {
     }
   });
 
+  it("interrupts long model requests with heartbeat evidence", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-codex-timeout-"));
+
+    try {
+      const initialized = await initRunstead({
+        cwd: workspace,
+        createDefaultGoal: true
+      });
+      const database = openRunsteadDatabase(initialized.stateDb);
+
+      try {
+        const task = listTasks({ cwd: workspace }).tasks[0];
+
+        if (task === undefined) {
+          throw new Error("Expected generated task");
+        }
+
+        const goal = showGoal({ cwd: workspace, id: task.goalId }).goal;
+        const result = await runCodexDirectWorker({
+          cwd: workspace,
+          stateDb: initialized.stateDb,
+          database,
+          policy: allowDirectToolsPolicy,
+          goal,
+          task,
+          model: "fake-codex",
+          evidenceDir: join(initialized.root, "evidence"),
+          transport: hangingTransport(),
+          modelRequestTimeoutMs: 20,
+          modelRequestHeartbeatMs: 5
+        });
+        const workerRun = database
+          .prepare(
+            `
+            SELECT status, output_json
+            FROM worker_runs
+            WHERE worker_type = ?
+          `
+          )
+          .get(CODEX_DIRECT_WORKER_KIND) as {
+          status: string;
+          output_json: string;
+        };
+        const modelToolCall = database
+          .prepare(
+            `
+            SELECT status, output_json
+            FROM tool_calls
+            WHERE action_type = 'model.inference.request'
+          `
+          )
+          .get() as { status: string; output_json: string };
+        const heartbeatCount = database
+          .prepare("SELECT COUNT(*) AS count FROM events WHERE type = ?")
+          .get("worker_run.heartbeat") as { count: number };
+        const workerOutput = JSON.parse(workerRun.output_json) as {
+          interruption?: { reason?: string };
+        };
+        const toolOutput = JSON.parse(modelToolCall.output_json) as {
+          error?: string;
+        };
+
+        expect(result.status).toBe("interrupted");
+        expect(result.exitCode).toBe(124);
+        expect(result.interruption).toMatchObject({
+          reason: "model_timeout",
+          timeoutMs: 20,
+          retryCommand: `runstead resume && runstead agent resume ${task.id}`
+        });
+        expect(result.summary).toContain("interrupted:model_timeout");
+        expect(workerRun.status).toBe("interrupted");
+        expect(workerOutput.interruption).toMatchObject({
+          reason: "model_timeout"
+        });
+        expect(modelToolCall.status).toBe("failed");
+        expect(toolOutput.error).toContain("interrupted:model_timeout");
+        expect(heartbeatCount.count).toBeGreaterThan(0);
+      } finally {
+        database.close();
+      }
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
   it("defines the expected narrow native tool surface", () => {
     expect(codexDirectToolDefinitions().map((tool) => tool.name)).toEqual([
       "list_files",
@@ -2032,6 +2117,16 @@ const modelAllowedRepoMaintenancePolicy: PolicyProfile = {
     }
   ]
 };
+
+function hangingTransport(): CodexDirectTransport {
+  return {
+    createResponse() {
+      return new Promise(() => {
+        // Intentionally never settles; timeout handling owns recovery.
+      });
+    }
+  };
+}
 
 function scriptedTransport(
   responses: Awaited<ReturnType<CodexDirectTransport["createResponse"]>>[]

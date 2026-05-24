@@ -244,6 +244,102 @@ describe("findInterruptedTasks", () => {
     }
   });
 
+  it("requeues explicit model-timeout interruptions even after the run attempt", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-resume-timeout-"));
+
+    try {
+      await initRunstead({ cwd: workspace });
+
+      const goal = await createGoal({
+        cwd: workspace,
+        domain: "repo-maintenance",
+        now: new Date("2026-05-14T07:15:00.000Z")
+      });
+      const task = goal.generatedTasks[0];
+
+      if (task === undefined) {
+        throw new Error("Expected createGoal to generate run_local_verifiers task");
+      }
+
+      const interruptedTask: Task = {
+        ...task,
+        status: "interrupted",
+        attempt: task.maxAttempts,
+        output: {
+          summary:
+            "Codex Direct model request timed out after 20ms; runstead marked the task interrupted:model_timeout.",
+          interruption: {
+            reason: "model_timeout",
+            timeoutMs: 20,
+            elapsedMs: 21,
+            heartbeatCount: 2,
+            retryCommand: `runstead resume && runstead agent resume ${task.id}`
+          }
+        },
+        updatedAt: "2026-05-14T07:16:00.000Z"
+      };
+      const database = openRunsteadDatabase(goal.stateDb);
+
+      try {
+        appendEventAndProject(database, {
+          event: {
+            eventId: `evt_${task.id}_interrupted`,
+            type: "task.interrupted",
+            aggregateType: "task",
+            aggregateId: task.id,
+            payload: {
+              reason: "model_timeout"
+            },
+            createdAt: interruptedTask.updatedAt
+          },
+          projection: {
+            type: "task",
+            value: interruptedTask
+          }
+        });
+      } finally {
+        database.close();
+      }
+
+      expect(findInterruptedTasks({ cwd: workspace }).interruptedTasks).toMatchObject([
+        {
+          task: {
+            id: task.id,
+            status: "interrupted"
+          },
+          reason: "explicit_interruption"
+        }
+      ]);
+
+      const result = await resumeInterruptedTasks({
+        cwd: workspace,
+        now: new Date("2026-05-14T07:17:00.000Z")
+      });
+      const stored = showTask({ cwd: workspace, id: task.id }).task;
+
+      expect(result.requeuedTasks).toMatchObject([
+        {
+          task: {
+            id: task.id,
+            status: "queued",
+            updatedAt: "2026-05-14T07:17:00.000Z",
+            output: {
+              interruption: {
+                reason: "model_timeout",
+                resumeCount: 1
+              }
+            }
+          },
+          previousStatus: "interrupted"
+        }
+      ]);
+      expect(result.failedTasks).toEqual([]);
+      expect(stored.status).toBe("queued");
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
   it("fails interrupted tasks that reached max attempts", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "runstead-resume-"));
 

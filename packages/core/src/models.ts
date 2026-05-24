@@ -17,6 +17,7 @@ export const TaskStatusSchema = z.enum([
   "running",
   "waiting_approval",
   "blocked",
+  "interrupted",
   "completed",
   "failed",
   "cancelled"
@@ -39,6 +40,7 @@ export const WorkerRunStatusSchema = z.enum([
   "running",
   "completed",
   "failed",
+  "interrupted",
   "waiting_approval",
   "blocked"
 ]);

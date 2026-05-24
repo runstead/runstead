@@ -3,8 +3,17 @@ import { readFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import type { Goal, JsonObject, Task, WorkerRun } from "@runstead/core";
-import type { RunsteadDatabase } from "@runstead/state-sqlite";
+import {
+  createRunsteadId,
+  type Goal,
+  type JsonObject,
+  type Task,
+  type WorkerRun
+} from "@runstead/core";
+import {
+  appendEventAndProject,
+  type RunsteadDatabase
+} from "@runstead/state-sqlite";
 
 import {
   type CodexResponsesInputItem,
@@ -52,6 +61,9 @@ import { runShellCommand, type ShellCommandResult } from "./shell-executor.js";
 
 export const CODEX_DIRECT_WORKER_KIND = "codex_direct";
 export const DEFAULT_CODEX_DIRECT_MAX_TURNS = 12;
+export const DEFAULT_CODEX_DIRECT_MODEL_REQUEST_TIMEOUT_MS = 10 * 60 * 1000;
+export const DEFAULT_CODEX_DIRECT_MODEL_REQUEST_HEARTBEAT_MS = 15 * 1000;
+const EXECUTION_LEASE_MS = 30 * 60 * 1000;
 const DEPENDENCY_FILE_NAMES = new Set([
   "package.json",
   "pnpm-lock.yaml",
@@ -78,6 +90,8 @@ export interface CodexDirectWorkerOptions {
   maxTurns?: number;
   maxToolCalls?: number;
   maxFailedToolCalls?: number;
+  modelRequestTimeoutMs?: number;
+  modelRequestHeartbeatMs?: number;
   finalizeOnBudget?: boolean;
   now?: Date;
 }
@@ -90,12 +104,18 @@ export interface CodexDirectWorkerResult {
   worker: typeof CODEX_DIRECT_WORKER_KIND;
   model: string;
   modelProvider: string;
-  status: "completed" | "waiting_approval" | "blocked" | "failed";
+  status:
+    | "completed"
+    | "waiting_approval"
+    | "interrupted"
+    | "blocked"
+    | "failed";
   exitCode: number;
   summary: string;
   toolCalls: number;
   failedToolCalls: number;
   warnings: string[];
+  interruption?: CodexDirectInterruptionSummary;
   budget?: CodexDirectBudgetSummary;
   workerRun: WorkerRun;
   approval?: {
@@ -129,6 +149,8 @@ export interface CodexDirectPendingPatchResumeOptions {
   maxTurns?: number;
   maxToolCalls?: number;
   maxFailedToolCalls?: number;
+  modelRequestTimeoutMs?: number;
+  modelRequestHeartbeatMs?: number;
   finalizeOnBudget?: boolean;
   now?: Date;
 }
@@ -142,6 +164,14 @@ export interface CodexDirectBudgetSummary {
   maxFailedToolCalls?: number;
   toolCalls: number;
   failedToolCalls: number;
+}
+
+export interface CodexDirectInterruptionSummary {
+  reason: "model_timeout";
+  timeoutMs: number;
+  elapsedMs: number;
+  heartbeatCount: number;
+  retryCommand: string;
 }
 
 type CodexDirectToolName =
@@ -198,8 +228,8 @@ export async function runCodexDirectWorker(
       content: options.prompt ?? buildCodexDirectUserPrompt(options)
     }
   ];
-  let executedToolCalls = 0;
-  let failedToolCalls = 0;
+  const executedToolCalls = 0;
+  const failedToolCalls = 0;
   const maxTurns = options.maxTurns ?? DEFAULT_CODEX_DIRECT_MAX_TURNS;
 
   return runCodexDirectConversation({
@@ -364,6 +394,23 @@ async function runCodexDirectConversation(input: {
       });
     }
 
+    if (error instanceof CodexDirectModelTimeoutError) {
+      return completedWorkerResult({
+        options: input.options,
+        workerRun: input.workerRun,
+        status: "interrupted",
+        exitCode: 124,
+        summary: error.message,
+        toolCalls: executedToolCalls,
+        failedToolCalls,
+        ...codexDirectWarningOptions([
+          ...(input.warnings ?? []),
+          "Codex Direct model request timed out; the task is recoverable with runstead resume."
+        ]),
+        interruption: modelTimeoutInterruption(input.options, error)
+      });
+    }
+
     return completedWorkerResult({
       options: input.options,
       workerRun: input.workerRun,
@@ -507,6 +554,23 @@ export async function runCodexDirectPendingPatchResume(
       });
     }
 
+    if (error instanceof CodexDirectModelTimeoutError) {
+      return completedWorkerResult({
+        options,
+        workerRun,
+        status: "interrupted",
+        exitCode: 124,
+        summary: error.message,
+        toolCalls: 1,
+        failedToolCalls: 0,
+        warnings: [
+          `Resumed from approved pending patch ${options.pendingPatch.approvalId}.`,
+          "Codex Direct model request timed out; the task is recoverable with runstead resume."
+        ],
+        interruption: modelTimeoutInterruption(options, error)
+      });
+    }
+
     return completedWorkerResult({
       options,
       workerRun,
@@ -624,7 +688,19 @@ async function runGovernedModelInference(
         : { networkDomains: options.modelProviderNetworkDomains })
     }),
     run: async () => {
-      const value = await options.transport.createResponse(options.request);
+      const modelRequest = await runModelRequestWithHeartbeat({
+        database: options.database,
+        task: options.task,
+        workerRun: options.workerRun,
+        timeoutMs:
+          options.modelRequestTimeoutMs ??
+          DEFAULT_CODEX_DIRECT_MODEL_REQUEST_TIMEOUT_MS,
+        heartbeatMs:
+          options.modelRequestHeartbeatMs ??
+          DEFAULT_CODEX_DIRECT_MODEL_REQUEST_HEARTBEAT_MS,
+        request: () => options.transport.createResponse(options.request)
+      });
+      const value = modelRequest.value;
 
       return {
         value,
@@ -632,12 +708,167 @@ async function runGovernedModelInference(
           model: options.model,
           status: value.status ?? "unknown",
           finishReason: value.finishReason,
+          elapsedMs: modelRequest.elapsedMs,
+          heartbeatCount: modelRequest.heartbeatCount,
           toolCalls: value.toolCalls.length,
           outputTextBytes: Buffer.byteLength(value.outputText, "utf8")
         }
       };
     }
   }).then((result) => result.value);
+}
+
+async function runModelRequestWithHeartbeat(input: {
+  database: RunsteadDatabase;
+  task: Task;
+  workerRun: WorkerRun;
+  timeoutMs: number;
+  heartbeatMs: number;
+  request: () => Promise<CodexResponsesResult>;
+}): Promise<{
+  value: CodexResponsesResult;
+  elapsedMs: number;
+  heartbeatCount: number;
+}> {
+  const startedAt = Date.now();
+  let heartbeatCount = 0;
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  let heartbeat: ReturnType<typeof setInterval> | undefined;
+
+  const recordHeartbeat = (stage: "started" | "waiting"): void => {
+    heartbeatCount += 1;
+    recordModelRequestHeartbeat({
+      database: input.database,
+      task: input.task,
+      workerRun: input.workerRun,
+      sequence: heartbeatCount,
+      stage,
+      elapsedMs: Date.now() - startedAt,
+      timeoutMs: input.timeoutMs
+    });
+  };
+
+  recordHeartbeat("started");
+
+  const timeoutPromise = new Promise<never>((_resolve, reject) => {
+    timeout = setTimeout(() => {
+      reject(
+        new CodexDirectModelTimeoutError({
+          timeoutMs: input.timeoutMs,
+          elapsedMs: Date.now() - startedAt,
+          heartbeatCount
+        })
+      );
+    }, input.timeoutMs);
+    timeout.unref?.();
+  });
+
+  if (input.heartbeatMs > 0) {
+    heartbeat = setInterval(() => {
+      recordHeartbeat("waiting");
+    }, input.heartbeatMs);
+    heartbeat.unref?.();
+  }
+
+  try {
+    const value = await Promise.race([input.request(), timeoutPromise]);
+
+    return {
+      value,
+      elapsedMs: Date.now() - startedAt,
+      heartbeatCount
+    };
+  } finally {
+    if (timeout !== undefined) {
+      clearTimeout(timeout);
+    }
+    if (heartbeat !== undefined) {
+      clearInterval(heartbeat);
+    }
+  }
+}
+
+function recordModelRequestHeartbeat(input: {
+  database: RunsteadDatabase;
+  task: Task;
+  workerRun: WorkerRun;
+  sequence: number;
+  stage: "started" | "waiting";
+  elapsedMs: number;
+  timeoutMs: number;
+}): void {
+  const heartbeatAt = new Date().toISOString();
+  const leaseExpiresAt = new Date(Date.now() + EXECUTION_LEASE_MS).toISOString();
+
+  appendEventAndProject(input.database, {
+    event: {
+      eventId: createRunsteadId("evt"),
+      type: "worker_run.heartbeat",
+      aggregateType: "worker_run",
+      aggregateId: input.workerRun.id,
+      payload: {
+        workerRunId: input.workerRun.id,
+        taskId: input.task.id,
+        phase: "model_inference_request",
+        stage: input.stage,
+        sequence: input.sequence,
+        elapsedMs: input.elapsedMs,
+        timeoutMs: input.timeoutMs
+      },
+      createdAt: heartbeatAt
+    }
+  });
+  input.database
+    .prepare(
+      `
+      UPDATE worker_runs
+      SET heartbeat_at = ?, lease_expires_at = ?
+      WHERE id = ? AND status = 'running'
+    `
+    )
+    .run(heartbeatAt, leaseExpiresAt, input.workerRun.id);
+  input.database
+    .prepare(
+      `
+      UPDATE tasks
+      SET heartbeat_at = ?, lease_expires_at = ?, updated_at = ?
+      WHERE id = ? AND status = 'running'
+    `
+    )
+    .run(heartbeatAt, leaseExpiresAt, heartbeatAt, input.task.id);
+}
+
+class CodexDirectModelTimeoutError extends Error {
+  readonly reason = "model_timeout";
+  readonly timeoutMs: number;
+  readonly elapsedMs: number;
+  readonly heartbeatCount: number;
+
+  constructor(input: {
+    timeoutMs: number;
+    elapsedMs: number;
+    heartbeatCount: number;
+  }) {
+    super(
+      `Codex Direct model request timed out after ${input.timeoutMs}ms; runstead marked the task interrupted:model_timeout.`
+    );
+    this.timeoutMs = input.timeoutMs;
+    this.elapsedMs = input.elapsedMs;
+    this.heartbeatCount = input.heartbeatCount;
+  }
+}
+
+function modelTimeoutInterruption(
+  options: Pick<CodexDirectWorkerOptions, "task">,
+  error: CodexDirectModelTimeoutError
+): CodexDirectInterruptionSummary {
+  return {
+    reason: error.reason,
+    timeoutMs: error.timeoutMs,
+    elapsedMs: error.elapsedMs,
+    heartbeatCount: error.heartbeatCount,
+    retryCommand: `runstead resume && runstead agent resume ${options.task.id}`
+  };
 }
 
 export function buildCodexDirectInstructions(
@@ -2160,6 +2391,7 @@ function completedWorkerResult(input: {
   toolCalls: number;
   failedToolCalls: number;
   warnings?: string[];
+  interruption?: CodexDirectWorkerResult["interruption"];
   budget?: CodexDirectBudgetSummary;
   approval?: CodexDirectWorkerResult["approval"];
 }): CodexDirectWorkerResult {
@@ -2172,6 +2404,9 @@ function completedWorkerResult(input: {
     summary: input.summary,
     toolCalls: input.toolCalls,
     failedToolCalls: input.failedToolCalls,
+    ...(input.interruption === undefined
+      ? {}
+      : { interruption: input.interruption }),
     ...(warnings.length === 0 ? {} : { warnings }),
     ...(input.budget === undefined ? {} : { budget: input.budget }),
     ...(input.approval === undefined ? {} : { approval: input.approval })
@@ -2194,6 +2429,9 @@ function completedWorkerResult(input: {
     toolCalls: input.toolCalls,
     failedToolCalls: input.failedToolCalls,
     warnings,
+    ...(input.interruption === undefined
+      ? {}
+      : { interruption: input.interruption }),
     workerRun,
     ...(input.budget === undefined ? {} : { budget: input.budget }),
     ...(input.approval === undefined ? {} : { approval: input.approval })
@@ -2214,6 +2452,8 @@ function workerRunStatus(
       return "completed";
     case "waiting_approval":
       return "waiting_approval";
+    case "interrupted":
+      return "interrupted";
     case "blocked":
       return "blocked";
     case "failed":

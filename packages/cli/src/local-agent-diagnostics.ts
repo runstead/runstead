@@ -1,6 +1,9 @@
 import type { JsonObject, Task } from "@runstead/core";
 
-import type { CodexDirectBudgetSummary } from "./codex-direct-worker.js";
+import type {
+  CodexDirectBudgetSummary,
+  CodexDirectInterruptionSummary
+} from "./codex-direct-worker.js";
 import type { RunTaskVerifierCommandResult } from "./verifier-runner.js";
 
 export interface LocalAgentDiagnostic {
@@ -18,6 +21,7 @@ export interface LocalAgentRunDiagnosticInput {
         failedToolCalls?: number;
         warnings?: string[];
         budget?: CodexDirectBudgetSummary;
+        interruption?: CodexDirectInterruptionSummary;
         status?: string;
       }
     | undefined;
@@ -37,6 +41,7 @@ export function diagnoseLocalAgentRun(
 
   return compactDiagnostics([
     approvalDiagnostic(input.task.id, input.approval),
+    interruptionDiagnostic(input.workerResult?.interruption),
     budgetDiagnostic(input.workerResult?.budget),
     verifierDiagnostic(input.verifierResults),
     policyDeniedDiagnostic(input.status, input.summary),
@@ -52,6 +57,7 @@ export function diagnoseLocalAgentTask(task: Task): LocalAgentDiagnostic[] {
 
   return compactDiagnostics([
     approvalDiagnostic(task.id, approvalFromOutput(output)),
+    interruptionDiagnostic(interruptionFromOutput(output.interruption)),
     budgetDiagnostic(budgetFromOutput(output.budget)),
     verifierOutputDiagnostic(output),
     policyDeniedDiagnostic(task.status, stringOutput(output, "summary")),
@@ -91,6 +97,21 @@ function approvalDiagnostic(
         likelyReason: "A governed action needs explicit local approval.",
         retry: `runstead approval approve ${approval.id} && runstead agent resume ${taskId}`
       };
+}
+
+function interruptionDiagnostic(
+  interruption: CodexDirectInterruptionSummary | undefined
+): LocalAgentDiagnostic | undefined {
+  if (interruption === undefined) {
+    return undefined;
+  }
+
+  return {
+    cause: `interrupted:${interruption.reason}`,
+    likelyReason:
+      "The Codex Direct model request exceeded its configured response timeout while Runstead stayed alive.",
+    retry: interruption.retryCommand
+  };
 }
 
 function budgetDiagnostic(
@@ -255,6 +276,27 @@ function approvalFromOutput(
         id: approval.id,
         reason:
           typeof approval.reason === "string" ? approval.reason : "approval needed"
+      }
+    : undefined;
+}
+
+function interruptionFromOutput(
+  value: unknown
+): CodexDirectInterruptionSummary | undefined {
+  if (!isRecord(value) || value.reason !== "model_timeout") {
+    return undefined;
+  }
+
+  return typeof value.timeoutMs === "number" &&
+    typeof value.elapsedMs === "number" &&
+    typeof value.heartbeatCount === "number" &&
+    typeof value.retryCommand === "string"
+    ? {
+        reason: "model_timeout",
+        timeoutMs: value.timeoutMs,
+        elapsedMs: value.elapsedMs,
+        heartbeatCount: value.heartbeatCount,
+        retryCommand: value.retryCommand
       }
     : undefined;
 }

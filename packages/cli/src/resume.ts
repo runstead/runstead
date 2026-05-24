@@ -8,7 +8,7 @@ import { listTasks } from "./tasks.js";
 
 export interface InterruptedTask {
   task: Task;
-  reason: "claimed_or_running" | "stale_lease";
+  reason: "claimed_or_running" | "stale_lease" | "explicit_interruption";
 }
 
 export interface FindInterruptedTasksOptions {
@@ -48,7 +48,11 @@ export interface ResumeInterruptedTasksResult {
   stateDb: string;
 }
 
-const INTERRUPTED_STATUSES = new Set<Task["status"]>(["claimed", "running"]);
+const INTERRUPTED_STATUSES = new Set<Task["status"]>([
+  "claimed",
+  "running",
+  "interrupted"
+]);
 const DEFAULT_STALE_LEASE_FALLBACK_MS = 30 * 60 * 1000;
 
 export function findInterruptedTasks(
@@ -70,7 +74,12 @@ export function findInterruptedTasks(
       .filter((task) => staleIds === undefined || staleIds.has(task.id))
       .map((task) => ({
         task,
-        reason: staleIds === undefined ? "claimed_or_running" : "stale_lease"
+        reason:
+          task.status === "interrupted"
+            ? "explicit_interruption"
+            : staleIds === undefined
+              ? "claimed_or_running"
+              : "stale_lease"
       })),
     stateDb: tasks.stateDb
   };
@@ -116,7 +125,10 @@ function resumeInterruptedTasksUnlocked(
         now: resumedAt
       });
 
-      if (interrupted.task.attempt >= interrupted.task.maxAttempts) {
+      if (
+        interrupted.task.attempt >= interrupted.task.maxAttempts &&
+        !retryableInterruptedTask(interrupted.task)
+      ) {
         const task: Task = {
           ...interrupted.task,
           status: "failed",
@@ -315,7 +327,18 @@ function resumeRequeuedOutput(task: Task): JsonObject | undefined {
   const context = output.ciRepairOrchestrator;
 
   if (!isRecord(context)) {
-    return output;
+    return retryableInterruptedTask(task)
+      ? {
+          ...output,
+          interruption: {
+            ...(isRecord(output.interruption) ? output.interruption : {}),
+            resumeCount:
+              numberOrZero(
+                isRecord(output.interruption) ? output.interruption.resumeCount : 0
+              ) + 1
+          }
+        }
+      : output;
   }
 
   const counters = isRecord(context.counters) ? context.counters : {};
@@ -330,6 +353,18 @@ function resumeRequeuedOutput(task: Task): JsonObject | undefined {
       }
     }
   };
+}
+
+function retryableInterruptedTask(task: Task): boolean {
+  return task.status === "interrupted" && interruptedReason(task) === "model_timeout";
+}
+
+function interruptedReason(task: Task): string | undefined {
+  const interruption = task.output?.interruption;
+
+  return isRecord(interruption) && typeof interruption.reason === "string"
+    ? interruption.reason
+    : undefined;
 }
 
 function failRunningWorkerRuns(input: {

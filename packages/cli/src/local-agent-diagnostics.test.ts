@@ -76,6 +76,50 @@ describe("local agent diagnostics", () => {
     );
   });
 
+  it("points model timeout interruptions at resume and retry", () => {
+    const diagnostics = diagnoseLocalAgentRun({
+      task: localAgentTask({ id: "task_model_timeout", status: "interrupted" }),
+      status: "interrupted",
+      summary:
+        "Codex Direct model request timed out after 50ms; runstead marked the task interrupted:model_timeout.",
+      workerResult: {
+        status: "interrupted",
+        failedToolCalls: 0,
+        warnings: [],
+        interruption: {
+          reason: "model_timeout",
+          timeoutMs: 50,
+          elapsedMs: 51,
+          heartbeatCount: 2,
+          retryCommand: "runstead resume && runstead agent resume task_model_timeout"
+        }
+      }
+    });
+
+    expect(diagnostics[0]).toMatchObject({
+      cause: "interrupted:model_timeout",
+      retry: "runstead resume && runstead agent resume task_model_timeout"
+    });
+
+    const storedDiagnostics = diagnoseLocalAgentTask(
+      localAgentTask({
+        id: "task_model_timeout",
+        status: "interrupted",
+        output: {
+          interruption: {
+            reason: "model_timeout",
+            timeoutMs: 50,
+            elapsedMs: 51,
+            heartbeatCount: 2,
+            retryCommand: "runstead resume && runstead agent resume task_model_timeout"
+          }
+        }
+      })
+    );
+
+    expect(storedDiagnostics[0]?.cause).toBe("interrupted:model_timeout");
+  });
+
   it("does not classify completed model summaries as Codex model failures", () => {
     const diagnostics = diagnoseLocalAgentRun({
       task: localAgentTask({ id: "task_1", status: "completed" }),

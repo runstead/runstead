@@ -6,6 +6,7 @@ export type RuntimeAgentCompletionStatus =
   | "completed"
   | "budget_exhausted"
   | "approval_waiting"
+  | "interrupted"
   | "blocked"
   | "failed";
 
@@ -13,6 +14,7 @@ export type RuntimeTaskResultStatus =
   | "completed"
   | "completed_with_warnings"
   | "waiting_approval"
+  | "interrupted"
   | "blocked"
   | "failed";
 export type RuntimeFinalWorkerRunStatus = Exclude<WorkerRun["status"], "running">;
@@ -30,7 +32,12 @@ export type RuntimeWorkerOutcome =
     }
   | {
       kind: "governed";
-      status: "completed" | "failed" | "waiting_approval" | "blocked";
+      status:
+        | "completed"
+        | "failed"
+        | "interrupted"
+        | "waiting_approval"
+        | "blocked";
       toolCalls: number;
       budgetExhausted?: boolean;
     };
@@ -53,6 +60,10 @@ export function runtimeAgentCompletionStatus(
 
   if (worker.status === "waiting_approval") {
     return "approval_waiting";
+  }
+
+  if (worker.status === "interrupted") {
+    return "interrupted";
   }
 
   if (worker.status === "blocked") {
@@ -130,6 +141,8 @@ export function runtimeTaskResultStatus(input: {
         : "completed";
     case "waiting_approval":
       return "waiting_approval";
+    case "interrupted":
+      return "interrupted";
     case "blocked":
       return "blocked";
     case "failed":
@@ -147,6 +160,8 @@ export function runtimeWorkerRunStatusFromTaskStatus(
       return "completed";
     case "waiting_approval":
       return "waiting_approval";
+    case "interrupted":
+      return "interrupted";
     case "blocked":
       return "blocked";
     default:
@@ -162,6 +177,8 @@ function runtimeTaskStatusFromWorkerStatus(
       return "completed";
     case "waiting_approval":
       return "waiting_approval";
+    case "interrupted":
+      return "interrupted";
     case "blocked":
       return "blocked";
     case "failed":

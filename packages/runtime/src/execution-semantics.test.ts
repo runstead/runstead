@@ -72,4 +72,28 @@ describe("@runstead/runtime execution semantics", () => {
       })
     ).toBe("blocked");
   });
+
+  it("keeps governed interruption distinct from ordinary failure", () => {
+    const worker = {
+      kind: "governed" as const,
+      status: "interrupted" as const,
+      toolCalls: 0
+    };
+
+    expect(runtimeExecutionSemantics({ worker })).toEqual({
+      implementation: "not_applied",
+      verification: "skipped",
+      agentCompletion: "interrupted"
+    });
+    expect(runtimeFinalTaskStatus({ worker })).toBe("interrupted");
+    expect(
+      runtimeTaskResultStatus({
+        taskStatus: "interrupted",
+        worker
+      })
+    ).toBe("interrupted");
+    expect(runtimeWorkerRunStatusFromTaskStatus("interrupted")).toBe(
+      "interrupted"
+    );
+  });
 });

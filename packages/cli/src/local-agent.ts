@@ -99,6 +99,8 @@ export interface CreateLocalAgentTaskOptions {
   maxTurns?: number;
   maxToolCalls?: number;
   maxFailedToolCalls?: number;
+  modelRequestTimeoutMs?: number;
+  modelRequestHeartbeatMs?: number;
   finalizeOnBudget?: boolean;
   gitDiffStaged?: boolean;
   gitDiffBase?: string;
@@ -148,6 +150,7 @@ export interface RunLocalAgentTaskResult {
     | "completed"
     | "completed_with_warnings"
     | "waiting_approval"
+    | "interrupted"
     | "blocked"
     | "failed";
   summary: string;
@@ -702,7 +705,7 @@ async function runLocalAgentWorker(options: {
     const maxTurns = localAgentTaskMaxTurns(options.task);
 
     if (options.pendingPatchResume !== undefined) {
-      return runCodexDirectPendingPatchResume({
+    return runCodexDirectPendingPatchResume({
         cwd: options.cwd,
         stateDb: options.stateDb,
         database: options.database,
@@ -721,6 +724,7 @@ async function runLocalAgentWorker(options: {
         pendingPatch: options.pendingPatchResume,
         ...(maxTurns === undefined ? {} : { maxTurns }),
         ...localAgentTaskToolBudget(options.task),
+        ...localAgentTaskModelRequestTiming(options.task),
         finalizeOnBudget: localAgentTaskFinalizeOnBudget(options.task),
         ...(options.now === undefined ? {} : { now: options.now })
       });
@@ -750,6 +754,7 @@ async function runLocalAgentWorker(options: {
       prompt: buildLocalAgentPrompt(options.task),
       ...(maxTurns === undefined ? {} : { maxTurns }),
       ...localAgentTaskToolBudget(options.task),
+      ...localAgentTaskModelRequestTiming(options.task),
       finalizeOnBudget: localAgentTaskFinalizeOnBudget(options.task),
       ...(options.now === undefined ? {} : { now: options.now })
     });
@@ -919,10 +924,17 @@ function formatLocalAgentWorkerResultLines(
       `Worker: ${workerResult.worker}`,
       `Provider: ${workerResult.modelProvider}`,
       `Model: ${workerResult.model}`,
+      `Worker status: ${workerResult.status}`,
       `Governance: ${String(governance.level)}`,
       `Tool proxy: ${String(governance.internalToolProxy)} (${String(governance.policyEnforcement)})`,
       `Tool calls: ${workerResult.toolCalls}`,
-      `Failed tool calls: ${workerResult.failedToolCalls}`
+      `Failed tool calls: ${workerResult.failedToolCalls}`,
+      ...(workerResult.interruption === undefined
+        ? []
+        : [
+            `Interruption: ${workerResult.interruption.reason} after ${workerResult.interruption.timeoutMs}ms`,
+            `Retry: ${workerResult.interruption.retryCommand}`
+          ])
     ];
   }
 
@@ -967,6 +979,9 @@ function localAgentRunDiagnosticsInput(
       status: result.workerResult.status,
       failedToolCalls: result.workerResult.failedToolCalls,
       warnings: result.workerResult.warnings,
+      ...(result.workerResult.interruption === undefined
+        ? {}
+        : { interruption: result.workerResult.interruption }),
       ...(result.workerResult.budget === undefined
         ? {}
         : { budget: result.workerResult.budget })
@@ -1264,6 +1279,12 @@ function localAgentTaskInput(input: {
     ...(input.options.maxFailedToolCalls === undefined
       ? {}
       : { maxFailedToolCalls: input.options.maxFailedToolCalls }),
+    ...(input.options.modelRequestTimeoutMs === undefined
+      ? {}
+      : { modelRequestTimeoutMs: input.options.modelRequestTimeoutMs }),
+    ...(input.options.modelRequestHeartbeatMs === undefined
+      ? {}
+      : { modelRequestHeartbeatMs: input.options.modelRequestHeartbeatMs }),
     ...(input.options.finalizeOnBudget === undefined
       ? {}
       : { finalizeOnBudget: input.options.finalizeOnBudget }),
@@ -1458,7 +1479,7 @@ function localAgentResultStatus(
 
 function localAgentWorkerRunStatus(
   status: Task["status"]
-): "completed" | "waiting_approval" | "blocked" | "failed" {
+): "completed" | "waiting_approval" | "interrupted" | "blocked" | "failed" {
   return runtimeWorkerRunStatusFromTaskStatus(status);
 }
 
@@ -1619,6 +1640,9 @@ function localAgentTaskOutput(input: {
     ...(input.workerResult.warnings.length === 0
       ? {}
       : { warnings: input.workerResult.warnings }),
+    ...(input.workerResult.interruption === undefined
+      ? {}
+      : { interruption: input.workerResult.interruption }),
     ...(input.workerResult.budget === undefined
       ? {}
       : { budget: input.workerResult.budget }),
@@ -1686,6 +1710,9 @@ function localAgentWorkerOutput(input: {
     ...(input.workerResult.warnings.length === 0
       ? {}
       : { warnings: input.workerResult.warnings }),
+    ...(input.workerResult.interruption === undefined
+      ? {}
+      : { interruption: input.workerResult.interruption }),
     ...(input.workerResult.budget === undefined
       ? {}
       : { budget: input.workerResult.budget }),
@@ -2199,6 +2226,16 @@ function localAgentTaskToolBudget(task: Task): {
   return {
     ...positiveIntegerInput(task, "maxToolCalls"),
     ...positiveIntegerInput(task, "maxFailedToolCalls")
+  };
+}
+
+function localAgentTaskModelRequestTiming(task: Task): {
+  modelRequestTimeoutMs?: number;
+  modelRequestHeartbeatMs?: number;
+} {
+  return {
+    ...positiveIntegerInput(task, "modelRequestTimeoutMs"),
+    ...positiveIntegerInput(task, "modelRequestHeartbeatMs")
   };
 }
 
