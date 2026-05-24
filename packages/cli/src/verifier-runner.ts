@@ -9,6 +9,11 @@ import {
   type Task
 } from "@runstead/core";
 import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sqlite";
+import {
+  commandVerifierResultsPassed,
+  type CommandVerifierInput,
+  type CommandVerifierResult
+} from "@runstead/verifiers";
 
 import {
   runGovernedToolAction,
@@ -26,7 +31,6 @@ import { claimTask, showTask } from "./tasks.js";
 import {
   storeCommandVerifierEvidence,
   storeCommandVerifierPolicyEvidence,
-  type CommandVerifierInput,
   type StoreCommandVerifierEvidenceResult
 } from "./verifier-evidence.js";
 
@@ -40,15 +44,7 @@ export interface RunTaskVerifiersOptions {
   now?: Date;
 }
 
-export interface RunTaskVerifierCommandResult {
-  verifier: string;
-  exitCode: number | null;
-  timedOut: boolean;
-  forceKilled: boolean;
-  evidenceId: string;
-  policyDecisionId?: string;
-  approvalId?: string;
-}
+export type RunTaskVerifierCommandResult = CommandVerifierResult;
 
 export interface RunTaskVerifiersResult {
   task: Task;
@@ -313,11 +309,7 @@ export async function runTaskVerifiersUnlocked(
       }
     }
 
-    const passed =
-      commandResults.length > 0 &&
-      commandResults.every(
-        (result) => result.exitCode === 0 && result.timedOut === false
-      );
+    const passed = commandVerifierResultsPassed(commandResults);
     const output = verifierOutput(commandResults, passed);
     const finalTask: Task = {
       ...currentTask,
