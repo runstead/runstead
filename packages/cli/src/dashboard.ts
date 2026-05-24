@@ -209,6 +209,28 @@ export interface DashboardStartupAgentPatch {
 export interface DashboardOperatorConsole {
   actions: DashboardOperatorAction[];
   recommendedAction?: DashboardOperatorAction;
+  currentRun?: DashboardOperatorRunContext;
+  pendingApprovals: DashboardOperatorPendingApproval[];
+  blockerCount: number;
+  staleEvidenceCount: number;
+  recommendedCommand?: string;
+}
+
+export interface DashboardOperatorRunContext {
+  id: string;
+  stage: string;
+  target: string;
+  status: string;
+  verdict: string;
+  blockers: string[];
+  resumeCommand?: string;
+}
+
+export interface DashboardOperatorPendingApproval {
+  id: string;
+  risk: string;
+  reason: string;
+  command: string;
 }
 
 export interface DashboardOperatorAction {
@@ -257,7 +279,8 @@ export async function buildDashboard(
       operator: buildDashboardOperatorConsole({
         cwd,
         daemon,
-        startup
+        startup,
+        approvals: baseSnapshot.approvals
       })
     };
     const html = formatDashboardHtml(snapshot);
@@ -483,7 +506,10 @@ function readDashboardSnapshot(
       staleEvidence: []
     },
     operator: {
-      actions: []
+      actions: [],
+      pendingApprovals: [],
+      blockerCount: 0,
+      staleEvidenceCount: 0
     }
   };
 }
@@ -781,6 +807,7 @@ function buildDashboardOperatorConsole(input: {
   cwd: string;
   daemon: DashboardDaemonStatus;
   startup: DashboardStartupSnapshot;
+  approvals: DashboardApproval[];
 }): DashboardOperatorConsole {
   const actions: DashboardOperatorAction[] = [];
   const seen = new Set<string>();
@@ -804,6 +831,17 @@ function buildDashboardOperatorConsole(input: {
         input.daemon.ciRepairStatus === undefined
           ? "A daemon task is waiting on approval."
           : `Daemon CI repair is ${input.daemon.ciRepairStatus}.`,
+      source: "daemon_approval",
+      status: "blocked"
+    });
+  }
+
+  for (const approval of input.approvals.filter((item) => item.status === "pending")) {
+    addAction({
+      id: `approval-${approval.id}`,
+      title: `Approve ${approval.risk}-risk request`,
+      command: `runstead approval approve-and-resume ${shellQuote(approval.id)} --cwd ${shellQuote(input.cwd)}`,
+      reason: approval.reason,
       source: "daemon_approval",
       status: "blocked"
     });
@@ -854,10 +892,60 @@ function buildDashboardOperatorConsole(input: {
 
   const recommendedAction =
     actions.find((action) => action.status === "blocked") ?? actions[0];
+  const currentRun =
+    run === undefined
+      ? undefined
+      : dashboardOperatorRunContext({
+          cwd: input.cwd,
+          run
+        });
+  const pendingApprovals = input.approvals
+    .filter((item) => item.status === "pending")
+    .map((approval) => ({
+      id: approval.id,
+      risk: approval.risk,
+      reason: approval.reason,
+      command: `runstead approval approve-and-resume ${shellQuote(approval.id)} --cwd ${shellQuote(input.cwd)}`
+    }));
+  const blockerCount =
+    input.startup.status?.gates.reduce(
+      (count, gate) => count + gate.blockers.length,
+      0
+    ) ?? run?.blockers.length ?? 0;
 
   return {
     actions,
-    ...(recommendedAction === undefined ? {} : { recommendedAction })
+    ...(recommendedAction === undefined ? {} : { recommendedAction }),
+    ...(currentRun === undefined ? {} : { currentRun }),
+    pendingApprovals,
+    blockerCount,
+    staleEvidenceCount: input.startup.staleEvidence.length,
+    ...(recommendedAction === undefined
+      ? {}
+      : { recommendedCommand: recommendedAction.command })
+  };
+}
+
+function dashboardOperatorRunContext(input: {
+  cwd: string;
+  run: DashboardStartupRun;
+}): DashboardOperatorRunContext {
+  const resumeCommand = input.run.operatorCommands.find(
+    (command) => command.kind === "resume"
+  )?.command;
+
+  return {
+    id: input.run.id,
+    stage: input.run.stage,
+    target: input.run.target,
+    status: input.run.status,
+    verdict: input.run.verdict,
+    blockers: input.run.blockers,
+    ...(resumeCommand === undefined
+      ? {
+          resumeCommand: `runstead startup ready --cwd ${shellQuote(input.cwd)} --resume ${shellQuote(input.run.id)}`
+        }
+      : { resumeCommand })
   };
 }
 
@@ -1098,9 +1186,19 @@ function operatorConsoleSection(operator: DashboardOperatorConsole): string {
     operator.recommendedAction === undefined
       ? "none"
       : `${operator.recommendedAction.title}: ${operator.recommendedAction.reason}`;
+  const run = operator.currentRun;
+  const pendingApprovals =
+    operator.pendingApprovals.length === 0
+      ? "none"
+      : operator.pendingApprovals
+          .map(
+            (approval) =>
+              `<code>${escapeHtml(approval.id)}</code> ${escapeHtml(approval.risk)}<br><code>${escapeHtml(approval.command)}</code>`
+          )
+          .join("<br>");
 
   if (operator.actions.length === 0) {
-    return `<section><header><h2>Operator Console</h2><span class="muted">0 actions</span></header><div class="empty">No operator actions are available.</div></section>`;
+    return `<section><header><h2>Operator Console</h2><span class="muted">0 actions</span></header>${operatorConsoleContextTable(operator, pendingApprovals)}<div class="empty">No operator actions are available.</div></section>`;
   }
 
   const rows = operator.actions
@@ -1115,9 +1213,41 @@ function operatorConsoleSection(operator: DashboardOperatorConsole): string {
 
   return `<section>
     <header><h2>Operator Console</h2><span class="muted">${operator.actions.length} action${operator.actions.length === 1 ? "" : "s"}</span></header>
-    <table><tbody><tr><th>Recommended</th><td>${escapeHtml(recommended)}</td></tr><tr><th>API</th><td><code>/operator-actions.json</code></td></tr></tbody></table>
+    <table><tbody>
+      <tr><th>Current run</th><td>${
+        run === undefined
+          ? "none"
+          : `<code>${escapeHtml(run.id)}</code> ${statusCell(run.status)} target=${escapeHtml(run.target)} verdict=${escapeHtml(run.verdict)}<br><code>${escapeHtml(run.resumeCommand ?? "")}</code>`
+      }</td></tr>
+      <tr><th>Recommended</th><td>${escapeHtml(recommended)}</td></tr>
+      <tr><th>Recommended command</th><td><code>${escapeHtml(operator.recommendedCommand ?? "none")}</code></td></tr>
+      <tr><th>Blockers</th><td>${operator.blockerCount}</td></tr>
+      <tr><th>Pending approvals</th><td>${pendingApprovals}</td></tr>
+      <tr><th>Stale evidence</th><td>${operator.staleEvidenceCount}</td></tr>
+      <tr><th>API</th><td><code>/operator-actions.json</code></td></tr>
+    </tbody></table>
     <div class="operator-actions">${rows}</div>
   </section>`;
+}
+
+function operatorConsoleContextTable(
+  operator: DashboardOperatorConsole,
+  pendingApprovals: string
+): string {
+  const run = operator.currentRun;
+
+  return `<table><tbody>
+    <tr><th>Current run</th><td>${
+      run === undefined
+        ? "none"
+        : `<code>${escapeHtml(run.id)}</code> ${statusCell(run.status)} target=${escapeHtml(run.target)} verdict=${escapeHtml(run.verdict)}<br><code>${escapeHtml(run.resumeCommand ?? "")}</code>`
+    }</td></tr>
+    <tr><th>Recommended command</th><td><code>${escapeHtml(operator.recommendedCommand ?? "none")}</code></td></tr>
+    <tr><th>Blockers</th><td>${operator.blockerCount}</td></tr>
+    <tr><th>Pending approvals</th><td>${pendingApprovals}</td></tr>
+    <tr><th>Stale evidence</th><td>${operator.staleEvidenceCount}</td></tr>
+    <tr><th>API</th><td><code>/operator-actions.json</code></td></tr>
+  </tbody></table>`;
 }
 
 function startupSection(startup: DashboardStartupSnapshot): string {

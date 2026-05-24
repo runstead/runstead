@@ -293,6 +293,9 @@ describe("buildDashboard", () => {
       expect(result.outputDir).toBe(join(root, "dashboard"));
       expect(html).toContain("Runstead Dashboard");
       expect(html).toContain("Operator Console");
+      expect(html).toContain("Current run");
+      expect(html).toContain("Pending approvals");
+      expect(html).toContain("Recommended command");
       expect(html).toContain("Startup Readiness");
       expect(html).toContain("run_dashboard_ready");
       expect(html).toContain("UI smoke artifacts");
@@ -370,14 +373,32 @@ describe("buildDashboard", () => {
           id: "daemon-approval-resume",
           source: "daemon_approval",
           status: "blocked"
-        }
+        },
+        currentRun: {
+          id: "run_dashboard_ready",
+          status: "completed",
+          verdict: "local_launch_ready",
+          target: "local"
+        },
+        pendingApprovals: [
+          {
+            id: "appr_001",
+            risk: "high",
+            command: expect.stringContaining("approve-and-resume appr_001")
+          }
+        ],
+        blockerCount: expect.any(Number),
+        staleEvidenceCount: 0,
+        recommendedCommand: expect.stringContaining("approve-and-resume")
       });
       expect(snapshot.operator.actions.map((action) => action.id)).toEqual([
         "daemon-approval-resume",
+        "approval-appr_001",
         "startup-next-action",
         "startup-run-command-1",
         "startup-run-command-2"
       ]);
+      expect(snapshot.operator.blockerCount).toBeGreaterThan(0);
       expect(operator).toEqual(snapshot.operator);
 
       const auditDatabase = openRunsteadDatabase(stateDb);
@@ -427,7 +448,7 @@ describe("buildDashboard", () => {
             }
           },
           operator: {
-            actions: 4,
+            actions: 5,
             recommendedAction: {
               id: "daemon-approval-resume",
               source: "daemon_approval",
