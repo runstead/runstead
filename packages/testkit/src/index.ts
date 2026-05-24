@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 export * from "./security-fixtures.js";
+export * from "./control-plane-conformance.js";
 
 export interface TempWorkspace {
   path: string;

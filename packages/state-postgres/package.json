@@ -26,5 +26,8 @@
   "dependencies": {
     "@runstead/core": "workspace:*",
     "@runstead/runtime": "workspace:*"
+  },
+  "devDependencies": {
+    "@runstead/testkit": "workspace:*"
   }
 }

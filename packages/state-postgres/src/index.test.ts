@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { assessTeamControlPlaneReadiness } from "@runstead/runtime";
+import { runRuntimeControlPlaneBackendConformance } from "@runstead/testkit";
 
 import {
   createPostgresControlPlaneBackend,
@@ -29,6 +30,50 @@ describe("@runstead/state-postgres", () => {
     expect(sql).toContain("idx_pg_events_aggregate_id");
     expect(client.queries[0]).toBe("BEGIN");
     expect(client.queries.at(-1)).toBe("COMMIT");
+  });
+
+  it("passes the reusable runtime control-plane backend conformance suite", async () => {
+    const client = new FakePostgresClient();
+    const result = await runRuntimeControlPlaneBackendConformance({
+      name: "postgres",
+      create: () =>
+        Promise.resolve({
+          backend: createPostgresControlPlaneBackend({
+            client,
+            stateUri: "postgres://runstead/state",
+            artifactBaseUri: "s3://runstead-artifacts"
+          }),
+          inspect: {
+            eventCount: (aggregateType, aggregateId) =>
+              Promise.resolve(
+                client.events.filter(
+                  (event) =>
+                    event.aggregate_type === aggregateType &&
+                    event.aggregate_id === aggregateId
+                ).length
+              ),
+            projectionCount: (projectionType, aggregateId) =>
+              Promise.resolve(
+                client.projections.filter(
+                  (projection) =>
+                    projection.projectionType === projectionType &&
+                    projection.aggregateId === aggregateId
+                ).length
+              )
+          }
+        })
+    });
+
+    expect(result).toEqual({
+      name: "postgres",
+      checks: [
+        "event_append_projection",
+        "idempotency_key",
+        "expected_revision_conflict",
+        "lock_renew_release",
+        "artifact_hash_read"
+      ]
+    });
   });
 
   it("appends events and projections transactionally with idempotency", async () => {
@@ -290,8 +335,8 @@ class FakePostgresClient implements PostgresControlPlaneClient {
     }
 
     if (normalized.includes("FROM") && normalized.includes('"events"')) {
-      const aggregateType = params.includes("task") ? "task" : undefined;
-      const aggregateId = params.includes("task_pg_1") ? "task_pg_1" : undefined;
+      const aggregateType = sqlParameter(normalized, params, "aggregate_type");
+      const aggregateId = sqlParameter(normalized, params, "aggregate_id");
 
       return rows<Row>(
         this.events.filter(
@@ -331,10 +376,16 @@ class FakePostgresClient implements PostgresControlPlaneClient {
       const existing = this.locks.get(String(params[0]));
 
       if (existing?.token === String(params[1])) {
-        this.locks.set(String(params[0]), {
+        const updated = {
           ...existing,
           expires_at: String(params[2])
-        });
+        };
+
+        this.locks.set(String(params[0]), updated);
+
+        if (normalized.includes("RETURNING")) {
+          return rows<Row>([updated]);
+        }
       }
 
       return rows<Row>();
@@ -376,4 +427,16 @@ function artifactBytes(value: unknown): Uint8Array {
   }
 
   throw new Error("expected fake artifact bytes");
+}
+
+function sqlParameter(
+  sql: string,
+  params: readonly unknown[],
+  column: string
+): string | undefined {
+  const match = new RegExp(`${column} = \\$(\\d+)`, "u").exec(sql);
+  const index = match?.[1] === undefined ? undefined : Number(match[1]) - 1;
+  const value = index === undefined ? undefined : params[index];
+
+  return typeof value === "string" ? value : undefined;
 }
