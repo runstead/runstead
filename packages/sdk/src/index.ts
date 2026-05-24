@@ -1,6 +1,10 @@
 import { z } from "zod";
 
-import type { ReadinessEvidenceTier, ReadinessTarget } from "@runstead/runtime";
+import type {
+  ReadinessEvidenceRequirement,
+  ReadinessEvidenceTier,
+  ReadinessTarget
+} from "@runstead/runtime";
 
 const EXTENSION_ID_PATTERN = /^[a-z][a-z0-9-]*$/;
 const SEMVER_PATTERN = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
@@ -338,6 +342,220 @@ export function compileRunsteadExtensionRuntime(
       (collector) => collector.safeForWrappedWorkers
     )
   };
+}
+
+export function extensionReadinessEvidenceRequirements(
+  contracts: RunsteadExtensionRuntimeContract[],
+  options: { stage?: string } = {}
+): ReadinessEvidenceRequirement[] {
+  return contracts.flatMap((contract) =>
+    contract.evidenceRequirements
+      .filter((requirement) =>
+        extensionRequirementAppliesToStage(contract, requirement, options.stage)
+      )
+      .map((requirement) => ({
+        source: "extension",
+        sourceId: `${contract.extensionId}/${requirement.sourceId}`,
+        targets: [...requirement.targets],
+        evidenceTiers: [...requirement.evidenceTiers],
+        evidenceTypes: [...requirement.evidenceTypes],
+        ...(requirement.blockers.length === 0
+          ? {}
+          : {
+              blockers: requirement.blockers.map(
+                (blocker) =>
+                  `extension ${contract.extensionId}/${requirement.sourceId}: ${blocker}`
+              )
+            })
+      }))
+  );
+}
+
+export function extensionReadinessRequirementBlockers(input: {
+  issues?: string[];
+  requirements: ReadinessEvidenceRequirement[];
+  target: ReadinessTarget;
+  evidenceTiers: string[];
+  evidenceTypes: string[];
+}): string[] {
+  const tiers = new Set(input.evidenceTiers);
+  const types = new Set(input.evidenceTypes);
+  const requirementBlockers = input.requirements.flatMap((requirement) => {
+    if (!requirement.targets.includes(input.target)) {
+      return [];
+    }
+
+    const missingTiers = requirement.evidenceTiers.filter((tier) => !tiers.has(tier));
+    const missingTypes = requirement.evidenceTypes.filter((type) => !types.has(type));
+
+    if (missingTiers.length === 0 && missingTypes.length === 0) {
+      return [];
+    }
+
+    if ((requirement.blockers ?? []).length > 0) {
+      return requirement.blockers ?? [];
+    }
+
+    return [
+      ...missingTiers.map(
+        (tier) =>
+          `${requirement.source} ${requirement.sourceId} requires ${tier} evidence tier`
+      ),
+      ...missingTypes.map(
+        (type) =>
+          `${requirement.source} ${requirement.sourceId} requires ${type} evidence`
+      )
+    ];
+  });
+
+  return [...(input.issues ?? []), ...requirementBlockers];
+}
+
+export function extensionCollectorPolicyBlockers(input: {
+  contracts: RunsteadExtensionRuntimeContract[];
+  requirements: ReadinessEvidenceRequirement[];
+  target: ReadinessTarget;
+  worker: string;
+  governanceProfile: string;
+}): string[] {
+  const requiredEvidenceTypes = new Set(
+    input.requirements
+      .filter((requirement) => requirement.targets.includes(input.target))
+      .flatMap((requirement) => requirement.evidenceTypes)
+  );
+  const targetMinimumQuality = minimumExtensionCollectorQualityForTarget(input.target);
+
+  return input.contracts.flatMap((contract) =>
+    contract.collectors.flatMap((collector) => {
+      if (
+        !collector.producesEvidenceTypes.some((type) => requiredEvidenceTypes.has(type))
+      ) {
+        return [];
+      }
+
+      return [
+        ...wrappedWorkerCollectorBlockers({
+          extensionId: contract.extensionId,
+          collectorId: collector.id,
+          safeForWrappedWorkers: collector.safeForWrappedWorkers,
+          worker: input.worker,
+          governanceProfile: input.governanceProfile
+        }),
+        ...collectorQualityBlockers({
+          extensionId: contract.extensionId,
+          collectorId: collector.id,
+          qualityTier: collector.qualityTier,
+          minimumQualityTier: targetMinimumQuality,
+          target: input.target
+        }),
+        ...collectorFreshnessBlockers({
+          extensionId: contract.extensionId,
+          collectorId: collector.id,
+          ...(collector.defaultFreshnessDays === undefined
+            ? {}
+            : { defaultFreshnessDays: collector.defaultFreshnessDays }),
+          target: input.target
+        })
+      ];
+    })
+  );
+}
+
+export function minimumExtensionCollectorQualityForTarget(
+  target: ReadinessTarget
+): RunsteadEvidenceQualityTier {
+  if (target === "local") {
+    return "self_reported";
+  }
+
+  if (target === "staging") {
+    return "machine_verified";
+  }
+
+  return "external_observed";
+}
+
+export function extensionQualityTierRank(tier: string): number {
+  return RunsteadEvidenceQualityTierSchema.options.indexOf(
+    tier as RunsteadEvidenceQualityTier
+  );
+}
+
+function wrappedWorkerCollectorBlockers(input: {
+  extensionId: string;
+  collectorId: string;
+  safeForWrappedWorkers: boolean;
+  worker: string;
+  governanceProfile: string;
+}): string[] {
+  if (
+    input.safeForWrappedWorkers ||
+    input.worker === "codex_direct" ||
+    input.governanceProfile === "governed"
+  ) {
+    return [];
+  }
+
+  return [
+    `extension ${input.extensionId}/${input.collectorId} is not safe for Level 1 wrapped workers; use --worker codex_direct --governance governed`
+  ];
+}
+
+function collectorQualityBlockers(input: {
+  extensionId: string;
+  collectorId: string;
+  qualityTier: string;
+  minimumQualityTier: string;
+  target: ReadinessTarget;
+}): string[] {
+  return extensionQualityTierRank(input.qualityTier) >=
+    extensionQualityTierRank(input.minimumQualityTier)
+    ? []
+    : [
+        `extension ${input.extensionId}/${input.collectorId} quality ${input.qualityTier} is below ${input.minimumQualityTier} for ${input.target} readiness`
+      ];
+}
+
+function collectorFreshnessBlockers(input: {
+  extensionId: string;
+  collectorId: string;
+  defaultFreshnessDays?: number;
+  target: ReadinessTarget;
+}): string[] {
+  if (input.target === "local" || input.defaultFreshnessDays !== undefined) {
+    return [];
+  }
+
+  return [
+    `extension ${input.extensionId}/${input.collectorId} must declare defaultFreshnessDays for ${input.target} readiness`
+  ];
+}
+
+function extensionRequirementAppliesToStage(
+  contract: RunsteadExtensionRuntimeContract,
+  requirement: RunsteadExtensionRuntimeContract["evidenceRequirements"][number],
+  stage: string | undefined
+): boolean {
+  if (stage === undefined || requirement.source === "verifier") {
+    return true;
+  }
+
+  if (requirement.source === "gate") {
+    return contract.gates.some(
+      (gate) => gate.id === requirement.sourceId && gate.stage === stage
+    );
+  }
+
+  const matchingGateFacetNames = new Set(
+    contract.gates
+      .filter((gate) => gate.stage === stage)
+      .flatMap((gate) => gate.requiredFacets.map((facet) => facet.name))
+  );
+
+  return (
+    matchingGateFacetNames.size === 0 ||
+    matchingGateFacetNames.has(requirement.sourceId)
+  );
 }
 
 function addDuplicateIdIssues(

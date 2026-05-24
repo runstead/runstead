@@ -5,6 +5,9 @@ import { extname, join } from "node:path";
 import type { ReadinessEvidenceRequirement, ReadinessTarget } from "@runstead/runtime";
 import {
   compileRunsteadExtensionRuntime,
+  extensionCollectorPolicyBlockers,
+  extensionReadinessEvidenceRequirements,
+  extensionReadinessRequirementBlockers,
   type RunsteadExtensionRuntimeContract
 } from "@runstead/sdk";
 import { parse as parseYaml } from "yaml";
@@ -84,26 +87,9 @@ export function startupReadinessExtensionEvidenceRequirements(
   extensions: LoadedStartupReadinessExtension[],
   options: { stage?: string } = {}
 ): ReadinessEvidenceRequirement[] {
-  return extensions.flatMap(({ contract }) =>
-    contract.evidenceRequirements
-      .filter((requirement) =>
-        extensionRequirementAppliesToStage(contract, requirement, options.stage)
-      )
-      .map((requirement) => ({
-        source: "extension",
-        sourceId: `${contract.extensionId}/${requirement.sourceId}`,
-        targets: [...requirement.targets],
-        evidenceTiers: [...requirement.evidenceTiers],
-        evidenceTypes: [...requirement.evidenceTypes],
-        ...(requirement.blockers.length === 0
-          ? {}
-          : {
-              blockers: requirement.blockers.map(
-                (blocker) =>
-                  `extension ${contract.extensionId}/${requirement.sourceId}: ${blocker}`
-              )
-            })
-      }))
+  return extensionReadinessEvidenceRequirements(
+    extensions.map(({ contract }) => contract),
+    options
   );
 }
 
@@ -114,37 +100,13 @@ export function startupReadinessExtensionRequirementBlockers(input: {
   evidenceTiers: string[];
   evidenceTypes: string[];
 }): string[] {
-  const tiers = new Set(input.evidenceTiers);
-  const types = new Set(input.evidenceTypes);
-  const requirementBlockers = input.requirements.flatMap((requirement) => {
-    if (!requirement.targets.includes(input.target)) {
-      return [];
-    }
-
-    const missingTiers = requirement.evidenceTiers.filter((tier) => !tiers.has(tier));
-    const missingTypes = requirement.evidenceTypes.filter((type) => !types.has(type));
-
-    if (missingTiers.length === 0 && missingTypes.length === 0) {
-      return [];
-    }
-
-    if ((requirement.blockers ?? []).length > 0) {
-      return requirement.blockers ?? [];
-    }
-
-    return [
-      ...missingTiers.map(
-        (tier) =>
-          `${requirement.source} ${requirement.sourceId} requires ${tier} evidence tier`
-      ),
-      ...missingTypes.map(
-        (type) =>
-          `${requirement.source} ${requirement.sourceId} requires ${type} evidence`
-      )
-    ];
+  return extensionReadinessRequirementBlockers({
+    issues: input.issues,
+    requirements: input.requirements,
+    target: input.target,
+    evidenceTiers: input.evidenceTiers,
+    evidenceTypes: input.evidenceTypes
   });
-
-  return [...input.issues, ...requirementBlockers];
 }
 
 export function startupReadinessExtensionPolicyBlockers(input: {
@@ -154,47 +116,13 @@ export function startupReadinessExtensionPolicyBlockers(input: {
   worker: string;
   governanceProfile: string;
 }): string[] {
-  const requiredEvidenceTypes = new Set(
-    input.requirements
-      .filter((requirement) => requirement.targets.includes(input.target))
-      .flatMap((requirement) => requirement.evidenceTypes)
-  );
-  const targetMinimumQuality = minimumCollectorQualityForTarget(input.target);
-
-  return input.extensions.flatMap(({ contract }) =>
-    contract.collectors.flatMap((collector) => {
-      if (
-        !collector.producesEvidenceTypes.some((type) => requiredEvidenceTypes.has(type))
-      ) {
-        return [];
-      }
-
-      return [
-        ...wrappedWorkerCollectorBlockers({
-          extensionId: contract.extensionId,
-          collectorId: collector.id,
-          safeForWrappedWorkers: collector.safeForWrappedWorkers,
-          worker: input.worker,
-          governanceProfile: input.governanceProfile
-        }),
-        ...collectorQualityBlockers({
-          extensionId: contract.extensionId,
-          collectorId: collector.id,
-          qualityTier: collector.qualityTier,
-          minimumQualityTier: targetMinimumQuality,
-          target: input.target
-        }),
-        ...collectorFreshnessBlockers({
-          extensionId: contract.extensionId,
-          collectorId: collector.id,
-          ...(collector.defaultFreshnessDays === undefined
-            ? {}
-            : { defaultFreshnessDays: collector.defaultFreshnessDays }),
-          target: input.target
-        })
-      ];
-    })
-  );
+  return extensionCollectorPolicyBlockers({
+    contracts: input.extensions.map(({ contract }) => contract),
+    requirements: input.requirements,
+    target: input.target,
+    worker: input.worker,
+    governanceProfile: input.governanceProfile
+  });
 }
 
 export async function startupReadinessExtensionVerifierCommands(options: {
@@ -237,77 +165,6 @@ async function discoverExtensionManifestPaths(root: string): Promise<string[]> {
   return paths.sort();
 }
 
-function wrappedWorkerCollectorBlockers(input: {
-  extensionId: string;
-  collectorId: string;
-  safeForWrappedWorkers: boolean;
-  worker: string;
-  governanceProfile: string;
-}): string[] {
-  if (
-    input.safeForWrappedWorkers ||
-    input.worker === "codex_direct" ||
-    input.governanceProfile === "governed"
-  ) {
-    return [];
-  }
-
-  return [
-    `extension ${input.extensionId}/${input.collectorId} is not safe for Level 1 wrapped workers; use --worker codex_direct --governance governed`
-  ];
-}
-
-function collectorQualityBlockers(input: {
-  extensionId: string;
-  collectorId: string;
-  qualityTier: string;
-  minimumQualityTier: string;
-  target: ReadinessTarget;
-}): string[] {
-  return qualityTierRank(input.qualityTier) >= qualityTierRank(input.minimumQualityTier)
-    ? []
-    : [
-        `extension ${input.extensionId}/${input.collectorId} quality ${input.qualityTier} is below ${input.minimumQualityTier} for ${input.target} readiness`
-      ];
-}
-
-function collectorFreshnessBlockers(input: {
-  extensionId: string;
-  collectorId: string;
-  defaultFreshnessDays?: number;
-  target: ReadinessTarget;
-}): string[] {
-  if (input.target === "local" || input.defaultFreshnessDays !== undefined) {
-    return [];
-  }
-
-  return [
-    `extension ${input.extensionId}/${input.collectorId} must declare defaultFreshnessDays for ${input.target} readiness`
-  ];
-}
-
-function minimumCollectorQualityForTarget(target: ReadinessTarget): string {
-  if (target === "local") {
-    return "self_reported";
-  }
-
-  if (target === "staging") {
-    return "machine_verified";
-  }
-
-  return "external_observed";
-}
-
-function qualityTierRank(tier: string): number {
-  return [
-    "none",
-    "self_reported",
-    "local_artifact",
-    "machine_verified",
-    "external_observed"
-  ].indexOf(tier);
-}
-
 async function discoverDirectoryManifestPaths(root: string): Promise<string[]> {
   const paths: string[] = [];
   let names: string[];
@@ -327,33 +184,6 @@ async function discoverDirectoryManifestPaths(root: string): Promise<string[]> {
   }
 
   return paths;
-}
-
-function extensionRequirementAppliesToStage(
-  contract: RunsteadExtensionRuntimeContract,
-  requirement: RunsteadExtensionRuntimeContract["evidenceRequirements"][number],
-  stage: string | undefined
-): boolean {
-  if (stage === undefined || requirement.source === "verifier") {
-    return true;
-  }
-
-  if (requirement.source === "gate") {
-    return contract.gates.some(
-      (gate) => gate.id === requirement.sourceId && gate.stage === stage
-    );
-  }
-
-  const matchingGateFacetNames = new Set(
-    contract.gates
-      .filter((gate) => gate.stage === stage)
-      .flatMap((gate) => gate.requiredFacets.map((facet) => facet.name))
-  );
-
-  return (
-    matchingGateFacetNames.size === 0 ||
-    matchingGateFacetNames.has(requirement.sourceId)
-  );
 }
 
 function parseExtensionManifest(contents: string, path: string): unknown {

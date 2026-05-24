@@ -4,6 +4,9 @@ import {
   compileRunsteadExtensionRuntime,
   defineReadinessFacet,
   defineRunsteadExtension,
+  extensionCollectorPolicyBlockers,
+  extensionReadinessEvidenceRequirements,
+  extensionReadinessRequirementBlockers,
   extensionReadinessTargets,
   RunsteadExtensionCompileError,
   validateRunsteadExtension
@@ -195,6 +198,85 @@ describe("Runstead SDK extension contracts", () => {
         ]
       })
     ).toThrow(RunsteadExtensionCompileError);
+  });
+
+  it("converts extension runtime contracts into readiness requirements outside CLI", () => {
+    const runtime = compileRunsteadExtensionRuntime({
+      schemaVersion: 1,
+      id: "growth-readiness",
+      version: "0.1.0",
+      name: "Growth readiness",
+      description: "Growth checks for startup launches.",
+      domains: ["ai-native-startup"],
+      facets: [
+        {
+          name: "activation-metric",
+          title: "Activation metric",
+          description: "Activation metric evidence.",
+          appliesToTargets: ["production"],
+          requiredEvidenceTypes: ["startup_metric_snapshot"],
+          blockers: ["activation metric evidence is missing"]
+        }
+      ],
+      collectors: [
+        {
+          id: "posthog-activation",
+          title: "PostHog activation",
+          description: "Collect activation.",
+          targets: ["production"],
+          producesEvidenceTypes: ["startup_metric_snapshot"],
+          qualityTier: "self_reported",
+          safeForWrappedWorkers: false
+        }
+      ],
+      gates: [
+        {
+          id: "launch-growth",
+          stage: "launch",
+          target: "production",
+          requiredFacets: ["activation-metric"]
+        }
+      ]
+    });
+
+    const requirements = extensionReadinessEvidenceRequirements([runtime], {
+      stage: "launch"
+    });
+
+    expect(requirements).toContainEqual(
+      expect.objectContaining({
+        source: "extension",
+        sourceId: "growth-readiness/activation-metric",
+        targets: ["production"],
+        evidenceTypes: ["startup_metric_snapshot"],
+        blockers: [
+          "extension growth-readiness/activation-metric: activation metric evidence is missing"
+        ]
+      })
+    );
+    expect(
+      extensionReadinessRequirementBlockers({
+        requirements,
+        target: "production",
+        evidenceTiers: [],
+        evidenceTypes: []
+      })
+    ).toEqual([
+      "extension growth-readiness/activation-metric: activation metric evidence is missing"
+    ]);
+    expect(
+      extensionCollectorPolicyBlockers({
+        contracts: [runtime],
+        requirements,
+        target: "production",
+        worker: "codex_cli",
+        governanceProfile: "readiness"
+      })
+    ).toEqual([
+      "extension growth-readiness/posthog-activation is not safe for Level 1 wrapped workers; use --worker codex_direct --governance governed",
+      "extension growth-readiness/posthog-activation quality self_reported is below external_observed for production readiness",
+      "extension growth-readiness/posthog-activation must declare defaultFreshnessDays for production readiness"
+    ]);
   });
 
   it("reports validation issues without throwing", () => {
