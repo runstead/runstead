@@ -134,6 +134,8 @@ interface EvidenceProvenanceArtifact {
   sources?: unknown;
   provenance?: unknown;
   codeState?: unknown;
+  verifier?: unknown;
+  command?: unknown;
 }
 
 interface LaunchReadinessReportData {
@@ -714,15 +716,19 @@ function verifierStatus(data: LaunchReadinessReportData): string {
 }
 
 function currentCommandEvidence(data: LaunchReadinessReportData): EvidenceReportRow[] {
+  const stale = staleEvidenceReasons(data);
+
   return data.evidence
     .filter((item) => item.type === "command_output")
-    .filter((item) => !isStaleCommandEvidence(data, item));
+    .filter((item) => !stale.has(item.id));
 }
 
 function staleCommandEvidence(data: LaunchReadinessReportData): EvidenceReportRow[] {
+  const stale = staleEvidenceReasons(data);
+
   return data.evidence
     .filter((item) => item.type === "command_output")
-    .filter((item) => isStaleCommandEvidence(data, item));
+    .filter((item) => stale.has(item.id));
 }
 
 function currentEvidenceRows(data: LaunchReadinessReportData): EvidenceReportRow[] {
@@ -746,6 +752,7 @@ function staleEvidenceReason(
 
 function staleEvidenceReasons(data: LaunchReadinessReportData): Map<string, string> {
   const reasons = new Map<string, string>();
+  const latestCommandEvidence = latestCommandEvidenceByCurrentKey(data);
   const latestStartupEvidence = latestEvidenceByCurrentKey(
     data.evidence.filter((item) => item.type.startsWith("startup_"))
   );
@@ -756,6 +763,17 @@ function staleEvidenceReasons(data: LaunchReadinessReportData): Map<string, stri
         item.id,
         `${commandEvidenceCodeState(data, item)}; ${commandEvidenceGovernance(item)}`
       );
+      continue;
+    }
+
+    if (item.type === "command_output") {
+      const key = commandEvidenceCurrentKey(data, item);
+      const latest = latestCommandEvidence.get(key);
+
+      if (latest !== undefined && latest.id !== item.id) {
+        reasons.set(item.id, `superseded by newer command evidence for ${key}`);
+      }
+
       continue;
     }
 
@@ -774,13 +792,25 @@ function staleEvidenceReasons(data: LaunchReadinessReportData): Map<string, stri
   return reasons;
 }
 
+function latestCommandEvidenceByCurrentKey(
+  data: LaunchReadinessReportData
+): Map<string, EvidenceReportRow> {
+  return latestEvidenceByCurrentKey(
+    data.evidence
+      .filter((item) => item.type === "command_output")
+      .filter((item) => !isStaleCommandEvidence(data, item)),
+    (item) => commandEvidenceCurrentKey(data, item)
+  );
+}
+
 function latestEvidenceByCurrentKey(
-  rows: EvidenceReportRow[]
+  rows: EvidenceReportRow[],
+  keyForRow: (row: EvidenceReportRow) => string = evidenceCurrentKey
 ): Map<string, EvidenceReportRow> {
   const latest = new Map<string, EvidenceReportRow>();
 
   for (const row of rows) {
-    const key = evidenceCurrentKey(row);
+    const key = keyForRow(row);
     const current = latest.get(key);
 
     if (
@@ -793,6 +823,28 @@ function latestEvidenceByCurrentKey(
   }
 
   return latest;
+}
+
+function commandEvidenceCurrentKey(
+  data: LaunchReadinessReportData,
+  item: EvidenceReportRow
+): string {
+  const artifact = readEvidenceProvenanceArtifact(item.uri);
+  const codeState = isRecord(artifact?.codeState) ? artifact.codeState : undefined;
+  const fingerprint =
+    codeState === undefined
+      ? data.currentCodeState.fingerprint
+      : (stringValue(codeState.fingerprint) ?? "missing");
+  const verifier = stringValue(artifact?.["verifier"]) ?? item.summary ?? item.id;
+  const command = stringValue(artifact?.["command"]) ?? "unknown";
+
+  return [
+    "command_output",
+    commandEvidenceGovernance(item),
+    verifier,
+    command,
+    fingerprint
+  ].join(":");
 }
 
 function evidenceCurrentKey(item: EvidenceReportRow): string {

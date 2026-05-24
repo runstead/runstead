@@ -303,6 +303,8 @@ describe("generateLaunchReadinessReport", () => {
         `${JSON.stringify(
           {
             schemaVersion: 1,
+            verifier: "test",
+            command: "npm test",
             codeState: currentCodeState,
             result: {
               exitCode: 0,
@@ -355,6 +357,15 @@ describe("generateLaunchReadinessReport", () => {
         });
         projectTask(database, wrappedWorkerTask);
         projectTask(database, codexDirectTask);
+        projectEvidence(database, {
+          id: "ev_wrapped_worker_command_000",
+          type: "command_output",
+          subjectType: "task",
+          subjectId: wrappedWorkerTask.id,
+          uri: pathToFileURL(commandArtifactPath).href,
+          summary: "Codex CLI verifier commands passed",
+          createdAt: "2026-05-14T03:20:45.000Z"
+        });
         projectEvidence(database, {
           id: "ev_wrapped_worker_command_001",
           type: "command_output",
@@ -545,15 +556,18 @@ describe("generateLaunchReadinessReport", () => {
       expect(json).toContain('"schemaVersion": 1');
       expect(json).toContain('"trustSummary"');
       expect(result.markdown).toContain("Current command evidence records: 2");
-      expect(result.markdown).toContain("Stale command evidence records: 0");
+      expect(result.markdown).toContain("Stale command evidence records: 1");
       expect(result.markdown).toContain("## Stale Evidence Appendix");
-      expect(result.markdown).toContain("Total stale records: 12; showing 10");
+      expect(result.markdown).toContain("Total stale records: 13; showing 10");
       expect(result.markdown).toContain(
-        "2 additional stale evidence records omitted from markdown"
+        "3 additional stale evidence records omitted from markdown"
       );
-      expect(parsedJson.staleEvidence).toHaveLength(12);
+      expect(parsedJson.staleEvidence).toHaveLength(13);
       expect(result.markdown).toContain(
         "superseded by newer evidence for startup_ui_validation:http://localhost:3000:desktop"
+      );
+      expect(result.markdown).toContain(
+        "superseded by newer command evidence for command_output:wrapped worker post-run verifier evidence:test:npm test"
       );
       expect(result.markdown).toContain("## Trust Summary");
       expect(result.markdown).toContain("## Metric Evidence Confidence");
