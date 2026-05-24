@@ -662,9 +662,7 @@ describe("startup readiness run model", () => {
       expect(verifierPhase).toMatchObject({
         status: "blocked",
         evidenceIds,
-        blockers: [
-          "build verifier evidence is missing for current code fingerprint"
-        ]
+        blockers: ["build verifier evidence is missing for current code fingerprint"]
       });
     } finally {
       await rm(workspace, { force: true, recursive: true });
@@ -1855,6 +1853,205 @@ describe("startup readiness run model", () => {
       await expect(readFile(repairArtifact ?? "", "utf8")).resolves.toContain(
         '"failureCategory": "product_gap"'
       );
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  }, 60_000);
+
+  it("retries product-gap UI smoke repairs and succeeds on the second attempt", async () => {
+    const workspace = join(
+      tmpdir(),
+      `runstead-startup-ready-ui-repair-second-${process.pid}`
+    );
+    const port = await availablePort();
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await mkdir(join(workspace, ".runstead", "startup"), { recursive: true });
+      await initRunstead({ cwd: workspace, profile: "trusted-local" });
+      await writeFile(
+        join(workspace, "package.json"),
+        `${JSON.stringify(
+          {
+            name: "startup-ready-ui-repair-second-fixture",
+            private: true,
+            scripts: {
+              test: 'node -e "process.exit(0)"',
+              lint: 'node -e "process.exit(0)"',
+              typecheck: 'node -e "process.exit(0)"',
+              build: 'node -e "process.exit(0)"'
+            }
+          },
+          null,
+          2
+        )}\n`,
+        "utf8"
+      );
+      await writeFile(
+        join(workspace, "server.mjs"),
+        startupReadyUiRepairServer("Todo MVP"),
+        "utf8"
+      );
+      await writeFile(
+        join(workspace, ".runstead", "startup", "ui-smoke.yaml"),
+        [
+          "schemaVersion: 1",
+          "server:",
+          "  command: node server.mjs",
+          `  port: ${port}`,
+          `  url: http://127.0.0.1:${port}`,
+          "  timeoutMs: 5000",
+          "checks:",
+          "  - name: home",
+          `    url: http://127.0.0.1:${port}`,
+          "    viewport: desktop",
+          "    expectText:",
+          "      - Todo MVP",
+          "      - Todo repaired",
+          "    flow: load repaired todo app",
+          ""
+        ].join("\n"),
+        "utf8"
+      );
+      let workerCalls = 0;
+
+      const result = await runStartupReady({
+        cwd: workspace,
+        stage: "launch",
+        target: "local",
+        worker: "codex_cli",
+        maxAttempts: 1,
+        workerRunner: async () => {
+          workerCalls += 1;
+          await writeFile(
+            join(workspace, "server.mjs"),
+            startupReadyUiRepairServer(
+              workerCalls === 1 ? "Todo MVP Todo almost" : "Todo MVP Todo repaired"
+            ),
+            "utf8"
+          );
+
+          return {
+            stdout: JSON.stringify({
+              summary: `repair attempt ${workerCalls}`,
+              files_changed: ["server.mjs"],
+              commands_run: [],
+              risks: [],
+              needs_approval: false,
+              approval_reason: null
+            }),
+            stderr: "",
+            exitCode: 0
+          };
+        },
+        now: new Date("2026-05-22T01:38:00.000Z")
+      });
+      const uiPhase = result.run.phases.find((phase) => phase.id === "ui_smoke");
+
+      expect(workerCalls).toBe(2);
+      expect(uiPhase).toMatchObject({
+        status: "passed",
+        blockers: [],
+        nextAction: "automatic UI smoke repair passed; continue launch readiness"
+      });
+      expect(uiPhase?.warnings?.join("\n")).toContain("UI smoke repair attempt 2");
+      expect(
+        uiPhase?.artifacts.filter((artifact) => artifact.includes("ui-smoke-repair-"))
+      ).toHaveLength(2);
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  }, 60_000);
+
+  it("stops UI smoke repair when the same failure repeats without a code diff", async () => {
+    const workspace = join(
+      tmpdir(),
+      `runstead-startup-ready-ui-repair-cycle-${process.pid}`
+    );
+    const port = await availablePort();
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await mkdir(join(workspace, ".runstead", "startup"), { recursive: true });
+      await initRunstead({ cwd: workspace, profile: "trusted-local" });
+      await writeFile(
+        join(workspace, "package.json"),
+        `${JSON.stringify(
+          {
+            name: "startup-ready-ui-repair-cycle-fixture",
+            private: true,
+            scripts: {
+              test: 'node -e "process.exit(0)"',
+              lint: 'node -e "process.exit(0)"',
+              typecheck: 'node -e "process.exit(0)"',
+              build: 'node -e "process.exit(0)"'
+            }
+          },
+          null,
+          2
+        )}\n`,
+        "utf8"
+      );
+      await writeFile(
+        join(workspace, "server.mjs"),
+        startupReadyUiRepairServer("Todo MVP"),
+        "utf8"
+      );
+      await writeFile(
+        join(workspace, ".runstead", "startup", "ui-smoke.yaml"),
+        [
+          "schemaVersion: 1",
+          "server:",
+          "  command: node server.mjs",
+          `  port: ${port}`,
+          `  url: http://127.0.0.1:${port}`,
+          "  timeoutMs: 5000",
+          "checks:",
+          "  - name: home",
+          `    url: http://127.0.0.1:${port}`,
+          "    viewport: desktop",
+          "    expectText:",
+          "      - Todo MVP",
+          "      - Todo repaired",
+          "    flow: load repaired todo app",
+          ""
+        ].join("\n"),
+        "utf8"
+      );
+      let workerCalls = 0;
+
+      const result = await runStartupReady({
+        cwd: workspace,
+        stage: "launch",
+        target: "local",
+        worker: "codex_cli",
+        maxAttempts: 1,
+        workerRunner: () => {
+          workerCalls += 1;
+
+          return Promise.resolve({
+            stdout: JSON.stringify({
+              summary: "claimed repair without diff",
+              files_changed: [],
+              commands_run: [],
+              risks: [],
+              needs_approval: false,
+              approval_reason: null
+            }),
+            stderr: "",
+            exitCode: 0
+          });
+        },
+        now: new Date("2026-05-22T01:39:00.000Z")
+      });
+      const uiPhase = result.run.phases.find((phase) => phase.id === "ui_smoke");
+
+      expect(workerCalls).toBe(1);
+      expect(uiPhase?.status).toBe("blocked");
+      expect(uiPhase?.blockers.join("\n")).toContain(
+        "repeated failure signature without a code diff"
+      );
+      expect(uiPhase?.warnings?.join("\n")).toContain("codeChanged=false");
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }

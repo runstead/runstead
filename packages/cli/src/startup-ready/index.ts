@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { stdin, stdout } from "node:process";
@@ -80,6 +80,7 @@ export type {
 
 const STARTUP_CONTEXT_FILE_NAMES = ["AGENTS.md", "CLAUDE.md", "CODEX.md"];
 const STALE_STARTUP_DOC_DAYS = 30;
+const STARTUP_READY_UI_SMOKE_REPAIR_MAX_ATTEMPTS = 2;
 const STARTUP_READY_APP_SURFACE_NAMES = new Set([
   "app",
   "app.js",
@@ -910,11 +911,11 @@ async function executeStartupReadyRun(
             ? "existing MVP verified; skipped worker build"
             : buildRecovery.recovered
               ? "Runstead recovered without re-running the agent; current verifier evidence proves the MVP"
-            : buildWarnings.length > 0
-              ? "verified MVP despite worker completion warning; continue launch readiness"
-              : build.status === "completed_with_warnings"
-                ? "review MVP worker warnings and continue launch readiness"
-                : "review MVP gate blockers and continue launch readiness"
+              : buildWarnings.length > 0
+                ? "verified MVP despite worker completion warning; continue launch readiness"
+                : build.status === "completed_with_warnings"
+                  ? "review MVP worker warnings and continue launch readiness"
+                  : "review MVP gate blockers and continue launch readiness"
           : verifierPhase.update.status === "passed"
             ? "Runstead can recover without re-running the agent; resume this readiness run for verifier-only evaluation"
             : "review worker output and resume startup readiness"
@@ -956,6 +957,9 @@ async function executeStartupReadyRun(
       status: uiSmoke.status,
       evidenceIds: uiSmoke.evidenceIds,
       artifacts: unique([...(uiSmokeRepair?.artifacts ?? []), ...uiSmoke.artifacts]),
+      ...(uiSmokeRepair === undefined
+        ? {}
+        : { warnings: startupReadyUiSmokeRepairWarnings(uiSmokeRepair) }),
       blockers:
         uiSmoke.status === "passed"
           ? []
@@ -1070,7 +1074,20 @@ interface StartupReadyUiSmokeRepairAttempt {
   uiSmoke: StartupReadyUiSmokeRunResult;
   artifacts: string[];
   blockers: string[];
+  attempts: StartupReadyUiSmokeRepairAttemptSummary[];
+  stoppedReason?: string;
   verifierUpdate?: Partial<StartupReadinessRunPhase>;
+}
+
+interface StartupReadyUiSmokeRepairAttemptSummary {
+  attempt: number;
+  signature: string;
+  workerStatus: string;
+  verifierStatus: string;
+  uiSmokeStatus: string;
+  codeChanged: boolean;
+  evidenceIds: string[];
+  stoppedReason?: string;
 }
 
 interface StartupReadyMvpBuildExecution {
@@ -1343,66 +1360,175 @@ async function attemptStartupReadyUiSmokeRepair(
   options: StartupReadyOptions,
   uiSmoke: StartupReadyUiSmokeRunResult
 ): Promise<StartupReadyUiSmokeRepairAttempt | undefined> {
-  const target = startupReadyUiSmokeRepairTarget(uiSmoke);
+  let currentUiSmoke = uiSmoke;
+  let target = startupReadyUiSmokeRepairTarget(currentUiSmoke);
 
   if (target === undefined) {
     return undefined;
   }
 
-  const repairArtifact = await writeStartupReadyUiSmokeRepairRequest({
-    run,
-    uiSmoke,
-    target,
-    ...(options.now === undefined ? {} : { now: options.now })
-  });
+  const artifacts = [...uiSmoke.artifacts];
+  const attempts: StartupReadyUiSmokeRepairAttemptSummary[] = [];
+  const seenSignatures = new Set<string>();
+  let verifierUpdate: Partial<StartupReadinessRunPhase> | undefined;
+  let stoppedReason: string | undefined;
 
-  emitStartupReadyProgress(run, options, {
-    phaseId: "ui_smoke",
-    status: "started",
-    message: "attempting automatic UI smoke repair with bounded MVP repair loop",
-    artifacts: [repairArtifact]
-  });
+  for (
+    let attempt = 1;
+    attempt <= STARTUP_READY_UI_SMOKE_REPAIR_MAX_ATTEMPTS;
+    attempt += 1
+  ) {
+    const signature = await startupReadyUiSmokeFailureSignature(target);
 
-  const build = await startupBuildMvp({
-    cwd: run.cwd,
-    worker: run.worker,
-    dependencyPolicy: "deny-new",
-    maxAttempts: 1,
-    ...(run.scaffoldProfile === undefined
-      ? {}
-      : { scaffoldProfile: run.scaffoldProfile }),
-    prompt: startupReadyUiSmokeRepairPrompt({
+    if (seenSignatures.has(signature)) {
+      stoppedReason = `UI smoke repair stopped before attempt ${attempt}: repeated failure signature ${signature}`;
+      break;
+    }
+
+    seenSignatures.add(signature);
+
+    const beforeCodeState = await collectCommandVerifierCodeState(run.cwd);
+    const repairArtifact = await writeStartupReadyUiSmokeRepairRequest({
       run,
-      uiSmoke,
+      uiSmoke: currentUiSmoke,
       target,
-      repairArtifact
-    }),
-    ...(options.workerRunner === undefined
-      ? {}
-      : { workerRunner: options.workerRunner }),
-    ...(options.now === undefined ? {} : { now: options.now })
-  });
-  const verifierUpdate = verifierPhaseUpdate(build.verifierRun);
-  const repaired =
-    startupBuildMvpPhaseExecutionStatus(build.status, build.execution) === "passed" &&
-    verifierUpdate.status === "passed";
-  const rerun = repaired
-    ? await executeStartupReadyUiSmoke({
-        cwd: run.cwd,
-        ...(options.now === undefined ? {} : { now: options.now })
-      })
-    : uiSmoke;
+      attempt,
+      signature,
+      maxAttempts: STARTUP_READY_UI_SMOKE_REPAIR_MAX_ATTEMPTS,
+      ...(options.now === undefined ? {} : { now: options.now })
+    });
+
+    artifacts.push(repairArtifact);
+    emitStartupReadyProgress(run, options, {
+      phaseId: "ui_smoke",
+      status: "started",
+      message: `attempting automatic UI smoke repair ${attempt}/${STARTUP_READY_UI_SMOKE_REPAIR_MAX_ATTEMPTS}`,
+      artifacts: [repairArtifact]
+    });
+
+    const build = await startupBuildMvp({
+      cwd: run.cwd,
+      worker: run.worker,
+      dependencyPolicy: "deny-new",
+      maxAttempts: 1,
+      ...(run.scaffoldProfile === undefined
+        ? {}
+        : { scaffoldProfile: run.scaffoldProfile }),
+      prompt: startupReadyUiSmokeRepairPrompt({
+        run,
+        uiSmoke: currentUiSmoke,
+        target,
+        repairArtifact,
+        attempt,
+        maxAttempts: STARTUP_READY_UI_SMOKE_REPAIR_MAX_ATTEMPTS,
+        signature
+      }),
+      ...(options.workerRunner === undefined
+        ? {}
+        : { workerRunner: options.workerRunner }),
+      ...(options.now === undefined ? {} : { now: options.now })
+    });
+    const afterCodeState = await collectCommandVerifierCodeState(run.cwd);
+    const codeChanged = beforeCodeState.fingerprint !== afterCodeState.fingerprint;
+    const currentVerifierUpdate = verifierPhaseUpdate(build.verifierRun);
+    const verified =
+      startupBuildMvpPhaseExecutionStatus(build.status, build.execution) === "passed" &&
+      currentVerifierUpdate.status === "passed";
+    verifierUpdate = mergeStartupVerifierPhaseUpdate(run, currentVerifierUpdate);
+    currentUiSmoke = verified
+      ? await executeStartupReadyUiSmoke({
+          cwd: run.cwd,
+          ...(options.now === undefined ? {} : { now: options.now })
+        })
+      : currentUiSmoke;
+    const summary: StartupReadyUiSmokeRepairAttemptSummary = {
+      attempt,
+      signature,
+      workerStatus: build.status,
+      verifierStatus: build.verifierRun.status,
+      uiSmokeStatus: currentUiSmoke.status,
+      codeChanged,
+      evidenceIds: currentUiSmoke.evidenceIds
+    };
+
+    attempts.push(summary);
+
+    if (!verified) {
+      stoppedReason = `automatic UI smoke repair stopped after attempt ${attempt}: worker=${build.status}; verifiers=${build.verifierRun.status}`;
+      attempts[attempts.length - 1] = {
+        ...summary,
+        stoppedReason
+      };
+      break;
+    }
+
+    if (currentUiSmoke.status === "passed") {
+      return {
+        uiSmoke: currentUiSmoke,
+        artifacts: unique([...artifacts, ...currentUiSmoke.artifacts]),
+        blockers: [],
+        attempts,
+        verifierUpdate
+      };
+    }
+
+    const nextTarget = startupReadyUiSmokeRepairTarget(currentUiSmoke);
+
+    if (nextTarget === undefined) {
+      stoppedReason = `automatic UI smoke repair stopped after attempt ${attempt}: remaining UI smoke failure is not product-repairable`;
+      attempts[attempts.length - 1] = {
+        ...summary,
+        stoppedReason
+      };
+      break;
+    }
+
+    const nextSignature = await startupReadyUiSmokeFailureSignature(nextTarget);
+
+    if (nextSignature === signature && !codeChanged) {
+      stoppedReason = `automatic UI smoke repair stopped after attempt ${attempt}: repeated failure signature without a code diff`;
+      attempts[attempts.length - 1] = {
+        ...summary,
+        stoppedReason
+      };
+      break;
+    }
+
+    if (nextSignature === signature && currentUiSmoke.evidenceIds.length === 0) {
+      stoppedReason = `automatic UI smoke repair stopped after attempt ${attempt}: repeated failure signature without new evidence`;
+      attempts[attempts.length - 1] = {
+        ...summary,
+        stoppedReason
+      };
+      break;
+    }
+
+    target = nextTarget;
+  }
 
   return {
-    uiSmoke: rerun,
-    artifacts: unique([...uiSmoke.artifacts, repairArtifact]),
-    blockers: repaired
-      ? []
-      : [
-          `automatic UI smoke repair did not produce a verified repair: worker=${build.status}; verifiers=${build.verifierRun.status}`
-        ],
-    verifierUpdate: mergeStartupVerifierPhaseUpdate(run, verifierUpdate)
+    uiSmoke: currentUiSmoke,
+    artifacts: unique([...artifacts, ...currentUiSmoke.artifacts]),
+    blockers: [
+      stoppedReason ??
+        `automatic UI smoke repair exhausted ${STARTUP_READY_UI_SMOKE_REPAIR_MAX_ATTEMPTS} attempts`
+    ],
+    attempts,
+    ...(stoppedReason === undefined ? {} : { stoppedReason }),
+    ...(verifierUpdate === undefined ? {} : { verifierUpdate })
   };
+}
+
+function startupReadyUiSmokeRepairWarnings(
+  repair: StartupReadyUiSmokeRepairAttempt
+): string[] {
+  return [
+    ...repair.attempts.map(
+      (attempt) =>
+        `UI smoke repair attempt ${attempt.attempt}: signature=${attempt.signature}; worker=${attempt.workerStatus}; verifiers=${attempt.verifierStatus}; ui=${attempt.uiSmokeStatus}; codeChanged=${attempt.codeChanged}; evidence=${attempt.evidenceIds.length}`
+    ),
+    ...(repair.stoppedReason === undefined ? [] : [repair.stoppedReason])
+  ];
 }
 
 function startupReadyUiSmokeRepairTarget(
@@ -1419,15 +1545,49 @@ function startupReadyUiSmokeRepairTarget(
   });
 }
 
+async function startupReadyUiSmokeFailureSignature(
+  check: StartupReadyUiSmokeCheckResult
+): Promise<string> {
+  const artifactHash =
+    check.artifact === undefined
+      ? "artifact:missing"
+      : `artifact:${await sha256FileOrValue(check.artifact)}`;
+  const basis = JSON.stringify({
+    name: check.name,
+    category: check.failureCategory ?? "unknown",
+    summary: check.failureSummary ?? "unknown",
+    action: check.failedAction ?? null,
+    artifactHash
+  });
+
+  return createHash("sha256").update(basis).digest("hex").slice(0, 16);
+}
+
+async function sha256FileOrValue(path: string): Promise<string> {
+  try {
+    return createHash("sha256")
+      .update(await readFile(path))
+      .digest("hex");
+  } catch {
+    return createHash("sha256").update(path).digest("hex");
+  }
+}
+
 async function writeStartupReadyUiSmokeRepairRequest(input: {
   run: StartupReadinessRun;
   uiSmoke: StartupReadyUiSmokeRunResult;
   target: StartupReadyUiSmokeCheckResult;
+  attempt: number;
+  maxAttempts: number;
+  signature: string;
   now?: Date;
 }): Promise<string> {
   const root = await resolveRunsteadRoot(input.run.cwd);
   const dir = join(root.root, "startup");
-  const path = join(dir, `ui-smoke-repair-${input.run.id}.json`);
+  const path = join(
+    dir,
+    `ui-smoke-repair-${input.run.id}-attempt-${input.attempt}.json`
+  );
 
   await mkdir(dir, { recursive: true });
   await writeFile(
@@ -1438,6 +1598,9 @@ async function writeStartupReadyUiSmokeRepairRequest(input: {
         runId: input.run.id,
         phase: "ui_smoke",
         configPath: input.uiSmoke.configPath,
+        attempt: input.attempt,
+        maxAttempts: input.maxAttempts,
+        failureSignature: input.signature,
         check: input.target.name,
         failureCategory: input.target.failureCategory ?? "unknown",
         failureSummary: input.target.failureSummary ?? "unknown",
@@ -1460,6 +1623,9 @@ function startupReadyUiSmokeRepairPrompt(input: {
   uiSmoke: StartupReadyUiSmokeRunResult;
   target: StartupReadyUiSmokeCheckResult;
   repairArtifact: string;
+  attempt: number;
+  maxAttempts: number;
+  signature: string;
 }): string {
   return [
     "Repair the product or UI smoke configuration for a failed Runstead UI smoke check.",
@@ -1467,6 +1633,8 @@ function startupReadyUiSmokeRepairPrompt(input: {
     "Prefer stable product selectors such as data-testid for core todo interactions.",
     "",
     `Run: ${input.run.id}`,
+    `Repair attempt: ${input.attempt}/${input.maxAttempts}`,
+    `Failure signature: ${input.signature}`,
     `UI smoke config: ${input.uiSmoke.configPath}`,
     `Repair artifact: ${input.repairArtifact}`,
     `Check: ${input.target.name}`,
@@ -2118,10 +2286,12 @@ async function startupReadyVerifierPhaseUpdate(
 
   const blockers = [
     ...currentEvidence.failed.map(
-      (evidence) => `${evidence.verifier} verifier evidence failed for current code fingerprint`
+      (evidence) =>
+        `${evidence.verifier} verifier evidence failed for current code fingerprint`
     ),
     ...currentEvidence.missingVerifierNames.map(
-      (verifier) => `${verifier} verifier evidence is missing for current code fingerprint`
+      (verifier) =>
+        `${verifier} verifier evidence is missing for current code fingerprint`
     )
   ];
 
@@ -2152,8 +2322,7 @@ async function startupReadyVerifierPhaseUpdate(
       warnings: [
         "verified despite agent completion failure using current code fingerprint verifier evidence"
       ],
-      nextAction:
-        "current verifier evidence proves the MVP; continue launch readiness"
+      nextAction: "current verifier evidence proves the MVP; continue launch readiness"
     },
     verifiedByCurrentEvidence: true
   };
@@ -2181,7 +2350,9 @@ async function collectCurrentStartupReadyVerifierEvidence(
   options: { now?: Date } = {}
 ): Promise<CurrentStartupReadyVerifierEvidence> {
   const expectedVerifierNames = unique(
-    (await startupReadyVerifierCommands(cwd, options.now)).map((command) => command.name)
+    (await startupReadyVerifierCommands(cwd, options.now)).map(
+      (command) => command.name
+    )
   );
 
   if (expectedVerifierNames.length === 0) {
@@ -2262,7 +2433,11 @@ async function collectCurrentStartupReadyVerifierEvidence(
       return;
     }
 
-    if (match.exitCode === 0 && match.timedOut === false && match.forceKilled === false) {
+    if (
+      match.exitCode === 0 &&
+      match.timedOut === false &&
+      match.forceKilled === false
+    ) {
       passed.push(match);
       return;
     }
@@ -3088,8 +3263,7 @@ export function buildStartupReadyOperatorCommands(
       kind: "recover",
       title: "Recover with verifier-only evaluation",
       command: `runstead startup ready --cwd ${cwd} --resume ${run.id}`,
-      when:
-        "Runstead can recover without re-running the agent because current verifier evidence exists."
+      when: "Runstead can recover without re-running the agent because current verifier evidence exists."
     });
   }
 
