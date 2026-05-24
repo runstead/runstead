@@ -173,11 +173,90 @@ describe("buildDashboard", () => {
             "2026-05-14T05:40:10.000Z",
             "2026-05-14T05:40:11.000Z"
           );
+        appendEventAndProject(database, {
+          event: {
+            eventId: "evt_dashboard_evidence_001",
+            type: "evidence.recorded",
+            aggregateType: "evidence",
+            aggregateId: "ev_ui_dashboard",
+            payload: {
+              type: "startup_ui_validation"
+            },
+            createdAt: "2026-05-14T05:42:00.000Z"
+          },
+          projection: {
+            type: "evidence",
+            value: {
+              id: "ev_ui_dashboard",
+              type: "startup_ui_validation",
+              subjectType: "startup",
+              subjectId: "ai-native-startup",
+              uri: join(root, "evidence", "ui-smoke-dom.html"),
+              hash: "sha256:dashboard",
+              summary: "UI smoke passed",
+              createdAt: "2026-05-14T05:42:00.000Z"
+            }
+          }
+        });
+        appendEventAndProject(database, {
+          event: {
+            eventId: "evt_dashboard_model_retry",
+            type: "model_request.retry",
+            aggregateType: "worker_run",
+            aggregateId: "wr_dashboard_patch",
+            payload: {
+              attempt: 2,
+              reason: "fetch failed",
+              delayMs: 250
+            },
+            createdAt: "2026-05-14T05:40:30.000Z"
+          }
+        });
       } finally {
         database.close();
       }
 
       await mkdir(join(root, "startup", "readiness-runs"), { recursive: true });
+      await writeFile(
+        join(root, "startup", "readiness-runs", "run_dashboard_blocked.json"),
+        `${JSON.stringify(
+          {
+            schemaVersion: 1,
+            id: "run_dashboard_blocked",
+            cwd: workspace,
+            stage: "launch",
+            target: "local",
+            worker: "codex_direct",
+            status: "blocked",
+            verdict: "local_launch_blocked",
+            verdictBlockers: ["UI smoke failed"],
+            evidenceIds: [],
+            evidenceTiers: [],
+            evidenceTypes: [],
+            reportPaths: [
+              join(root, "reports", "startup-readiness-run-run_dashboard_blocked.md")
+            ],
+            guidedFlow: [],
+            operatorCommands: [],
+            startedAt: "2026-05-14T05:20:00.000Z",
+            completedAt: "2026-05-14T05:25:00.000Z",
+            phases: [
+              {
+                id: "ui_smoke",
+                title: "UI smoke",
+                status: "failed",
+                evidenceIds: [],
+                artifacts: [join(root, "evidence", "ui-smoke-failed.html")],
+                blockers: ["UI smoke failed"],
+                nextAction: "repair UI"
+              }
+            ]
+          },
+          null,
+          2
+        )}\n`,
+        "utf8"
+      );
       await writeFile(
         join(root, "startup", "readiness-runs", "run_dashboard_ready.json"),
         `${JSON.stringify(
@@ -298,6 +377,15 @@ describe("buildDashboard", () => {
       expect(html).toContain("Recommended command");
       expect(html).toContain("Startup Readiness");
       expect(html).toContain("run_dashboard_ready");
+      expect(html).toContain("Run comparison");
+      expect(html).toContain("run_dashboard_blocked");
+      expect(html).toContain("Timeline: Phases");
+      expect(html).toContain("Timeline: Worker Runs");
+      expect(html).toContain("Timeline: Model Requests");
+      expect(html).toContain("Timeline: Tool Calls");
+      expect(html).toContain("Timeline: Approvals");
+      expect(html).toContain("Timeline: Evidence");
+      expect(html).toContain("Timeline: Reports");
       expect(html).toContain("UI smoke artifacts");
       expect(html).toContain("Operator command");
       expect(html).toContain("Guided next step");
@@ -368,6 +456,28 @@ describe("buildDashboard", () => {
           }
         }
       });
+      expect(snapshot.startup.runComparison).toMatchObject({
+        latestCompleted: {
+          id: "run_dashboard_ready",
+          status: "completed",
+          verdict: "local_launch_ready"
+        },
+        latestBlocked: {
+          id: "run_dashboard_blocked",
+          status: "blocked",
+          verdict: "local_launch_blocked"
+        },
+        resolvedBlockers: ["UI smoke failed"]
+      });
+      expect(snapshot.startup.timelineGroups.map((group) => group.group)).toEqual([
+        "phases",
+        "worker_runs",
+        "model_requests",
+        "tool_calls",
+        "approvals",
+        "evidence",
+        "reports"
+      ]);
       expect(snapshot.operator).toMatchObject({
         recommendedAction: {
           id: "daemon-approval-resume",
@@ -426,7 +536,16 @@ describe("buildDashboard", () => {
           aggregate_type: "dashboard",
           aggregate_id: "local"
         });
-        expect(JSON.parse(event.payload_json)).toMatchObject({
+        const payload = JSON.parse(event.payload_json) as {
+          startup: {
+            timelineGroups: {
+              group: string;
+              items: number;
+            }[];
+          };
+        };
+
+        expect(payload).toMatchObject({
           summary: {
             activeGoals: 1,
             queuedTasks: 1
@@ -447,6 +566,11 @@ describe("buildDashboard", () => {
             agentPatch: {
               taskId: "task_001",
               filesTouched: 2
+            },
+            runComparison: {
+              latestCompleted: "run_dashboard_ready",
+              latestBlocked: "run_dashboard_blocked",
+              resolvedBlockers: 1
             }
           },
           operator: {
@@ -457,6 +581,10 @@ describe("buildDashboard", () => {
               status: "blocked"
             }
           }
+        });
+        expect(payload.startup.timelineGroups).toContainEqual({
+          group: "phases",
+          items: 2
         });
       } finally {
         auditDatabase.close();

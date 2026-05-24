@@ -167,6 +167,8 @@ export interface DashboardStartupSnapshot {
   status?: StartupStatusResult;
   latestReportPath?: string;
   latestRun?: DashboardStartupRun;
+  runComparison?: DashboardStartupRunComparison;
+  timelineGroups: DashboardStartupTimelineGroup[];
   staleEvidence: DashboardStartupStaleEvidence[];
   agentPatch?: DashboardStartupAgentPatch;
   error?: string;
@@ -188,6 +190,30 @@ export interface DashboardStartupRun {
   operatorCommands: DashboardStartupOperatorCommand[];
 }
 
+export interface DashboardStartupRunComparison {
+  latestCompleted?: DashboardStartupRunSummary;
+  latestBlocked?: DashboardStartupRunSummary;
+  resolvedBlockers: string[];
+  stillBlocked: string[];
+  narrative: string;
+}
+
+export interface DashboardStartupRunSummary {
+  id: string;
+  status: string;
+  verdict: string;
+  target: string;
+  startedAt?: string;
+  completedAt?: string;
+  blockerCount: number;
+  phaseStatuses: DashboardStartupRunPhaseSummary[];
+}
+
+export interface DashboardStartupRunPhaseSummary {
+  phase: string;
+  status: string;
+}
+
 export interface DashboardStartupTimelineItem {
   phase: string;
   title: string;
@@ -196,6 +222,28 @@ export interface DashboardStartupTimelineItem {
   artifacts: string[];
   blockers: string[];
   nextAction?: string;
+}
+
+export interface DashboardStartupTimelineGroup {
+  group:
+    | "phases"
+    | "worker_runs"
+    | "model_requests"
+    | "tool_calls"
+    | "approvals"
+    | "evidence"
+    | "reports";
+  title: string;
+  items: DashboardStartupTimelineEntry[];
+}
+
+export interface DashboardStartupTimelineEntry {
+  id: string;
+  title: string;
+  status: string;
+  createdAt?: string;
+  detail?: string;
+  artifacts: string[];
 }
 
 export interface DashboardStartupGuidedStep {
@@ -1299,6 +1347,7 @@ function readDashboardSnapshot(
     },
     startup: {
       available: false,
+      timelineGroups: [],
       staleEvidence: []
     },
     operator: {
@@ -1317,6 +1366,9 @@ async function readDashboardStartupStatus(input: {
   database: RunsteadDatabase;
 }): Promise<DashboardStartupSnapshot> {
   try {
+    const runs = await readStartupRuns(input.root);
+    const latestRun = runs[0];
+    const report = latestStartupReport(input.root);
     const status = await getStartupStatus({
       cwd: input.cwd,
       now: new Date(input.generatedAt)
@@ -1325,8 +1377,16 @@ async function readDashboardStartupStatus(input: {
     return {
       available: true,
       status,
-      ...latestStartupReport(input.root),
-      ...(await latestStartupRun(input.root)),
+      ...report,
+      ...(latestRun === undefined ? {} : { latestRun }),
+      ...dashboardStartupRunComparison(runs),
+      timelineGroups: dashboardStartupTimelineGroups({
+        database: input.database,
+        ...(latestRun === undefined ? {} : { latestRun }),
+        ...(report.latestReportPath === undefined
+          ? {}
+          : { latestReportPath: report.latestReportPath })
+      }),
       staleEvidence: status.evidence.staleSources.slice(0, 12).map((source) => ({
         evidenceId: source.evidenceId,
         type: source.type,
@@ -1339,6 +1399,7 @@ async function readDashboardStartupStatus(input: {
   } catch (error) {
     return {
       available: false,
+      timelineGroups: [],
       staleEvidence: [],
       error: error instanceof Error ? error.message : String(error)
     };
@@ -1351,11 +1412,10 @@ function latestStartupReport(root: string): { latestReportPath?: string } {
   return { latestReportPath: reportPath };
 }
 
-async function latestStartupRun(
-  root: string
-): Promise<{ latestRun?: DashboardStartupRun }> {
+async function readStartupRuns(root: string): Promise<DashboardStartupRun[]> {
   const dirs = [join(root, "startup", "readiness-runs"), join(root, "startup", "runs")];
-  const runs = (
+
+  return (
     await Promise.all(
       dirs.map(async (dir) => {
         try {
@@ -1375,8 +1435,6 @@ async function latestStartupRun(
     .sort((left, right) =>
       startupRunSortTime(right).localeCompare(startupRunSortTime(left))
     );
-
-  return runs[0] === undefined ? {} : { latestRun: runs[0] };
 }
 
 async function readStartupRunFile(
@@ -1468,6 +1526,324 @@ function rowToStartupOperatorCommand(
 
 function startupRunSortTime(run: DashboardStartupRun): string {
   return run.completedAt ?? run.startedAt ?? "";
+}
+
+function dashboardStartupRunComparison(runs: DashboardStartupRun[]): {
+  runComparison?: DashboardStartupRunComparison;
+} {
+  const latestCompleted = runs.find((run) => run.status === "completed");
+  const latestBlocked = runs.find(
+    (run) => run.id !== latestCompleted?.id && startupRunBlockedOrInterrupted(run)
+  );
+
+  if (latestCompleted === undefined && latestBlocked === undefined) {
+    return {};
+  }
+
+  const completedBlockers = new Set(latestCompleted?.blockers ?? []);
+  const blockedBlockers = new Set(latestBlocked?.blockers ?? []);
+  const resolvedBlockers =
+    latestCompleted === undefined
+      ? []
+      : [...blockedBlockers].filter((blocker) => !completedBlockers.has(blocker));
+  const stillBlocked = [...blockedBlockers].filter((blocker) =>
+    completedBlockers.has(blocker)
+  );
+
+  return {
+    runComparison: {
+      ...(latestCompleted === undefined
+        ? {}
+        : { latestCompleted: dashboardStartupRunSummary(latestCompleted) }),
+      ...(latestBlocked === undefined
+        ? {}
+        : { latestBlocked: dashboardStartupRunSummary(latestBlocked) }),
+      resolvedBlockers,
+      stillBlocked,
+      narrative: startupRunComparisonNarrative({
+        latestCompleted,
+        latestBlocked,
+        resolvedBlockers,
+        stillBlocked
+      })
+    }
+  };
+}
+
+function startupRunBlockedOrInterrupted(run: DashboardStartupRun): boolean {
+  return (
+    run.status === "blocked" ||
+    run.status === "failed" ||
+    run.status === "interrupted" ||
+    run.verdict.endsWith("_blocked") ||
+    run.blockers.length > 0
+  );
+}
+
+function dashboardStartupRunSummary(
+  run: DashboardStartupRun
+): DashboardStartupRunSummary {
+  return {
+    id: run.id,
+    status: run.status,
+    verdict: run.verdict,
+    target: run.target,
+    ...(run.startedAt === undefined ? {} : { startedAt: run.startedAt }),
+    ...(run.completedAt === undefined ? {} : { completedAt: run.completedAt }),
+    blockerCount: run.blockers.length,
+    phaseStatuses: run.timeline.map((item) => ({
+      phase: item.phase,
+      status: item.status
+    }))
+  };
+}
+
+function startupRunComparisonNarrative(input: {
+  latestCompleted: DashboardStartupRun | undefined;
+  latestBlocked: DashboardStartupRun | undefined;
+  resolvedBlockers: string[];
+  stillBlocked: string[];
+}): string {
+  if (input.latestCompleted !== undefined && input.latestBlocked !== undefined) {
+    return `Latest completed run ${input.latestCompleted.id} is compared with blocked/interrupted run ${input.latestBlocked.id}; ${input.resolvedBlockers.length} blocker(s) resolved and ${input.stillBlocked.length} blocker(s) still shared.`;
+  }
+
+  if (input.latestCompleted !== undefined) {
+    return `Latest completed run ${input.latestCompleted.id} has no blocked/interrupted run to compare.`;
+  }
+
+  return `Latest blocked/interrupted run ${input.latestBlocked?.id ?? "unknown"} has no completed recovery run yet.`;
+}
+
+function dashboardStartupTimelineGroups(input: {
+  database: RunsteadDatabase;
+  latestRun?: DashboardStartupRun;
+  latestReportPath?: string;
+}): DashboardStartupTimelineGroup[] {
+  return [
+    dashboardPhaseTimelineGroup(input.latestRun),
+    dashboardWorkerRunTimelineGroup(input.database),
+    dashboardModelRequestTimelineGroup(input.database),
+    dashboardToolCallTimelineGroup(input.database),
+    dashboardApprovalTimelineGroup(input.database),
+    dashboardEvidenceTimelineGroup(input.database),
+    dashboardReportTimelineGroup(input.latestRun, input.latestReportPath)
+  ].filter((group): group is DashboardStartupTimelineGroup => group.items.length > 0);
+}
+
+function dashboardPhaseTimelineGroup(
+  run: DashboardStartupRun | undefined
+): DashboardStartupTimelineGroup {
+  return {
+    group: "phases",
+    title: "Phases",
+    items:
+      run?.timeline.map((item) => {
+        const detail = item.blockers[0] ?? item.nextAction;
+
+        return {
+          id: item.phase,
+          title: item.title,
+          status: item.status,
+          ...(detail === undefined ? {} : { detail }),
+          artifacts: item.artifacts
+        };
+      }) ?? []
+  };
+}
+
+function dashboardWorkerRunTimelineGroup(
+  database: RunsteadDatabase
+): DashboardStartupTimelineGroup {
+  const rows = database
+    .prepare(
+      `
+      SELECT id, task_id, worker_type, status, started_at, ended_at
+      FROM worker_runs
+      ORDER BY started_at DESC, id DESC
+      LIMIT 25
+    `
+    )
+    .all() as unknown as WorkerRunTimelineRow[];
+
+  return {
+    group: "worker_runs",
+    title: "Worker Runs",
+    items: rows.map((row) => ({
+      id: row.id,
+      title: row.worker_type,
+      status: row.status,
+      createdAt: row.started_at,
+      detail: `task=${row.task_id}${row.ended_at === null ? "" : ` ended=${row.ended_at}`}`,
+      artifacts: []
+    }))
+  };
+}
+
+function dashboardModelRequestTimelineGroup(
+  database: RunsteadDatabase
+): DashboardStartupTimelineGroup {
+  const rows = database
+    .prepare(
+      `
+      SELECT event_id, type, aggregate_id, payload_json, created_at
+      FROM events
+      WHERE type LIKE 'model_request.%'
+      ORDER BY created_at DESC, id DESC
+      LIMIT 25
+    `
+    )
+    .all() as unknown as ModelRequestTimelineRow[];
+
+  return {
+    group: "model_requests",
+    title: "Model Requests",
+    items: rows.map((row) => ({
+      id: row.event_id,
+      title: row.type,
+      status: modelRequestTimelineStatus(row.type),
+      createdAt: row.created_at,
+      detail: modelRequestTimelineDetail(row),
+      artifacts: []
+    }))
+  };
+}
+
+function dashboardToolCallTimelineGroup(
+  database: RunsteadDatabase
+): DashboardStartupTimelineGroup {
+  const rows = database
+    .prepare(
+      `
+      SELECT id, worker_run_id, task_id, action_type, status, started_at, ended_at
+      FROM tool_calls
+      ORDER BY started_at DESC, id DESC
+      LIMIT 25
+    `
+    )
+    .all() as unknown as ToolCallTimelineRow[];
+
+  return {
+    group: "tool_calls",
+    title: "Tool Calls",
+    items: rows.map((row) => ({
+      id: row.id,
+      title: row.action_type,
+      status: row.status,
+      createdAt: row.started_at,
+      detail: `task=${row.task_id} worker=${row.worker_run_id}${row.ended_at === null ? "" : ` ended=${row.ended_at}`}`,
+      artifacts: []
+    }))
+  };
+}
+
+function dashboardApprovalTimelineGroup(
+  database: RunsteadDatabase
+): DashboardStartupTimelineGroup {
+  const rows = database
+    .prepare(
+      `
+      SELECT id, action_id, status, risk, reason, updated_at
+      FROM approvals
+      ORDER BY updated_at DESC, id DESC
+      LIMIT 25
+    `
+    )
+    .all() as unknown as ApprovalTimelineRow[];
+
+  return {
+    group: "approvals",
+    title: "Approvals",
+    items: rows.map((row) => ({
+      id: row.id,
+      title: row.action_id,
+      status: row.status,
+      createdAt: row.updated_at,
+      detail: `${row.risk}: ${row.reason}`,
+      artifacts: []
+    }))
+  };
+}
+
+function dashboardEvidenceTimelineGroup(
+  database: RunsteadDatabase
+): DashboardStartupTimelineGroup {
+  const rows = database
+    .prepare(
+      `
+      SELECT id, type, subject_type, subject_id, summary, uri, created_at
+      FROM evidence
+      ORDER BY created_at DESC, id DESC
+      LIMIT 25
+    `
+    )
+    .all() as unknown as EvidenceTimelineRow[];
+
+  return {
+    group: "evidence",
+    title: "Evidence",
+    items: rows.map((row) => ({
+      id: row.id,
+      title: row.type,
+      status: "recorded",
+      createdAt: row.created_at,
+      detail: `${row.subject_type}/${row.subject_id}: ${row.summary ?? "no summary"}`,
+      artifacts: [row.uri]
+    }))
+  };
+}
+
+function dashboardReportTimelineGroup(
+  run: DashboardStartupRun | undefined,
+  latestReportPath: string | undefined
+): DashboardStartupTimelineGroup {
+  const reports = [
+    ...(run?.reports ?? []),
+    ...(latestReportPath === undefined ? [] : [latestReportPath])
+  ];
+  const uniqueReports = [...new Set(reports)];
+
+  return {
+    group: "reports",
+    title: "Reports",
+    items: uniqueReports.map((path, index) => ({
+      id: `report-${index + 1}`,
+      title: path.split("/").pop() ?? path,
+      status: "available",
+      detail: path,
+      artifacts: [path]
+    }))
+  };
+}
+
+function modelRequestTimelineStatus(type: string): string {
+  if (type.endsWith(".retry")) {
+    return "retry";
+  }
+
+  if (type.endsWith(".failed")) {
+    return "failed";
+  }
+
+  if (type.endsWith(".completed")) {
+    return "completed";
+  }
+
+  return "recorded";
+}
+
+function modelRequestTimelineDetail(row: ModelRequestTimelineRow): string {
+  const payload = parseJsonRecord(row.payload_json);
+  const attempt =
+    typeof payload?.attempt === "number" ? `attempt=${payload.attempt}` : undefined;
+  const reason =
+    typeof payload?.reason === "string" ? `reason=${payload.reason}` : undefined;
+  const delayMs =
+    typeof payload?.delayMs === "number" ? `delay=${payload.delayMs}ms` : undefined;
+
+  return [row.aggregate_id, attempt, reason, delayMs]
+    .filter((part): part is string => part !== undefined)
+    .join(" ");
 }
 
 function latestStartupAgentPatch(database: RunsteadDatabase): {
@@ -2135,6 +2511,8 @@ function startupSection(startup: DashboardStartupSnapshot): string {
             }`
       }</td></tr>
     </tbody></table>
+    ${startupRunComparisonTable(startup.runComparison)}
+    ${startupTimelineGroupsTable(startup.timelineGroups)}
     ${
       run === undefined
         ? '<div class="empty">No startup readiness run has been recorded.</div>'
@@ -2174,6 +2552,65 @@ function startupSection(startup: DashboardStartupSnapshot): string {
         : `<table><thead><tr><th>Evidence</th><th>Type</th><th>Age</th><th>Source</th></tr></thead><tbody>${staleRows}</tbody></table>`
     }
   </section>`;
+}
+
+function startupRunComparisonTable(
+  comparison: DashboardStartupRunComparison | undefined
+): string {
+  if (comparison === undefined) {
+    return '<div class="empty">Run comparison unavailable.</div>';
+  }
+
+  const completed = comparison.latestCompleted;
+  const blocked = comparison.latestBlocked;
+
+  return `<table>
+    <thead><tr><th>Run comparison</th><th>Run</th><th>Verdict</th><th>Blockers</th></tr></thead>
+    <tbody>
+      <tr><td>Latest completed</td><td>${
+        completed === undefined
+          ? "none"
+          : `<code>${escapeHtml(completed.id)}</code> ${statusCell(completed.status)}`
+      }</td><td>${escapeHtml(completed?.verdict ?? "none")}</td><td>${completed?.blockerCount ?? 0}</td></tr>
+      <tr><td>Latest blocked/interrupted</td><td>${
+        blocked === undefined
+          ? "none"
+          : `<code>${escapeHtml(blocked.id)}</code> ${statusCell(blocked.status)}`
+      }</td><td>${escapeHtml(blocked?.verdict ?? "none")}</td><td>${blocked?.blockerCount ?? 0}</td></tr>
+      <tr><td>Resolved blockers</td><td colspan="3">${comparison.resolvedBlockers.length === 0 ? "none" : comparison.resolvedBlockers.map(escapeHtml).join("<br>")}</td></tr>
+      <tr><td>Still shared</td><td colspan="3">${comparison.stillBlocked.length === 0 ? "none" : comparison.stillBlocked.map(escapeHtml).join("<br>")}</td></tr>
+      <tr><td>Summary</td><td colspan="3">${escapeHtml(comparison.narrative)}</td></tr>
+    </tbody>
+  </table>`;
+}
+
+function startupTimelineGroupsTable(groups: DashboardStartupTimelineGroup[]): string {
+  if (groups.length === 0) {
+    return '<div class="empty">No startup operator timeline entries.</div>';
+  }
+
+  return groups
+    .map((group) => {
+      const rows = group.items
+        .slice(0, 10)
+        .map((item) => {
+          const artifacts =
+            item.artifacts.length === 0
+              ? "none"
+              : item.artifacts
+                  .map((artifact) => `<code>${escapeHtml(artifact)}</code>`)
+                  .join("<br>");
+
+          return `<tr><td><code>${escapeHtml(item.id)}</code><br>${escapeHtml(item.title)}</td><td>${statusCell(item.status)}</td><td>${escapeHtml(item.createdAt ?? "n/a")}</td><td>${escapeHtml(item.detail ?? "none")}<br>${artifacts}</td></tr>`;
+        })
+        .join("");
+
+      return `<table>
+        <thead><tr><th>Timeline: ${escapeHtml(group.title)}</th><th>Status</th><th>Time</th><th>Detail</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>`;
+    })
+    .join("");
 }
 
 function daemonSection(status: DashboardDaemonStatus): string {
@@ -2323,7 +2760,24 @@ function dashboardEventPayload(
                   status: snapshot.startup.agentPatch.status,
                   filesTouched: snapshot.startup.agentPatch.filesTouched.length
                 }
-              })
+              }),
+          ...(snapshot.startup.runComparison === undefined
+            ? {}
+            : {
+                runComparison: {
+                  latestCompleted:
+                    snapshot.startup.runComparison.latestCompleted?.id ?? null,
+                  latestBlocked:
+                    snapshot.startup.runComparison.latestBlocked?.id ?? null,
+                  resolvedBlockers:
+                    snapshot.startup.runComparison.resolvedBlockers.length,
+                  stillBlocked: snapshot.startup.runComparison.stillBlocked.length
+                }
+              }),
+          timelineGroups: snapshot.startup.timelineGroups.map((group) => ({
+            group: group.group,
+            items: group.items.length
+          }))
         };
 
   return {
@@ -2517,5 +2971,51 @@ interface EventRow {
   type: string;
   aggregate_type: string;
   aggregate_id: string;
+  created_at: string;
+}
+
+interface WorkerRunTimelineRow {
+  id: string;
+  task_id: string;
+  worker_type: string;
+  status: string;
+  started_at: string;
+  ended_at: string | null;
+}
+
+interface ModelRequestTimelineRow {
+  event_id: string;
+  type: string;
+  aggregate_id: string;
+  payload_json: string;
+  created_at: string;
+}
+
+interface ToolCallTimelineRow {
+  id: string;
+  worker_run_id: string;
+  task_id: string;
+  action_type: string;
+  status: string;
+  started_at: string;
+  ended_at: string | null;
+}
+
+interface ApprovalTimelineRow {
+  id: string;
+  action_id: string;
+  status: string;
+  risk: string;
+  reason: string;
+  updated_at: string;
+}
+
+interface EvidenceTimelineRow {
+  id: string;
+  type: string;
+  subject_type: string;
+  subject_id: string;
+  summary: string | null;
+  uri: string;
   created_at: string;
 }
