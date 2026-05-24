@@ -1,4 +1,4 @@
-import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { access, cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -220,6 +220,70 @@ describe("startup ready fixture matrix", () => {
           join(workspace, ".runstead", "reports", "startup-complete-product-check.md")
         ])
       );
+    });
+  }, 90_000);
+
+  it("runs the codex_direct one-command golden path without prior init", async () => {
+    await withFixture("tiny-todo", async (workspace) => {
+      const port = await availablePort();
+      await writeUiSmokeConfig(workspace, port, ["Todo MVP", "Add task"]);
+
+      const result = await runStartupReady({
+        cwd: workspace,
+        stage: "launch",
+        target: "local",
+        worker: "codex_direct",
+        maxAttempts: 1,
+        now: new Date("2026-05-23T00:16:30.000Z")
+      });
+      const build = result.run.phases.find((phase) => phase.id === "build_mvp");
+      const verifiers = result.run.phases.find((phase) => phase.id === "verifiers");
+      const uiSmoke = result.run.phases.find((phase) => phase.id === "ui_smoke");
+      const launchReport = result.run.phases.find(
+        (phase) => phase.id === "launch_report"
+      );
+      const complete = result.run.phases.find((phase) => phase.id === "complete_check");
+
+      expect(result.plan.runsteadInitialized).toBe(false);
+      await expect(access(join(workspace, ".runstead", "config.yaml"))).resolves.toBe(
+        undefined
+      );
+      await expect(access(join(workspace, ".runstead", "state.db"))).resolves.toBe(
+        undefined
+      );
+      await expect(readFile(join(workspace, "AGENTS.json"), "utf8")).rejects.toThrow();
+      await expect(readFile(join(workspace, "CODEX.json"), "utf8")).rejects.toThrow();
+      expect(result.run.worker).toBe("codex_direct");
+      expect(build).toMatchObject({
+        status: "passed",
+        nextAction: "existing MVP verified; skipped worker build"
+      });
+      expect(verifiers?.status).toBe("passed");
+      expect(uiSmoke?.status).toBe("passed");
+      expect(launchReport?.status).toBe("passed");
+      expect(complete?.status).toBe("passed");
+      expect(result.run.status).toBe("completed");
+      expect(result.run.verdict).toBe("local_launch_ready");
+      expect(result.run.reportPaths).toEqual(
+        expect.arrayContaining([
+          join(
+            workspace,
+            ".runstead",
+            "reports",
+            `startup-readiness-run-${result.run.id}.md`
+          ),
+          join(
+            workspace,
+            ".runstead",
+            "reports",
+            "launch-readiness-ai-native-startup.md"
+          ),
+          join(workspace, ".runstead", "reports", "startup-complete-product-check.md")
+        ])
+      );
+      expect(
+        result.run.operatorCommands.find((command) => command.kind === "rerun")?.command
+      ).toContain("--worker codex_direct");
     });
   }, 90_000);
 
@@ -756,30 +820,30 @@ async function writeStaticTodoApp(
       "<!doctype html>",
       "<html>",
       "<head>",
-      "  <meta charset=\"utf-8\">",
+      '  <meta charset="utf-8">',
       "  <title>Todo MVP</title>",
-      "  <link rel=\"stylesheet\" href=\"/styles.css\">",
+      '  <link rel="stylesheet" href="/styles.css">',
       "</head>",
       "<body>",
       "  <main>",
       "    <h1>Todo MVP</h1>",
-      "    <form data-testid=\"todo-form\">",
-      "      <label for=\"todo-input\">Add todo</label>",
-      "      <input id=\"todo-input\" data-testid=\"new-todo-input\" type=\"text\">",
-      "      <button data-testid=\"add-todo\" type=\"submit\">Add todo</button>",
+      '    <form data-testid="todo-form">',
+      '      <label for="todo-input">Add todo</label>',
+      '      <input id="todo-input" data-testid="new-todo-input" type="text">',
+      '      <button data-testid="add-todo" type="submit">Add todo</button>',
       "    </form>",
-      "    <section class=\"toolbar\" aria-label=\"Todo filters\">",
-      "      <label for=\"todo-search\">Search todos</label>",
-      "      <input id=\"todo-search\" data-testid=\"todo-search\" type=\"search\">",
-      "      <button data-testid=\"filter-all\" type=\"button\">All</button>",
-      "      <button data-testid=\"filter-active\" type=\"button\">Active</button>",
-      "      <button data-testid=\"filter-completed\" type=\"button\">Completed</button>",
-      "      <button data-testid=\"clear-completed\" type=\"button\">Clear completed</button>",
+      '    <section class="toolbar" aria-label="Todo filters">',
+      '      <label for="todo-search">Search todos</label>',
+      '      <input id="todo-search" data-testid="todo-search" type="search">',
+      '      <button data-testid="filter-all" type="button">All</button>',
+      '      <button data-testid="filter-active" type="button">Active</button>',
+      '      <button data-testid="filter-completed" type="button">Completed</button>',
+      '      <button data-testid="clear-completed" type="button">Clear completed</button>',
       "    </section>",
-      "    <p data-testid=\"todo-count\">0 active</p>",
-      "    <ul data-testid=\"todo-list\"></ul>",
+      '    <p data-testid="todo-count">0 active</p>',
+      '    <ul data-testid="todo-list"></ul>',
       "  </main>",
-      "  <script src=\"/app.js\"></script>",
+      '  <script src="/app.js"></script>',
       "</body>",
       "</html>",
       ""
@@ -1017,8 +1081,7 @@ function seedInterruptedFixtureTask(
     appendEventAndProject(database, {
       event: {
         eventId: createRunsteadId("evt"),
-        type:
-          input.status === "interrupted" ? "task.interrupted" : "task.started",
+        type: input.status === "interrupted" ? "task.interrupted" : "task.started",
         aggregateType: "task",
         aggregateId: task.id,
         payload: task,
