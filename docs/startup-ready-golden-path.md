@@ -48,6 +48,59 @@ Runstead should:
 - write `startup-readiness-run-<run-id>.md`
 - return `local_launch_ready` or explicit blockers
 
+## Empty Repo Dogfood
+
+The live dogfood path used for the todo example is an empty repo that Runstead
+turns into a local-first todo MVP:
+
+```text
+/Users/Michael.Lin/Sites/temp/todo
+https://github.com/leapvoid/todo
+```
+
+Run the governed scaffold path with `codex_direct`:
+
+```bash
+runstead startup ready \
+  --cwd /Users/Michael.Lin/Sites/temp/todo \
+  --stage launch \
+  --target local \
+  --worker codex_direct \
+  --governance governed \
+  --app-template static-todo \
+  --app-type local-first-web
+```
+
+For an empty repo, the scaffold profile is written to:
+
+```text
+.runstead/startup/scaffold-profile.json
+```
+
+The profile tells the worker to build a dependency-light static todo app,
+provide `test`, `lint`, `typecheck`, `build`, and `start` scripts, persist data
+in `localStorage`, and expose stable UI smoke selectors such as
+`data-testid=new-todo-input` and `data-testid=add-todo`.
+
+With `codex_direct`, filesystem and shell tool calls go through Runstead policy.
+The first scaffold write approval can be reused for safe app files in the same
+task, while dependency, secret, `.git`, `.runstead`, and protected-path writes
+stay outside that grant.
+
+If UI smoke fails, `startup ready` writes a repair request artifact like:
+
+```text
+.runstead/startup/ui-smoke-repair-<run-id>.json
+```
+
+Then it runs one bounded MVP repair attempt and reruns UI smoke. A passing local
+run should end as `local_launch_ready`. That verdict covers local demo and
+operator validation only. If the repo has no initial commit, or the remote repo
+is private or unauthenticated, remote GitHub Actions can be recorded as
+`remote_ci_not_applicable_until_initial_commit`, `not_configured`, or `unknown`;
+that does not block a local target unless the requested target requires remote
+CI evidence.
+
 ## Plan, CI, Resume
 
 Planner only:
@@ -73,6 +126,28 @@ Resume:
 ```bash
 runstead startup ready --cwd /tmp/runstead-todo --resume <run-id>
 ```
+
+Dashboard operator console:
+
+```bash
+runstead dashboard serve --cwd /tmp/runstead-todo
+```
+
+The dashboard shows the latest readiness run, pending approvals, stale evidence
+count, blockers, resume commands, and recommended next command. The same action
+queue is available as JSON at `/operator-actions.json`.
+
+Artifact hygiene:
+
+```bash
+runstead startup artifact hygiene --cwd /tmp/runstead-todo --retention-days 30
+```
+
+This writes `.runstead/startup/latest-artifacts.json`,
+`.runstead/reports/startup-artifact-hygiene.md`, and a JSON report that separates
+current, referenced, superseded, and unreferenced artifacts. Add `--prune` only
+when you want Runstead to delete unreferenced artifacts older than the retention
+window.
 
 ## Reading The Result
 

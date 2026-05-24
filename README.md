@@ -68,16 +68,20 @@ Run the end-to-end readiness path in an empty or existing MVP repository:
 runstead startup ready \
   --cwd /path/to/mvp \
   --stage launch \
-  --worker codex_cli \
-  --governance readiness \
-  --target local
+  --target local \
+  --worker codex_direct \
+  --governance governed \
+  --app-template static-todo \
+  --app-type local-first-web
 ```
 
 This initializes Runstead if needed, generates context and measurement
 artifacts, runs the bounded MVP build/repair loop, discovers and runs verifier
 commands, executes UI smoke when a dev server is available, writes launch and
 complete-check reports, and returns a target-aware verdict such as
-`local_launch_ready` or explicit blockers.
+`local_launch_ready` or explicit blockers. `--app-template static-todo` is the
+built-in empty-repo scaffold profile for a local-first todo MVP; omit it for an
+existing app.
 
 Use `--interactive` when the founder wants to supplement the generated context
 and measurement evidence before the run starts:
@@ -114,6 +118,12 @@ Build and serve the local evidence dashboard:
 
 ```bash
 runstead dashboard serve --cwd /path/to/mvp
+```
+
+Compact the local artifact view and identify unreferenced retention candidates:
+
+```bash
+runstead startup artifact hygiene --cwd /path/to/mvp --retention-days 30
 ```
 
 For a repo-local example, run the todo golden path fixture:
@@ -287,6 +297,10 @@ pnpm format:check
   and boundaries
 - [docs/startup-lifecycle.md](docs/startup-lifecycle.md): stage model and
   startup pack shape
+- [docs/startup-ready-golden-path.md](docs/startup-ready-golden-path.md): todo
+  dogfood golden path
+- [docs/startup-artifact-hygiene.md](docs/startup-artifact-hygiene.md):
+  retention and latest-artifact view
 - [docs/codex-direct.md](docs/codex-direct.md): native worker architecture and
   strict governance notes
 - [docs/security-model.md](docs/security-model.md): assurance levels, trust

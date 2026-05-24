@@ -96,10 +96,11 @@ Serve the same state as a local dashboard:
 runstead dashboard serve --cwd /path/to/mvp
 ```
 
-The dashboard now includes an operator console that merges the current startup
-next action, readiness run commands, guided-flow commands, and daemon approval
-resume commands. The same action queue is available at
-`/operator-actions.json` for local tooling.
+The dashboard now includes an operator console with the latest readiness run,
+pending approvals, blocker count, stale evidence count, resume command, and
+recommended next command. It merges startup next actions, readiness run
+commands, guided-flow commands, and daemon approval resume commands. The same
+action queue is available at `/operator-actions.json` for local tooling.
 
 ## UI Smoke
 
@@ -158,6 +159,25 @@ configs include a golden path that adds a synthetic todo, toggles it, exercises
 search/filter controls when present, and reloads to prove persistence. Flow
 execution stores DOM, screenshot, console log, and managed server log artifacts
 when available so a failed launch gate has inspectable evidence.
+
+## Artifact Hygiene
+
+Long dogfood runs can leave many evidence, report, startup, log, and checkpoint
+files under `.runstead`. Generate a compact latest view and retention report:
+
+```bash
+runstead startup artifact hygiene --cwd /path/to/mvp --retention-days 30
+```
+
+The command writes:
+
+- `.runstead/startup/latest-artifacts.json`
+- `.runstead/reports/startup-artifact-hygiene.md`
+- `.runstead/reports/startup-artifact-hygiene.json`
+
+Files are classified as `current`, `referenced`, `superseded`, or
+`unreferenced`. By default the command is report-only. Add `--prune` to delete
+unreferenced files older than the retention window.
 
 ## Evidence Tiers
 
