@@ -11,9 +11,12 @@ import {
   type WorkerRun
 } from "@runstead/core";
 import {
-  appendEventAndProject,
-  type RunsteadDatabase
-} from "@runstead/state-sqlite";
+  runtimeExecutionSemantics,
+  type RuntimeExecutionSemantics,
+  type RuntimeVerificationStatus,
+  type RuntimeWorkerOutcome
+} from "@runstead/runtime";
+import { appendEventAndProject, type RunsteadDatabase } from "@runstead/state-sqlite";
 
 import {
   type CodexResponsesInputItem,
@@ -108,14 +111,10 @@ export interface CodexDirectWorkerResult {
   worker: typeof CODEX_DIRECT_WORKER_KIND;
   model: string;
   modelProvider: string;
-  status:
-    | "completed"
-    | "waiting_approval"
-    | "interrupted"
-    | "blocked"
-    | "failed";
+  status: "completed" | "waiting_approval" | "interrupted" | "blocked" | "failed";
   exitCode: number;
   summary: string;
+  execution: RuntimeExecutionSemantics;
   toolCalls: number;
   failedToolCalls: number;
   warnings: string[];
@@ -257,6 +256,9 @@ async function runCodexDirectConversation(input: {
 }): Promise<CodexDirectWorkerResult> {
   let executedToolCalls = input.executedToolCalls;
   let failedToolCalls = input.failedToolCalls;
+  const verifierResults = new Map<string, RuntimeVerificationStatus>();
+  const verification = (): RuntimeVerificationStatus =>
+    codexDirectVerificationStatus(input.options.task, verifierResults);
 
   try {
     for (let turn = 0; turn < input.maxTurns; turn += 1) {
@@ -284,6 +286,7 @@ async function runCodexDirectConversation(input: {
           summary,
           toolCalls: executedToolCalls,
           failedToolCalls,
+          verification: verification(),
           ...codexDirectWarningOptions(input.warnings)
         });
       }
@@ -301,6 +304,7 @@ async function runCodexDirectConversation(input: {
             maxTurns: input.maxTurns,
             toolCalls: executedToolCalls,
             failedToolCalls,
+            verification: verification(),
             ...codexDirectWarningOptions(input.warnings)
           });
         }
@@ -325,6 +329,11 @@ async function runCodexDirectConversation(input: {
         if (toolResult.failed) {
           failedToolCalls += 1;
         }
+        recordCodexDirectVerifierResult({
+          toolCall,
+          toolResult,
+          verifierResults
+        });
         input.messages.push({
           type: "function_call",
           call_id: rawToolCall.id,
@@ -349,6 +358,7 @@ async function runCodexDirectConversation(input: {
             maxTurns: input.maxTurns,
             toolCalls: executedToolCalls,
             failedToolCalls,
+            verification: verification(),
             ...codexDirectWarningOptions(input.warnings)
           });
         }
@@ -363,6 +373,7 @@ async function runCodexDirectConversation(input: {
       maxTurns: input.maxTurns,
       toolCalls: executedToolCalls,
       failedToolCalls,
+      verification: verification(),
       ...codexDirectWarningOptions(input.warnings)
     });
   } catch (error) {
@@ -375,6 +386,7 @@ async function runCodexDirectConversation(input: {
         summary: error.message,
         toolCalls: executedToolCalls,
         failedToolCalls,
+        verification: verification(),
         ...codexDirectWarningOptions(input.warnings),
         approval: {
           id: error.approval.id,
@@ -394,6 +406,7 @@ async function runCodexDirectConversation(input: {
         summary: error.message,
         toolCalls: executedToolCalls,
         failedToolCalls,
+        verification: verification(),
         ...codexDirectWarningOptions(input.warnings)
       });
     }
@@ -407,6 +420,7 @@ async function runCodexDirectConversation(input: {
         summary: error.message,
         toolCalls: executedToolCalls,
         failedToolCalls,
+        verification: verification(),
         ...codexDirectWarningOptions([
           ...(input.warnings ?? []),
           "Codex Direct model request timed out; the task is recoverable with runstead resume."
@@ -423,6 +437,7 @@ async function runCodexDirectConversation(input: {
       summary: error instanceof Error ? error.message : String(error),
       toolCalls: executedToolCalls,
       failedToolCalls,
+      verification: verification(),
       ...codexDirectWarningOptions(input.warnings)
     });
   }
@@ -848,11 +863,7 @@ class CodexDirectModelTimeoutError extends Error {
   readonly elapsedMs: number;
   readonly heartbeatCount: number;
 
-  constructor(input: {
-    timeoutMs: number;
-    elapsedMs: number;
-    heartbeatCount: number;
-  }) {
+  constructor(input: { timeoutMs: number; elapsedMs: number; heartbeatCount: number }) {
     super(
       `Codex Direct model request timed out after ${input.timeoutMs}ms; runstead marked the task interrupted:model_timeout.`
     );
@@ -2282,6 +2293,7 @@ async function finalizeBudgetExceededWorkerResult(input: {
   maxTurns: number;
   toolCalls: number;
   failedToolCalls: number;
+  verification?: RuntimeVerificationStatus;
   warnings?: string[];
 }): Promise<CodexDirectWorkerResult> {
   const budget = codexDirectBudgetSummary(input);
@@ -2319,6 +2331,7 @@ async function finalizeBudgetExceededWorkerResult(input: {
         summary,
         toolCalls: input.toolCalls,
         failedToolCalls: input.failedToolCalls,
+        verification: input.verification ?? "skipped",
         warnings,
         budget
       });
@@ -2333,6 +2346,7 @@ async function finalizeBudgetExceededWorkerResult(input: {
         }`,
         toolCalls: input.toolCalls,
         failedToolCalls: input.failedToolCalls,
+        verification: input.verification ?? "skipped",
         warnings,
         budget
       });
@@ -2347,6 +2361,7 @@ async function finalizeBudgetExceededWorkerResult(input: {
     summary: warning,
     toolCalls: input.toolCalls,
     failedToolCalls: input.failedToolCalls,
+    verification: input.verification ?? "skipped",
     warnings,
     budget
   });
@@ -2395,6 +2410,7 @@ function completedWorkerResult(input: {
   summary: string;
   toolCalls: number;
   failedToolCalls: number;
+  verification?: RuntimeVerificationStatus;
   warnings?: string[];
   interruption?: CodexDirectWorkerResult["interruption"];
   budget?: CodexDirectBudgetSummary;
@@ -2402,16 +2418,21 @@ function completedWorkerResult(input: {
 }): CodexDirectWorkerResult {
   const warnings = input.warnings ?? [];
   const modelProvider = input.options.modelProviderResourceId ?? "chatgpt_codex";
+  const execution = codexDirectExecutionSemantics({
+    status: input.status,
+    toolCalls: input.toolCalls,
+    ...(input.budget === undefined ? {} : { budget: input.budget }),
+    verification: input.verification ?? "skipped"
+  });
   const output = {
     worker: CODEX_DIRECT_WORKER_KIND,
     model: input.options.model,
     modelProvider,
     summary: input.summary,
+    execution,
     toolCalls: input.toolCalls,
     failedToolCalls: input.failedToolCalls,
-    ...(input.interruption === undefined
-      ? {}
-      : { interruption: input.interruption }),
+    ...(input.interruption === undefined ? {} : { interruption: input.interruption }),
     ...(warnings.length === 0 ? {} : { warnings }),
     ...(input.budget === undefined ? {} : { budget: input.budget }),
     ...(input.approval === undefined ? {} : { approval: input.approval })
@@ -2431,16 +2452,90 @@ function completedWorkerResult(input: {
     status: input.status,
     exitCode: input.exitCode,
     summary: input.summary,
+    execution,
     toolCalls: input.toolCalls,
     failedToolCalls: input.failedToolCalls,
     warnings,
-    ...(input.interruption === undefined
-      ? {}
-      : { interruption: input.interruption }),
+    ...(input.interruption === undefined ? {} : { interruption: input.interruption }),
     workerRun,
     ...(input.budget === undefined ? {} : { budget: input.budget }),
     ...(input.approval === undefined ? {} : { approval: input.approval })
   };
+}
+
+function codexDirectExecutionSemantics(input: {
+  status: CodexDirectWorkerResult["status"];
+  toolCalls: number;
+  budget?: CodexDirectBudgetSummary;
+  verification: RuntimeVerificationStatus;
+}): RuntimeExecutionSemantics {
+  const worker: RuntimeWorkerOutcome = {
+    kind: "governed",
+    status: input.status,
+    toolCalls: input.toolCalls,
+    ...(input.budget === undefined ? {} : { budgetExhausted: true })
+  };
+  const verifier =
+    input.verification === "skipped" ? undefined : { status: input.verification };
+
+  return verifier === undefined
+    ? runtimeExecutionSemantics({ worker })
+    : runtimeExecutionSemantics({ worker, verifier });
+}
+
+function codexDirectVerificationStatus(
+  task: Task,
+  verifierResults: Map<string, RuntimeVerificationStatus>
+): RuntimeVerificationStatus {
+  const declaredNames = declaredVerifierCommands(task).map((command) => command.name);
+
+  if (declaredNames.length === 0 || verifierResults.size === 0) {
+    return "skipped";
+  }
+
+  if (declaredNames.some((name) => verifierResults.get(name) === "failed")) {
+    return "failed";
+  }
+
+  return declaredNames.every((name) => verifierResults.get(name) === "passed")
+    ? "passed"
+    : "skipped";
+}
+
+function recordCodexDirectVerifierResult(input: {
+  toolCall: CodexDirectToolCall;
+  toolResult: { output: string; failed: boolean };
+  verifierResults: Map<string, RuntimeVerificationStatus>;
+}): void {
+  if (input.toolCall.name !== "run_verifier" || input.toolResult.failed) {
+    return;
+  }
+
+  const parsed = safeJsonObject(input.toolResult.output);
+  if (parsed === undefined) {
+    return;
+  }
+
+  const verifier = typeof parsed.verifier === "string" ? parsed.verifier : undefined;
+
+  if (verifier === undefined) {
+    return;
+  }
+
+  input.verifierResults.set(
+    verifier,
+    parsed.exitCode === 0 && parsed.timedOut === false ? "passed" : "failed"
+  );
+}
+
+function safeJsonObject(value: string): Record<string, unknown> | undefined {
+  try {
+    const parsed = JSON.parse(value) as unknown;
+
+    return isRecord(parsed) ? parsed : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function codexDirectWarningOptions(
@@ -2915,10 +3010,7 @@ function codexDirectTaskScaffoldProfile(
   };
 }
 
-function isScaffoldAppOwnedPatchPath(
-  path: string,
-  appOwnedPaths: string[]
-): boolean {
+function isScaffoldAppOwnedPatchPath(path: string, appOwnedPaths: string[]): boolean {
   if (
     SCAFFOLD_APP_PATCH_PROTECTED_PATH_PATTERNS.some((pattern) =>
       matchesPolicyPathPattern(path, pattern)

@@ -14,6 +14,7 @@ import {
   runtimeFinalTaskStatus,
   runtimeTaskResultStatus,
   runtimeWorkerRunStatusFromTaskStatus,
+  type RuntimeExecutionSemantics,
   type RuntimeVerifierOutcome,
   type RuntimeWorkerOutcome
 } from "@runstead/runtime";
@@ -156,6 +157,7 @@ export interface RunLocalAgentTaskResult {
     | "blocked"
     | "failed";
   summary: string;
+  execution: RuntimeExecutionSemantics;
   audit: LocalAgentAuditSummary;
   checkpoint?: WorkspaceCheckpoint;
   verifierResults?: RunTaskVerifierCommandResult[];
@@ -609,6 +611,10 @@ async function runLocalAgentTaskWithDatabase(options: {
     const finalStatus = localAgentFinalTaskStatus(workerResult, verifierResult);
     const resultStatus = localAgentResultStatus(finalStatus, workerResult);
     const summary = localAgentFinalSummary(workerResult, verifierResult);
+    const execution = localAgentExecutionSemantics({
+      workerResult,
+      ...(verifierResult === undefined ? {} : { verifierResult })
+    });
     const finalTask = finalizeLocalAgentTask({
       database: options.database,
       task: options.task,
@@ -642,6 +648,7 @@ async function runLocalAgentTaskWithDatabase(options: {
       workerResult,
       status: resultStatus,
       summary,
+      execution,
       audit: summarizeLocalAgentAudit(options.database, finalTask.id),
       ...(checkpoint === undefined ? {} : { checkpoint }),
       ...(verifierResult === undefined
@@ -676,6 +683,7 @@ async function runLocalAgentTaskWithDatabase(options: {
       goal: options.goal,
       status: failure.resultStatus,
       summary: String(failure.output.summary),
+      execution: failure.execution,
       audit: summarizeLocalAgentAudit(options.database, finalTask.id),
       ...(checkpoint === undefined ? {} : { checkpoint }),
       ...(failure.approval === undefined ? {} : { approval: failure.approval })
@@ -707,7 +715,7 @@ async function runLocalAgentWorker(options: {
     const maxTurns = localAgentTaskMaxTurns(options.task);
 
     if (options.pendingPatchResume !== undefined) {
-    return runCodexDirectPendingPatchResume({
+      return runCodexDirectPendingPatchResume({
         cwd: options.cwd,
         stateDb: options.stateDb,
         database: options.database,
@@ -868,6 +876,7 @@ export function formatLocalAgentRunReport(result: RunLocalAgentTaskResult): stri
     "Runstead agent run",
     `Task: ${result.task.id}`,
     `Status: ${result.status}`,
+    ...formatExecutionSemanticsLines(result.execution),
     ...(result.workerResult === undefined
       ? []
       : formatLocalAgentWorkerResultLines(result.workerResult)),
@@ -1475,7 +1484,7 @@ function localAgentFinalTaskStatus(
   verifierResult?: RunTaskVerifiersResult
 ): Task["status"] {
   const worker = localAgentWorkerOutcome(workerResult);
-  const verifier = localAgentVerifierOutcome(verifierResult);
+  const verifier = localAgentEffectiveVerifierOutcome(workerResult, verifierResult);
 
   return verifier === undefined
     ? runtimeFinalTaskStatus({ worker })
@@ -1536,13 +1545,36 @@ function localAgentFinalSummary(
 function localAgentExecutionSemantics(input: {
   workerResult: LocalAgentWorkerResult;
   verifierResult?: RunTaskVerifiersResult;
-}): JsonObject {
+}): RuntimeExecutionSemantics {
   const worker = localAgentWorkerOutcome(input.workerResult);
-  const verifier = localAgentVerifierOutcome(input.verifierResult);
+  const verifier = localAgentEffectiveVerifierOutcome(
+    input.workerResult,
+    input.verifierResult
+  );
 
   return verifier === undefined
     ? runtimeExecutionSemantics({ worker })
     : runtimeExecutionSemantics({ worker, verifier });
+}
+
+function localAgentEffectiveVerifierOutcome(
+  workerResult: LocalAgentWorkerResult,
+  verifierResult: RunTaskVerifiersResult | undefined
+): RuntimeVerifierOutcome | undefined {
+  const explicit = localAgentVerifierOutcome(verifierResult);
+
+  if (explicit !== undefined) {
+    return explicit;
+  }
+
+  if (
+    isCodexDirectLocalAgentWorkerResult(workerResult) &&
+    workerResult.execution.verification !== "skipped"
+  ) {
+    return { status: workerResult.execution.verification };
+  }
+
+  return undefined;
 }
 
 function localAgentWorkerOutcome(
@@ -1913,6 +1945,25 @@ function formatLocalAgentWarnings(warnings: string[] | undefined): string[] {
     : ["Warnings:", ...warnings.map((warning) => `  ${warning}`)];
 }
 
+function formatExecutionSemanticsLines(execution: RuntimeExecutionSemantics): string[] {
+  return [
+    "Execution:",
+    `  implementation: ${execution.implementation}`,
+    `  verification: ${execution.verification}`,
+    `  agentCompletion: ${execution.agentCompletion}`
+  ];
+}
+
+function localAgentFailureExecution(
+  agentCompletion: RuntimeExecutionSemantics["agentCompletion"]
+): RuntimeExecutionSemantics {
+  return {
+    implementation: "not_applied",
+    verification: "skipped",
+    agentCompletion
+  };
+}
+
 function localAgentFailureFromError(
   error: unknown,
   checkpoint?: WorkspaceCheckpoint
@@ -1921,6 +1972,7 @@ function localAgentFailureFromError(
   workerStatus: "failed" | "waiting_approval" | "blocked";
   resultStatus: RunLocalAgentTaskResult["status"];
   output: JsonObject;
+  execution: RuntimeExecutionSemantics;
   approval?: CodexDirectWorkerResult["approval"];
 } {
   if (error instanceof ToolActionApprovalRequiredError) {
@@ -1937,9 +1989,11 @@ function localAgentFailureFromError(
       resultStatus: "waiting_approval",
       output: {
         summary: error.message,
+        execution: localAgentFailureExecution("approval_waiting"),
         ...(checkpoint === undefined ? {} : { checkpointId: checkpoint.id }),
         approval
       },
+      execution: localAgentFailureExecution("approval_waiting"),
       approval
     };
   }
@@ -1951,10 +2005,14 @@ function localAgentFailureFromError(
       resultStatus: "blocked",
       output: {
         summary: error.message,
+        execution: localAgentFailureExecution("blocked"),
         ...(checkpoint === undefined ? {} : { checkpointId: checkpoint.id })
-      }
+      },
+      execution: localAgentFailureExecution("blocked")
     };
   }
+
+  const execution = localAgentFailureExecution("failed");
 
   return {
     taskStatus: "failed",
@@ -1962,8 +2020,10 @@ function localAgentFailureFromError(
     resultStatus: "failed",
     output: {
       summary: error instanceof Error ? error.message : String(error),
+      execution,
       ...(checkpoint === undefined ? {} : { checkpointId: checkpoint.id })
-    }
+    },
+    execution
   };
 }
 
@@ -1976,7 +2036,10 @@ function isCodexDirectLocalAgentWorkerResult(
 function localAgentWorkerCompleted(workerResult: LocalAgentWorkerResult): boolean {
   return isCodexDirectLocalAgentWorkerResult(workerResult)
     ? workerResult.status === "completed" ||
-        (workerResult.status === "failed" && workerResult.budget !== undefined)
+        (workerResult.status === "failed" &&
+          (workerResult.budget !== undefined ||
+            workerResult.toolCalls > 0 ||
+            workerResult.execution.verification !== "skipped"))
     : workerResult.exitCode === 0;
 }
 

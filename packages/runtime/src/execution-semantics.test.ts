@@ -51,6 +51,33 @@ describe("@runstead/runtime execution semantics", () => {
     expect(runtimeWorkerRunStatusFromTaskStatus(taskStatus)).toBe("completed");
   });
 
+  it("treats late governed worker failure as a warning when verification passed", () => {
+    const worker = {
+      kind: "governed" as const,
+      status: "failed" as const,
+      toolCalls: 3
+    };
+    const taskStatus = runtimeFinalTaskStatus({
+      worker,
+      verifier: {
+        status: "passed",
+        taskStatus: "completed"
+      }
+    });
+
+    expect(
+      runtimeExecutionSemantics({ worker, verifier: { status: "passed" } })
+    ).toEqual({
+      implementation: "applied",
+      verification: "passed",
+      agentCompletion: "failed"
+    });
+    expect(taskStatus).toBe("completed");
+    expect(runtimeTaskResultStatus({ taskStatus, worker })).toBe(
+      "completed_with_warnings"
+    );
+  });
+
   it("keeps waiting approval and blocked states resumable", () => {
     expect(
       runtimeFinalTaskStatus({
@@ -92,8 +119,6 @@ describe("@runstead/runtime execution semantics", () => {
         worker
       })
     ).toBe("interrupted");
-    expect(runtimeWorkerRunStatusFromTaskStatus("interrupted")).toBe(
-      "interrupted"
-    );
+    expect(runtimeWorkerRunStatusFromTaskStatus("interrupted")).toBe("interrupted");
   });
 });

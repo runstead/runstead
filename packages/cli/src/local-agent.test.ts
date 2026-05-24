@@ -1034,6 +1034,11 @@ describe("local agent task primitives", () => {
       const storedTask = showTask({ cwd: workspace, id: created.task.id }).task;
 
       expect(result.status).toBe("completed_with_warnings");
+      expect(result.execution).toEqual({
+        implementation: "applied",
+        verification: "passed",
+        agentCompletion: "budget_exhausted"
+      });
       expect(localAgentRunExitCode(result)).toBe(0);
       expect(storedTask.status).toBe("completed");
       expect(storedTask.output).toMatchObject({
@@ -1059,6 +1064,74 @@ describe("local agent task primitives", () => {
         })
       ]);
       expect(result.summary).toContain("turn budget exhausted after 1 turns");
+      expect(result.summary).toContain("Verifiers: All verifier commands passed");
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("keeps codex_direct final model failures as warnings when verifiers pass", async () => {
+    const workspace = await mkdtemp(
+      join(tmpdir(), "runstead-local-agent-final-fetch-pass-")
+    );
+    const verifierCommand = nodeCommand(
+      "const fs = require('node:fs'); process.exit(fs.readFileSync('README.md', 'utf8').includes('Edited by Runstead') ? 0 : 1);"
+    );
+
+    try {
+      await initRunstead({ cwd: workspace, profile: "trusted-local" });
+      await allowLocalAgentEditPolicyForTest(workspace, verifierCommand);
+      const created = await createLocalAgentTask({
+        cwd: workspace,
+        prompt: "Update the README.",
+        worker: "codex_direct",
+        model: "gpt-5.3-codex",
+        mode: "edit",
+        verifierCommands: [
+          {
+            name: "test",
+            command: verifierCommand
+          }
+        ]
+      });
+      const result = await runLocalAgentTask({
+        cwd: workspace,
+        taskId: created.task.id,
+        transport: editReadmeThenFailTransport()
+      });
+      const storedTask = showTask({ cwd: workspace, id: created.task.id }).task;
+
+      expect(result.status).toBe("completed_with_warnings");
+      expect(result.execution).toEqual({
+        implementation: "applied",
+        verification: "passed",
+        agentCompletion: "failed"
+      });
+      expect(localAgentRunExitCode(result)).toBe(0);
+      expect(storedTask.status).toBe("completed");
+      expect(storedTask.output).toMatchObject({
+        execution: {
+          implementation: "applied",
+          verification: "passed",
+          agentCompletion: "failed"
+        }
+      });
+      expect(result.workerResult).toMatchObject({
+        worker: "codex_direct",
+        status: "failed",
+        execution: {
+          verification: "skipped",
+          agentCompletion: "failed"
+        }
+      });
+      expect(result.verifierResults).toEqual([
+        expect.objectContaining({
+          verifier: "test",
+          exitCode: 0,
+          timedOut: false
+        })
+      ]);
+      expect(result.summary).toContain("fetch failed");
       expect(result.summary).toContain("Verifiers: All verifier commands passed");
     } finally {
       await rm(workspace, { force: true, recursive: true });
@@ -1413,6 +1486,39 @@ function editReadmeTransport(): CodexDirectTransport {
         finishReason: "stop",
         outputItems: []
       });
+    }
+  };
+}
+
+function editReadmeThenFailTransport(): CodexDirectTransport {
+  let requests = 0;
+
+  return {
+    createResponse() {
+      requests += 1;
+
+      if (requests === 1) {
+        return Promise.resolve({
+          id: "resp_local_agent_final_fetch_1",
+          status: "completed",
+          outputText: "",
+          toolCalls: [
+            {
+              id: "call_write_readme",
+              name: "write_file",
+              arguments: JSON.stringify({
+                path: "README.md",
+                content: "# Edited by Runstead\n",
+                createDirs: false
+              })
+            }
+          ],
+          finishReason: "tool_calls",
+          outputItems: []
+        });
+      }
+
+      return Promise.reject(new Error("fetch failed"));
     }
   };
 }

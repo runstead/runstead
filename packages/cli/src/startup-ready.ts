@@ -7,7 +7,8 @@ import { fileURLToPath } from "node:url";
 import {
   createReadinessRunSnapshotEvent,
   readinessRunGovernanceProfile as runtimeReadinessRunGovernanceProfile,
-  type ReadinessEvidenceRequirement
+  type ReadinessEvidenceRequirement,
+  type RuntimeExecutionSemantics
 } from "@runstead/runtime";
 import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sqlite";
 
@@ -57,10 +58,7 @@ import {
   evaluateStartupVerdict,
   type StartupVerdictResult
 } from "./startup-verdict.js";
-import {
-  runTaskVerifiers,
-  type RunTaskVerifiersResult
-} from "./verifier-runner.js";
+import { runTaskVerifiers, type RunTaskVerifiersResult } from "./verifier-runner.js";
 import { generateStartupContext } from "./startup-automation.js";
 import {
   collectCommandVerifierCodeState,
@@ -248,6 +246,8 @@ export interface StartupReadinessRunPhase {
   evidenceIds: string[];
   artifacts: string[];
   blockers: string[];
+  warnings?: string[];
+  execution?: RuntimeExecutionSemantics;
   nextAction?: string;
 }
 
@@ -703,9 +703,7 @@ export function formatStartupReadinessRun(run: StartupReadinessRun): string {
     ),
     ...(run.scaffoldProfile === undefined
       ? []
-      : [
-          `Scaffold profile: ${run.scaffoldProfile.id} (${run.scaffoldProfile.title})`
-        ]),
+      : [`Scaffold profile: ${run.scaffoldProfile.id} (${run.scaffoldProfile.title})`]),
     "",
     ...run.phases.map(
       (phase, index) => `${index + 1}. ${phase.title.padEnd(28)} ${phase.status}`
@@ -860,10 +858,16 @@ async function executeStartupReadyRun(
       options,
       greenPath
     });
-    const buildPhaseStatus = startupBuildMvpPhaseExecutionStatus(build.status);
+    const buildPhaseStatus = startupBuildMvpPhaseExecutionStatus(
+      build.status,
+      build.execution
+    );
+    const buildWarnings = startupBuildMvpPhaseExecutionWarnings(build.execution);
 
     updatePhase(run, "build_mvp", {
       status: buildPhaseStatus,
+      execution: build.execution,
+      warnings: buildWarnings,
       artifacts: scaffoldArtifact === undefined ? [] : [scaffoldArtifact],
       blockers:
         buildPhaseStatus === "passed"
@@ -873,9 +877,11 @@ async function executeStartupReadyRun(
         buildPhaseStatus === "passed"
           ? build.agentSkipped
             ? "existing MVP verified; skipped worker build"
-            : build.status === "completed_with_warnings"
-            ? "review MVP worker warnings and continue launch readiness"
-            : "review MVP gate blockers and continue launch readiness"
+            : buildWarnings.length > 0
+              ? "verified MVP despite worker completion warning; continue launch readiness"
+              : build.status === "completed_with_warnings"
+                ? "review MVP worker warnings and continue launch readiness"
+                : "review MVP gate blockers and continue launch readiness"
           : "review worker output and resume startup readiness"
     });
     updatePhase(run, "verifiers", verifierPhaseUpdate(build.verifierRun));
@@ -1034,6 +1040,7 @@ interface StartupReadyUiSmokeRepairAttempt {
 
 interface StartupReadyMvpBuildExecution {
   status: StartupBuildMvpResultStatus;
+  execution: RuntimeExecutionSemantics;
   verifierRun: StartupMvpVerifierRun;
   gate: Awaited<ReturnType<typeof checkStartupGate>>;
   agentSkipped: boolean;
@@ -1044,9 +1051,7 @@ interface StartupReadyGreenPathPreflight {
   blockers: string[];
 }
 
-type StartupMvpVerifierRun = Awaited<
-  ReturnType<typeof startupBuildMvp>
->["verifierRun"];
+type StartupMvpVerifierRun = Awaited<ReturnType<typeof startupBuildMvp>>["verifierRun"];
 
 function startupCompleteProductArtifacts(
   complete: Awaited<ReturnType<typeof generateStartupCompleteProductCheck>>
@@ -1101,14 +1106,16 @@ async function executeStartupReadyMvpBuild(input: {
   greenPath: StartupReadyGreenPathPreflight;
 }): Promise<StartupReadyMvpBuildExecution> {
   if (input.greenPath.ok) {
-    const verified = await runStartupReadyGreenPathVerifiers(
-      input.run,
-      input.options
-    );
+    const verified = await runStartupReadyGreenPathVerifiers(input.run, input.options);
 
     if (startupMvpVerifierRunPassed(verified.verifierRun)) {
       return {
         status: "completed",
+        execution: {
+          implementation: "no_change_needed",
+          verification: "passed",
+          agentCompletion: "completed"
+        },
         verifierRun: verified.verifierRun,
         gate: await checkStartupGate({
           cwd: input.run.cwd,
@@ -1136,6 +1143,7 @@ async function executeStartupReadyMvpBuild(input: {
 
   return {
     status: build.status,
+    execution: build.execution,
     verifierRun: build.verifierRun,
     gate: build.gate,
     agentSkipped: false
@@ -1252,7 +1260,9 @@ async function hasStartupReadyUiSmokeConfig(
 
   const root = await resolveRunsteadRoot(run.cwd);
 
-  return (await optionalStat(join(root.root, "startup", "ui-smoke.yaml"))) !== undefined;
+  return (
+    (await optionalStat(join(root.root, "startup", "ui-smoke.yaml"))) !== undefined
+  );
 }
 
 async function hasStartupReadyApplicationSurface(cwd: string): Promise<boolean> {
@@ -1279,15 +1289,11 @@ async function refreshStartupReadyCurrentContext(
     ...(options.now === undefined ? {} : { now: options.now })
   });
   const current = run.phases.find((phase) => phase.id === "context");
-  const status =
-    current?.status === "pending" ? "passed" : current?.status;
+  const status = current?.status === "pending" ? "passed" : current?.status;
 
   updatePhase(run, "context", {
     ...(status === undefined ? {} : { status }),
-    evidenceIds: unique([
-      ...(current?.evidenceIds ?? []),
-      refreshed.evidenceId
-    ]),
+    evidenceIds: unique([...(current?.evidenceIds ?? []), refreshed.evidenceId]),
     artifacts: unique([
       ...(current?.artifacts ?? []),
       ...refreshed.files,
@@ -1343,7 +1349,7 @@ async function attemptStartupReadyUiSmokeRepair(
   });
   const verifierUpdate = verifierPhaseUpdate(build.verifierRun);
   const repaired =
-    startupBuildMvpPhaseExecutionStatus(build.status) === "passed" &&
+    startupBuildMvpPhaseExecutionStatus(build.status, build.execution) === "passed" &&
     verifierUpdate.status === "passed";
   const rerun = repaired
     ? await executeStartupReadyUiSmoke({
@@ -1373,8 +1379,7 @@ function startupReadyUiSmokeRepairTarget(
     }
 
     return (
-      check.failureCategory !== "browser_runtime" &&
-      check.failureCategory !== "network"
+      check.failureCategory !== "browser_runtime" && check.failureCategory !== "network"
     );
   });
 }
@@ -2055,11 +2060,31 @@ type StartupBuildMvpResultStatus = Awaited<
 >["status"];
 
 export function startupBuildMvpPhaseExecutionStatus(
-  status: StartupBuildMvpResultStatus
+  status: StartupBuildMvpResultStatus,
+  execution?: RuntimeExecutionSemantics
 ): "passed" | "failed" {
+  if (
+    execution?.verification === "passed" &&
+    (execution.implementation === "applied" ||
+      execution.implementation === "no_change_needed")
+  ) {
+    return "passed";
+  }
+
   return status === "completed" || status === "completed_with_warnings"
     ? "passed"
     : "failed";
+}
+
+function startupBuildMvpPhaseExecutionWarnings(
+  execution: RuntimeExecutionSemantics
+): string[] {
+  return execution.verification === "passed" &&
+    execution.agentCompletion !== "completed"
+    ? [
+        `MVP verification passed after agent completion reported ${execution.agentCompletion}`
+      ]
+    : [];
 }
 
 function phaseStatus(
@@ -2209,9 +2234,11 @@ async function writeStartupReadinessDecisionReport(
       phaseEvidence: run.phases.map((phase) => ({
         phase: phase.id,
         status: phase.status,
+        ...(phase.execution === undefined ? {} : { execution: phase.execution }),
         evidenceIds: phase.evidenceIds,
         artifacts: phase.artifacts,
-        blockers: phase.blockers
+        blockers: phase.blockers,
+        ...(phase.warnings === undefined ? {} : { warnings: phase.warnings })
       }))
     },
     reports: unique([...run.reportPaths, markdownPath, jsonPath])
@@ -2489,9 +2516,11 @@ function formatStartupReadinessDecisionMarkdown(input: {
     phaseEvidence: {
       phase: string;
       status: StartupReadinessPhaseStatus;
+      execution?: RuntimeExecutionSemantics;
       evidenceIds: string[];
       artifacts: string[];
       blockers: string[];
+      warnings?: string[];
     }[];
   };
   reports: string[];
@@ -2570,11 +2599,11 @@ function formatStartupReadinessDecisionMarkdown(input: {
     "",
     "## Phase Evidence",
     "",
-    "| Phase | Status | Evidence | Artifacts | Blockers |",
-    "| --- | --- | --- | --- | --- |",
+    "| Phase | Status | Execution | Evidence | Artifacts | Blockers | Warnings |",
+    "| --- | --- | --- | --- | --- | --- | --- |",
     ...input.evidence.phaseEvidence.map(
       (phase) =>
-        `| ${phase.phase} | ${phase.status} | ${phase.evidenceIds.length === 0 ? "none" : phase.evidenceIds.join(", ")} | ${phase.artifacts.length === 0 ? "none" : phase.artifacts.join("<br>")} | ${phase.blockers.length === 0 ? "none" : phase.blockers.join("<br>")} |`
+        `| ${phase.phase} | ${phase.status} | ${formatStartupPhaseExecution(phase.execution)} | ${phase.evidenceIds.length === 0 ? "none" : phase.evidenceIds.join(", ")} | ${phase.artifacts.length === 0 ? "none" : phase.artifacts.join("<br>")} | ${phase.blockers.length === 0 ? "none" : phase.blockers.join("<br>")} | ${phase.warnings === undefined || phase.warnings.length === 0 ? "none" : phase.warnings.join("<br>")} |`
     ),
     "",
     "## Reports",
@@ -2584,6 +2613,14 @@ function formatStartupReadinessDecisionMarkdown(input: {
       : input.reports.map((path) => `- ${path}`).join("\n"),
     ""
   ].join("\n");
+}
+
+function formatStartupPhaseExecution(
+  execution: RuntimeExecutionSemantics | undefined
+): string {
+  return execution === undefined
+    ? "none"
+    : `implementation=${execution.implementation}<br>verification=${execution.verification}<br>agentCompletion=${execution.agentCompletion}`;
 }
 
 export function buildStartupReadyGuidedFlow(
@@ -3078,10 +3115,7 @@ function startupReadinessEvidenceIsStale(
   currentCodeFingerprint?: string
 ): boolean {
   return (
-    startupReadinessEvidenceCodeFingerprintStale(
-      artifact,
-      currentCodeFingerprint
-    ) ||
+    startupReadinessEvidenceCodeFingerprintStale(artifact, currentCodeFingerprint) ||
     startupReadinessArtifactSources(artifact).some((source) => {
       if (
         typeof source.uri !== "string" ||
@@ -3221,7 +3255,8 @@ function updatePhase(
     ...update,
     evidenceIds: update.evidenceIds ?? phase.evidenceIds,
     artifacts: update.artifacts ?? phase.artifacts,
-    blockers: update.blockers ?? phase.blockers
+    blockers: update.blockers ?? phase.blockers,
+    warnings: update.warnings ?? phase.warnings
   });
 }
 
@@ -3735,9 +3770,9 @@ async function collectStartupReadyCodeState(cwd: string): Promise<{
   };
 }
 
-function startupReadyGitHead(
-  codeState: CommandVerifierCodeState
-): { gitHead?: string } {
+function startupReadyGitHead(codeState: CommandVerifierCodeState): {
+  gitHead?: string;
+} {
   if (!codeState.available) {
     return {};
   }

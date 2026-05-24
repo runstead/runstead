@@ -123,7 +123,10 @@ describe("startup readiness run model", () => {
   });
 
   it("marks command evidence stale after the code fingerprint changes", async () => {
-    const workspace = join(tmpdir(), `runstead-startup-ready-stale-code-${process.pid}`);
+    const workspace = join(
+      tmpdir(),
+      `runstead-startup-ready-stale-code-${process.pid}`
+    );
 
     try {
       await rm(workspace, { force: true, recursive: true });
@@ -1111,9 +1114,7 @@ describe("startup readiness run model", () => {
     expect(production.verdict).toBe("public_launch_ready");
     expect(production.blockers).toEqual([]);
     expect(production.targetReadiness.local.verdict).toBe("local_launch_ready");
-    expect(production.targetReadiness.staging.verdict).toBe(
-      "staging_launch_blocked"
-    );
+    expect(production.targetReadiness.staging.verdict).toBe("staging_launch_blocked");
     expect(production.targetReadiness.staging.blockers).toContain(
       "staging deployment evidence is required"
     );
@@ -1124,7 +1125,21 @@ describe("startup readiness run model", () => {
     expect(startupBuildMvpPhaseExecutionStatus("completed_with_warnings")).toBe(
       "passed"
     );
+    expect(
+      startupBuildMvpPhaseExecutionStatus("failed", {
+        implementation: "applied",
+        verification: "passed",
+        agentCompletion: "failed"
+      })
+    ).toBe("passed");
     expect(startupBuildMvpPhaseExecutionStatus("failed")).toBe("failed");
+    expect(
+      startupBuildMvpPhaseExecutionStatus("failed", {
+        implementation: "not_applied",
+        verification: "skipped",
+        agentCompletion: "failed"
+      })
+    ).toBe("failed");
   });
 
   it("loads UI smoke config and executes the launch UI phase", async () => {
@@ -1252,8 +1267,7 @@ describe("startup readiness run model", () => {
         appType: "local-first-web"
       });
       expect(
-        result.run.operatorCommands.find((command) => command.kind === "rerun")
-          ?.command
+        result.run.operatorCommands.find((command) => command.kind === "rerun")?.command
       ).toContain("--app-template static-todo");
       expect(buildPhase?.artifacts).toEqual(
         expect.arrayContaining([
@@ -1287,7 +1301,12 @@ describe("startup readiness run model", () => {
       expect(completePhase?.artifacts).toEqual(
         expect.arrayContaining([
           join(workspace, ".runstead", "reports", "startup-complete-product-check.md"),
-          join(workspace, ".runstead", "reports", "startup-complete-product-check.json"),
+          join(
+            workspace,
+            ".runstead",
+            "reports",
+            "startup-complete-product-check.json"
+          ),
           join(
             workspace,
             ".runstead",
@@ -1722,16 +1741,12 @@ async function latestStartupEvidenceContent(
       throw new Error(`Expected evidence type ${type}`);
     }
 
-    const artifact = JSON.parse(
-      await readFile(fileURLToPath(row.uri), "utf8")
-    ) as { content?: string };
+    const artifact = JSON.parse(await readFile(fileURLToPath(row.uri), "utf8")) as {
+      content?: string;
+    };
     const content = JSON.parse(artifact.content ?? "{}") as unknown;
 
-    if (
-      typeof content !== "object" ||
-      content === null ||
-      Array.isArray(content)
-    ) {
+    if (typeof content !== "object" || content === null || Array.isArray(content)) {
       throw new Error(`Expected object content for evidence type ${type}`);
     }
 

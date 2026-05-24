@@ -1,6 +1,9 @@
 import type { JsonObject, Task, WorkerRun } from "@runstead/core";
 
-export type RuntimeAgentImplementationStatus = "applied" | "not_applied";
+export type RuntimeAgentImplementationStatus =
+  | "applied"
+  | "not_applied"
+  | "no_change_needed";
 export type RuntimeVerificationStatus = "passed" | "failed" | "skipped";
 export type RuntimeAgentCompletionStatus =
   | "completed"
@@ -32,12 +35,7 @@ export type RuntimeWorkerOutcome =
     }
   | {
       kind: "governed";
-      status:
-        | "completed"
-        | "failed"
-        | "interrupted"
-        | "waiting_approval"
-        | "blocked";
+      status: "completed" | "failed" | "interrupted" | "waiting_approval" | "blocked";
       toolCalls: number;
       budgetExhausted?: boolean;
     };
@@ -106,11 +104,7 @@ export function runtimeFinalTaskStatus(input: {
   verifier?: RuntimeVerifierOutcome;
 }): Task["status"] {
   if (input.worker.kind === "governed") {
-    if (
-      input.worker.status === "failed" &&
-      input.worker.budgetExhausted === true &&
-      input.verifier?.status === "passed"
-    ) {
+    if (input.worker.status === "failed" && input.verifier?.status === "passed") {
       return "completed";
     }
 
@@ -134,9 +128,7 @@ export function runtimeTaskResultStatus(input: {
 }): RuntimeTaskResultStatus {
   switch (input.taskStatus) {
     case "completed":
-      return input.worker?.kind === "governed" &&
-        input.worker.status === "failed" &&
-        input.worker.budgetExhausted === true
+      return input.worker?.kind === "governed" && input.worker.status === "failed"
         ? "completed_with_warnings"
         : "completed";
     case "waiting_approval":

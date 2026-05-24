@@ -751,7 +751,11 @@ describe("runCodexDirectWorker", () => {
 
     try {
       await writeFile(join(workspace, "index.html"), "<h1>Before</h1>\n", "utf8");
-      await writeFile(join(workspace, "styles.css"), "body { color: black; }\n", "utf8");
+      await writeFile(
+        join(workspace, "styles.css"),
+        "body { color: black; }\n",
+        "utf8"
+      );
       const initialized = await initRunstead({
         cwd: workspace,
         createDefaultGoal: true
@@ -879,7 +883,7 @@ describe("runCodexDirectWorker", () => {
     const workspace = await mkdtemp(join(tmpdir(), "runstead-codex-scaffold-dep-"));
 
     try {
-      await writeFile(join(workspace, "package.json"), "{\"name\":\"before\"}\n", "utf8");
+      await writeFile(join(workspace, "package.json"), '{"name":"before"}\n', "utf8");
       const initialized = await initRunstead({
         cwd: workspace,
         createDefaultGoal: true
@@ -969,7 +973,7 @@ describe("runCodexDirectWorker", () => {
           }
         });
         await expect(readFile(join(workspace, "package.json"), "utf8")).resolves.toBe(
-          "{\"name\":\"before\"}\n"
+          '{"name":"before"}\n'
         );
       } finally {
         database.close();
@@ -2265,6 +2269,101 @@ describe("runCodexDirectWorker", () => {
     }
   });
 
+  it("keeps verifier-passed execution semantics when final model request fails", async () => {
+    const workspace = await mkdtemp(
+      join(tmpdir(), "runstead-codex-direct-final-fetch-")
+    );
+
+    try {
+      const initialized = await initRunstead({
+        cwd: workspace,
+        createDefaultGoal: true
+      });
+      const database = openRunsteadDatabase(initialized.stateDb);
+
+      try {
+        const task = listTasks({ cwd: workspace }).tasks[0];
+
+        if (task === undefined) {
+          throw new Error("Expected generated task");
+        }
+
+        const taskWithVerifier = {
+          ...task,
+          input: {
+            ...task.input,
+            commands: [
+              {
+                name: "test",
+                command: nodeCommand("process.exit(0);")
+              }
+            ]
+          },
+          verifiers: ["command:test"]
+        };
+        const goal = showGoal({ cwd: workspace, id: task.goalId }).goal;
+        const transport = scriptedTransportWithFailures([
+          {
+            outputText: "",
+            toolCalls: [
+              {
+                id: "call_verifier",
+                name: "run_verifier",
+                arguments: JSON.stringify({
+                  name: "test"
+                })
+              }
+            ],
+            finishReason: "tool_calls",
+            outputItems: []
+          },
+          new Error("fetch failed")
+        ]);
+        const result = await runCodexDirectWorker({
+          cwd: workspace,
+          stateDb: initialized.stateDb,
+          database,
+          policy: allowDirectToolsPolicy,
+          goal,
+          task: taskWithVerifier,
+          model: "fake-codex",
+          evidenceDir: join(initialized.root, "evidence"),
+          transport
+        });
+        const workerRun = database
+          .prepare(
+            `
+            SELECT output_json
+            FROM worker_runs
+            WHERE worker_type = ?
+          `
+          )
+          .get(CODEX_DIRECT_WORKER_KIND) as { output_json: string };
+        const workerOutput = JSON.parse(workerRun.output_json) as {
+          execution?: unknown;
+        };
+
+        expect(result).toMatchObject({
+          status: "failed",
+          execution: {
+            implementation: "applied",
+            verification: "passed",
+            agentCompletion: "failed"
+          }
+        });
+        expect(workerOutput.execution).toMatchObject({
+          implementation: "applied",
+          verification: "passed",
+          agentCompletion: "failed"
+        });
+      } finally {
+        database.close();
+      }
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
   it("defines the expected narrow native tool surface", () => {
     expect(codexDirectToolDefinitions().map((tool) => tool.name)).toEqual([
       "list_files",
@@ -2451,4 +2550,28 @@ function scriptedTransport(
       return Promise.resolve(response);
     }
   };
+}
+
+function scriptedTransportWithFailures(
+  steps: (Awaited<ReturnType<CodexDirectTransport["createResponse"]>> | Error)[]
+): CodexDirectTransport & { requests: CodexResponsesRequest[] } {
+  const requests: CodexResponsesRequest[] = [];
+
+  return {
+    requests,
+    createResponse(request) {
+      requests.push(request);
+      const step = steps.shift();
+
+      if (step === undefined) {
+        throw new Error("No scripted Codex response left");
+      }
+
+      return step instanceof Error ? Promise.reject(step) : Promise.resolve(step);
+    }
+  };
+}
+
+function nodeCommand(script: string): string {
+  return `${JSON.stringify(process.execPath)} -e ${JSON.stringify(script)}`;
 }

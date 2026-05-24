@@ -1,6 +1,8 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
+import type { RuntimeExecutionSemantics } from "@runstead/runtime";
+
 import {
   createLocalAgentTask,
   runLocalAgentTask,
@@ -92,6 +94,7 @@ export interface StartupBuildMvpResult {
   localAgentTaskId: string;
   status: RunLocalAgentTaskResult["status"];
   summary: string;
+  execution: RuntimeExecutionSemantics;
   maxTurns: number;
   dependencyApproval: StartupDependencyApprovalBoundary;
   verifierRun: StartupMvpVerifierRun;
@@ -105,6 +108,7 @@ export interface StartupBuildMvpAttempt {
   localAgentTaskId: string;
   status: RunLocalAgentTaskResult["status"];
   summary: string;
+  execution: RuntimeExecutionSemantics;
   verifierRun: StartupMvpVerifierRun;
 }
 
@@ -313,6 +317,7 @@ export async function startupBuildMvp(
       localAgentTaskId: created.task.id,
       status: run.status,
       summary: run.summary,
+      execution: run.execution,
       verifierRun
     };
 
@@ -352,6 +357,7 @@ export async function startupBuildMvp(
     localAgentTaskId: finalAttempt.localAgentTaskId,
     status: finalAttempt.status,
     summary: finalAttempt.summary,
+    execution: finalAttempt.execution,
     maxTurns,
     dependencyApproval,
     verifierRun: finalAttempt.verifierRun,
@@ -477,6 +483,7 @@ export function formatStartupBuildMvp(result: StartupBuildMvpResult): string {
     `Worker: ${result.worker}`,
     `Task: ${result.localAgentTaskId}`,
     `Status: ${result.status}`,
+    `Execution: implementation=${result.execution.implementation} verification=${result.execution.verification} agentCompletion=${result.execution.agentCompletion}`,
     `Summary: ${result.summary}`,
     `Max turns: ${result.maxTurns}`,
     `Dependency policy: ${formatStartupDependencyApprovalBoundary(result.dependencyApproval)}`,
