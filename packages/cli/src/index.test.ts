@@ -666,7 +666,7 @@ describe("cli entrypoint", () => {
       expect.arrayContaining(["list", "show"])
     );
     expect(completeCheck?.options.map((option) => option.long)).toEqual(
-      expect.arrayContaining(["--actor", "--cwd", "--domain", "--print"])
+      expect.arrayContaining(["--actor", "--cwd", "--domain", "--print", "--target"])
     );
     expect(remediate?.options.map((option) => option.long)).toEqual(
       expect.arrayContaining([

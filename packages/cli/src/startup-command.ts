@@ -2115,12 +2115,18 @@ export function registerStartupCommands(program: Command): void {
     )
     .option("--cwd <path>", "Workspace directory")
     .option("--domain <id>", "Domain id to evaluate", "ai-native-startup")
+    .option(
+      "--target <target>",
+      "Launch target: local, staging, or production",
+      "local"
+    )
     .option("--print", "Print the generated markdown")
     .option("--actor <id>", "RBAC subject for complete product audit", "local-admin")
     .action(
       async (options: {
         cwd?: string;
         domain: string;
+        target: string;
         print?: boolean;
         actor: string;
       }) => {
@@ -2154,9 +2160,11 @@ export function registerStartupCommands(program: Command): void {
           formatStartupCompleteProductCheck,
           generateStartupCompleteProductCheck
         } = await import("./startup-complete-check.js");
+        const { parseStartupReadyTarget } = await import("./startup-ready.js");
         const result = await generateStartupCompleteProductCheck({
           ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-          domain: options.domain
+          domain: options.domain,
+          target: parseStartupReadyTarget(options.target)
         });
 
         console.log(`Generated startup complete product check: ${result.markdownPath}`);
