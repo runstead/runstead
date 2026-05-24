@@ -51,6 +51,43 @@ describe("buildDomainPackManifest", () => {
     );
   });
 
+  it("builds a manifest for the mature research-monitor pack", async () => {
+    const packRoot = fileURLToPath(
+      new URL("../packs/research-monitor", import.meta.url)
+    );
+
+    const manifest = await buildDomainPackManifest(packRoot);
+
+    expect(manifest.domain.id).toBe("research-monitor");
+    expect(manifest.taskTypes).toEqual([
+      "discover_sources",
+      "scan_sources",
+      "evaluate_source_reliability",
+      "summarize_findings",
+      "triage_source_conflicts",
+      "prepare_digest_release",
+      "archive_research_memory"
+    ]);
+    expect(manifest.fixtures).toEqual([
+      "source-discovery-review",
+      "source-reliability-review",
+      "weekly-research-digest-smoke",
+      "conflicting-sources-regression",
+      "publish-gate-review",
+      "archive-memory-update"
+    ]);
+    expect(Object.keys(manifest.gateThresholds)).toEqual([
+      "scan",
+      "assess",
+      "digest",
+      "publish",
+      "archive"
+    ]);
+    expect(manifest.files.map((file) => file.path)).toContain(
+      "fixtures/archive-memory-update/archive-record.json"
+    );
+  });
+
   it("includes fixture and eval files in generated pack manifests", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "runstead-domain-manifest-"));
 

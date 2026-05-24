@@ -1,0 +1,36 @@
+{
+  "topic": "AI coding agent launch readiness",
+  "cycle": "2026-W21",
+  "queries": [
+    {
+      "id": "query_agent_launch_readiness",
+      "query": "AI coding agent production readiness checklist",
+      "owner": "research-monitor",
+      "ranAt": "2026-05-21T10:00:00.000Z"
+    },
+    {
+      "id": "query_agent_regression_evidence",
+      "query": "agent generated code regression verification evidence",
+      "owner": "research-monitor",
+      "ranAt": "2026-05-21T10:05:00.000Z"
+    }
+  ],
+  "candidates": [
+    {
+      "sourceId": "src_vendor_release_notes",
+      "url": "https://example.invalid/vendor/release-notes",
+      "type": "vendor_release_notes",
+      "relevance": "Primary source for launch-readiness feature claims."
+    },
+    {
+      "sourceId": "src_independent_eval",
+      "url": "https://example.invalid/research/eval",
+      "type": "independent_eval",
+      "relevance": "Independent evidence for regression and verification failure modes."
+    }
+  ],
+  "sourceGaps": [
+    "No customer support ticket source is available for this cycle.",
+    "No production incident report source is available for this cycle."
+  ]
+}

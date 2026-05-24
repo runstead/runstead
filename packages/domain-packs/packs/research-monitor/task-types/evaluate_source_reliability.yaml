@@ -1,0 +1,19 @@
+id: evaluate_source_reliability
+domain: research-monitor
+description: Score source reliability, independence, primary-source status, and known limitations before claims are treated as high confidence.
+
+default_priority: high
+max_attempts: 1
+
+verifiers:
+  required:
+    - source:reliability_scored
+    - source:primary_status_recorded
+    - source:independence_checked
+    - source:limitations_marked
+
+worker_routing:
+  preferred: codex_cli
+  fallback:
+    - shell
+    - codex_direct

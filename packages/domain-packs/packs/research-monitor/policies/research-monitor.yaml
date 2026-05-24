@@ -10,11 +10,30 @@ rules:
         in:
           - network.read
           - filesystem.read
+          - filesystem.list
+          - filesystem.search
     decision: allow
     risk: low
     obligations:
       - record_source_url
       - capture_retrieval_time
+      - treat_source_content_as_untrusted
+
+  - id: allow_source_inventory_and_assessment_records
+    when:
+      action_type:
+        in:
+          - research.source.discover
+          - research.source.evaluate
+          - evidence.record
+    decision: allow
+    risk: medium
+    obligations:
+      - record_discovery_query
+      - record_source_owner
+      - record_primary_source_status
+      - record_reliability_score
+      - mark_limitations
 
   - id: require_citations_for_research_claims
     when:
@@ -25,6 +44,29 @@ rules:
       - cite_sources
       - mark_uncertain_claims
       - check_contradictions
+      - include_reliability_scores
+
+  - id: allow_reviewed_archive_updates
+    when:
+      action_type: research.archive
+    decision: allow
+    risk: medium
+    obligations:
+      - record_durable_claim_ids
+      - record_durable_source_ids
+      - record_followup_questions
+
+  - id: deny_secret_and_distribution_path_edits
+    when:
+      path:
+        matches_any:
+          - ".env"
+          - ".env.*"
+          - "**/secrets/**"
+          - "published/**"
+          - "distribution/**"
+    decision: deny
+    risk: critical
 
   - id: require_approval_for_external_publish
     when:
@@ -35,3 +77,7 @@ rules:
           - publish_report
     decision: require_approval
     risk: high
+    obligations:
+      - attach_reviewed_digest
+      - record_approval_owner
+      - preserve_no_external_send_evidence

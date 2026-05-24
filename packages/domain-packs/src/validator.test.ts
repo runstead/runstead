@@ -134,27 +134,54 @@ describe("validateDomainPackDir", () => {
     ]);
     expect(Object.keys(result.domain?.gateThresholds ?? {})).toEqual([
       "scan",
+      "assess",
       "digest",
-      "publish"
+      "publish",
+      "archive"
     ]);
     expect(result.goalTemplates.map((template) => template.id)).toEqual([
       "weekly-research-digest"
     ]);
     expect(result.taskTypes.map((taskType) => taskType.id)).toEqual([
+      "discover_sources",
       "scan_sources",
+      "evaluate_source_reliability",
       "summarize_findings",
       "triage_source_conflicts",
-      "prepare_digest_release"
+      "prepare_digest_release",
+      "archive_research_memory"
     ]);
     expect(result.fixtures.map((fixture) => fixture.id)).toEqual([
+      "source-discovery-review",
+      "source-reliability-review",
       "weekly-research-digest-smoke",
       "conflicting-sources-regression",
-      "publish-gate-review"
+      "publish-gate-review",
+      "archive-memory-update"
     ]);
     expect(result.evals.map((evaluation) => evaluation.id)).toEqual([
+      "source-discovery-review",
+      "source-reliability-review",
       "weekly-research-digest-smoke",
       "conflicting-sources-regression",
-      "publish-gate-review"
+      "publish-gate-review",
+      "archive-memory-update"
+    ]);
+    expect(result.domain?.reportSections?.map((section) => section.id)).toEqual([
+      "source-coverage",
+      "source-reliability",
+      "claim-quality",
+      "distribution-readiness",
+      "research-memory"
+    ]);
+    expect(result.goalTemplates[0]?.generated.recurringTasks).toEqual([
+      "discover_sources",
+      "scan_sources",
+      "evaluate_source_reliability",
+      "summarize_findings",
+      "triage_source_conflicts",
+      "prepare_digest_release",
+      "archive_research_memory"
     ]);
   });
 

@@ -9,9 +9,11 @@ verifiers:
   required:
     - citation:source_linked
     - citation:no_uncited_claims
+    - source:reliability_scored
     - contradiction_check:completed
 
 worker_routing:
   preferred: codex_cli
   fallback:
     - shell
+    - codex_direct

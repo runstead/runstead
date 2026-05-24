@@ -1,5 +1,29 @@
 version: 1
 fixtures:
+  - id: source-discovery-review
+    description: Source discovery fixture that records search queries, candidate relevance, and inventory gaps before digest work starts.
+    path: source-discovery-review
+    task_type: discover_sources
+    goal_template: weekly-research-digest
+    tags:
+      - discovery
+      - research
+    acceptance_contracts:
+      - source_inventory_has_queries
+      - source_relevance_recorded
+      - source_gaps_marked
+  - id: source-reliability-review
+    description: Source assessment fixture that scores authority, independence, primary-source status, and limitations before claims are summarized.
+    path: source-reliability-review
+    task_type: evaluate_source_reliability
+    goal_template: weekly-research-digest
+    tags:
+      - reliability
+      - research
+    acceptance_contracts:
+      - source_reliability_scored
+      - primary_source_status_recorded
+      - source_limitations_marked
   - id: weekly-research-digest-smoke
     description: Representative research digest input for smoke evals.
     path: weekly-research-digest-smoke
@@ -9,8 +33,10 @@ fixtures:
       - smoke
       - research
     acceptance_contracts:
+      - source_inventory_has_queries
       - sources_are_cited
       - source_freshness_checked
+      - source_reliability_scored
       - contradictions_reviewed
       - publish_gate_requires_approval
       - external_publish_not_performed
@@ -28,6 +54,7 @@ fixtures:
       - contradictions_reviewed
       - claim_confidence_recorded
       - uncertainty_marked
+      - source_reliability_scored
   - id: publish-gate-review
     description: Digest release fixture proving external publish remains approval-gated even when the digest is otherwise ready.
     path: publish-gate-review
@@ -40,5 +67,19 @@ fixtures:
     acceptance_contracts:
       - sources_are_cited
       - source_freshness_checked
+      - source_reliability_scored
       - publish_gate_requires_approval
       - external_publish_not_performed
+  - id: archive-memory-update
+    description: Archive fixture proving reviewed digest claims, source ids, and follow-up questions are persisted for the next monitoring cycle.
+    path: archive-memory-update
+    task_type: archive_research_memory
+    goal_template: weekly-research-digest
+    tags:
+      - archive
+      - memory
+      - research
+    acceptance_contracts:
+      - archive_record_created
+      - durable_claim_ids_recorded
+      - followup_questions_recorded

@@ -1,0 +1,26 @@
+{
+  "assessments": [
+    {
+      "sourceId": "src_vendor_release_notes",
+      "primarySource": true,
+      "independent": false,
+      "reliabilityScore": 0.82,
+      "limitations": [
+        "Vendor-authored source can overstate completeness.",
+        "Does not include independent regression evidence."
+      ]
+    },
+    {
+      "sourceId": "src_independent_eval",
+      "primarySource": false,
+      "independent": true,
+      "reliabilityScore": 0.74,
+      "limitations": [
+        "Evaluation sample size is small.",
+        "Methodology does not cover every launch workflow."
+      ]
+    }
+  ],
+  "minimumHighConfidenceScore": 0.8,
+  "notes": "Claims sourced only from the independent eval remain medium confidence unless corroborated."
+}

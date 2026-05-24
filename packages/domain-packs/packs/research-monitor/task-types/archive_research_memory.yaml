@@ -1,0 +1,18 @@
+id: archive_research_memory
+domain: research-monitor
+description: Persist durable claim ids, source ids, unresolved questions, and next-cycle watch items after a digest is reviewed.
+
+default_priority: medium
+max_attempts: 1
+
+verifiers:
+  required:
+    - archive:durable_claim_ids_recorded
+    - archive:source_ids_recorded
+    - archive:followup_questions_recorded
+
+worker_routing:
+  preferred: shell
+  fallback:
+    - codex_cli
+    - codex_direct

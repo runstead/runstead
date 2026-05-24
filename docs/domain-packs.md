@@ -25,11 +25,15 @@ read-only inspection, evidence records, reports, gates, and local verifier
 commands.
 
 `research-monitor` is now the second maturity-gated built-in pack. It models a
-scan -> digest -> publish lifecycle for recurring cited research work, with
-source freshness, contradiction review, citation quality, and external publish
-approval contracts. Its fixtures cover a weekly digest smoke path, conflicting
-source regression, and approval-gated publish review so the pack abstraction is
-validated outside the startup domain.
+discover -> scan -> reliability assessment -> digest -> conflict triage ->
+publish gate -> archive lifecycle for recurring cited research work, with
+source freshness, source reliability, contradiction review, citation quality,
+archive memory, and external publish approval contracts. Its fixtures cover
+source discovery, source reliability, a weekly digest smoke path, conflicting
+source regression, approval-gated publish review, and archive updates so the
+pack abstraction is validated outside the startup domain. See
+[`docs/research-monitor-golden-path.md`](research-monitor-golden-path.md) for
+the workflow.
 
 Runtime task and goal state belongs in SQLite under `.runstead/state.db`.
 Domain YAML remains configuration and template material only.

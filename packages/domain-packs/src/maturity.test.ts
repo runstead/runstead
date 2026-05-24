@@ -47,8 +47,8 @@ describe("assessDomainPackMaturity", () => {
     expect(result.score).toBe(1);
     expect(report).toContain("Status: passed");
     expect(report).toContain("gate-thresholds");
-    expect(report).toContain("scan");
-    expect(report).toContain("publish");
+    expect(report).toContain("assess");
+    expect(report).toContain("archive");
   });
 
   it("flags starter packs that lack domain maturity metadata", async () => {

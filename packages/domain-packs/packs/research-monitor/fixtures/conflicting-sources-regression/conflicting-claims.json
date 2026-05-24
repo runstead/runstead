@@ -1,0 +1,22 @@
+{
+  "topic": "Agent-generated code defect rate",
+  "claims": [
+    {
+      "claimId": "claim_defect_rate_down",
+      "sourceId": "src_lab_benchmark",
+      "claim": "The defect rate decreased after adding verifier gates.",
+      "confidence": "medium"
+    },
+    {
+      "claimId": "claim_defect_rate_flat",
+      "sourceId": "src_field_report",
+      "claim": "The defect rate was unchanged in field usage.",
+      "confidence": "medium"
+    }
+  ],
+  "requiredHandling": [
+    "cite both claims",
+    "mark disagreement as unresolved",
+    "do not collapse the contradiction into a single trend"
+  ]
+}

@@ -7,14 +7,20 @@ description: >
 
 generated:
   recurring_tasks:
+    - discover_sources
     - scan_sources
+    - evaluate_source_reliability
     - summarize_findings
     - triage_source_conflicts
     - prepare_digest_release
+    - archive_research_memory
   policy_profile: research-monitor
   acceptance_contracts:
+    - source_inventory_has_queries
     - sources_are_cited
     - source_freshness_checked
+    - source_reliability_scored
     - contradictions_reviewed
     - publish_gate_requires_approval
     - external_publish_not_performed
+    - archive_record_created

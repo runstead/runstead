@@ -1,0 +1,18 @@
+id: discover_sources
+domain: research-monitor
+description: Discover candidate sources for a monitored topic and record why each source is relevant before it can enter the source inventory.
+
+default_priority: medium
+max_attempts: 2
+
+verifiers:
+  required:
+    - source:query_recorded
+    - source:relevance_reason_recorded
+    - source:inventory_candidate_recorded
+
+worker_routing:
+  preferred: shell
+  fallback:
+    - codex_cli
+    - codex_direct

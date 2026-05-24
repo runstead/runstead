@@ -1,0 +1,16 @@
+{
+  "archiveId": "research_archive_2026_w21",
+  "digestId": "digest_2026_w21",
+  "sourceIds": [
+    "src_vendor_release_notes",
+    "src_independent_eval",
+    "src_lab_benchmark",
+    "src_field_report"
+  ],
+  "claimIds": ["claim_defect_rate_down", "claim_defect_rate_flat"],
+  "followupQuestions": [
+    "Does field usage include the same verifier gate configuration as the lab benchmark?",
+    "Which launch-readiness gates correlate with fewer rollback events?"
+  ],
+  "externalPublishPerformed": false
+}

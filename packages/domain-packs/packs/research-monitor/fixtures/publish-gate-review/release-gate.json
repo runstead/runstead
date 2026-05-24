@@ -1,0 +1,12 @@
+{
+  "digestId": "digest_2026_w21",
+  "citationsComplete": true,
+  "freshnessChecked": true,
+  "reliabilityChecked": true,
+  "redactionChecked": true,
+  "approval": {
+    "status": "missing",
+    "requiredBefore": "external_publish"
+  },
+  "externalSendPerformed": false
+}

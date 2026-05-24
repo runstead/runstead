@@ -1,10 +1,24 @@
 version: 1
 benchmarks:
+  - id: source-discovery-review
+    fixture: source-discovery-review
+    acceptance_contracts:
+      - source_inventory_has_queries
+      - source_relevance_recorded
+      - source_gaps_marked
+  - id: source-reliability-review
+    fixture: source-reliability-review
+    acceptance_contracts:
+      - source_reliability_scored
+      - primary_source_status_recorded
+      - source_limitations_marked
   - id: weekly-research-digest-smoke
     fixture: weekly-research-digest-smoke
     acceptance_contracts:
+      - source_inventory_has_queries
       - sources_are_cited
       - source_freshness_checked
+      - source_reliability_scored
       - contradictions_reviewed
       - publish_gate_requires_approval
       - external_publish_not_performed
@@ -15,10 +29,18 @@ benchmarks:
       - contradictions_reviewed
       - claim_confidence_recorded
       - uncertainty_marked
+      - source_reliability_scored
   - id: publish-gate-review
     fixture: publish-gate-review
     acceptance_contracts:
       - sources_are_cited
       - source_freshness_checked
+      - source_reliability_scored
       - publish_gate_requires_approval
       - external_publish_not_performed
+  - id: archive-memory-update
+    fixture: archive-memory-update
+    acceptance_contracts:
+      - archive_record_created
+      - durable_claim_ids_recorded
+      - followup_questions_recorded
