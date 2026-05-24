@@ -147,6 +147,56 @@ export function startupReadinessExtensionRequirementBlockers(input: {
   return [...input.issues, ...requirementBlockers];
 }
 
+export function startupReadinessExtensionPolicyBlockers(input: {
+  extensions: LoadedStartupReadinessExtension[];
+  requirements: ReadinessEvidenceRequirement[];
+  target: ReadinessTarget;
+  worker: string;
+  governanceProfile: string;
+}): string[] {
+  const requiredEvidenceTypes = new Set(
+    input.requirements
+      .filter((requirement) => requirement.targets.includes(input.target))
+      .flatMap((requirement) => requirement.evidenceTypes)
+  );
+  const targetMinimumQuality = minimumCollectorQualityForTarget(input.target);
+
+  return input.extensions.flatMap(({ contract }) =>
+    contract.collectors.flatMap((collector) => {
+      if (
+        !collector.producesEvidenceTypes.some((type) => requiredEvidenceTypes.has(type))
+      ) {
+        return [];
+      }
+
+      return [
+        ...wrappedWorkerCollectorBlockers({
+          extensionId: contract.extensionId,
+          collectorId: collector.id,
+          safeForWrappedWorkers: collector.safeForWrappedWorkers,
+          worker: input.worker,
+          governanceProfile: input.governanceProfile
+        }),
+        ...collectorQualityBlockers({
+          extensionId: contract.extensionId,
+          collectorId: collector.id,
+          qualityTier: collector.qualityTier,
+          minimumQualityTier: targetMinimumQuality,
+          target: input.target
+        }),
+        ...collectorFreshnessBlockers({
+          extensionId: contract.extensionId,
+          collectorId: collector.id,
+          ...(collector.defaultFreshnessDays === undefined
+            ? {}
+            : { defaultFreshnessDays: collector.defaultFreshnessDays }),
+          target: input.target
+        })
+      ];
+    })
+  );
+}
+
 async function discoverExtensionManifestPaths(root: string): Promise<string[]> {
   let entries: Dirent[];
 
@@ -172,6 +222,77 @@ async function discoverExtensionManifestPaths(root: string): Promise<string[]> {
   }
 
   return paths.sort();
+}
+
+function wrappedWorkerCollectorBlockers(input: {
+  extensionId: string;
+  collectorId: string;
+  safeForWrappedWorkers: boolean;
+  worker: string;
+  governanceProfile: string;
+}): string[] {
+  if (
+    input.safeForWrappedWorkers ||
+    input.worker === "codex_direct" ||
+    input.governanceProfile === "governed"
+  ) {
+    return [];
+  }
+
+  return [
+    `extension ${input.extensionId}/${input.collectorId} is not safe for Level 1 wrapped workers; use --worker codex_direct --governance governed`
+  ];
+}
+
+function collectorQualityBlockers(input: {
+  extensionId: string;
+  collectorId: string;
+  qualityTier: string;
+  minimumQualityTier: string;
+  target: ReadinessTarget;
+}): string[] {
+  return qualityTierRank(input.qualityTier) >= qualityTierRank(input.minimumQualityTier)
+    ? []
+    : [
+        `extension ${input.extensionId}/${input.collectorId} quality ${input.qualityTier} is below ${input.minimumQualityTier} for ${input.target} readiness`
+      ];
+}
+
+function collectorFreshnessBlockers(input: {
+  extensionId: string;
+  collectorId: string;
+  defaultFreshnessDays?: number;
+  target: ReadinessTarget;
+}): string[] {
+  if (input.target === "local" || input.defaultFreshnessDays !== undefined) {
+    return [];
+  }
+
+  return [
+    `extension ${input.extensionId}/${input.collectorId} must declare defaultFreshnessDays for ${input.target} readiness`
+  ];
+}
+
+function minimumCollectorQualityForTarget(target: ReadinessTarget): string {
+  if (target === "local") {
+    return "self_reported";
+  }
+
+  if (target === "staging") {
+    return "machine_verified";
+  }
+
+  return "external_observed";
+}
+
+function qualityTierRank(tier: string): number {
+  return [
+    "none",
+    "self_reported",
+    "local_artifact",
+    "machine_verified",
+    "external_observed"
+  ].indexOf(tier);
 }
 
 async function discoverDirectoryManifestPaths(root: string): Promise<string[]> {

@@ -74,7 +74,8 @@ describe("Runstead SDK extension contracts", () => {
 
     expect(extension.collectors[0]).toMatchObject({
       id: "posthog-activation",
-      safeForWrappedWorkers: false
+      safeForWrappedWorkers: false,
+      qualityTier: "none"
     });
     expect(extensionReadinessTargets(extension)).toEqual(["staging", "production"]);
   });
@@ -105,7 +106,9 @@ describe("Runstead SDK extension contracts", () => {
           description: "Collect activation metrics from PostHog.",
           producesEvidenceTypes: ["startup_metric_snapshot"],
           requiredSecrets: ["POSTHOG_API_KEY"],
-          safeForWrappedWorkers: true
+          safeForWrappedWorkers: true,
+          qualityTier: "external_observed",
+          defaultFreshnessDays: 14
         }
       ],
       verifiers: [
@@ -135,6 +138,10 @@ describe("Runstead SDK extension contracts", () => {
       requiredEvidenceTiers: ["real_user_analytics", "local_command"],
       requiredEvidenceTypes: ["startup_metric_snapshot", "command_output"],
       safeForWrappedWorkers: true
+    });
+    expect(runtime.collectors[0]).toMatchObject({
+      qualityTier: "external_observed",
+      defaultFreshnessDays: 14
     });
     expect(runtime.gates[0]?.requiredFacets[0]?.name).toBe("activation-metric");
     expect(runtime.evidenceRequirements).toContainEqual(

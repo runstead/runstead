@@ -19,6 +19,14 @@ export const RunsteadEvidenceTierSchema = z.enum([
   "security_scan"
 ]);
 
+export const RunsteadEvidenceQualityTierSchema = z.enum([
+  "none",
+  "self_reported",
+  "local_artifact",
+  "machine_verified",
+  "external_observed"
+]);
+
 export const RunsteadFacetFieldSchema = z.object({
   name: z.string().min(1),
   type: z.enum(["string", "number", "boolean", "string_array", "json"]),
@@ -45,7 +53,9 @@ export const RunsteadEvidenceCollectorSchema = z.object({
   description: z.string().min(1),
   producesEvidenceTypes: z.array(z.string().min(1)).min(1),
   requiredSecrets: z.array(z.string().min(1)).default([]),
-  safeForWrappedWorkers: z.boolean().default(false)
+  safeForWrappedWorkers: z.boolean().default(false),
+  qualityTier: RunsteadEvidenceQualityTierSchema.default("none"),
+  defaultFreshnessDays: z.number().int().positive().optional()
 });
 
 export const RunsteadVerifierSchema = z.object({
@@ -103,6 +113,9 @@ export const RunsteadExtensionManifestSchema = z
 
 export type RunsteadReadinessTarget = ReadinessTarget;
 export type RunsteadEvidenceTier = ReadinessEvidenceTier;
+export type RunsteadEvidenceQualityTier = z.infer<
+  typeof RunsteadEvidenceQualityTierSchema
+>;
 export type RunsteadFacetField = z.infer<typeof RunsteadFacetFieldSchema>;
 export type RunsteadReadinessFacet = z.infer<typeof RunsteadReadinessFacetSchema>;
 export type RunsteadEvidenceCollector = z.infer<typeof RunsteadEvidenceCollectorSchema>;

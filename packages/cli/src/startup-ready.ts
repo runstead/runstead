@@ -21,6 +21,7 @@ import { detectStartupDevServerCommand } from "./startup-dev-server.js";
 import {
   loadStartupReadinessExtensions,
   startupReadinessExtensionEvidenceRequirements,
+  startupReadinessExtensionPolicyBlockers,
   startupReadinessExtensionRequirementBlockers
 } from "./startup-extension-loader.js";
 import { executeStartupReadyUiSmoke } from "./startup-ready-ui-smoke.js";
@@ -193,6 +194,8 @@ export interface StartupReadinessRun {
   evidenceTiers: StartupReadinessEvidenceTier[];
   evidenceTypes: string[];
   evidenceRequirements: ReadinessEvidenceRequirement[];
+  staleEvidenceRefs: string[];
+  supersededEvidenceRefs: string[];
   verdict: StartupReadinessVerdict;
   verdictBlockers: string[];
   reportPaths: string[];
@@ -270,7 +273,7 @@ export async function planStartupReady(
       resolveRunsteadRoot(cwd),
       collectRepoInspection(cwd, now.toISOString()),
       inspectStartupReadyDevServer(cwd),
-      collectRecordedStartupReadinessEvidence(cwd),
+      collectRecordedStartupReadinessEvidence(cwd, { now }),
       inspectStartupReadyGate(cwd, startupReadyStageToGateStage(stage), now),
       inspectStartupReadyDocs(cwd, now),
       loadStartupReadinessExtensions({ cwd })
@@ -287,6 +290,13 @@ export async function planStartupReady(
     target,
     evidenceTiers: recordedEvidence.evidenceTiers,
     evidenceTypes: recordedEvidence.evidenceTypes
+  });
+  const extensionPolicyBlockers = startupReadinessExtensionPolicyBlockers({
+    extensions: extensions.extensions,
+    requirements: extensionRequirements,
+    target,
+    worker,
+    governanceProfile: governance.profile
   });
 
   return {
@@ -339,7 +349,8 @@ export async function planStartupReady(
       planPhase("launch_report", "Launch report", [
         ...deploymentPlanBlockers(evidenceTiers, target),
         ...targetOperationalEvidencePlanBlockers(evidenceTypes, evidenceTiers, target),
-        ...extensionBlockers
+        ...extensionBlockers,
+        ...extensionPolicyBlockers
       ]),
       planPhase("complete_check", "Complete product check", [
         ...gate.blockers,
@@ -470,6 +481,8 @@ export async function createStartupReadinessRun(
     evidenceTiers: [],
     evidenceTypes: [],
     evidenceRequirements: [],
+    staleEvidenceRefs: [],
+    supersededEvidenceRefs: [],
     verdict: "not_evaluated",
     verdictBlockers: [],
     reportPaths: [],
@@ -496,6 +509,8 @@ export async function readStartupReadinessRun(input: {
     run: withStartupReadinessGuidance({
       ...parsed,
       evidenceRequirements: parsed.evidenceRequirements ?? [],
+      staleEvidenceRefs: parsed.staleEvidenceRefs ?? [],
+      supersededEvidenceRefs: parsed.supersededEvidenceRefs ?? [],
       governanceProfile: startupReadinessRunGovernanceProfile(parsed)
     }),
     path
@@ -1092,7 +1107,7 @@ async function ensureStartupReadyLocalMvpEvidence(
   now: Date
 ): Promise<void> {
   const evidenceTypes = new Set(
-    (await collectRecordedStartupReadinessEvidence(run.cwd)).evidenceTypes
+    (await collectRecordedStartupReadinessEvidence(run.cwd, { now })).evidenceTypes
   );
   const gate = await checkStartupGate({
     cwd: run.cwd,
@@ -1189,7 +1204,7 @@ async function ensureStartupReadyLocalLaunchEvidence(
   }
 
   const evidenceTypes = new Set(
-    (await collectRecordedStartupReadinessEvidence(run.cwd)).evidenceTypes
+    (await collectRecordedStartupReadinessEvidence(run.cwd, { now })).evidenceTypes
   );
   const gate = await checkStartupGate({
     cwd: run.cwd,
@@ -1500,7 +1515,9 @@ async function finalizeRun(
   now: Date,
   options: { extraEvidenceTiers?: StartupReadinessEvidenceTier[] } = {}
 ): Promise<StartupReadinessRun> {
-  const recordedEvidence = await collectRecordedStartupReadinessEvidence(run.cwd);
+  const recordedEvidence = await collectRecordedStartupReadinessEvidence(run.cwd, {
+    now
+  });
   const evidenceTiers = uniqueEvidenceTiers([
     ...inferPhaseEvidenceTiers(run),
     ...recordedEvidence.evidenceTiers,
@@ -1511,8 +1528,16 @@ async function finalizeRun(
     extensions.extensions,
     { stage: run.stage }
   );
+  const extensionPolicyBlockers = startupReadinessExtensionPolicyBlockers({
+    extensions: extensions.extensions,
+    requirements: extensionRequirements,
+    target: run.target,
+    worker: run.worker,
+    governanceProfile: run.governanceProfile
+  });
+  const extensionLoaderBlockers = [...extensions.issues, ...extensionPolicyBlockers];
   const runForVerdict =
-    extensions.issues.length === 0
+    extensionLoaderBlockers.length === 0
       ? run
       : {
           ...run,
@@ -1524,7 +1549,7 @@ async function finalizeRun(
               status: "blocked" as const,
               evidenceIds: [],
               artifacts: extensions.discoveredPaths,
-              blockers: extensions.issues
+              blockers: extensionLoaderBlockers
             }
           ]
         };
@@ -1532,7 +1557,9 @@ async function finalizeRun(
     run: runForVerdict,
     evidenceTiers,
     evidenceTypes: recordedEvidence.evidenceTypes,
-    evidenceRequirements: extensionRequirements
+    evidenceRequirements: extensionRequirements,
+    staleEvidenceRefs: recordedEvidence.staleEvidenceRefs,
+    supersededEvidenceRefs: recordedEvidence.supersededEvidenceRefs
   });
   const phaseStatuses = run.phases.map((phase) => phase.status);
   const status = phaseStatuses.includes("failed")
@@ -1547,6 +1574,8 @@ async function finalizeRun(
     evidenceTiers,
     evidenceTypes: recordedEvidence.evidenceTypes,
     evidenceRequirements: extensionRequirements,
+    staleEvidenceRefs: recordedEvidence.staleEvidenceRefs,
+    supersededEvidenceRefs: recordedEvidence.supersededEvidenceRefs,
     verdict: verdict.verdict,
     verdictBlockers: verdict.blockers,
     completedAt: now.toISOString()
@@ -1566,7 +1595,9 @@ async function writeStartupReadinessDecisionReport(
     run,
     evidenceTiers: run.evidenceTiers,
     evidenceTypes: run.evidenceTypes,
-    evidenceRequirements: run.evidenceRequirements
+    evidenceRequirements: run.evidenceRequirements,
+    staleEvidenceRefs: run.staleEvidenceRefs,
+    supersededEvidenceRefs: run.supersededEvidenceRefs
   });
   const payload = {
     schemaVersion: 1,
@@ -1750,7 +1781,9 @@ function startupReadinessDecision(input: {
     },
     evidenceTiers: input.run.evidenceTiers,
     evidenceTypes: input.run.evidenceTypes,
-    evidenceRequirements: input.run.evidenceRequirements
+    evidenceRequirements: input.run.evidenceRequirements,
+    staleEvidenceRefs: input.run.staleEvidenceRefs,
+    supersededEvidenceRefs: input.run.supersededEvidenceRefs
   });
 
   return {
@@ -2289,29 +2322,39 @@ export function evaluateStartupReadinessVerdict(input: {
   evidenceTiers: StartupReadinessEvidenceTier[];
   evidenceTypes?: string[];
   evidenceRequirements?: ReadinessEvidenceRequirement[];
+  staleEvidenceRefs?: string[];
+  supersededEvidenceRefs?: string[];
 }): StartupVerdictResult {
   return evaluateStartupVerdict({
     target: input.run.target,
     phases: input.run.phases,
     evidenceTiers: input.evidenceTiers,
     evidenceTypes: input.evidenceTypes ?? [],
-    evidenceRequirements: input.evidenceRequirements ?? []
+    evidenceRequirements: input.evidenceRequirements ?? [],
+    staleEvidenceRefs: input.staleEvidenceRefs ?? [],
+    supersededEvidenceRefs: input.supersededEvidenceRefs ?? []
   });
 }
 
-async function collectRecordedStartupReadinessEvidence(cwd: string): Promise<{
+async function collectRecordedStartupReadinessEvidence(
+  cwd: string,
+  options: { now?: Date } = {}
+): Promise<{
   evidenceTiers: StartupReadinessEvidenceTier[];
   evidenceTypes: string[];
+  staleEvidenceRefs: string[];
+  supersededEvidenceRefs: string[];
 }> {
   try {
     const state = await requireRunsteadStateDb(cwd);
     const database = openRunsteadDatabase(state.stateDb);
+    const checkedAt = (options.now ?? new Date()).toISOString();
 
     try {
       const rows = database
         .prepare(
           `
-          SELECT type, uri, summary
+          SELECT id, type, uri, summary, created_at AS createdAt
           FROM evidence
           WHERE type = 'command_output' OR type LIKE 'startup_%'
           `
@@ -2320,14 +2363,28 @@ async function collectRecordedStartupReadinessEvidence(cwd: string): Promise<{
       const artifacts = await Promise.all(
         rows.map((row) => readStartupReadinessEvidenceArtifact(row.uri))
       );
+      const staleEvidenceRefs = unique(
+        rows.flatMap((row, index) =>
+          startupReadinessEvidenceIsStale(artifacts[index], checkedAt) ? [row.id] : []
+        )
+      );
+      const supersededEvidenceRefs = unique(
+        supersededStartupReadinessEvidenceRefs(rows, artifacts)
+      );
+      const excludedRefs = new Set([...staleEvidenceRefs, ...supersededEvidenceRefs]);
+      const activeEvidence = rows
+        .map((row, index) => ({ row, artifact: artifacts[index] }))
+        .filter(({ row }) => !excludedRefs.has(row.id));
 
       return {
         evidenceTiers: uniqueEvidenceTiers(
-          rows.flatMap((row, index) =>
-            inferRecordedEvidenceTiers(row, artifacts[index])
+          activeEvidence.flatMap(({ row, artifact }) =>
+            inferRecordedEvidenceTiers(row, artifact)
           )
         ),
-        evidenceTypes: unique(rows.map((row) => row.type))
+        evidenceTypes: unique(activeEvidence.map(({ row }) => row.type)),
+        staleEvidenceRefs,
+        supersededEvidenceRefs
       };
     } finally {
       database.close();
@@ -2335,15 +2392,19 @@ async function collectRecordedStartupReadinessEvidence(cwd: string): Promise<{
   } catch {
     return {
       evidenceTiers: [],
-      evidenceTypes: []
+      evidenceTypes: [],
+      staleEvidenceRefs: [],
+      supersededEvidenceRefs: []
     };
   }
 }
 
 interface StartupReadinessEvidenceRow {
+  id: string;
   type: string;
   uri: string;
   summary?: string | null;
+  createdAt: string;
 }
 
 function inferRecordedEvidenceTiers(
@@ -2421,6 +2482,112 @@ function evidenceSearchText(
   artifact: unknown
 ): string {
   return `${row.type} ${row.uri} ${row.summary ?? ""} ${JSON.stringify(artifact ?? {})}`.toLowerCase();
+}
+
+function startupReadinessEvidenceIsStale(
+  artifact: unknown,
+  checkedAt: string
+): boolean {
+  return startupReadinessArtifactSources(artifact).some((source) => {
+    if (
+      typeof source.uri !== "string" ||
+      typeof source.capturedAt !== "string" ||
+      typeof source.freshnessDays !== "number"
+    ) {
+      return false;
+    }
+
+    const capturedAt = Date.parse(source.capturedAt);
+    const checkedAtMs = Date.parse(checkedAt);
+
+    if (Number.isNaN(capturedAt) || Number.isNaN(checkedAtMs)) {
+      return false;
+    }
+
+    const ageDays = Math.floor((checkedAtMs - capturedAt) / 86_400_000);
+
+    return ageDays > source.freshnessDays;
+  });
+}
+
+function supersededStartupReadinessEvidenceRefs(
+  rows: StartupReadinessEvidenceRow[],
+  artifacts: unknown[]
+): string[] {
+  const latest = new Map<string, StartupReadinessEvidenceRow>();
+
+  rows.forEach((row, index) => {
+    if (!row.type.startsWith("startup_")) {
+      return;
+    }
+
+    const key = startupReadinessEvidenceCurrentKey(row, artifacts[index]);
+    const current = latest.get(key);
+
+    if (
+      current === undefined ||
+      Date.parse(row.createdAt) > Date.parse(current.createdAt) ||
+      (row.createdAt === current.createdAt && row.id.localeCompare(current.id) > 0)
+    ) {
+      latest.set(key, row);
+    }
+  });
+
+  return rows.flatMap((row, index) => {
+    if (!row.type.startsWith("startup_")) {
+      return [];
+    }
+
+    const key = startupReadinessEvidenceCurrentKey(row, artifacts[index]);
+
+    return latest.get(key)?.id === row.id ? [] : [row.id];
+  });
+}
+
+function startupReadinessEvidenceCurrentKey(
+  row: StartupReadinessEvidenceRow,
+  artifact: unknown
+): string {
+  const content = parsedStartupReadinessArtifactContent(artifact);
+
+  if (row.type === "startup_ui_validation") {
+    const url = isRecord(content) ? stringValue(content.url) : undefined;
+    const viewport = isRecord(content) ? stringValue(content.viewport) : undefined;
+
+    return `${row.type}:${url ?? row.uri}:${viewport ?? "unknown"}`;
+  }
+
+  if (row.type === "startup_metric" || row.type === "startup_metric_snapshot") {
+    const metric = isRecord(content) ? stringValue(content.metric) : undefined;
+
+    return `${row.type}:${metric ?? row.uri}`;
+  }
+
+  return row.type;
+}
+
+function parsedStartupReadinessArtifactContent(artifact: unknown): unknown {
+  if (!isRecord(artifact)) {
+    return undefined;
+  }
+
+  if (typeof artifact.content !== "string") {
+    return artifact;
+  }
+
+  try {
+    return JSON.parse(artifact.content) as unknown;
+  } catch {
+    return artifact.content;
+  }
+}
+
+function startupReadinessArtifactSources(artifact: unknown): Record<string, unknown>[] {
+  if (!isRecord(artifact) || !Array.isArray(artifact.sources)) {
+    return [];
+  }
+
+  return artifact.sources.filter(isRecord);
 }
 
 function stagingDeploymentText(text: string): boolean {
@@ -2968,6 +3135,10 @@ async function inspectGitState(
       dirtyState: "unknown"
     };
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function stringValue(value: unknown): string | undefined {

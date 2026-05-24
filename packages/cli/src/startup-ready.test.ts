@@ -458,6 +458,227 @@ describe("startup readiness run model", () => {
     }
   });
 
+  it("treats extension collector safety, quality, and freshness as policy blockers", async () => {
+    const workspace = join(
+      tmpdir(),
+      `runstead-startup-ready-extension-policy-${process.pid}`
+    );
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await mkdir(workspace, { recursive: true });
+      const initialized = await initRunstead({
+        cwd: workspace,
+        profile: "trusted-local"
+      });
+      await mkdir(join(initialized.root, "extensions"), { recursive: true });
+      await writeFile(
+        join(initialized.root, "extensions", "growth-policy.json"),
+        `${JSON.stringify(
+          {
+            schemaVersion: 1,
+            id: "growth-policy",
+            version: "0.1.0",
+            name: "Growth policy",
+            description: "Growth collector policy checks.",
+            domains: ["ai-native-startup"],
+            facets: [
+              {
+                name: "activation-metric",
+                title: "Activation metric",
+                description: "Activation evidence is required before launch.",
+                appliesToTargets: ["local", "production"],
+                requiredEvidenceTypes: ["startup_metric_snapshot"]
+              }
+            ],
+            collectors: [
+              {
+                id: "posthog-activation",
+                title: "PostHog activation",
+                description: "Collect activation metrics from PostHog.",
+                producesEvidenceTypes: ["startup_metric_snapshot"],
+                safeForWrappedWorkers: false,
+                qualityTier: "self_reported"
+              }
+            ],
+            gates: [
+              {
+                id: "local-growth",
+                stage: "launch",
+                target: "local",
+                requiredFacets: ["activation-metric"]
+              },
+              {
+                id: "production-growth",
+                stage: "launch",
+                target: "production",
+                requiredFacets: ["activation-metric"]
+              }
+            ]
+          },
+          null,
+          2
+        )}\n`,
+        "utf8"
+      );
+
+      const localPlan = await planStartupReady({
+        cwd: workspace,
+        stage: "launch",
+        target: "local",
+        worker: "codex_cli",
+        now: new Date("2026-05-22T01:20:45.000Z")
+      });
+      const productionPlan = await planStartupReady({
+        cwd: workspace,
+        stage: "launch",
+        target: "production",
+        worker: "codex_direct",
+        governanceProfile: "governed",
+        now: new Date("2026-05-22T01:20:45.000Z")
+      });
+
+      expect(
+        localPlan.phases.find((phase) => phase.id === "launch_report")?.blockers
+      ).toEqual(
+        expect.arrayContaining([
+          "extension growth-policy/posthog-activation is not safe for Level 1 wrapped workers; use --worker codex_direct --governance governed"
+        ])
+      );
+      expect(
+        productionPlan.phases.find((phase) => phase.id === "launch_report")?.blockers
+      ).toEqual(
+        expect.arrayContaining([
+          "extension growth-policy/posthog-activation quality self_reported is below external_observed for production readiness",
+          "extension growth-policy/posthog-activation must declare defaultFreshnessDays for production readiness"
+        ])
+      );
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("excludes stale extension evidence from readiness planning", async () => {
+    const workspace = join(
+      tmpdir(),
+      `runstead-startup-ready-extension-freshness-${process.pid}`
+    );
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await mkdir(workspace, { recursive: true });
+      const initialized = await initRunstead({
+        cwd: workspace,
+        profile: "trusted-local"
+      });
+      await mkdir(join(initialized.root, "extensions"), { recursive: true });
+      await writeFile(
+        join(initialized.root, "extensions", "growth-freshness.json"),
+        `${JSON.stringify(
+          {
+            schemaVersion: 1,
+            id: "growth-freshness",
+            version: "0.1.0",
+            name: "Growth freshness",
+            description: "Growth freshness checks.",
+            domains: ["ai-native-startup"],
+            facets: [
+              {
+                name: "activation-metric",
+                title: "Activation metric",
+                description: "Activation evidence is required before launch.",
+                appliesToTargets: ["local"],
+                requiredEvidenceTypes: ["startup_metric_snapshot"]
+              }
+            ],
+            gates: [
+              {
+                id: "local-growth",
+                stage: "launch",
+                target: "local",
+                requiredFacets: ["activation-metric"]
+              }
+            ]
+          },
+          null,
+          2
+        )}\n`,
+        "utf8"
+      );
+      await addStartupEvidence({
+        cwd: workspace,
+        type: "metric_snapshot",
+        summary: "Old activation metric",
+        sources: [
+          {
+            kind: "analytics",
+            uri: "https://analytics.example/activation",
+            capturedAt: "2026-05-01T00:00:00.000Z",
+            freshnessDays: 7
+          }
+        ],
+        content: JSON.stringify({
+          metric: "activation",
+          source: "analytics",
+          threshold: 40,
+          current: 42
+        }),
+        now: new Date("2026-05-02T00:00:00.000Z")
+      });
+
+      const stalePlan = await planStartupReady({
+        cwd: workspace,
+        stage: "launch",
+        target: "local",
+        now: new Date("2026-05-22T01:21:00.000Z")
+      });
+
+      expect(
+        stalePlan.phases.find((phase) => phase.id === "launch_report")?.blockers
+      ).toEqual(
+        expect.arrayContaining([
+          "extension growth-freshness/activation-metric requires startup_metric_snapshot evidence"
+        ])
+      );
+
+      await addStartupEvidence({
+        cwd: workspace,
+        type: "metric_snapshot",
+        summary: "Fresh activation metric",
+        sources: [
+          {
+            kind: "analytics",
+            uri: "https://analytics.example/activation",
+            capturedAt: "2026-05-22T01:20:00.000Z",
+            freshnessDays: 7
+          }
+        ],
+        content: JSON.stringify({
+          metric: "activation",
+          source: "analytics",
+          threshold: 40,
+          current: 47
+        }),
+        now: new Date("2026-05-22T01:21:30.000Z")
+      });
+
+      const freshPlan = await planStartupReady({
+        cwd: workspace,
+        stage: "launch",
+        target: "local",
+        now: new Date("2026-05-22T01:22:00.000Z")
+      });
+
+      expect(
+        freshPlan.phases.find((phase) => phase.id === "launch_report")?.blockers
+      ).not.toContain(
+        "extension growth-freshness/activation-metric requires startup_metric_snapshot evidence"
+      );
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
   it("explains first-run context ingest and refresh behavior in plans", async () => {
     const workspace = join(
       tmpdir(),

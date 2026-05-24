@@ -65,7 +65,9 @@ An extension manifest contains:
 - `facets`: named readiness dimensions, such as activation metrics, rollback,
   migration, support triage, or security review.
 - `collectors`: integrations that produce evidence records from external
-  systems.
+  systems. Collector metadata includes `safeForWrappedWorkers`, `qualityTier`,
+  and `defaultFreshnessDays`; startup readiness treats these as policy inputs
+  when a collector can satisfy an extension evidence requirement.
 - `verifiers`: commands that produce local or CI evidence.
 - `gates`: stage and target requirements that compose facets and evidence.
 
@@ -121,6 +123,15 @@ whose `domains` include `ai-native-startup` contribute their compiled evidence
 requirements to the readiness engine, so extension facets and gates can block a
 local, staging, or production verdict when their required evidence types or tiers
 are missing.
+
+Collector policy is enforced before the verdict is allowed:
+
+- Level 1 wrapped workers reject collectors that are not
+  `safeForWrappedWorkers`.
+- Collector `qualityTier` must meet the requested target's minimum quality bar.
+- Staging and production collectors must declare `defaultFreshnessDays`.
+- Evidence with expired source freshness is excluded from readiness inputs
+  instead of satisfying a gate.
 
 ## Boundaries
 
