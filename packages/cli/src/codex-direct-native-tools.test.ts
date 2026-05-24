@@ -93,6 +93,52 @@ describe("codex direct native tools", () => {
     ).toEqual(["src/old.ts", "src/new.ts"]);
   });
 
+  it("applies Codex apply-patch syntax after approval resume", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-codex-patch-"));
+
+    try {
+      await writeFile(join(workspace, "app.js"), "const name = 'old';\n", "utf8");
+      const added = await applyWorkspacePatch(workspace, {
+        patch: [
+          "*** Begin Patch",
+          "*** Add File: package.json",
+          "+{",
+          "+  \"name\": \"todo\"",
+          "+}",
+          "+",
+          "*** End Patch"
+        ].join("\n")
+      });
+      const updated = await applyWorkspacePatch(workspace, {
+        patch: [
+          "*** Begin Patch",
+          "*** Update File: app.js",
+          "@@",
+          "-const name = 'old';",
+          "+const name = 'new';",
+          "*** End Patch"
+        ].join("\n")
+      });
+
+      await expect(readFile(join(workspace, "package.json"), "utf8")).resolves.toBe(
+        "{\n  \"name\": \"todo\"\n}\n"
+      );
+      await expect(readFile(join(workspace, "app.js"), "utf8")).resolves.toBe(
+        "const name = 'new';\n"
+      );
+      expect(added).toMatchObject({
+        filesTouched: ["package.json"],
+        applied: true
+      });
+      expect(updated).toMatchObject({
+        filesTouched: ["app.js"],
+        applied: true
+      });
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
   it("reports symlink escapes for multi-file reads and rejects structured patches", async () => {
     const root = await mkdtemp(join(tmpdir(), "runstead-native-tools-"));
 
