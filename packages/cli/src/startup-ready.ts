@@ -1,11 +1,9 @@
 import { randomUUID } from "node:crypto";
-import { execFile } from "node:child_process";
 import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { stdin, stdout } from "node:process";
 import { createInterface } from "node:readline/promises";
 import { fileURLToPath } from "node:url";
-import { promisify } from "node:util";
 import {
   createReadinessRunSnapshotEvent,
   readinessRunGovernanceProfile as runtimeReadinessRunGovernanceProfile,
@@ -63,8 +61,11 @@ import {
   runTaskVerifiers,
   type RunTaskVerifiersResult
 } from "./verifier-runner.js";
+import {
+  collectCommandVerifierCodeState,
+  type CommandVerifierCodeState
+} from "./verifier-evidence.js";
 
-const execFileAsync = promisify(execFile);
 export {
   executeStartupReadyUiSmoke,
   inferStartupReadyUiSmokeExpectText,
@@ -236,6 +237,7 @@ export interface StartupReadinessRun {
   completedAt?: string;
   gitHead?: string;
   dirtyState: StartupReadinessDirtyState;
+  codeFingerprint?: string;
 }
 
 export interface StartupReadinessRunPhase {
@@ -526,7 +528,7 @@ export async function createStartupReadinessRun(
 ): Promise<PersistedStartupReadinessRun> {
   const plan = await planStartupReady(options);
   const startedAt = (options.now ?? new Date()).toISOString();
-  const git = await inspectGitState(plan.cwd);
+  const codeState = await collectStartupReadyCodeState(plan.cwd);
   const run: StartupReadinessRun = {
     schemaVersion: 1,
     id: `run_${randomUUID().replaceAll("-", "")}`,
@@ -560,8 +562,9 @@ export async function createStartupReadinessRun(
     guidedFlow: [],
     operatorCommands: [],
     startedAt,
-    ...(git.head === undefined ? {} : { gitHead: git.head }),
-    dirtyState: git.dirtyState
+    ...(codeState.gitHead === undefined ? {} : { gitHead: codeState.gitHead }),
+    dirtyState: codeState.dirtyState,
+    codeFingerprint: codeState.fingerprint
   };
 
   return writeStartupReadinessRun(run);
@@ -582,6 +585,9 @@ export async function readStartupReadinessRun(input: {
       evidenceRequirements: parsed.evidenceRequirements ?? [],
       staleEvidenceRefs: parsed.staleEvidenceRefs ?? [],
       supersededEvidenceRefs: parsed.supersededEvidenceRefs ?? [],
+      ...(typeof parsed.codeFingerprint === "string"
+        ? { codeFingerprint: parsed.codeFingerprint }
+        : {}),
       governanceProfile: startupReadinessRunGovernanceProfile(parsed)
     }),
     path
@@ -712,6 +718,7 @@ export function formatStartupReadinessRun(run: StartupReadinessRun): string {
     `Verdict blockers: ${run.verdictBlockers.length === 0 ? "none" : run.verdictBlockers.join("; ")}`,
     `Git head: ${run.gitHead ?? "unknown"}`,
     `Dirty state: ${run.dirtyState}`,
+    `Code fingerprint: ${run.codeFingerprint ?? "unknown"}`,
     "",
     "Launch decision:",
     `- Requested target: ${run.target} ${requestedDecision?.canLaunch === true ? "ready" : "blocked"} (${run.verdict})`,
@@ -2033,8 +2040,10 @@ async function finalizeRun(
   now: Date,
   options: { extraEvidenceTiers?: StartupReadinessEvidenceTier[] } = {}
 ): Promise<StartupReadinessRun> {
+  const codeState = await collectStartupReadyCodeState(run.cwd);
   const recordedEvidence = await collectRecordedStartupReadinessEvidence(run.cwd, {
-    now
+    now,
+    codeFingerprint: codeState.fingerprint
   });
   const evidenceTiers = uniqueEvidenceTiers([
     ...inferPhaseEvidenceTiers(run),
@@ -2094,6 +2103,9 @@ async function finalizeRun(
     evidenceRequirements: extensionRequirements,
     staleEvidenceRefs: recordedEvidence.staleEvidenceRefs,
     supersededEvidenceRefs: recordedEvidence.supersededEvidenceRefs,
+    ...(codeState.gitHead === undefined ? {} : { gitHead: codeState.gitHead }),
+    dirtyState: codeState.dirtyState,
+    codeFingerprint: codeState.fingerprint,
     verdict: verdict.verdict,
     verdictBlockers: verdict.blockers,
     completedAt: now.toISOString()
@@ -2136,7 +2148,8 @@ async function writeStartupReadinessDecisionReport(
       startedAt: run.startedAt,
       completedAt: run.completedAt,
       gitHead: run.gitHead,
-      dirtyState: run.dirtyState
+      dirtyState: run.dirtyState,
+      codeFingerprint: run.codeFingerprint
     },
     verdict: {
       requested: {
@@ -2425,6 +2438,7 @@ function formatStartupReadinessDecisionMarkdown(input: {
     completedAt: string | undefined;
     gitHead: string | undefined;
     dirtyState: StartupReadinessDirtyState;
+    codeFingerprint: string | undefined;
   };
   decisions: {
     localDemo: StartupReadinessDecision;
@@ -2513,6 +2527,7 @@ function formatStartupReadinessDecisionMarkdown(input: {
     "",
     `- Git SHA: ${input.run.gitHead ?? "unknown"}`,
     `- Dirty state: ${input.run.dirtyState}`,
+    `- Code fingerprint: ${input.run.codeFingerprint ?? "unknown"}`,
     `- Started: ${input.run.startedAt}`,
     `- Completed: ${input.run.completedAt ?? "not completed"}`,
     `- Evidence tiers: ${input.evidence.tiers.length === 0 ? "none" : input.evidence.tiers.join(", ")}`,
@@ -2871,7 +2886,7 @@ export function evaluateStartupReadinessVerdict(input: {
 
 async function collectRecordedStartupReadinessEvidence(
   cwd: string,
-  options: { now?: Date } = {}
+  options: { now?: Date; codeFingerprint?: string } = {}
 ): Promise<{
   evidenceTiers: StartupReadinessEvidenceTier[];
   evidenceTypes: string[];
@@ -2898,7 +2913,13 @@ async function collectRecordedStartupReadinessEvidence(
       );
       const staleEvidenceRefs = unique(
         rows.flatMap((row, index) =>
-          startupReadinessEvidenceIsStale(artifacts[index], checkedAt) ? [row.id] : []
+          startupReadinessEvidenceIsStale(
+            artifacts[index],
+            checkedAt,
+            options.codeFingerprint
+          )
+            ? [row.id]
+            : []
         )
       );
       const supersededEvidenceRefs = unique(
@@ -3019,28 +3040,52 @@ function evidenceSearchText(
 
 function startupReadinessEvidenceIsStale(
   artifact: unknown,
-  checkedAt: string
+  checkedAt: string,
+  currentCodeFingerprint?: string
 ): boolean {
-  return startupReadinessArtifactSources(artifact).some((source) => {
-    if (
-      typeof source.uri !== "string" ||
-      typeof source.capturedAt !== "string" ||
-      typeof source.freshnessDays !== "number"
-    ) {
-      return false;
-    }
+  return (
+    startupReadinessEvidenceCodeFingerprintStale(
+      artifact,
+      currentCodeFingerprint
+    ) ||
+    startupReadinessArtifactSources(artifact).some((source) => {
+      if (
+        typeof source.uri !== "string" ||
+        typeof source.capturedAt !== "string" ||
+        typeof source.freshnessDays !== "number"
+      ) {
+        return false;
+      }
 
-    const capturedAt = Date.parse(source.capturedAt);
-    const checkedAtMs = Date.parse(checkedAt);
+      const capturedAt = Date.parse(source.capturedAt);
+      const checkedAtMs = Date.parse(checkedAt);
 
-    if (Number.isNaN(capturedAt) || Number.isNaN(checkedAtMs)) {
-      return false;
-    }
+      if (Number.isNaN(capturedAt) || Number.isNaN(checkedAtMs)) {
+        return false;
+      }
 
-    const ageDays = Math.floor((checkedAtMs - capturedAt) / 86_400_000);
+      const ageDays = Math.floor((checkedAtMs - capturedAt) / 86_400_000);
 
-    return ageDays > source.freshnessDays;
-  });
+      return ageDays > source.freshnessDays;
+    })
+  );
+}
+
+function startupReadinessEvidenceCodeFingerprintStale(
+  artifact: unknown,
+  currentCodeFingerprint: string | undefined
+): boolean {
+  if (currentCodeFingerprint === undefined || !isRecord(artifact)) {
+    return false;
+  }
+
+  const codeState = artifact.codeState;
+
+  if (!isRecord(codeState) || typeof codeState.fingerprint !== "string") {
+    return false;
+  }
+
+  return codeState.fingerprint !== currentCodeFingerprint;
 }
 
 function supersededStartupReadinessEvidenceRefs(
@@ -3642,31 +3687,40 @@ function startupReadinessRunsDir(root: string): string {
   return join(root, "startup", "readiness-runs");
 }
 
-async function inspectGitState(
-  cwd: string
-): Promise<{ head?: string; dirtyState: StartupReadinessDirtyState }> {
-  const [head, status] = await Promise.all([
-    execFileAsync("git", ["rev-parse", "--verify", "HEAD"], {
-      cwd,
-      encoding: "utf8",
-      timeout: 5_000
-    }).catch(() => undefined),
-    execFileAsync("git", ["status", "--short"], {
-      cwd,
-      encoding: "utf8",
-      timeout: 5_000
-    }).catch(() => undefined)
-  ]);
+async function collectStartupReadyCodeState(cwd: string): Promise<{
+  gitHead?: string;
+  dirtyState: StartupReadinessDirtyState;
+  fingerprint: string;
+}> {
+  const codeState = await collectCommandVerifierCodeState(cwd);
 
   return {
-    ...(head === undefined ? {} : { head: head.stdout.trim() }),
-    dirtyState:
-      status === undefined
-        ? "unknown"
-        : status.stdout.trim().length === 0
-          ? "clean"
-          : "dirty"
+    ...startupReadyGitHead(codeState),
+    dirtyState: startupReadyDirtyState(codeState),
+    fingerprint: codeState.fingerprint
   };
+}
+
+function startupReadyGitHead(
+  codeState: CommandVerifierCodeState
+): { gitHead?: string } {
+  if (!codeState.available) {
+    return {};
+  }
+
+  return {
+    gitHead: codeState.gitHead ?? "unborn"
+  };
+}
+
+function startupReadyDirtyState(
+  codeState: CommandVerifierCodeState
+): StartupReadinessDirtyState {
+  if (!codeState.available) {
+    return "unknown";
+  }
+
+  return codeState.dirty ? "dirty" : "clean";
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

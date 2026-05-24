@@ -1,15 +1,23 @@
+import { execFile } from "node:child_process";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { promisify } from "node:util";
 
-import { createRunsteadId, type Evidence, type RunsteadEvent } from "@runstead/core";
+import {
+  createRunsteadId,
+  type Evidence,
+  type RunsteadEvent,
+  type Task
+} from "@runstead/core";
 import { describe, expect, it } from "vitest";
 import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sqlite";
 
 import { initRunstead } from "./init.js";
 import { addStartupEvidence } from "./startup-evidence.js";
+import { storeCommandVerifierEvidence } from "./verifier-evidence.js";
 import {
   createStartupReadinessRun,
   evaluateStartupReadinessVerdict,
@@ -23,6 +31,8 @@ import {
   type StartupReadyProgressEvent,
   type StartupReadinessRunPhase
 } from "./startup-ready.js";
+
+const execFileAsync = promisify(execFile);
 
 describe("startup readiness run model", () => {
   it("persists and reads a readiness run with phase state", async () => {
@@ -81,6 +91,116 @@ describe("startup readiness run model", () => {
       await rm(workspace, { force: true, recursive: true });
     }
   });
+
+  it("records unborn git state with a code fingerprint", async () => {
+    const workspace = join(tmpdir(), `runstead-startup-ready-unborn-${process.pid}`);
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await mkdir(workspace, { recursive: true });
+      await git(workspace, "init");
+      await writeFile(
+        join(workspace, "package.json"),
+        `${JSON.stringify({ name: "startup-ready-unborn-fixture" }, null, 2)}\n`,
+        "utf8"
+      );
+
+      const { run } = await createStartupReadinessRun({
+        cwd: workspace,
+        stage: "mvp",
+        target: "local",
+        now: new Date("2026-05-22T01:05:00.000Z")
+      });
+
+      expect(run.gitHead).toBe("unborn");
+      expect(run.dirtyState).toBe("dirty");
+      expect(run.codeFingerprint).toMatch(/^[a-f0-9]{64}$/);
+      expect(formatStartupReadinessRun(run)).toContain("Git head: unborn");
+      expect(formatStartupReadinessRun(run)).toContain("Code fingerprint:");
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("marks command evidence stale after the code fingerprint changes", async () => {
+    const workspace = join(tmpdir(), `runstead-startup-ready-stale-code-${process.pid}`);
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await mkdir(workspace, { recursive: true });
+      await git(workspace, "init");
+      await git(workspace, "config", "user.email", "runstead@example.com");
+      await git(workspace, "config", "user.name", "Runstead Test");
+      await writeFile(
+        join(workspace, "package.json"),
+        `${JSON.stringify(
+          {
+            name: "startup-ready-stale-code-fixture",
+            private: true,
+            scripts: {
+              test: 'node -e "process.exit(0)"',
+              lint: 'node -e "process.exit(0)"',
+              typecheck: 'node -e "process.exit(0)"',
+              build: 'node -e "process.exit(0)"'
+            }
+          },
+          null,
+          2
+        )}\n`,
+        "utf8"
+      );
+      await writeFile(join(workspace, "index.html"), "<h1>Todo MVP</h1>\n", "utf8");
+      await git(workspace, "add", "package.json", "index.html");
+      await git(workspace, "commit", "-m", "initial app");
+      await initRunstead({ cwd: workspace, profile: "trusted-local" });
+
+      const database = openRunsteadDatabase(join(workspace, ".runstead", "state.db"));
+      let staleEvidenceId = "";
+
+      try {
+        const stored = await storeCommandVerifierEvidence({
+          cwd: workspace,
+          runsteadRoot: join(workspace, ".runstead"),
+          database,
+          task: startupReadyVerifierTask(),
+          command: {
+            name: "test",
+            command: 'node -e "process.exit(0)"'
+          },
+          now: new Date("2026-05-22T01:08:00.000Z")
+        });
+        staleEvidenceId = stored.evidence.id;
+      } finally {
+        database.close();
+      }
+
+      await writeFile(
+        join(workspace, "index.html"),
+        "<h1>Todo MVP changed</h1>\n",
+        "utf8"
+      );
+      await git(workspace, "add", "index.html");
+      await git(workspace, "commit", "-m", "change app");
+
+      const result = await runStartupReady({
+        cwd: workspace,
+        stage: "mvp",
+        target: "local",
+        worker: "codex_cli",
+        workerRunner: () => {
+          throw new Error("green-path verifier should avoid the worker");
+        },
+        now: new Date("2026-05-22T01:10:00.000Z")
+      });
+
+      expect(result.run.staleEvidenceRefs).toContain(staleEvidenceId);
+      expect(result.run.verdict).toBe("local_launch_ready");
+      expect(result.run.gitHead).toMatch(/^[a-f0-9]{40}$/);
+      expect(result.run.codeFingerprint).toMatch(/^[a-f0-9]{64}$/);
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  }, 60_000);
 
   it("executes the MVP readiness phases and persists the final run", async () => {
     const workspace = join(tmpdir(), `runstead-startup-ready-exec-${process.pid}`);
@@ -1658,4 +1778,28 @@ async function insertLegacyStartupMetricSnapshot(input: {
   } finally {
     database.close();
   }
+}
+
+async function git(cwd: string, ...args: string[]): Promise<void> {
+  await execFileAsync("git", args, {
+    cwd,
+    maxBuffer: 1024 * 1024
+  });
+}
+
+function startupReadyVerifierTask(): Task {
+  return {
+    id: "task_startup_ready_stale_code",
+    goalId: "goal_startup_ready_stale_code",
+    domain: "ai-native-startup",
+    type: "run_mvp_verifiers",
+    status: "running",
+    priority: "medium",
+    attempt: 0,
+    maxAttempts: 1,
+    input: {},
+    verifiers: ["command:test"],
+    createdAt: "2026-05-22T01:08:00.000Z",
+    updatedAt: "2026-05-22T01:08:00.000Z"
+  };
 }

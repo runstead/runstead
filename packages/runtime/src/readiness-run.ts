@@ -32,6 +32,7 @@ export interface RuntimeReadinessRunSnapshot {
   completedAt?: string;
   gitHead?: string;
   dirtyState: string;
+  codeFingerprint?: string;
 }
 
 export interface CreateReadinessRunSnapshotEventOptions {
@@ -89,7 +90,10 @@ export function readinessRunSnapshotPayload(
     startedAt: run.startedAt,
     ...(run.completedAt === undefined ? {} : { completedAt: run.completedAt }),
     ...(run.gitHead === undefined ? {} : { gitHead: run.gitHead }),
-    dirtyState: run.dirtyState
+    dirtyState: run.dirtyState,
+    ...(run.codeFingerprint === undefined
+      ? {}
+      : { codeFingerprint: run.codeFingerprint })
   };
 }
 

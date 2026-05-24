@@ -47,6 +47,7 @@ export interface CommandVerifierArtifact {
 export interface CommandVerifierCodeState {
   kind: "git_workspace";
   available: boolean;
+  headState: "committed" | "unborn" | "unknown";
   gitHead?: string;
   dirty: boolean;
   statusHash: string;
@@ -252,7 +253,11 @@ export async function storeCommandVerifierPolicyEvidence(
 export async function collectCommandVerifierCodeState(
   cwd: string
 ): Promise<CommandVerifierCodeState> {
-  const gitHead = await gitOutput(cwd, ["rev-parse", "HEAD"]);
+  const insideWorkTree = await gitOutput(cwd, [
+    "rev-parse",
+    "--is-inside-work-tree"
+  ]);
+  const gitHead = await gitOutput(cwd, ["rev-parse", "--verify", "HEAD"]);
   const statusOutput = await gitOutput(cwd, [
     "status",
     "--porcelain=v1",
@@ -260,12 +265,13 @@ export async function collectCommandVerifierCodeState(
     "--untracked-files=all"
   ]);
 
-  if (gitHead === undefined || statusOutput === undefined) {
+  if (insideWorkTree?.trim() !== "true" || statusOutput === undefined) {
     const fallback = sha256(`nogit:${cwd}`);
 
     return {
       kind: "git_workspace",
       available: false,
+      headState: "unknown",
       dirty: false,
       statusHash: fallback,
       fileSetHash: fallback,
@@ -284,9 +290,12 @@ export async function collectCommandVerifierCodeState(
   );
   const statusHash = sha256(statusOutput);
   const fileSetHash = sha256(JSON.stringify(changedFiles));
+  const normalizedGitHead = gitHead?.trim();
+  const headState = normalizedGitHead === undefined ? "unborn" : "committed";
   const fingerprint = sha256(
     JSON.stringify({
-      gitHead: gitHead.trim(),
+      gitHead: normalizedGitHead ?? "unborn",
+      headState,
       statusHash,
       fileSetHash
     })
@@ -295,7 +304,8 @@ export async function collectCommandVerifierCodeState(
   return {
     kind: "git_workspace",
     available: true,
-    gitHead: gitHead.trim(),
+    headState,
+    ...(normalizedGitHead === undefined ? {} : { gitHead: normalizedGitHead }),
     dirty: changedFiles.length > 0,
     statusHash,
     fileSetHash,
