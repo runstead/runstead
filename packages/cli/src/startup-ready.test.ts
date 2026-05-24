@@ -1018,6 +1018,7 @@ describe("startup readiness run model", () => {
         ].join("\n"),
         "utf8"
       );
+      let workerCalls = 0;
 
       const result = await runStartupReady({
         cwd: workspace,
@@ -1027,19 +1028,11 @@ describe("startup readiness run model", () => {
         appTemplate: "static-todo",
         appType: "local-first-web",
         maxAttempts: 1,
-        workerRunner: () =>
-          Promise.resolve({
-            stdout: JSON.stringify({
-              summary: "built launch fixture",
-              files_changed: [],
-              commands_run: [],
-              risks: [],
-              needs_approval: false,
-              approval_reason: null
-            }),
-            stderr: "",
-            exitCode: 0
-          }),
+        workerRunner: () => {
+          workerCalls += 1;
+
+          throw new Error("green-path startup ready should skip the MVP worker");
+        },
         now: new Date("2026-05-22T01:30:00.000Z")
       });
       const uiPhase = result.run.phases.find((phase) => phase.id === "ui_smoke");
@@ -1066,6 +1059,10 @@ describe("startup readiness run model", () => {
           join(workspace, ".runstead", "startup", "scaffold-profile.json")
         ])
       );
+      expect(buildPhase?.nextAction).toBe(
+        "existing MVP verified; skipped worker build"
+      );
+      expect(workerCalls).toBe(0);
       expect(result.run.verdict).toBe("local_launch_ready");
       expect(result.run.verdictBlockers).toEqual([]);
       expect(uiPhase?.evidenceIds).toHaveLength(2);
@@ -1212,22 +1209,17 @@ describe("startup readiness run model", () => {
         workerRunner: async (_command, args) => {
           workerCalls += 1;
 
-          if (workerCalls === 2) {
-            repairPrompt = args.join("\n");
-            await writeFile(
-              join(workspace, "server.mjs"),
-              startupReadyUiRepairServer("Todo MVP Todo repaired"),
-              "utf8"
-            );
-          }
+          repairPrompt = args.join("\n");
+          await writeFile(
+            join(workspace, "server.mjs"),
+            startupReadyUiRepairServer("Todo MVP Todo repaired"),
+            "utf8"
+          );
 
           return {
             stdout: JSON.stringify({
-              summary:
-                workerCalls === 1
-                  ? "built launch fixture"
-                  : "repaired UI smoke fixture",
-              files_changed: workerCalls === 1 ? [] : ["server.mjs"],
+              summary: "repaired UI smoke fixture",
+              files_changed: ["server.mjs"],
               commands_run: [],
               risks: [],
               needs_approval: false,
@@ -1244,7 +1236,7 @@ describe("startup readiness run model", () => {
         artifact.includes("ui-smoke-repair-")
       );
 
-      expect(workerCalls).toBe(2);
+      expect(workerCalls).toBe(1);
       expect(repairPrompt).toContain("Repair the product or UI smoke configuration");
       expect(repairPrompt).toContain('expected text was not visible: "Todo repaired"');
       expect(uiPhase).toMatchObject({

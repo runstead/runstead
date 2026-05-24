@@ -181,6 +181,11 @@ export function registerStartupCommands(program: Command): void {
       "Print and persist guided next steps for missing evidence and launch blockers"
     )
     .option(
+      "--force-build",
+      "Call the MVP build worker even when existing app verifiers are already runnable"
+    )
+    .option("--repair", "Alias for --force-build")
+    .option(
       "--app-template <template>",
       "Built-in scaffold template for empty repos, currently static-todo"
     )
@@ -203,6 +208,8 @@ export function registerStartupCommands(program: Command): void {
         refreshContext?: boolean;
         interactive?: boolean;
         guided?: boolean;
+        forceBuild?: boolean;
+        repair?: boolean;
         appTemplate?: string;
         appType?: string;
         maxAttempts: string;
@@ -234,6 +241,7 @@ export function registerStartupCommands(program: Command): void {
           refreshContext: options.refreshContext === true,
           interactive: options.interactive === true,
           guided: options.guided === true,
+          forceBuild: options.forceBuild === true || options.repair === true,
           ...(options.appTemplate === undefined
             ? {}
             : { appTemplate: parseStartupScaffoldTemplate(options.appTemplate) }),

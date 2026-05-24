@@ -492,9 +492,11 @@ describe("cli entrypoint", () => {
       expect.arrayContaining([
         "--ci",
         "--cwd",
+        "--force-build",
         "--governance",
         "--plan",
         "--refresh-context",
+        "--repair",
         "--max-attempts",
         "--resume",
         "--stage",

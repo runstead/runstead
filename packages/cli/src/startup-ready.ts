@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
-import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { stdin, stdout } from "node:process";
 import { createInterface } from "node:readline/promises";
@@ -14,7 +14,7 @@ import {
 import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sqlite";
 
 import { collectRepoInspection } from "./inspection-evidence.js";
-import type { LocalAgentWorkerKind } from "./local-agent.js";
+import { createLocalAgentTask, type LocalAgentWorkerKind } from "./local-agent.js";
 import { recoverStaleRunningTasks } from "./resume.js";
 import { requireRunsteadStateDb, resolveRunsteadRoot } from "./runstead-root.js";
 import { generateStartupCiSummary } from "./startup-ci-integration.js";
@@ -59,6 +59,10 @@ import {
   evaluateStartupVerdict,
   type StartupVerdictResult
 } from "./startup-verdict.js";
+import {
+  runTaskVerifiers,
+  type RunTaskVerifiersResult
+} from "./verifier-runner.js";
 
 const execFileAsync = promisify(execFile);
 export {
@@ -76,6 +80,17 @@ export type {
 
 const STARTUP_CONTEXT_FILE_NAMES = ["AGENTS.md", "CLAUDE.md", "CODEX.md"];
 const STALE_STARTUP_DOC_DAYS = 30;
+const STARTUP_READY_APP_SURFACE_NAMES = new Set([
+  "app",
+  "app.js",
+  "index.html",
+  "main.js",
+  "pages",
+  "public",
+  "server.js",
+  "server.mjs",
+  "src"
+]);
 
 export type StartupReadyStage = "mvp" | "launch" | "scale" | "complete";
 export type StartupReadyTarget = "local" | "staging" | "production";
@@ -133,6 +148,7 @@ export interface StartupReadyOptions {
   appTemplate?: StartupScaffoldTemplate;
   appType?: StartupAppType;
   maxAttempts?: number;
+  forceBuild?: boolean;
   workerRunner?: StartupBuildMvpOptions["workerRunner"];
   onProgress?: (event: StartupReadyProgressEvent) => void;
   now?: Date;
@@ -816,29 +832,25 @@ async function executeStartupReadyRun(
   }
 
   if (shouldRunPhase(run, "build_mvp") || shouldRunPhase(run, "verifiers")) {
+    const greenPath = await startupReadyGreenPathPreflight(run, options);
+
     updatePhase(run, "build_mvp", { status: "running" });
     await writeStartupReadinessRun(run);
     emitStartupReadyProgress(run, options, {
       phaseId: "build_mvp",
       status: "started",
-      message: "running bounded MVP build or repair loop"
+      message: greenPath.ok
+        ? "verifying existing MVP without starting an agent worker"
+        : "running bounded MVP build or repair loop"
     });
     const scaffoldArtifact =
       run.scaffoldProfile === undefined
         ? undefined
         : await writeStartupScaffoldProfileArtifact(run);
-    const build = await startupBuildMvp({
-      cwd: run.cwd,
-      worker: run.worker,
-      dependencyPolicy: "deny-new",
-      maxAttempts: options.maxAttempts ?? 2,
-      ...(run.scaffoldProfile === undefined
-        ? {}
-        : { scaffoldProfile: run.scaffoldProfile }),
-      ...(options.workerRunner === undefined
-        ? {}
-        : { workerRunner: options.workerRunner }),
-      ...(options.now === undefined ? {} : { now: options.now })
+    const build = await executeStartupReadyMvpBuild({
+      run,
+      options,
+      greenPath
     });
     const buildPhaseStatus = startupBuildMvpPhaseExecutionStatus(build.status);
 
@@ -851,7 +863,9 @@ async function executeStartupReadyRun(
           : [`worker finished with status ${build.status}`],
       nextAction:
         buildPhaseStatus === "passed"
-          ? build.status === "completed_with_warnings"
+          ? build.agentSkipped
+            ? "existing MVP verified; skipped worker build"
+            : build.status === "completed_with_warnings"
             ? "review MVP worker warnings and continue launch readiness"
             : "review MVP gate blockers and continue launch readiness"
           : "review worker output and resume startup readiness"
@@ -1009,6 +1023,22 @@ interface StartupReadyUiSmokeRepairAttempt {
   verifierUpdate?: Partial<StartupReadinessRunPhase>;
 }
 
+interface StartupReadyMvpBuildExecution {
+  status: StartupBuildMvpResultStatus;
+  verifierRun: StartupMvpVerifierRun;
+  gate: Awaited<ReturnType<typeof checkStartupGate>>;
+  agentSkipped: boolean;
+}
+
+interface StartupReadyGreenPathPreflight {
+  ok: boolean;
+  blockers: string[];
+}
+
+type StartupMvpVerifierRun = Awaited<
+  ReturnType<typeof startupBuildMvp>
+>["verifierRun"];
+
 function startupCompleteProductArtifacts(
   complete: Awaited<ReturnType<typeof generateStartupCompleteProductCheck>>
 ): string[] {
@@ -1054,6 +1084,176 @@ async function writeStartupScaffoldProfileArtifact(
   );
 
   return path;
+}
+
+async function executeStartupReadyMvpBuild(input: {
+  run: StartupReadinessRun;
+  options: StartupReadyOptions;
+  greenPath: StartupReadyGreenPathPreflight;
+}): Promise<StartupReadyMvpBuildExecution> {
+  if (input.greenPath.ok) {
+    const verified = await runStartupReadyGreenPathVerifiers(
+      input.run,
+      input.options
+    );
+
+    if (startupMvpVerifierRunPassed(verified.verifierRun)) {
+      return {
+        status: "completed",
+        verifierRun: verified.verifierRun,
+        gate: await checkStartupGate({
+          cwd: input.run.cwd,
+          stage: "mvp",
+          ...(input.options.now === undefined ? {} : { now: input.options.now })
+        }),
+        agentSkipped: true
+      };
+    }
+  }
+
+  const build = await startupBuildMvp({
+    cwd: input.run.cwd,
+    worker: input.run.worker,
+    dependencyPolicy: "deny-new",
+    maxAttempts: input.options.maxAttempts ?? 2,
+    ...(input.run.scaffoldProfile === undefined
+      ? {}
+      : { scaffoldProfile: input.run.scaffoldProfile }),
+    ...(input.options.workerRunner === undefined
+      ? {}
+      : { workerRunner: input.options.workerRunner }),
+    ...(input.options.now === undefined ? {} : { now: input.options.now })
+  });
+
+  return {
+    status: build.status,
+    verifierRun: build.verifierRun,
+    gate: build.gate,
+    agentSkipped: false
+  };
+}
+
+async function startupReadyGreenPathPreflight(
+  run: StartupReadinessRun,
+  options: StartupReadyOptions
+): Promise<StartupReadyGreenPathPreflight> {
+  if (options.forceBuild === true) {
+    return {
+      ok: false,
+      blockers: ["force build requested"]
+    };
+  }
+
+  const [inspection, hasAppSurface, hasUiSmokeConfig] = await Promise.all([
+    collectRepoInspection(run.cwd, (options.now ?? new Date()).toISOString()),
+    hasStartupReadyApplicationSurface(run.cwd),
+    hasStartupReadyUiSmokeConfig(run)
+  ]);
+  const blockers = [
+    hasAppSurface ? undefined : "application surface is missing",
+    inspection.commands.test.detected ? undefined : "test command is missing",
+    inspection.commands.lint.detected ? undefined : "lint command is missing",
+    inspection.commands.typecheck.detected ? undefined : "typecheck command is missing",
+    inspection.commands.build.detected ? undefined : "build command is missing",
+    hasPhase(run, "ui_smoke") && !hasUiSmokeConfig
+      ? "UI smoke config is missing"
+      : undefined
+  ].filter((blocker): blocker is string => blocker !== undefined);
+
+  return {
+    ok: blockers.length === 0,
+    blockers
+  };
+}
+
+async function runStartupReadyGreenPathVerifiers(
+  run: StartupReadinessRun,
+  options: StartupReadyOptions
+): Promise<{ verifierRun: StartupMvpVerifierRun }> {
+  const created = await createLocalAgentTask({
+    cwd: run.cwd,
+    title: "Verify existing startup MVP",
+    prompt:
+      "Verify the existing AI-coded MVP with repository commands. Do not invoke an editing agent.",
+    worker: run.worker,
+    mode: "read-only",
+    verifierCommands: await startupReadyVerifierCommands(run.cwd, options.now),
+    ...(options.now === undefined ? {} : { now: options.now })
+  });
+  const verified = await runTaskVerifiers({
+    cwd: run.cwd,
+    taskId: created.task.id,
+    ...(options.now === undefined ? {} : { now: options.now })
+  });
+
+  return {
+    verifierRun: startupMvpVerifierRunFromTaskVerifiers(verified)
+  };
+}
+
+async function startupReadyVerifierCommands(
+  cwd: string,
+  now?: Date
+): Promise<{ name: string; command: string }[]> {
+  const inspection = await collectRepoInspection(
+    cwd,
+    (now ?? new Date()).toISOString()
+  );
+
+  return [
+    { name: "test", command: inspection.commands.test.command },
+    { name: "lint", command: inspection.commands.lint.command },
+    { name: "typecheck", command: inspection.commands.typecheck.command },
+    { name: "build", command: inspection.commands.build.command }
+  ].flatMap((item) =>
+    item.command === undefined ? [] : [{ name: item.name, command: item.command }]
+  );
+}
+
+function startupMvpVerifierRunFromTaskVerifiers(
+  result: RunTaskVerifiersResult
+): StartupMvpVerifierRun {
+  const failed = result.commandResults.some(
+    (command) => command.exitCode !== 0 || command.timedOut
+  );
+
+  return {
+    status: failed ? "failed" : "completed",
+    taskId: result.task.id,
+    commandResults: result.commandResults
+  };
+}
+
+function startupMvpVerifierRunPassed(run: StartupMvpVerifierRun): boolean {
+  return (
+    run.status === "completed" &&
+    run.commandResults.length > 0 &&
+    run.commandResults.every(
+      (command) => command.exitCode === 0 && command.timedOut === false
+    )
+  );
+}
+
+async function hasStartupReadyUiSmokeConfig(
+  run: StartupReadinessRun
+): Promise<boolean> {
+  if (!hasPhase(run, "ui_smoke")) {
+    return true;
+  }
+
+  const root = await resolveRunsteadRoot(run.cwd);
+
+  return (await optionalStat(join(root.root, "startup", "ui-smoke.yaml"))) !== undefined;
+}
+
+async function hasStartupReadyApplicationSurface(cwd: string): Promise<boolean> {
+  try {
+    const entries = await readdir(cwd, { withFileTypes: true });
+
+    return entries.some((entry) => STARTUP_READY_APP_SURFACE_NAMES.has(entry.name));
+  } catch {
+    return false;
+  }
 }
 
 async function attemptStartupReadyUiSmokeRepair(
