@@ -1422,7 +1422,11 @@ async function ensureStartupReadyLocalLaunchEvidence(
       threshold: 1,
       current: 1,
       metric: "local_required_checks_passed",
-      confidence: "local_command",
+      sourceClass: "synthetic_smoke",
+      confidence: 0.35,
+      launchWeight: 0.25,
+      realUserData: false,
+      captureMode: "local_command",
       verifierPhase: "passed",
       uiSmokePhase: phaseStatus(run, "ui_smoke") ?? "not_included"
     },

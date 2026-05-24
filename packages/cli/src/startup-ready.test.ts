@@ -2,7 +2,7 @@ import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { createRunsteadId, type Evidence, type RunsteadEvent } from "@runstead/core";
 import { describe, expect, it } from "vitest";
@@ -1089,6 +1089,15 @@ describe("startup readiness run model", () => {
       });
       expect(evidenceCount(workspace, "startup_metric_snapshot")).toBeGreaterThan(1);
       expect(evidenceCount(workspace, "startup_migration_plan")).toBeGreaterThan(1);
+      await expect(
+        latestStartupEvidenceContent(workspace, "startup_metric_snapshot")
+      ).resolves.toMatchObject({
+        sourceClass: "synthetic_smoke",
+        confidence: 0.35,
+        launchWeight: 0.25,
+        realUserData: false,
+        captureMode: "local_command"
+      });
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }
@@ -1447,6 +1456,48 @@ function evidenceCount(workspace: string, type: string): number {
       .get(type) as { count: number };
 
     return row.count;
+  } finally {
+    database.close();
+  }
+}
+
+async function latestStartupEvidenceContent(
+  workspace: string,
+  type: string
+): Promise<Record<string, unknown>> {
+  const database = openRunsteadDatabase(join(workspace, ".runstead", "state.db"));
+
+  try {
+    const row = database
+      .prepare(
+        `
+        SELECT uri
+        FROM evidence
+        WHERE type = ?
+        ORDER BY created_at DESC, id DESC
+        LIMIT 1
+      `
+      )
+      .get(type) as { uri: string } | undefined;
+
+    if (row === undefined) {
+      throw new Error(`Expected evidence type ${type}`);
+    }
+
+    const artifact = JSON.parse(
+      await readFile(fileURLToPath(row.uri), "utf8")
+    ) as { content?: string };
+    const content = JSON.parse(artifact.content ?? "{}") as unknown;
+
+    if (
+      typeof content !== "object" ||
+      content === null ||
+      Array.isArray(content)
+    ) {
+      throw new Error(`Expected object content for evidence type ${type}`);
+    }
+
+    return content as Record<string, unknown>;
   } finally {
     database.close();
   }
