@@ -380,6 +380,13 @@ describe("startup UI validation evidence", () => {
           {
             type: "expectPersisted",
             text: "Runstead smoke todo"
+          },
+          {
+            type: "expectNoOverlap",
+            selectors: [
+              "[data-testid='new-todo-input']",
+              "[data-testid='add-todo']"
+            ]
           }
         ],
         browserRunner: () =>
@@ -413,6 +420,13 @@ describe("startup UI validation evidence", () => {
                 status: "pass",
                 summary: "persisted todo",
                 expected: "Runstead smoke todo"
+              },
+              {
+                type: "expectNoOverlap",
+                status: "pass",
+                summary: "no overlap across 2 visible controls",
+                expected: "no-overlap",
+                actual: "2 visible controls"
               }
             ]
           }),
@@ -451,7 +465,8 @@ describe("startup UI validation evidence", () => {
             { type: "fill", status: "pass" },
             { type: "click", status: "pass" },
             { type: "expectText", status: "pass" },
-            { type: "expectPersisted", status: "pass" }
+            { type: "expectPersisted", status: "pass" },
+            { type: "expectNoOverlap", status: "pass" }
           ]
         }
       });

@@ -2170,6 +2170,127 @@ describe("startup readiness run model", () => {
     }
   });
 
+  it("generates richer static-todo UI smoke workflows", async () => {
+    const workspace = join(
+      tmpdir(),
+      `runstead-startup-ready-static-ui-flow-${process.pid}`
+    );
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await mkdir(join(workspace, ".runstead", "startup"), { recursive: true });
+      await writeFile(
+        join(workspace, "package.json"),
+        `${JSON.stringify({ name: "todo-mvp" }, null, 2)}\n`,
+        "utf8"
+      );
+      await writeFile(
+        join(workspace, "README.md"),
+        "# Todo MVP\n\nA local-first todo task app.\n",
+        "utf8"
+      );
+      await writeFile(
+        join(workspace, ".runstead", "startup", "scaffold-profile.json"),
+        `${JSON.stringify(
+          {
+            schemaVersion: 1,
+            profile: {
+              id: "static-todo",
+              template: "static-todo"
+            }
+          },
+          null,
+          2
+        )}\n`,
+        "utf8"
+      );
+
+      const {
+        defaultStartupReadyUiSmokeConfig,
+        inferStartupReadyUiSmokeFlowActions
+      } = await import("./startup-ready.js");
+      const steps = await inferStartupReadyUiSmokeFlowActions(workspace);
+      const config = await defaultStartupReadyUiSmokeConfig(workspace, "npm run dev");
+
+      expect(steps.map((step) => step.type)).toEqual([
+        "fill",
+        "click",
+        "expectText",
+        "click",
+        "fill",
+        "click",
+        "expectText",
+        "click",
+        "fill",
+        "expectText",
+        "click",
+        "expectText",
+        "click",
+        "click",
+        "expectPersisted",
+        "click",
+        "expectCount",
+        "fill",
+        "click",
+        "click",
+        "click",
+        "expectCount"
+      ]);
+      expect(
+        steps.some(
+          (step) =>
+            step.type === "click" && step.selectors?.includes("[data-testid='edit-todo']")
+        )
+      ).toBe(true);
+      expect(
+        steps.some(
+          (step) =>
+            step.type === "click" &&
+            step.selectors?.includes("[data-testid='delete-todo']")
+        )
+      ).toBe(true);
+      expect(
+        steps.some(
+          (step) =>
+            step.type === "click" &&
+            step.selectors?.includes("[data-testid='clear-completed']")
+        )
+      ).toBe(true);
+      expect(
+        steps.some(
+          (step) =>
+            step.type === "click" &&
+            step.selectors?.includes("[data-testid='filter-completed']")
+        )
+      ).toBe(true);
+      expect(config.checks[0]).toMatchObject({
+        name: "home-desktop-product-flow",
+        flow:
+          "todo workflow: add, edit, complete, search/filter, delete, clear completed, reload persistence"
+      });
+      expect(config.checks[0]?.steps).toHaveLength(22);
+      expect(config.checks[1]).toMatchObject({
+        name: "home-mobile-product-layout",
+        viewport: "mobile"
+      });
+      const mobileStep = config.checks[1]?.steps?.[0];
+
+      expect(mobileStep?.type).toBe("expectNoOverlap");
+      if (mobileStep?.type !== "expectNoOverlap") {
+        throw new Error("Expected mobile UI smoke to assert non-overlapping controls");
+      }
+      expect(mobileStep.selectors).toEqual(
+        expect.arrayContaining([
+          "[data-testid='new-todo-input']",
+          "[data-testid='filter-completed']",
+          "[data-testid='clear-completed']"
+        ])
+      );
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
   it("accepts legacy agent-generated UI smoke config shape", async () => {
     const workspace = join(tmpdir(), `runstead-startup-ready-legacy-ui-${process.pid}`);
     const port = await availablePort();

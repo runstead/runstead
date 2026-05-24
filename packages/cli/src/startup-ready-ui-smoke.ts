@@ -219,12 +219,16 @@ async function loadOrCreateStartupReadyUiSmokeConfig(cwd: string): Promise<
   }
 }
 
-async function defaultStartupReadyUiSmokeConfig(
+export async function defaultStartupReadyUiSmokeConfig(
   cwd: string,
   command: string
 ): Promise<StartupReadyUiSmokeConfig> {
   const expectText = await inferStartupReadyUiSmokeExpectText(cwd);
   const steps = await inferStartupReadyUiSmokeFlowActions(cwd);
+  const staticTodo = await hasStartupReadyStaticTodoScaffold(cwd);
+  const mobileSteps = staticTodo
+    ? startupReadyMobileNoOverlapActions()
+    : [];
 
   return {
     schemaVersion: 1,
@@ -243,15 +247,22 @@ async function defaultStartupReadyUiSmokeConfig(
         flow:
           steps.length === 0
             ? "load the primary product route"
-            : "todo golden path: add, toggle, search/filter, reload persistence",
+            : staticTodo
+              ? "todo workflow: add, edit, complete, search/filter, delete, clear completed, reload persistence"
+              : "todo golden path: add, toggle, search/filter, reload persistence",
         ...(steps.length === 0 ? {} : { steps })
       },
       {
-        name: "home-mobile",
+        name:
+          mobileSteps.length === 0 ? "home-mobile" : "home-mobile-product-layout",
         url: "http://127.0.0.1:3000",
         viewport: "mobile",
         expectText,
-        flow: "load the primary product route on mobile viewport"
+        flow:
+          mobileSteps.length === 0
+            ? "load the primary product route on mobile viewport"
+            : "mobile layout: no overlapping todo controls",
+        ...(mobileSteps.length === 0 ? {} : { steps: mobileSteps })
       }
     ]
   };
@@ -280,7 +291,8 @@ export async function inferStartupReadyUiSmokeFlowActions(
       readOptionalTextFile(join(cwd, "README.md")),
       readOptionalTextFile(join(cwd, "index.html")),
       readOptionalTextFile(join(cwd, "src", "App.tsx")),
-      readOptionalTextFile(join(cwd, "src", "App.jsx"))
+      readOptionalTextFile(join(cwd, "src", "App.jsx")),
+      readOptionalTextFile(join(cwd, ".runstead", "startup", "scaffold-profile.json"))
     ])
   ).join("\n");
 
@@ -288,6 +300,14 @@ export async function inferStartupReadyUiSmokeFlowActions(
     return [];
   }
 
+  if (await hasStartupReadyStaticTodoScaffold(cwd)) {
+    return staticTodoUiSmokeFlowActions();
+  }
+
+  return genericTodoUiSmokeFlowActions();
+}
+
+function genericTodoUiSmokeFlowActions(): StartupUiFlowAction[] {
   const smokeTodo = "Runstead smoke todo";
 
   return [
@@ -385,6 +405,285 @@ export async function inferStartupReadyUiSmokeFlowActions(
       text: smokeTodo
     }
   ];
+}
+
+function staticTodoUiSmokeFlowActions(): StartupUiFlowAction[] {
+  const smokeTodo = "Runstead smoke todo";
+  const editedTodo = "Runstead edited todo";
+
+  return [
+    {
+      type: "fill",
+      selectors: todoInputSelectors(),
+      value: smokeTodo
+    },
+    {
+      type: "click",
+      selectors: addTodoSelectors()
+    },
+    {
+      type: "expectText",
+      text: smokeTodo
+    },
+    {
+      type: "click",
+      selectors: [
+        "[data-testid='edit-todo']",
+        "[data-testid='todo-edit']",
+        "[aria-label*='edit' i]",
+        "button:has-text('Edit')",
+        "text=Edit"
+      ]
+    },
+    {
+      type: "fill",
+      selectors: [
+        "[data-testid='todo-edit-input']",
+        "[data-testid='edit-todo-input']",
+        "input[name='todo-edit']",
+        "input[name='edit-todo']",
+        "input[aria-label*='edit' i]",
+        "[data-testid='todo-item'] input[type='text']"
+      ],
+      value: editedTodo
+    },
+    {
+      type: "click",
+      selectors: [
+        "[data-testid='save-todo']",
+        "[data-testid='todo-save']",
+        "[aria-label*='save' i]",
+        "button:has-text('Save')",
+        "text=Save"
+      ]
+    },
+    {
+      type: "expectText",
+      text: editedTodo
+    },
+    {
+      type: "click",
+      selectors: [
+        "[data-testid='todo-toggle']",
+        "[data-testid='todo-item'] input[type='checkbox']",
+        "[aria-label*='complete' i]",
+        "input[type='checkbox']",
+        `text=${editedTodo}`
+      ]
+    },
+    {
+      type: "fill",
+      selectors: todoSearchSelectors(),
+      value: "edited"
+    },
+    {
+      type: "expectText",
+      text: editedTodo
+    },
+    {
+      type: "click",
+      selectors: [
+        "[data-testid='filter-completed']",
+        "[aria-label*='completed' i]",
+        "button:has-text('Completed')",
+        "text=Completed"
+      ]
+    },
+    {
+      type: "expectText",
+      text: editedTodo
+    },
+    {
+      type: "click",
+      selectors: [
+        "[data-testid='filter-active']",
+        "[aria-label*='active' i]",
+        "button:has-text('Active')",
+        "text=Active"
+      ]
+    },
+    {
+      type: "click",
+      selectors: [
+        "[data-testid='filter-all']",
+        "[aria-label*='all' i]",
+        "button:has-text('All')",
+        "text=All"
+      ]
+    },
+    {
+      type: "expectPersisted",
+      text: editedTodo
+    },
+    {
+      type: "click",
+      selectors: [
+        "[data-testid='delete-todo']",
+        "[data-testid='remove-todo']",
+        "[aria-label*='delete' i]",
+        "[aria-label*='remove' i]",
+        "button:has-text('Delete')",
+        "button:has-text('Remove')",
+        "text=Delete",
+        "text=Remove"
+      ]
+    },
+    {
+      type: "expectCount",
+      selector: "[data-testid='todo-item']",
+      count: 0
+    },
+    {
+      type: "fill",
+      selectors: todoInputSelectors(),
+      value: smokeTodo
+    },
+    {
+      type: "click",
+      selectors: addTodoSelectors()
+    },
+    {
+      type: "click",
+      selectors: [
+        "[data-testid='todo-toggle']",
+        "[data-testid='todo-item'] input[type='checkbox']",
+        "[aria-label*='complete' i]",
+        "input[type='checkbox']",
+        `text=${smokeTodo}`
+      ]
+    },
+    {
+      type: "click",
+      selectors: [
+        "[data-testid='clear-completed']",
+        "[data-testid='clear-completed-todos']",
+        "[aria-label*='clear' i][aria-label*='completed' i]",
+        "button:has-text('Clear completed')",
+        "text=Clear completed"
+      ]
+    },
+    {
+      type: "expectCount",
+      selector: "[data-testid='todo-item']",
+      count: 0
+    }
+  ];
+}
+
+function todoInputSelectors(): string[] {
+  return [
+    "[data-testid='new-todo-input']",
+    "[data-testid='todo-input']",
+    "[data-testid='new-task-input']",
+    "[data-testid='task-input']",
+    "form:has(button[type='submit']) input:not([type='search']):not([aria-label*='search' i]):not([placeholder*='search' i])",
+    "form:has(button[type='submit']) textarea:not([aria-label*='search' i]):not([placeholder*='search' i])",
+    "#todo-input",
+    "#task-input",
+    "input[name='todo']",
+    "input[name='task']",
+    "input[aria-label*='new' i][aria-label*='todo' i]",
+    "input[aria-label*='new' i][aria-label*='task' i]",
+    "input[aria-label*='add' i][aria-label*='todo' i]",
+    "input[aria-label*='add' i][aria-label*='task' i]",
+    "input[placeholder*='new' i][placeholder*='todo' i]",
+    "input[placeholder*='new' i][placeholder*='task' i]",
+    "input[placeholder*='add' i][placeholder*='todo' i]",
+    "input[placeholder*='add' i][placeholder*='task' i]",
+    "form input[type='text']:not([aria-label*='search' i]):not([placeholder*='search' i])",
+    "input[type='text']:not([aria-label*='search' i]):not([placeholder*='search' i])",
+    "input:not([type]):not([aria-label*='search' i]):not([placeholder*='search' i])",
+    "textarea:not([aria-label*='search' i]):not([placeholder*='search' i])"
+  ];
+}
+
+function addTodoSelectors(): string[] {
+  return [
+    "[data-testid='add-todo']",
+    "[data-testid='add-task']",
+    "button[type='submit']",
+    "button:has-text('Add')",
+    "text=Add"
+  ];
+}
+
+function todoSearchSelectors(): string[] {
+  return [
+    "[data-testid='todo-search']",
+    "[data-testid='task-search']",
+    "#todo-search",
+    "#task-search",
+    "input[name='todo-search']",
+    "input[name='task-search']",
+    "input[name='search']",
+    "input[aria-label*='search' i]",
+    "input[placeholder*='search' i]",
+    "input[type='search']"
+  ];
+}
+
+function startupReadyMobileNoOverlapActions(): StartupUiFlowAction[] {
+  return [
+    {
+      type: "expectNoOverlap",
+      selectors: [
+        "[data-testid='new-todo-input']",
+        "[data-testid='todo-input']",
+        "[data-testid='add-todo']",
+        "[data-testid='todo-search']",
+        "[data-testid='filter-active']",
+        "[data-testid='filter-completed']",
+        "[data-testid='filter-all']",
+        "[data-testid='clear-completed']"
+      ]
+    }
+  ];
+}
+
+async function hasStartupReadyStaticTodoScaffold(cwd: string): Promise<boolean> {
+  const direct = await startupReadyScaffoldProfileText(
+    join(cwd, ".runstead", "startup", "scaffold-profile.json")
+  );
+
+  if (direct !== undefined) {
+    return direct;
+  }
+
+  try {
+    const root = await resolveRunsteadRoot(cwd);
+
+    return (
+      (await startupReadyScaffoldProfileText(
+        join(root.root, "startup", "scaffold-profile.json")
+      )) ?? false
+    );
+  } catch {
+    return false;
+  }
+}
+
+async function startupReadyScaffoldProfileText(
+  path: string
+): Promise<boolean | undefined> {
+  const contents = await readOptionalTextFile(path);
+
+  if (contents.trim().length === 0) {
+    return undefined;
+  }
+
+  try {
+    const parsed = JSON.parse(contents) as unknown;
+    const profile = isRecord(parsed) ? parsed.profile : undefined;
+
+    return (
+      (isRecord(profile) &&
+        (profile.id === "static-todo" || profile.template === "static-todo")) ||
+      (isRecord(parsed) &&
+        (parsed.id === "static-todo" || parsed.template === "static-todo"))
+    );
+  } catch {
+    return false;
+  }
 }
 
 async function inferExpectTextFromPackageJson(cwd: string): Promise<string[]> {
@@ -712,6 +1011,14 @@ function parseStartupReadyUiSmokeStep(
         ),
         ...flowSelectors(normalized)
       };
+    case "expectNoOverlap":
+      return {
+        type: "expectNoOverlap",
+        selectors: requiredSelectorList(
+          normalized,
+          `UI smoke expectNoOverlap selectors ${index + 1}`
+        )
+      };
     default:
       throw new Error(
         `Unsupported UI smoke flow step ${index + 1}: ${String(normalizedType)}`
@@ -735,6 +1042,22 @@ function flowSelectors(value: Record<string, unknown>): {
       ? {}
       : { selectors: arrayOfStrings(value.selectors) })
   };
+}
+
+function requiredSelectorList(
+  value: Record<string, unknown>,
+  label: string
+): string[] {
+  const selectors = unique([
+    ...arrayOfStrings(value.selectors),
+    ...(typeof value.selector === "string" ? [value.selector] : [])
+  ]);
+
+  if (selectors.length === 0) {
+    throw new Error(`${label} must include at least one selector`);
+  }
+
+  return selectors;
 }
 
 function requiredStringValue(value: unknown, label: string): string {

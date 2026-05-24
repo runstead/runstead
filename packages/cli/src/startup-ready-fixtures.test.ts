@@ -13,6 +13,7 @@ import {
 } from "@runstead/core";
 import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sqlite";
 import { describe, expect, it } from "vitest";
+import { stringify as stringifyYaml } from "yaml";
 
 import { buildDashboard } from "./dashboard.js";
 import { initRunstead } from "./init.js";
@@ -22,6 +23,7 @@ import {
   runStartupReady
 } from "./startup-ready.js";
 import { recordStartupSourceEvidence } from "./startup-source-connectors.js";
+import type { StartupUiFlowAction } from "./startup-ui-validation.js";
 import { listTasks } from "./tasks.js";
 import type { WorkerProcessRunner } from "./wrapped-worker.js";
 
@@ -63,11 +65,15 @@ describe("startup ready fixture matrix", () => {
     let attempts = 0;
 
     try {
-      await writeUiSmokeConfig(workspace, port, [
-        "Todo MVP",
-        "Add todo",
-        "Search todos"
-      ]);
+      await writeStaticTodoScaffoldProfile(workspace);
+      const fullFlow = await inferStartupReadyUiSmokeFlowActions(workspace);
+
+      await writeUiSmokeConfig(
+        workspace,
+        port,
+        ["Todo MVP", "Add todo", "Search todos"],
+        fullFlow
+      );
 
       const result = await runStartupReady({
         cwd: workspace,
@@ -479,27 +485,84 @@ async function withFixture(
 async function writeUiSmokeConfig(
   workspace: string,
   port: number,
-  expectText: string[]
+  expectText: string[],
+  steps: StartupUiFlowAction[] = []
 ): Promise<void> {
   await mkdir(join(workspace, ".runstead", "startup"), { recursive: true });
+  const url = `http://127.0.0.1:${port}`;
+  const checks = [
+    {
+      name: steps.length === 0 ? "home" : "home-desktop-product-flow",
+      url,
+      viewport: "desktop",
+      expectText,
+      flow:
+        steps.length === 0
+          ? "load todo app"
+          : "todo workflow: add, edit, complete, search/filter, delete, clear completed, reload persistence",
+      ...(steps.length === 0 ? {} : { steps })
+    },
+    ...(steps.length === 0
+      ? []
+      : [
+          {
+            name: "home-mobile-product-layout",
+            url,
+            viewport: "mobile",
+            expectText,
+            flow: "mobile layout: no overlapping todo controls",
+            steps: [
+              {
+                type: "expectNoOverlap" as const,
+                selectors: [
+                  "[data-testid='new-todo-input']",
+                  "[data-testid='add-todo']",
+                  "[data-testid='todo-search']",
+                  "[data-testid='filter-active']",
+                  "[data-testid='filter-completed']",
+                  "[data-testid='filter-all']",
+                  "[data-testid='clear-completed']"
+                ]
+              }
+            ]
+          }
+        ])
+  ];
+
   await writeFile(
     join(workspace, ".runstead", "startup", "ui-smoke.yaml"),
-    [
-      "schemaVersion: 1",
-      "server:",
-      "  command: npm run dev",
-      `  port: ${port}`,
-      `  url: http://127.0.0.1:${port}`,
-      "  timeoutMs: 5000",
-      "checks:",
-      "  - name: home",
-      `    url: http://127.0.0.1:${port}`,
-      "    viewport: desktop",
-      "    expectText:",
-      ...expectText.map((text) => `      - ${text}`),
-      "    flow: load todo app",
-      ""
-    ].join("\n"),
+    stringifyYaml(
+      {
+        schemaVersion: 1,
+        server: {
+          command: "npm run dev",
+          port,
+          url,
+          timeoutMs: 5000
+        },
+        checks
+      },
+      { lineWidth: 0 }
+    ),
+    "utf8"
+  );
+}
+
+async function writeStaticTodoScaffoldProfile(workspace: string): Promise<void> {
+  await mkdir(join(workspace, ".runstead", "startup"), { recursive: true });
+  await writeFile(
+    join(workspace, ".runstead", "startup", "scaffold-profile.json"),
+    `${JSON.stringify(
+      {
+        schemaVersion: 1,
+        profile: {
+          id: "static-todo",
+          template: "static-todo"
+        }
+      },
+      null,
+      2
+    )}\n`,
     "utf8"
   );
 }
@@ -700,14 +763,21 @@ async function writeStaticTodoApp(
       "<body>",
       "  <main>",
       "    <h1>Todo MVP</h1>",
-      "    <form>",
+      "    <form data-testid=\"todo-form\">",
       "      <label for=\"todo-input\">Add todo</label>",
       "      <input id=\"todo-input\" data-testid=\"new-todo-input\" type=\"text\">",
       "      <button data-testid=\"add-todo\" type=\"submit\">Add todo</button>",
       "    </form>",
-      "    <label for=\"todo-search\">Search todos</label>",
-      "    <input id=\"todo-search\" data-testid=\"todo-search\" type=\"search\">",
-      "    <ul data-testid=\"todo-list\"><li data-testid=\"todo-item\">Ship Runstead</li></ul>",
+      "    <section class=\"toolbar\" aria-label=\"Todo filters\">",
+      "      <label for=\"todo-search\">Search todos</label>",
+      "      <input id=\"todo-search\" data-testid=\"todo-search\" type=\"search\">",
+      "      <button data-testid=\"filter-all\" type=\"button\">All</button>",
+      "      <button data-testid=\"filter-active\" type=\"button\">Active</button>",
+      "      <button data-testid=\"filter-completed\" type=\"button\">Completed</button>",
+      "      <button data-testid=\"clear-completed\" type=\"button\">Clear completed</button>",
+      "    </section>",
+      "    <p data-testid=\"todo-count\">0 active</p>",
+      "    <ul data-testid=\"todo-list\"></ul>",
       "  </main>",
       "  <script src=\"/app.js\"></script>",
       "</body>",
@@ -718,12 +788,131 @@ async function writeStaticTodoApp(
   );
   await writeFile(
     join(workspace, "styles.css"),
-    "body { font-family: system-ui, sans-serif; margin: 2rem; }\n",
+    [
+      "body { font-family: system-ui, sans-serif; margin: 0; color: #172026; background: #f7f7f4; }",
+      "main { width: min(760px, calc(100% - 32px)); margin: 32px auto; }",
+      "form, .toolbar, li { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }",
+      "input { min-height: 36px; padding: 0 10px; border: 1px solid #9aa3a6; border-radius: 6px; }",
+      "button { min-height: 36px; padding: 0 12px; border: 1px solid #48645f; border-radius: 6px; background: #ffffff; color: #172026; }",
+      "ul { list-style: none; padding: 0; display: grid; gap: 10px; }",
+      "li { justify-content: space-between; padding: 10px; border: 1px solid #d5d8d4; background: #ffffff; border-radius: 8px; }",
+      ".todo-title { flex: 1 1 180px; }",
+      ".completed .todo-title { text-decoration: line-through; color: #6b7270; }",
+      "@media (max-width: 520px) { main { margin: 20px auto; } form > *, .toolbar > * { flex: 1 1 100%; } li { align-items: flex-start; } }",
+      ""
+    ].join("\n"),
     "utf8"
   );
   await writeFile(
     join(workspace, "app.js"),
-    "document.querySelector('form')?.addEventListener('submit', (event) => event.preventDefault());\n",
+    [
+      "const storageKey = 'runstead.static.todo.fixture';",
+      "const form = document.querySelector('[data-testid=\"todo-form\"]');",
+      "const input = document.querySelector('[data-testid=\"new-todo-input\"]');",
+      "const search = document.querySelector('[data-testid=\"todo-search\"]');",
+      "const list = document.querySelector('[data-testid=\"todo-list\"]');",
+      "const count = document.querySelector('[data-testid=\"todo-count\"]');",
+      "let filter = 'all';",
+      "let editingId = null;",
+      "let todos = [];",
+      "try {",
+      "  todos = JSON.parse(localStorage.getItem(storageKey) || '[]');",
+      "} catch {",
+      "  todos = [];",
+      "}",
+      "function save() {",
+      "  localStorage.setItem(storageKey, JSON.stringify(todos));",
+      "}",
+      "function visibleTodos() {",
+      "  const query = (search.value || '').toLowerCase();",
+      "  return todos.filter((todo) => {",
+      "    const matchesSearch = todo.title.toLowerCase().includes(query);",
+      "    const matchesFilter = filter === 'all' || (filter === 'active' ? !todo.completed : todo.completed);",
+      "    return matchesSearch && matchesFilter;",
+      "  });",
+      "}",
+      "function render() {",
+      "  list.innerHTML = '';",
+      "  const activeCount = todos.filter((todo) => !todo.completed).length;",
+      "  count.textContent = `${activeCount} active`;",
+      "  for (const todo of visibleTodos()) {",
+      "    const item = document.createElement('li');",
+      "    item.dataset.testid = 'todo-item';",
+      "    item.className = todo.completed ? 'completed' : '';",
+      "    const toggle = document.createElement('input');",
+      "    toggle.type = 'checkbox';",
+      "    toggle.checked = todo.completed;",
+      "    toggle.dataset.testid = 'todo-toggle';",
+      "    toggle.setAttribute('aria-label', `Complete ${todo.title}`);",
+      "    toggle.addEventListener('change', () => {",
+      "      todo.completed = toggle.checked;",
+      "      save();",
+      "      render();",
+      "    });",
+      "    item.append(toggle);",
+      "    if (editingId === todo.id) {",
+      "      const editInput = document.createElement('input');",
+      "      editInput.value = todo.title;",
+      "      editInput.dataset.testid = 'todo-edit-input';",
+      "      editInput.setAttribute('aria-label', 'Edit todo');",
+      "      const saveButton = document.createElement('button');",
+      "      saveButton.type = 'button';",
+      "      saveButton.dataset.testid = 'save-todo';",
+      "      saveButton.textContent = 'Save';",
+      "      saveButton.addEventListener('click', () => {",
+      "        todo.title = editInput.value.trim() || todo.title;",
+      "        editingId = null;",
+      "        save();",
+      "        render();",
+      "      });",
+      "      item.append(editInput, saveButton);",
+      "    } else {",
+      "      const title = document.createElement('span');",
+      "      title.className = 'todo-title';",
+      "      title.textContent = todo.title;",
+      "      const edit = document.createElement('button');",
+      "      edit.type = 'button';",
+      "      edit.dataset.testid = 'edit-todo';",
+      "      edit.textContent = 'Edit';",
+      "      edit.addEventListener('click', () => {",
+      "        editingId = todo.id;",
+      "        render();",
+      "      });",
+      "      const remove = document.createElement('button');",
+      "      remove.type = 'button';",
+      "      remove.dataset.testid = 'delete-todo';",
+      "      remove.textContent = 'Delete';",
+      "      remove.addEventListener('click', () => {",
+      "        todos = todos.filter((itemTodo) => itemTodo.id !== todo.id);",
+      "        save();",
+      "        render();",
+      "      });",
+      "      item.append(title, edit, remove);",
+      "    }",
+      "    list.append(item);",
+      "  }",
+      "}",
+      "form.addEventListener('submit', (event) => {",
+      "  event.preventDefault();",
+      "  const title = input.value.trim();",
+      "  if (title.length === 0) return;",
+      "  todos = [...todos, { id: `${Date.now()}-${Math.random()}`, title, completed: false }];",
+      "  input.value = '';",
+      "  save();",
+      "  render();",
+      "});",
+      "search.addEventListener('input', render);",
+      "document.querySelector('[data-testid=\"filter-all\"]').addEventListener('click', () => { filter = 'all'; render(); });",
+      "document.querySelector('[data-testid=\"filter-active\"]').addEventListener('click', () => { filter = 'active'; render(); });",
+      "document.querySelector('[data-testid=\"filter-completed\"]').addEventListener('click', () => { filter = 'completed'; render(); });",
+      "document.querySelector('[data-testid=\"clear-completed\"]').addEventListener('click', () => {",
+      "  todos = todos.filter((todo) => !todo.completed);",
+      "  save();",
+      "  render();",
+      "});",
+      "render();",
+      ""
+    ].join("\n"),
     "utf8"
   );
   await writeFile(

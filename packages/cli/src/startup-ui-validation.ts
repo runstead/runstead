@@ -134,6 +134,10 @@ export type StartupUiFlowAction =
       text: string;
       selector?: string;
       selectors?: string[];
+    }
+  | {
+      type: "expectNoOverlap";
+      selectors: string[];
     };
 
 export interface StartupUiFlowActionResult {
@@ -1063,6 +1067,23 @@ async function runPlaywrightFlowAction(
           expected: action.text
         };
       }
+      case "expectNoOverlap": {
+        const result = await expectPlaywrightNoOverlap(page, action.selectors);
+
+        return {
+          type: action.type,
+          status: result.overlap === undefined ? "pass" : "fail",
+          summary:
+            result.overlap === undefined
+              ? `no overlap across ${result.count} visible controls`
+              : `overlap between ${result.overlap.first} and ${result.overlap.second}`,
+          expected: "no-overlap",
+          actual:
+            result.overlap === undefined
+              ? `${result.count} visible controls`
+              : result.overlap.area
+        };
+      }
     }
   } catch (error) {
     return {
@@ -1071,6 +1092,87 @@ async function runPlaywrightFlowAction(
       summary: error instanceof Error ? error.message : String(error)
     };
   }
+}
+
+interface StartupUiElementBox {
+  selector: string;
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+}
+
+interface StartupUiOverlapResult {
+  count: number;
+  overlap?: {
+    first: string;
+    second: string;
+    area: string;
+  };
+}
+
+async function expectPlaywrightNoOverlap(
+  page: PlaywrightPage,
+  selectors: string[]
+): Promise<StartupUiOverlapResult> {
+  const boxes: StartupUiElementBox[] = [];
+
+  for (const selector of selectors) {
+    const locator = page.locator(selector).first();
+
+    if ((await locator.count()) === 0) {
+      continue;
+    }
+
+    const box = await locator.boundingBox();
+
+    if (box === null || box.width <= 0 || box.height <= 0) {
+      continue;
+    }
+
+    boxes.push({
+      selector,
+      left: box.x,
+      top: box.y,
+      right: box.x + box.width,
+      bottom: box.y + box.height
+    });
+  }
+
+  return findStartupUiOverlap(boxes);
+}
+
+function findStartupUiOverlap(
+  boxes: StartupUiElementBox[]
+): StartupUiOverlapResult {
+  for (let index = 0; index < boxes.length; index += 1) {
+    for (let next = index + 1; next < boxes.length; next += 1) {
+      const first = boxes[index];
+      const second = boxes[next];
+
+      if (first === undefined || second === undefined) {
+        continue;
+      }
+
+      const width =
+        Math.min(first.right, second.right) - Math.max(first.left, second.left);
+      const height =
+        Math.min(first.bottom, second.bottom) - Math.max(first.top, second.top);
+
+      if (width > 1 && height > 1) {
+        return {
+          count: boxes.length,
+          overlap: {
+            first: first.selector,
+            second: second.selector,
+            area: `${Math.round(width)}x${Math.round(height)}`
+          }
+        };
+      }
+    }
+  }
+
+  return { count: boxes.length };
 }
 
 async function waitForPlaywrightText(
@@ -1545,6 +1647,35 @@ function cdpFlowActionExpression(action: StartupUiFlowAction): string {
     const found = bodyText().includes(action.text);
     return found ? pass("persisted " + action.text, { expected: action.text }) : fail("missing persisted " + action.text, { expected: action.text });
   }
+  if (action.type === "expectNoOverlap") {
+    const boxes = selectors
+      .map((selector) => {
+        const node = bySelector(selector);
+        if (!node) return null;
+        const rect = node.getBoundingClientRect();
+        if (rect.width <= 0 || rect.height <= 0) return null;
+        return {
+          selector,
+          left: rect.left,
+          top: rect.top,
+          right: rect.right,
+          bottom: rect.bottom
+        };
+      })
+      .filter(Boolean);
+    for (let index = 0; index < boxes.length; index += 1) {
+      for (let next = index + 1; next < boxes.length; next += 1) {
+        const first = boxes[index];
+        const second = boxes[next];
+        const width = Math.min(first.right, second.right) - Math.max(first.left, second.left);
+        const height = Math.min(first.bottom, second.bottom) - Math.max(first.top, second.top);
+        if (width > 1 && height > 1) {
+          return fail("overlap between " + first.selector + " and " + second.selector, { expected: "no-overlap", actual: Math.round(width) + "x" + Math.round(height) });
+        }
+      }
+    }
+    return pass("no overlap across " + boxes.length + " visible controls", { expected: "no-overlap", actual: boxes.length + " visible controls" });
+  }
   return fail("Unsupported action type: " + action.type);
 })()
 `;
@@ -1747,6 +1878,12 @@ interface PlaywrightLocator {
   selectOption(value: string): Promise<void>;
   click(): Promise<void>;
   innerText(): Promise<string>;
+  boundingBox(): Promise<{
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  } | null>;
 }
 
 interface PlaywrightResponse {

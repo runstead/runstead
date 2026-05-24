@@ -66,6 +66,7 @@ import {
 } from "../verifier-evidence.js";
 
 export {
+  defaultStartupReadyUiSmokeConfig,
   executeStartupReadyUiSmoke,
   inferStartupReadyUiSmokeExpectText,
   inferStartupReadyUiSmokeFlowActions
