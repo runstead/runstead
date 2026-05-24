@@ -165,7 +165,9 @@ export function createPostgresTeamControlPlaneProfile(
     runners: options.runnerIds.map((runnerId) => ({
       runnerId,
       organizationId: options.organizationId,
-      ...(options.workspaceId === undefined ? {} : { workspaceId: options.workspaceId }),
+      ...(options.workspaceId === undefined
+        ? {}
+        : { workspaceId: options.workspaceId }),
       labels: ["runstead", "team"],
       status: "active" as const
     })),
@@ -198,9 +200,7 @@ class PostgresEventStore implements RuntimeEventStore {
     private readonly schema: PostgresSchemaNames
   ) {}
 
-  async append(
-    entries: RuntimeEventAppend[]
-  ): Promise<RuntimeEventAppendResult[]> {
+  async append(entries: RuntimeEventAppend[]): Promise<RuntimeEventAppendResult[]> {
     if (entries.length === 0) {
       return [];
     }
@@ -274,11 +274,7 @@ class PostgresEventStore implements RuntimeEventStore {
             ) VALUES ($1, $2::jsonb, $3)
             ON CONFLICT (idempotency_key) DO NOTHING
           `,
-            [
-              entry.idempotencyKey,
-              JSON.stringify(result),
-              entry.event.createdAt
-            ]
+            [entry.idempotencyKey, JSON.stringify(result), entry.event.createdAt]
           );
         }
 
@@ -357,9 +353,7 @@ class PostgresEventStore implements RuntimeEventStore {
     );
     const row = result.rows[0];
 
-    return row === undefined
-      ? undefined
-      : runtimeEventAppendResult(row.result_json);
+    return row === undefined ? undefined : runtimeEventAppendResult(row.result_json);
   }
 
   private async aggregateRevision(event: RunsteadEvent): Promise<number> {

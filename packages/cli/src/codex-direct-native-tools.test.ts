@@ -103,7 +103,7 @@ describe("codex direct native tools", () => {
           "*** Begin Patch",
           "*** Add File: package.json",
           "+{",
-          "+  \"name\": \"todo\"",
+          '+  "name": "todo"',
           "+}",
           "+",
           "*** End Patch"
@@ -121,7 +121,7 @@ describe("codex direct native tools", () => {
       });
 
       await expect(readFile(join(workspace, "package.json"), "utf8")).resolves.toBe(
-        "{\n  \"name\": \"todo\"\n}\n"
+        '{\n  "name": "todo"\n}\n'
       );
       await expect(readFile(join(workspace, "app.js"), "utf8")).resolves.toBe(
         "const name = 'new';\n"

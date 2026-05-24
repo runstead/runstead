@@ -182,7 +182,7 @@ describe("@runstead/state-postgres", () => {
     const artifact = await backend.artifacts.write({
       path: "reports/launch.json",
       contentType: "application/json",
-      contents: "{\"status\":\"ready\"}",
+      contents: '{"status":"ready"}',
       metadata: {
         target: "local"
       }
@@ -194,7 +194,7 @@ describe("@runstead/state-postgres", () => {
       contentType: "application/json"
     });
     expect(artifact.sha256).toMatch(/^sha256:[a-f0-9]{64}$/);
-    expect(Buffer.from(contents).toString("utf8")).toBe("{\"status\":\"ready\"}");
+    expect(Buffer.from(contents).toString("utf8")).toBe('{"status":"ready"}');
 
     await lease.release();
     const nextLease = await backend.locks.acquire({
@@ -272,7 +272,11 @@ class FakePostgresClient implements PostgresControlPlaneClient {
 
     this.queries.push(normalized);
 
-    if (normalized === "BEGIN" || normalized === "COMMIT" || normalized === "ROLLBACK") {
+    if (
+      normalized === "BEGIN" ||
+      normalized === "COMMIT" ||
+      normalized === "ROLLBACK"
+    ) {
       return rows<Row>();
     }
 
@@ -353,10 +357,7 @@ class FakePostgresClient implements PostgresControlPlaneClient {
       return rows<Row>(lock === undefined ? [] : [lock]);
     }
 
-    if (
-      normalized.includes("INSERT INTO") &&
-      normalized.includes('"runtime_locks"')
-    ) {
+    if (normalized.includes("INSERT INTO") && normalized.includes('"runtime_locks"')) {
       this.locks.set(String(params[0]), {
         resource: String(params[0]),
         owner: String(params[1]),
@@ -400,7 +401,10 @@ class FakePostgresClient implements PostgresControlPlaneClient {
       return rows<Row>();
     }
 
-    if (normalized.includes("SELECT contents") && normalized.includes('"runtime_artifacts"')) {
+    if (
+      normalized.includes("SELECT contents") &&
+      normalized.includes('"runtime_artifacts"')
+    ) {
       const contents = this.artifacts.get(String(params[0]));
 
       return rows<Row>(contents === undefined ? [] : [{ contents }]);
@@ -410,7 +414,9 @@ class FakePostgresClient implements PostgresControlPlaneClient {
   }
 }
 
-function rows<Row extends PostgresRow>(values: PostgresRow[] = []): PostgresQueryResult<Row> {
+function rows<Row extends PostgresRow>(
+  values: PostgresRow[] = []
+): PostgresQueryResult<Row> {
   return {
     rows: values as Row[],
     rowCount: values.length

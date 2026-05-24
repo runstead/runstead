@@ -6,13 +6,7 @@ import { openRunsteadDatabase } from "@runstead/state-sqlite";
 
 import { requireRunsteadStateDb } from "./runstead-root.js";
 
-const STARTUP_ARTIFACT_DIRS = [
-  "evidence",
-  "reports",
-  "startup",
-  "logs",
-  "checkpoints"
-];
+const STARTUP_ARTIFACT_DIRS = ["evidence", "reports", "startup", "logs", "checkpoints"];
 
 export interface StartupArtifactHygieneOptions {
   cwd?: string;
@@ -188,8 +182,7 @@ async function startupArtifactFiles(input: {
       ageDays,
       layer,
       referencedBy: references,
-      pruneCandidate:
-        layer === "unreferenced" && ageDays >= input.retentionDays
+      pruneCandidate: layer === "unreferenced" && ageDays >= input.retentionDays
     });
   }
 
@@ -247,9 +240,7 @@ async function startupArtifactReferences(root: string): Promise<{
         .map(async (path) => {
           try {
             const parsed = JSON.parse(
-              await import("node:fs/promises").then((fs) =>
-                fs.readFile(path, "utf8")
-              )
+              await import("node:fs/promises").then((fs) => fs.readFile(path, "utf8"))
             ) as {
               id?: unknown;
               completedAt?: unknown;
@@ -450,10 +441,7 @@ function startupArtifactHygieneSummary(
     pruneCandidates: pruneCandidates.length,
     deletedFiles: deletedFiles.length,
     totalBytes: files.reduce((total, file) => total + file.sizeBytes, 0),
-    candidateBytes: pruneCandidates.reduce(
-      (total, file) => total + file.sizeBytes,
-      0
-    )
+    candidateBytes: pruneCandidates.reduce((total, file) => total + file.sizeBytes, 0)
   };
 }
 
@@ -481,13 +469,15 @@ async function writeStartupArtifactHygieneResult(
     )}\n`,
     "utf8"
   );
-  await writeFile(result.latestPath, `${JSON.stringify(result.latest, null, 2)}\n`, "utf8");
+  await writeFile(
+    result.latestPath,
+    `${JSON.stringify(result.latest, null, 2)}\n`,
+    "utf8"
+  );
   await writeFile(result.reportPath, startupArtifactHygieneMarkdown(result), "utf8");
 }
 
-function startupArtifactHygieneMarkdown(
-  result: StartupArtifactHygieneResult
-): string {
+function startupArtifactHygieneMarkdown(result: StartupArtifactHygieneResult): string {
   return [
     "# Startup Artifact Hygiene",
     "",

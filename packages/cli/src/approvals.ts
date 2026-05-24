@@ -806,9 +806,7 @@ function approvalActionGrantReuse(
   try {
     const action = JSON.parse(actionJson) as unknown;
     const context = isRecord(action) && isRecord(action.context) ? action.context : {};
-    const approvalGrant = isRecord(context.approvalGrant)
-      ? context.approvalGrant
-      : {};
+    const approvalGrant = isRecord(context.approvalGrant) ? context.approvalGrant : {};
 
     return approvalGrant.mode === "scoped_until_expiry"
       ? "scoped_until_expiry"
@@ -826,9 +824,7 @@ function approvalActionGrantScope(actionJson: string | null): string | undefined
   try {
     const action = JSON.parse(actionJson) as unknown;
     const context = isRecord(action) && isRecord(action.context) ? action.context : {};
-    const approvalGrant = isRecord(context.approvalGrant)
-      ? context.approvalGrant
-      : {};
+    const approvalGrant = isRecord(context.approvalGrant) ? context.approvalGrant : {};
 
     return typeof approvalGrant.scope === "string" ? approvalGrant.scope : undefined;
   } catch {

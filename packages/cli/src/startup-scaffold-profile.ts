@@ -70,9 +70,7 @@ export function resolveStartupScaffoldProfile(input: {
   };
 }
 
-export function parseStartupScaffoldTemplate(
-  value: string
-): StartupScaffoldTemplate {
+export function parseStartupScaffoldTemplate(value: string): StartupScaffoldTemplate {
   if (value === "static-todo") {
     return value;
   }

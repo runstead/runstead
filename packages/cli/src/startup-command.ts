@@ -193,10 +193,7 @@ export function registerStartupCommands(program: Command): void {
       "--app-template <template>",
       "Built-in scaffold template for empty repos, currently static-todo"
     )
-    .option(
-      "--app-type <type>",
-      "Built-in app profile, currently local-first-web"
-    )
+    .option("--app-type <type>", "Built-in app profile, currently local-first-web")
     .option("--max-attempts <count>", "Maximum bounded MVP repair attempts", "2")
     .action(
       async (options: {
@@ -2116,8 +2113,18 @@ export function registerStartupCommands(program: Command): void {
       collectValues,
       []
     )
-    .option("--evidence <id>", "Evidence id produced after the change", collectValues, [])
-    .option("--source <ref>", "Source reference for the manual change", collectValues, [])
+    .option(
+      "--evidence <id>",
+      "Evidence id produced after the change",
+      collectValues,
+      []
+    )
+    .option(
+      "--source <ref>",
+      "Source reference for the manual change",
+      collectValues,
+      []
+    )
     .option("--goal <id>", "Associated goal id")
     .option("--gate <stage>", "Associated gate: idea, mvp, launch, or scale")
     .option("--blocker <text>", "Associated blocker or risk this change resolves")
@@ -2144,9 +2151,7 @@ export function registerStartupCommands(program: Command): void {
           action: "record manual startup change evidence"
         });
 
-        const { recordStartupManualChange } = await import(
-          "./startup-evidence.js"
-        );
+        const { recordStartupManualChange } = await import("./startup-evidence.js");
         const result = await recordStartupManualChange({
           ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
           operator: options.operator,
@@ -2225,7 +2230,11 @@ export function registerStartupCommands(program: Command): void {
       "Write a latest-artifacts view and retention report for startup artifacts."
     )
     .option("--cwd <path>", "Workspace directory")
-    .option("--retention-days <days>", "Age threshold for unreferenced prune candidates", "30")
+    .option(
+      "--retention-days <days>",
+      "Age threshold for unreferenced prune candidates",
+      "30"
+    )
     .option("--prune", "Delete unreferenced artifacts older than the retention window")
     .option("--actor <id>", "RBAC subject for artifact hygiene", "local-admin")
     .action(

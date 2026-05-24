@@ -437,9 +437,7 @@ export async function recordStartupManualChange(
       {
         kind: "manual",
         uri: `operator:${options.operator}`,
-        ...(options.now === undefined
-          ? {}
-          : { capturedAt: options.now.toISOString() }),
+        ...(options.now === undefined ? {} : { capturedAt: options.now.toISOString() }),
         trustLevel: "medium",
         provenance: {
           reason: options.reason

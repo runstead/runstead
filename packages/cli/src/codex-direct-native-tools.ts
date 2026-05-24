@@ -1175,18 +1175,14 @@ interface CodexApplyPatchHunk {
   newLines: string[];
 }
 
-function parseCodexApplyPatchOperations(
-  patch: string
-): CodexApplyPatchOperation[] {
+function parseCodexApplyPatchOperations(patch: string): CodexApplyPatchOperation[] {
   const lines = patch.split(/\r?\n/);
   const operations: CodexApplyPatchOperation[] = [];
   let index = 0;
 
   while (index < lines.length) {
     const line = lines[index] ?? "";
-    const fileMatch = /^\*\*\* (Add|Update|Delete) File:\s*(?<path>.+?)\s*$/.exec(
-      line
-    );
+    const fileMatch = /^\*\*\* (Add|Update|Delete) File:\s*(?<path>.+?)\s*$/.exec(line);
 
     if (fileMatch?.groups?.path === undefined) {
       index += 1;
@@ -1368,7 +1364,7 @@ function splitGitDiffHeaderArgs(value: string): string[] {
       break;
     }
 
-    if (value[index] === "\"") {
+    if (value[index] === '"') {
       const start = index;
       index += 1;
 
@@ -1378,7 +1374,7 @@ function splitGitDiffHeaderArgs(value: string): string[] {
           continue;
         }
 
-        if (value[index] === "\"") {
+        if (value[index] === '"') {
           index += 1;
           break;
         }
@@ -1411,10 +1407,10 @@ function normalizeDiffPath(path: string, prefix?: "a/" | "b/"): string | undefin
 
   const withoutPrefix =
     prefix !== undefined && unquoted.startsWith(prefix)
-    ? unquoted.slice(prefix.length)
-    : unquoted.startsWith("a/") || unquoted.startsWith("b/")
-      ? unquoted.slice(2)
-      : unquoted;
+      ? unquoted.slice(prefix.length)
+      : unquoted.startsWith("a/") || unquoted.startsWith("b/")
+        ? unquoted.slice(2)
+        : unquoted;
 
   return normalizePath(withoutPrefix);
 }

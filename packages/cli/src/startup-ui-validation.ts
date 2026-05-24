@@ -1142,9 +1142,7 @@ async function expectPlaywrightNoOverlap(
   return findStartupUiOverlap(boxes);
 }
 
-function findStartupUiOverlap(
-  boxes: StartupUiElementBox[]
-): StartupUiOverlapResult {
+function findStartupUiOverlap(boxes: StartupUiElementBox[]): StartupUiOverlapResult {
   for (let index = 0; index < boxes.length; index += 1) {
     for (let next = index + 1; next < boxes.length; next += 1) {
       const first = boxes[index];

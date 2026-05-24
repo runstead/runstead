@@ -33,10 +33,7 @@ describe("startup extension examples", () => {
         "sentry-error-rate.yaml",
         "github-actions-ci.yaml"
       ]) {
-        await cp(
-          join(examplesRoot, name),
-          join(initialized.root, "extensions", name)
-        );
+        await cp(join(examplesRoot, name), join(initialized.root, "extensions", name));
       }
 
       const plan = await planStartupReady({
@@ -48,9 +45,7 @@ describe("startup extension examples", () => {
         now: new Date("2026-05-24T01:30:00.000Z")
       });
       const extensions = plan.phases.find((phase) => phase.id === "extensions");
-      const launchReport = plan.phases.find(
-        (phase) => phase.id === "launch_report"
-      );
+      const launchReport = plan.phases.find((phase) => phase.id === "launch_report");
 
       expect(plan.extensions.loaded.sort()).toEqual([
         "github-actions-ci-readiness",

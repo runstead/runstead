@@ -576,8 +576,7 @@ function startupSourceEvidenceContent(input: {
 
   return {
     metric:
-      stringPayloadValue(input.payload, "metric") ??
-      `${input.connector}_source_metric`,
+      stringPayloadValue(input.payload, "metric") ?? `${input.connector}_source_metric`,
     source: input.definition.displayName,
     threshold:
       input.payload?.threshold ??

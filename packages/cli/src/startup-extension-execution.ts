@@ -1,16 +1,9 @@
 import { spawn } from "node:child_process";
 import { join, resolve } from "node:path";
 
-import {
-  createRunsteadId,
-  type JsonObject,
-  type Task
-} from "@runstead/core";
+import { createRunsteadId, type JsonObject, type Task } from "@runstead/core";
 import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sqlite";
-import type {
-  ReadinessEvidenceRequirement,
-  ReadinessTarget
-} from "@runstead/runtime";
+import type { ReadinessEvidenceRequirement, ReadinessTarget } from "@runstead/runtime";
 import type { RunsteadEvidenceCollector } from "@runstead/sdk";
 
 import { createLocalAgentTask, type LocalAgentWorkerKind } from "./local-agent.js";
@@ -279,7 +272,10 @@ function startupExtensionCollectorsForTarget(input: {
   extensions: LoadedStartupReadinessExtension[];
   requirements: ReadinessEvidenceRequirement[];
   target: ReadinessTarget;
-}): { extension: LoadedStartupReadinessExtension; collector: RunsteadEvidenceCollector }[] {
+}): {
+  extension: LoadedStartupReadinessExtension;
+  collector: RunsteadEvidenceCollector;
+}[] {
   const requiredTypes = new Set(
     input.requirements
       .filter((requirement) => requirement.targets.includes(input.target))
@@ -307,7 +303,8 @@ async function createExtensionCollectorTask(input: {
   const created = await createLocalAgentTask({
     cwd: input.cwd,
     title: "Run startup extension collectors",
-    prompt: "Collect extension-defined readiness evidence using governed local commands.",
+    prompt:
+      "Collect extension-defined readiness evidence using governed local commands.",
     worker: input.worker,
     mode: "read-only",
     ...(input.now === undefined ? {} : { now: input.now })
@@ -520,9 +517,8 @@ function parseCollectorEvidenceItems(stdout: string): Record<string, unknown>[] 
       .reverse()
       .find((line) => line.startsWith("{") || line.startsWith("[")) ?? stdout.trim();
   const parsed = JSON.parse(jsonText) as unknown;
-  const items = isRecord(parsed) && Array.isArray(parsed.evidence)
-    ? parsed.evidence
-    : [parsed];
+  const items =
+    isRecord(parsed) && Array.isArray(parsed.evidence) ? parsed.evidence : [parsed];
 
   return items.filter(isRecord);
 }

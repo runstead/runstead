@@ -1,4 +1,12 @@
-import { access, mkdir, mkdtemp, readFile, rm, utimes, writeFile } from "node:fs/promises";
+import {
+  access,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  utimes,
+  writeFile
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -31,12 +39,7 @@ describe("startup artifact hygiene", () => {
       const oldEvidence = join(root, "evidence", "metric-old.json");
       const oldUnreferenced = join(root, "evidence", "old-unreferenced.log");
       const report = join(root, "reports", "launch-readiness-ai-native-startup.md");
-      const latestRunPath = join(
-        root,
-        "startup",
-        "readiness-runs",
-        "run_latest.json"
-      );
+      const latestRunPath = join(root, "startup", "readiness-runs", "run_latest.json");
 
       await writeFile(currentEvidence, "{}\n", "utf8");
       await writeFile(oldEvidence, "{}\n", "utf8");

@@ -183,9 +183,9 @@ async function prepareExtensionWorkspace(
         private: true,
         scripts: {
           test: "node scripts/collector.mjs",
-          lint: "node -e \"process.exit(0)\"",
-          typecheck: "node -e \"process.exit(0)\"",
-          build: "node -e \"process.exit(0)\""
+          lint: 'node -e "process.exit(0)"',
+          typecheck: 'node -e "process.exit(0)"',
+          build: 'node -e "process.exit(0)"'
         }
       },
       null,

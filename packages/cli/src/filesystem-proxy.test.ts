@@ -258,7 +258,7 @@ describe("filesystem proxy", () => {
         writeGovernedWorkspaceFile({
           ...fixture,
           path: "package.json",
-          content: "{\"scripts\":{}}\n",
+          content: '{"scripts":{}}\n',
           requestedBy: "test"
         })
       ).rejects.toBeInstanceOf(ToolActionApprovalRequiredError);

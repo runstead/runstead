@@ -651,10 +651,10 @@ export function evaluatePolicy(options: EvaluatePolicyOptions): PolicyEvaluation
         : { matchedResourceId: match.resourceId }),
       ...(match.path === undefined ? {} : { matchedPath: match.path }),
       ...(match.command === undefined ? {} : { matchedCommand: match.command }),
-      ...(match.sideEffect === undefined ? {} : { matchedSideEffect: match.sideEffect }),
-      ...(match.riskClass === undefined
+      ...(match.sideEffect === undefined
         ? {}
-        : { matchedRiskClass: match.riskClass })
+        : { matchedSideEffect: match.sideEffect }),
+      ...(match.riskClass === undefined ? {} : { matchedRiskClass: match.riskClass })
     };
   }
 

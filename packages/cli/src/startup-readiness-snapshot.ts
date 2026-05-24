@@ -33,17 +33,15 @@ export function readLatestStartupReadinessSnapshot(
   const matchingSnapshots = [
     ...readStartupReadinessSnapshotEvents(options),
     ...readStartupReadinessSnapshotFiles(options)
-  ]
-    .filter((snapshot) => snapshotMatchesTarget(snapshot, options));
+  ].filter((snapshot) => snapshotMatchesTarget(snapshot, options));
   const completedSnapshots = matchingSnapshots.filter(startupReadinessRunCompleted);
-  const snapshots = (completedSnapshots.length === 0
-    ? matchingSnapshots
-    : completedSnapshots
+  const snapshots = (
+    completedSnapshots.length === 0 ? matchingSnapshots : completedSnapshots
   ).sort((left, right) =>
-      startupReadinessSnapshotTime(right).localeCompare(
-        startupReadinessSnapshotTime(left)
-      )
-    );
+    startupReadinessSnapshotTime(right).localeCompare(
+      startupReadinessSnapshotTime(left)
+    )
+  );
 
   return snapshots[0];
 }
@@ -67,7 +65,9 @@ function readStartupReadinessSnapshotEvents(
       .all() as unknown as StartupReadinessSnapshotEventRow[];
 
     return rows
-      .map((row) => startupReadinessSnapshotFromUnknown(row.payload_json, row.created_at))
+      .map((row) =>
+        startupReadinessSnapshotFromUnknown(row.payload_json, row.created_at)
+      )
       .filter(
         (snapshot): snapshot is StartupReadinessVerdictSnapshot =>
           snapshot !== undefined

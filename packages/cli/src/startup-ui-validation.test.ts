@@ -383,10 +383,7 @@ describe("startup UI validation evidence", () => {
           },
           {
             type: "expectNoOverlap",
-            selectors: [
-              "[data-testid='new-todo-input']",
-              "[data-testid='add-todo']"
-            ]
+            selectors: ["[data-testid='new-todo-input']", "[data-testid='add-todo']"]
           }
         ],
         browserRunner: () =>

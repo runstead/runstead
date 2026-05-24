@@ -168,10 +168,7 @@ describe("startup source connectors", () => {
   });
 
   it("records target-specific deployment tiers for named hosting connectors", async () => {
-    const workspace = join(
-      tmpdir(),
-      `runstead-startup-source-target-${process.pid}`
-    );
+    const workspace = join(tmpdir(), `runstead-startup-source-target-${process.pid}`);
 
     try {
       await rm(workspace, { force: true, recursive: true });
@@ -415,10 +412,7 @@ describe("startup source connectors", () => {
   });
 
   it("records production monitoring and analytics connector targets", async () => {
-    const workspace = join(
-      tmpdir(),
-      `runstead-startup-source-prod-${process.pid}`
-    );
+    const workspace = join(tmpdir(), `runstead-startup-source-prod-${process.pid}`);
 
     try {
       await rm(workspace, { force: true, recursive: true });

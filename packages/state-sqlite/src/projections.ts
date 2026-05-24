@@ -444,7 +444,11 @@ function upsertWorkerRun(database: RunsteadDatabase, workerRun: WorkerRun): void
 function projectionExecutionLease(
   status: string,
   timestamp: string
-): { ownerId: string | null; heartbeatAt: string | null; leaseExpiresAt: string | null } {
+): {
+  ownerId: string | null;
+  heartbeatAt: string | null;
+  leaseExpiresAt: string | null;
+} {
   if (status !== "claimed" && status !== "running") {
     return {
       ownerId: null,

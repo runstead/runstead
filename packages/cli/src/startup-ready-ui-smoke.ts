@@ -59,7 +59,9 @@ export interface StartupReadyUiSmokeCheckResult {
   failureCategory?: string;
   failureSummary?: string;
   repairHint?: string;
-  failedAction?: NonNullable<StartupUiValidationExecutionEvidence["flowActions"]>[number];
+  failedAction?: NonNullable<
+    StartupUiValidationExecutionEvidence["flowActions"]
+  >[number];
   blockers: string[];
 }
 
@@ -226,9 +228,7 @@ export async function defaultStartupReadyUiSmokeConfig(
   const expectText = await inferStartupReadyUiSmokeExpectText(cwd);
   const steps = await inferStartupReadyUiSmokeFlowActions(cwd);
   const staticTodo = await hasStartupReadyStaticTodoScaffold(cwd);
-  const mobileSteps = staticTodo
-    ? startupReadyMobileNoOverlapActions()
-    : [];
+  const mobileSteps = staticTodo ? startupReadyMobileNoOverlapActions() : [];
 
   return {
     schemaVersion: 1,
@@ -253,8 +253,7 @@ export async function defaultStartupReadyUiSmokeConfig(
         ...(steps.length === 0 ? {} : { steps })
       },
       {
-        name:
-          mobileSteps.length === 0 ? "home-mobile" : "home-mobile-product-layout",
+        name: mobileSteps.length === 0 ? "home-mobile" : "home-mobile-product-layout",
         url: "http://127.0.0.1:3000",
         viewport: "mobile",
         expectText,
@@ -1044,10 +1043,7 @@ function flowSelectors(value: Record<string, unknown>): {
   };
 }
 
-function requiredSelectorList(
-  value: Record<string, unknown>,
-  label: string
-): string[] {
+function requiredSelectorList(value: Record<string, unknown>, label: string): string[] {
   const selectors = unique([
     ...arrayOfStrings(value.selectors),
     ...(typeof value.selector === "string" ? [value.selector] : [])

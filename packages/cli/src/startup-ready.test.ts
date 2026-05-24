@@ -2206,10 +2206,8 @@ describe("startup readiness run model", () => {
         "utf8"
       );
 
-      const {
-        defaultStartupReadyUiSmokeConfig,
-        inferStartupReadyUiSmokeFlowActions
-      } = await import("./startup-ready.js");
+      const { defaultStartupReadyUiSmokeConfig, inferStartupReadyUiSmokeFlowActions } =
+        await import("./startup-ready.js");
       const steps = await inferStartupReadyUiSmokeFlowActions(workspace);
       const config = await defaultStartupReadyUiSmokeConfig(workspace, "npm run dev");
 
@@ -2240,7 +2238,8 @@ describe("startup readiness run model", () => {
       expect(
         steps.some(
           (step) =>
-            step.type === "click" && step.selectors?.includes("[data-testid='edit-todo']")
+            step.type === "click" &&
+            step.selectors?.includes("[data-testid='edit-todo']")
         )
       ).toBe(true);
       expect(
@@ -2266,8 +2265,7 @@ describe("startup readiness run model", () => {
       ).toBe(true);
       expect(config.checks[0]).toMatchObject({
         name: "home-desktop-product-flow",
-        flow:
-          "todo workflow: add, edit, complete, search/filter, delete, clear completed, reload persistence"
+        flow: "todo workflow: add, edit, complete, search/filter, delete, clear completed, reload persistence"
       });
       expect(config.checks[0]?.steps).toHaveLength(22);
       expect(config.checks[1]).toMatchObject({

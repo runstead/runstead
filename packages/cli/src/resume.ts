@@ -200,8 +200,9 @@ function staleInterruptedTaskIds(input: {
 }): Set<string> {
   const database = openRunsteadDatabase(input.stateDb);
   const nowIso = input.now.toISOString();
-  const fallbackCutoff = new Date(input.now.getTime() - input.staleAfterMs)
-    .toISOString();
+  const fallbackCutoff = new Date(
+    input.now.getTime() - input.staleAfterMs
+  ).toISOString();
 
   try {
     const rows = database
@@ -220,9 +221,7 @@ function staleInterruptedTaskIds(input: {
       .all(nowIso, fallbackCutoff) as unknown as StaleTaskLeaseRow[];
 
     return new Set(
-      rows
-        .filter((row) => !leaseOwnerAlive(row.owner_id))
-        .map((row) => row.id)
+      rows.filter((row) => !leaseOwnerAlive(row.owner_id)).map((row) => row.id)
     );
   } finally {
     database.close();

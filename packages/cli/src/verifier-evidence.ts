@@ -253,10 +253,7 @@ export async function storeCommandVerifierPolicyEvidence(
 export async function collectCommandVerifierCodeState(
   cwd: string
 ): Promise<CommandVerifierCodeState> {
-  const insideWorkTree = await gitOutput(cwd, [
-    "rev-parse",
-    "--is-inside-work-tree"
-  ]);
+  const insideWorkTree = await gitOutput(cwd, ["rev-parse", "--is-inside-work-tree"]);
   const gitHead = await gitOutput(cwd, ["rev-parse", "--verify", "HEAD"]);
   const statusOutput = await gitOutput(cwd, [
     "status",

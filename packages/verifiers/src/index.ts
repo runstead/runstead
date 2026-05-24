@@ -32,7 +32,9 @@ export function isStandardVerifierName(name: string): name is StandardVerifierNa
 }
 
 export function commandVerifierResultPassed(result: CommandVerifierResult): boolean {
-  return result.exitCode === 0 && result.timedOut === false && result.forceKilled === false;
+  return (
+    result.exitCode === 0 && result.timedOut === false && result.forceKilled === false
+  );
 }
 
 export function commandVerifierResultsPassed(

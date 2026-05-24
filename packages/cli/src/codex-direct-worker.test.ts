@@ -2390,8 +2390,11 @@ describe("runCodexDirectWorker", () => {
         expect(auditLog.entries.map((entry) => entry.type)).toEqual([
           "model_request.retry"
         ]);
-        expect(dashboard.snapshot.events.some((event) => event.type === "model_request.retry"))
-          .toBe(true);
+        expect(
+          dashboard.snapshot.events.some(
+            (event) => event.type === "model_request.retry"
+          )
+        ).toBe(true);
       } finally {
         database.close();
       }
@@ -2467,9 +2470,7 @@ describe("runCodexDirectWorker", () => {
           }
         });
         expect(result.warnings).toEqual(
-          expect.arrayContaining([
-            expect.stringContaining("retry budget exhausted")
-          ])
+          expect.arrayContaining([expect.stringContaining("retry budget exhausted")])
         );
         expect(retryCount.count).toBe(2);
         expect(workerOutput.interruption).toMatchObject({
