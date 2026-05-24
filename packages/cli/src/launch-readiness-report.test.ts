@@ -124,13 +124,15 @@ describe("generateLaunchReadinessReport", () => {
       const markdown = await readFile(result.reportPath, "utf8");
 
       expect(result.status).toBe("blocked");
+      expect(result.targetStatus).toBe("public_launch_blocked");
       expect(result.blockers).toContain("CI configuration is missing");
       expect(result.trustSummary.qualityScore).toBeLessThan(1);
       expect(result.jsonPath).toContain("launch-readiness-ai-native-startup.json");
       expect(markdown).toBe(result.markdown);
       expect(markdown).toContain("# Runstead Launch Readiness Report");
+      expect(markdown).toContain("Status: public_launch_blocked");
       expect(markdown).toContain("## Trust Summary");
-      expect(markdown).toContain("Quality score:");
+      expect(markdown).toContain("Quality score (production target):");
       expect(markdown).toContain("## Repo Health");
       expect(markdown).toContain("## Verifier Status");
       expect(markdown).toContain("## Governance Boundary");
@@ -172,6 +174,7 @@ describe("generateLaunchReadinessReport", () => {
           reportType?: string;
           domain?: string;
           status?: string;
+          targetStatus?: string;
           blockers?: string[];
           trustSummary?: {
             conclusion?: string;
@@ -186,6 +189,7 @@ describe("generateLaunchReadinessReport", () => {
           reportType: "launch_readiness",
           domain: "ai-native-startup",
           status: "blocked",
+          targetStatus: "public_launch_blocked",
           blockers: result.blockers,
           summary: {
             blockers: result.blockers.length,
@@ -196,6 +200,55 @@ describe("generateLaunchReadinessReport", () => {
       } finally {
         auditDatabase.close();
       }
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("moves missing CI into next-target blockers for local launch reports", async () => {
+    const workspace = join(tmpdir(), `runstead-launch-report-local-${process.pid}`);
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await mkdir(workspace, { recursive: true });
+      await writeFile(
+        join(workspace, "package.json"),
+        `${JSON.stringify(
+          {
+            name: "launch-report-local-fixture",
+            private: true,
+            scripts: {
+              test: 'node -e "process.exit(0)"',
+              lint: 'node -e "process.exit(0)"',
+              typecheck: 'node -e "process.exit(0)"',
+              build: 'node -e "process.exit(0)"'
+            }
+          },
+          null,
+          2
+        )}\n`,
+        "utf8"
+      );
+      await initRunstead({ cwd: workspace });
+
+      const result = await generateLaunchReadinessReport({
+        cwd: workspace,
+        domain: "ai-native-startup",
+        target: "local",
+        now: new Date("2026-05-14T12:30:00.000Z")
+      });
+
+      expect(result.targetStatus).toBe("local_launch_blocked");
+      expect(result.blockers).not.toContain("CI configuration is missing");
+      expect(result.markdown).toContain("Status: local_launch_blocked");
+      expect(result.markdown).toContain("- CI: not required for local target");
+      expect(result.markdown).toContain("## Next Target Blockers");
+      expect(result.markdown).toContain(
+        "- CI configuration is missing before staging or production readiness"
+      );
+      expect(result.markdown).not.toContain(
+        "CI configuration is missing [source: repo:ci_detection]"
+      );
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }
@@ -554,6 +607,7 @@ describe("generateLaunchReadinessReport", () => {
       const parsedJson = JSON.parse(json) as { staleEvidence?: unknown[] };
 
       expect(result.status).toBe("launch_ready");
+      expect(result.targetStatus).toBe("public_launch_ready");
       expect(result.blockers).toEqual([]);
       expect(result.trustSummary.conclusion).toContain("Launch-ready");
       expect(result.trustSummary.acceptedDebtRegister).toEqual(
@@ -582,6 +636,7 @@ describe("generateLaunchReadinessReport", () => {
         "superseded by newer command evidence for command_output:wrapped worker post-run verifier evidence:test:npm test"
       );
       expect(result.markdown).toContain("## Trust Summary");
+      expect(result.markdown).toContain("Status: public_launch_ready");
       expect(result.markdown).toContain("## Metric Evidence Confidence");
       expect(result.markdown).toContain("source_class=analytics_real_user");
       expect(result.markdown).toContain("launch_weight=1");

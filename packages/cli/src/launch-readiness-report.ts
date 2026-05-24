@@ -43,12 +43,20 @@ export interface LaunchReadinessReportResult {
   markdown: string;
   event: RunsteadEvent;
   status: LaunchReadinessStatus;
+  targetStatus: LaunchReadinessTargetStatus;
   blockers: string[];
   trustSummary: LaunchReadinessTrustSummary;
 }
 
 type LaunchReadinessStatus = "launch_ready" | "blocked";
 export type LaunchReadinessTarget = "local" | "staging" | "production";
+type LaunchReadinessTargetStatus =
+  | "local_launch_ready"
+  | "local_launch_blocked"
+  | "staging_launch_ready"
+  | "staging_launch_blocked"
+  | "public_launch_ready"
+  | "public_launch_blocked";
 
 export interface LaunchReadinessTrustSummary {
   qualityScore: number;
@@ -192,6 +200,7 @@ export async function generateLaunchReadinessReport(
     const blockers = releaseBlockers(data, target);
     const status: LaunchReadinessStatus =
       blockers.length === 0 ? "launch_ready" : "blocked";
+    const targetStatus = launchReadinessTargetStatus(target, status);
     const aggregateId = `launch_readiness_${domain.replaceAll("-", "_")}`;
     const previousReport = readPreviousLaunchReadinessEvent(database, aggregateId);
     const trustSummary = launchReadinessTrustSummary({
@@ -205,6 +214,7 @@ export async function generateLaunchReadinessReport(
       domain,
       target,
       status,
+      targetStatus,
       blockers,
       trustSummary,
       data
@@ -225,6 +235,7 @@ export async function generateLaunchReadinessReport(
       domain,
       target,
       status,
+      targetStatus,
       blockers,
       trustSummary,
       evidence: currentEvidenceRows(data).map((item) => ({
@@ -257,6 +268,8 @@ export async function generateLaunchReadinessReport(
       payload: reportEventPayload({
         domain,
         status,
+        target,
+        targetStatus,
         blockers,
         reportPath,
         jsonPath,
@@ -281,6 +294,7 @@ export async function generateLaunchReadinessReport(
       markdown,
       event,
       status,
+      targetStatus,
       blockers,
       trustSummary
     };
@@ -388,6 +402,7 @@ function formatLaunchReadinessReport(input: {
   domain: string;
   target: LaunchReadinessTarget;
   status: LaunchReadinessStatus;
+  targetStatus: LaunchReadinessTargetStatus;
   blockers: string[];
   trustSummary: LaunchReadinessTrustSummary;
   data: LaunchReadinessReportData;
@@ -398,11 +413,11 @@ function formatLaunchReadinessReport(input: {
     `Domain: ${input.domain}`,
     `Target: ${input.target}`,
     `Generated: ${input.generatedAt}`,
-    `Status: ${input.status}`,
+    `Status: ${input.targetStatus}`,
     "",
     "## Trust Summary",
     "",
-    trustSummaryMarkdown(input.trustSummary),
+    trustSummaryMarkdown(input.trustSummary, input.target),
     "",
     "## Metric Evidence Confidence",
     "",
@@ -410,7 +425,11 @@ function formatLaunchReadinessReport(input: {
     "",
     "## Repo Health",
     "",
-    repoHealth(input.data.repo),
+    repoHealth(input.data.repo, input.target),
+    "",
+    "## Next Target Blockers",
+    "",
+    nextTargetBlockers(input.data, input.target),
     "",
     "## Verifier Status",
     "",
@@ -482,7 +501,10 @@ function formatLaunchReadinessReport(input: {
   ].join("\n");
 }
 
-function repoHealth(repo: RepoInspectionSnapshot): string {
+function repoHealth(
+  repo: RepoInspectionSnapshot,
+  target: LaunchReadinessTarget
+): string {
   const packageManager = repo.packageManager.detected
     ? `${repo.packageManager.packageManager} (${repo.packageManager.source})`
     : "not detected";
@@ -500,7 +522,9 @@ function repoHealth(repo: RepoInspectionSnapshot): string {
     : "missing";
   const ci = repo.ci.detected
     ? repo.ci.providers.map((provider) => provider.provider).join(", ")
-    : "missing";
+    : target === "local"
+      ? "not required for local target"
+      : "missing";
 
   return [
     `- Git: ${repo.git.isGitRepo ? "detected" : "not detected"}`,
@@ -514,10 +538,30 @@ function repoHealth(repo: RepoInspectionSnapshot): string {
   ].join("\n");
 }
 
-function trustSummaryMarkdown(summary: LaunchReadinessTrustSummary): string {
+function nextTargetBlockers(
+  data: LaunchReadinessReportData,
+  target: LaunchReadinessTarget
+): string {
+  if (target !== "local") {
+    return "none";
+  }
+
+  const blockers = [
+    ...(data.repo.ci.detected
+      ? []
+      : ["CI configuration is missing before staging or production readiness"])
+  ];
+
+  return listOrNone(blockers, (blocker) => `- ${blocker}`);
+}
+
+function trustSummaryMarkdown(
+  summary: LaunchReadinessTrustSummary,
+  target: LaunchReadinessTarget
+): string {
   return [
-    `- Quality score: ${formatPercent(summary.qualityScore)}`,
-    `- Evidence completeness: ${formatPercent(summary.evidenceCompletenessScore)}`,
+    `- Quality score (${target} target): ${formatPercent(summary.qualityScore)}`,
+    `- Evidence completeness (${target} target): ${formatPercent(summary.evidenceCompletenessScore)}`,
     `- Conclusion: ${summary.conclusion}`,
     `- Remediation effort: ${summary.remediationEffort}`,
     `- Trend: blocker_delta=${summary.trend.blockerDelta}, previous_status=${summary.trend.previousStatus ?? "none"}`,
@@ -1434,6 +1478,23 @@ function releaseBlockers(
   ];
 }
 
+function launchReadinessTargetStatus(
+  target: LaunchReadinessTarget,
+  status: LaunchReadinessStatus
+): LaunchReadinessTargetStatus {
+  if (target === "local") {
+    return status === "launch_ready" ? "local_launch_ready" : "local_launch_blocked";
+  }
+
+  if (target === "staging") {
+    return status === "launch_ready"
+      ? "staging_launch_ready"
+      : "staging_launch_blocked";
+  }
+
+  return status === "launch_ready" ? "public_launch_ready" : "public_launch_blocked";
+}
+
 function unresolvedTaskBlockers(
   data: LaunchReadinessReportData & { hasVerifierEvidence: boolean }
 ): string[] {
@@ -1649,6 +1710,8 @@ function readPreviousLaunchReadinessEvent(
 function reportEventPayload(input: {
   domain: string;
   status: LaunchReadinessStatus;
+  target: LaunchReadinessTarget;
+  targetStatus: LaunchReadinessTargetStatus;
   blockers: string[];
   reportPath: string;
   jsonPath: string;
@@ -1659,7 +1722,9 @@ function reportEventPayload(input: {
   return {
     reportType: "launch_readiness",
     domain: input.domain,
+    target: input.target,
     status: input.status,
+    targetStatus: input.targetStatus,
     blockers: input.blockers,
     uri: pathToFileURL(input.reportPath).href,
     jsonUri: pathToFileURL(input.jsonPath).href,
