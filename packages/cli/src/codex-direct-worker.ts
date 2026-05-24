@@ -8,6 +8,7 @@ import type { RunsteadDatabase } from "@runstead/state-sqlite";
 
 import {
   type CodexResponsesInputItem,
+  type CodexResponsesFunctionCallInputItem,
   type CodexResponsesRequest,
   type CodexResponsesResult,
   type CodexResponsesTool,
@@ -121,8 +122,14 @@ export interface CodexDirectPendingPatchResumeOptions {
   task: Task;
   model: string;
   modelProviderResourceId?: string;
+  modelProviderNetworkDomains?: string[];
   evidenceDir: string;
+  transport?: CodexDirectTransport;
   pendingPatch: CodexDirectPendingPatchResume;
+  maxTurns?: number;
+  maxToolCalls?: number;
+  maxFailedToolCalls?: number;
+  finalizeOnBudget?: boolean;
   now?: Date;
 }
 
@@ -195,18 +202,40 @@ export async function runCodexDirectWorker(
   let failedToolCalls = 0;
   const maxTurns = options.maxTurns ?? DEFAULT_CODEX_DIRECT_MAX_TURNS;
 
+  return runCodexDirectConversation({
+    options,
+    workerRun,
+    messages,
+    maxTurns,
+    executedToolCalls,
+    failedToolCalls
+  });
+}
+
+async function runCodexDirectConversation(input: {
+  options: CodexDirectWorkerOptions;
+  workerRun: WorkerRun;
+  messages: CodexResponsesInputItem[];
+  maxTurns: number;
+  executedToolCalls: number;
+  failedToolCalls: number;
+  warnings?: string[];
+}): Promise<CodexDirectWorkerResult> {
+  let executedToolCalls = input.executedToolCalls;
+  let failedToolCalls = input.failedToolCalls;
+
   try {
-    for (let turn = 0; turn < maxTurns; turn += 1) {
+    for (let turn = 0; turn < input.maxTurns; turn += 1) {
       const request: CodexResponsesRequest = {
-        model: options.model,
-        instructions: buildCodexDirectInstructions(options),
-        input: messages,
+        model: input.options.model,
+        instructions: buildCodexDirectInstructions(input.options),
+        input: input.messages,
         tools: codexDirectToolDefinitions(),
-        sessionId: options.task.id
+        sessionId: input.options.task.id
       };
       const response = await runGovernedModelInference({
-        ...options,
-        workerRun,
+        ...input.options,
+        workerRun: input.workerRun,
         request
       });
 
@@ -214,91 +243,105 @@ export async function runCodexDirectWorker(
         const summary = response.outputText || "Codex Direct worker completed.";
 
         return completedWorkerResult({
-          options,
-          workerRun,
+          options: input.options,
+          workerRun: input.workerRun,
           status: "completed",
           exitCode: 0,
           summary,
           toolCalls: executedToolCalls,
-          failedToolCalls
+          failedToolCalls,
+          ...codexDirectWarningOptions(input.warnings)
         });
       }
 
       for (const rawToolCall of response.toolCalls) {
         if (
-          options.maxToolCalls !== undefined &&
-          executedToolCalls >= options.maxToolCalls
+          input.options.maxToolCalls !== undefined &&
+          executedToolCalls >= input.options.maxToolCalls
         ) {
           return finalizeBudgetExceededWorkerResult({
-            options,
-            workerRun,
-            messages,
+            options: input.options,
+            workerRun: input.workerRun,
+            messages: input.messages,
             reason: "tool_calls",
-            maxTurns,
+            maxTurns: input.maxTurns,
             toolCalls: executedToolCalls,
-            failedToolCalls
+            failedToolCalls,
+            ...codexDirectWarningOptions(input.warnings)
           });
         }
 
         const toolCall = parseCodexDirectToolCall(rawToolCall);
         const toolResult = await runCodexDirectTool({
-          ...options,
-          workerRun,
-          toolCall
+          ...input.options,
+          workerRun: input.workerRun,
+          toolCall,
+          resumeContext: {
+            messages: input.messages,
+            toolCall: {
+              type: "function_call",
+              call_id: rawToolCall.id,
+              name: rawToolCall.name,
+              arguments: rawToolCall.arguments
+            }
+          }
         });
 
         executedToolCalls += 1;
         if (toolResult.failed) {
           failedToolCalls += 1;
         }
-        messages.push({
+        input.messages.push({
           type: "function_call",
           call_id: rawToolCall.id,
           name: rawToolCall.name,
           arguments: rawToolCall.arguments
         });
-        messages.push({
+        input.messages.push({
           type: "function_call_output",
           call_id: rawToolCall.id,
           output: toolResult.output
         });
 
         if (
-          options.maxFailedToolCalls !== undefined &&
-          failedToolCalls >= options.maxFailedToolCalls
+          input.options.maxFailedToolCalls !== undefined &&
+          failedToolCalls >= input.options.maxFailedToolCalls
         ) {
           return finalizeBudgetExceededWorkerResult({
-            options,
-            workerRun,
-            messages,
+            options: input.options,
+            workerRun: input.workerRun,
+            messages: input.messages,
             reason: "failed_tool_calls",
-            maxTurns,
+            maxTurns: input.maxTurns,
             toolCalls: executedToolCalls,
-            failedToolCalls
+            failedToolCalls,
+            ...codexDirectWarningOptions(input.warnings)
           });
         }
       }
     }
 
     return finalizeBudgetExceededWorkerResult({
-      options,
-      workerRun,
-      messages,
+      options: input.options,
+      workerRun: input.workerRun,
+      messages: input.messages,
       reason: "turns",
-      maxTurns,
+      maxTurns: input.maxTurns,
       toolCalls: executedToolCalls,
-      failedToolCalls
+      failedToolCalls,
+      ...codexDirectWarningOptions(input.warnings)
     });
   } catch (error) {
     if (error instanceof ToolActionApprovalRequiredError) {
       return completedWorkerResult({
-        options,
-        workerRun,
+        options: input.options,
+        workerRun: input.workerRun,
         status: "waiting_approval",
         exitCode: 2,
         summary: error.message,
         toolCalls: executedToolCalls,
         failedToolCalls,
+        ...codexDirectWarningOptions(input.warnings),
         approval: {
           id: error.approval.id,
           actionId: error.approval.actionId,
@@ -310,24 +353,26 @@ export async function runCodexDirectWorker(
 
     if (error instanceof ToolActionDeniedError) {
       return completedWorkerResult({
-        options,
-        workerRun,
+        options: input.options,
+        workerRun: input.workerRun,
         status: "blocked",
         exitCode: 3,
         summary: error.message,
         toolCalls: executedToolCalls,
-        failedToolCalls
+        failedToolCalls,
+        ...codexDirectWarningOptions(input.warnings)
       });
     }
 
     return completedWorkerResult({
-      options,
-      workerRun,
+      options: input.options,
+      workerRun: input.workerRun,
       status: "failed",
       exitCode: 1,
       summary: error instanceof Error ? error.message : String(error),
       toolCalls: executedToolCalls,
-      failedToolCalls
+      failedToolCalls,
+      ...codexDirectWarningOptions(input.warnings)
     });
   }
 }
@@ -344,7 +389,7 @@ export async function runCodexDirectPendingPatchResume(
   });
 
   try {
-    await runGovernedToolAction({
+    const governed = await runGovernedToolAction({
       ...governedToolOptions({ ...options, workerRun }),
       action: options.pendingPatch.action,
       run: async () => {
@@ -370,17 +415,65 @@ export async function runCodexDirectPendingPatchResume(
         };
       }
     });
+    const output = JSON.stringify({
+      mode: governed.value.mode,
+      filesTouched: governed.value.filesTouched,
+      applied: governed.value.applied,
+      approvalId: options.pendingPatch.approvalId,
+      policyDecisionId: options.pendingPatch.policyDecisionId,
+      resume: "approved_pending_patch"
+    });
+    const resumeContext = options.pendingPatch.pendingPatch.resumeContext;
 
-    return completedWorkerResult({
-      options,
+    if (resumeContext === undefined || options.transport === undefined) {
+      return completedWorkerResult({
+        options,
+        workerRun,
+        status: "completed",
+        exitCode: 0,
+        summary: "Applied approved pending patch without regenerating model output.",
+        toolCalls: 1,
+        failedToolCalls: 0,
+        warnings: [
+          `Resumed from approved pending patch ${options.pendingPatch.approvalId}.`,
+          ...(resumeContext === undefined
+            ? [
+                "Approved patch lacked durable conversation context; model loop continuation was skipped."
+              ]
+            : []),
+          ...(options.transport === undefined
+            ? [
+                "Codex Direct transport was unavailable; model loop continuation was skipped."
+              ]
+            : [])
+        ]
+      });
+    }
+
+    return runCodexDirectConversation({
+      options: {
+        ...options,
+        transport: options.transport,
+        modelProviderNetworkDomains: options.modelProviderNetworkDomains ?? [
+          "chatgpt.com"
+        ]
+      },
       workerRun,
-      status: "completed",
-      exitCode: 0,
-      summary: "Applied approved pending patch without regenerating model output.",
-      toolCalls: 1,
+      messages: [
+        ...resumeContext.messages,
+        resumeContext.toolCall,
+        {
+          type: "function_call_output",
+          call_id: resumeContext.toolCall.call_id,
+          output
+        }
+      ],
+      maxTurns: options.maxTurns ?? DEFAULT_CODEX_DIRECT_MAX_TURNS,
+      executedToolCalls: 1,
       failedToolCalls: 0,
       warnings: [
-        `Resumed from approved pending patch ${options.pendingPatch.approvalId}.`
+        `Resumed from approved pending patch ${options.pendingPatch.approvalId}.`,
+        "Continued the Codex Direct model loop from the approved tool call."
       ]
     });
   } catch (error) {
@@ -1030,6 +1123,7 @@ async function runCodexDirectTool(
   options: CodexDirectWorkerOptions & {
     workerRun: WorkerRun;
     toolCall: CodexDirectToolCall;
+    resumeContext?: CodexDirectPendingToolResumeContext;
   }
 ): Promise<{ output: string; failed: boolean }> {
   try {
@@ -1056,6 +1150,7 @@ async function executeCodexDirectTool(
   options: CodexDirectWorkerOptions & {
     workerRun: WorkerRun;
     toolCall: CodexDirectToolCall;
+    resumeContext?: CodexDirectPendingToolResumeContext;
   }
 ): Promise<string> {
   switch (options.toolCall.name) {
@@ -1535,6 +1630,7 @@ async function runGovernedVerifier(
 async function runGovernedApplyPatch(
   options: CodexDirectWorkerOptions & {
     workerRun: WorkerRun;
+    resumeContext?: CodexDirectPendingToolResumeContext;
     patch?: string;
     replacements?: {
       path: string;
@@ -1563,6 +1659,9 @@ async function runGovernedApplyPatch(
       pendingPatch: codexDirectPendingPatchPayload({
         filesTouched,
         approvalMetadata,
+        ...(options.resumeContext === undefined
+          ? {}
+          : { resumeContext: options.resumeContext }),
         ...(options.patch === undefined ? {} : { patch: options.patch }),
         ...(options.replacements === undefined
           ? {}
@@ -1947,9 +2046,11 @@ async function finalizeBudgetExceededWorkerResult(input: {
   maxTurns: number;
   toolCalls: number;
   failedToolCalls: number;
+  warnings?: string[];
 }): Promise<CodexDirectWorkerResult> {
   const budget = codexDirectBudgetSummary(input);
   const warning = codexDirectBudgetWarning(budget);
+  const warnings = [...(input.warnings ?? []), warning];
 
   if (input.options.finalizeOnBudget === true) {
     input.messages.push({
@@ -1982,7 +2083,7 @@ async function finalizeBudgetExceededWorkerResult(input: {
         summary,
         toolCalls: input.toolCalls,
         failedToolCalls: input.failedToolCalls,
-        warnings: [warning],
+        warnings,
         budget
       });
     } catch (error) {
@@ -1996,7 +2097,7 @@ async function finalizeBudgetExceededWorkerResult(input: {
         }`,
         toolCalls: input.toolCalls,
         failedToolCalls: input.failedToolCalls,
-        warnings: [warning],
+        warnings,
         budget
       });
     }
@@ -2010,7 +2111,7 @@ async function finalizeBudgetExceededWorkerResult(input: {
     summary: warning,
     toolCalls: input.toolCalls,
     failedToolCalls: input.failedToolCalls,
-    warnings: [warning],
+    warnings,
     budget
   });
 }
@@ -2097,6 +2198,12 @@ function completedWorkerResult(input: {
     ...(input.budget === undefined ? {} : { budget: input.budget }),
     ...(input.approval === undefined ? {} : { approval: input.approval })
   };
+}
+
+function codexDirectWarningOptions(
+  warnings: string[] | undefined
+): { warnings: string[] } | object {
+  return warnings === undefined ? {} : { warnings };
 }
 
 function workerRunStatus(
@@ -2536,6 +2643,7 @@ interface CodexDirectPatchApprovalMetadata {
 interface CodexDirectPendingPatchPayload extends CodexDirectPatchApprovalMetadata {
   mode: "unified_diff" | "replacements";
   filesTouched: string[];
+  resumeContext?: CodexDirectPendingToolResumeContext;
   patch?: string;
   replacements?: {
     path: string;
@@ -2543,6 +2651,11 @@ interface CodexDirectPendingPatchPayload extends CodexDirectPatchApprovalMetadat
     replace: string;
     replaceAll?: boolean;
   }[];
+}
+
+interface CodexDirectPendingToolResumeContext {
+  messages: CodexResponsesInputItem[];
+  toolCall: CodexResponsesFunctionCallInputItem;
 }
 
 type ActionEnvelopeWithPendingPatch = ActionEnvelope & {
@@ -2605,6 +2718,7 @@ function codexDirectPatchApprovalMetadata(input: {
 function codexDirectPendingPatchPayload(input: {
   filesTouched: string[];
   approvalMetadata: CodexDirectPatchApprovalMetadata;
+  resumeContext?: CodexDirectPendingToolResumeContext;
   patch?: string;
   replacements?: {
     path: string;
@@ -2621,6 +2735,14 @@ function codexDirectPendingPatchPayload(input: {
     dependencyImpact: input.approvalMetadata.dependencyImpact,
     riskSummary: input.approvalMetadata.riskSummary,
     canonicalSignature: input.approvalMetadata.canonicalSignature,
+    ...(input.resumeContext === undefined
+      ? {}
+      : {
+          resumeContext: {
+            messages: cloneCodexResponsesMessages(input.resumeContext.messages),
+            toolCall: input.resumeContext.toolCall
+          }
+        }),
     ...(input.patch === undefined ? {} : { patch: input.patch }),
     ...(input.replacements === undefined ? {} : { replacements: input.replacements })
   };
@@ -2723,6 +2845,7 @@ function parseCodexDirectPendingPatchPayload(
           },
           riskSummary: value.riskSummary,
           canonicalSignature: value.canonicalSignature,
+          ...optionalParsedResumeContext(value.resumeContext),
           patch: value.patch
         }
       : undefined;
@@ -2746,8 +2869,109 @@ function parseCodexDirectPendingPatchPayload(
         },
         riskSummary: value.riskSummary,
         canonicalSignature: value.canonicalSignature,
+        ...optionalParsedResumeContext(value.resumeContext),
         replacements
       };
+}
+
+function optionalParsedResumeContext(
+  value: unknown
+): { resumeContext: CodexDirectPendingToolResumeContext } | object {
+  const resumeContext = parseCodexDirectPendingToolResumeContext(value);
+
+  return resumeContext === undefined ? {} : { resumeContext };
+}
+
+function parseCodexDirectPendingToolResumeContext(
+  value: unknown
+): CodexDirectPendingToolResumeContext | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const messages = parseCodexResponsesInputItems(value.messages);
+  const toolCall = parseCodexResponsesFunctionCallInputItem(value.toolCall);
+
+  return messages === undefined || toolCall === undefined
+    ? undefined
+    : { messages, toolCall };
+}
+
+function cloneCodexResponsesMessages(
+  messages: CodexResponsesInputItem[]
+): CodexResponsesInputItem[] {
+  return messages.map((item) => ({ ...item }));
+}
+
+function parseCodexResponsesInputItems(
+  value: unknown
+): CodexResponsesInputItem[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  const parsed = value.map(parseCodexResponsesInputItem);
+
+  return parsed.every((item): item is CodexResponsesInputItem => item !== undefined)
+    ? parsed
+    : undefined;
+}
+
+function parseCodexResponsesInputItem(
+  value: unknown
+): CodexResponsesInputItem | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  if (
+    (value.role === "user" || value.role === "assistant") &&
+    typeof value.content === "string"
+  ) {
+    return {
+      role: value.role,
+      content: value.content
+    };
+  }
+
+  if (value.type === "function_call") {
+    return parseCodexResponsesFunctionCallInputItem(value);
+  }
+
+  if (
+    value.type === "function_call_output" &&
+    typeof value.call_id === "string" &&
+    typeof value.output === "string"
+  ) {
+    return {
+      type: "function_call_output",
+      call_id: value.call_id,
+      output: value.output
+    };
+  }
+
+  return undefined;
+}
+
+function parseCodexResponsesFunctionCallInputItem(
+  value: unknown
+): CodexResponsesFunctionCallInputItem | undefined {
+  if (
+    !isRecord(value) ||
+    value.type !== "function_call" ||
+    typeof value.call_id !== "string" ||
+    typeof value.name !== "string" ||
+    typeof value.arguments !== "string"
+  ) {
+    return undefined;
+  }
+
+  return {
+    type: "function_call",
+    call_id: value.call_id,
+    name: value.name,
+    arguments: value.arguments
+  };
 }
 
 function normalizePendingPatchRiskClass(

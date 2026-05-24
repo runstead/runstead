@@ -407,7 +407,7 @@ export async function runLocalAgentTask(
       ? readLocalAgentApprovedPendingPatch(state.stateDb, claimedTask)
       : undefined;
   const runtime =
-    worker === CODEX_DIRECT_WORKER_KIND && pendingPatchResume === undefined
+    worker === CODEX_DIRECT_WORKER_KIND
       ? options.transport === undefined
         ? await createModelProviderRuntime({
             cwd,
@@ -437,7 +437,7 @@ export async function runLocalAgentTask(
     join(root.root, "policies", "repo-maintenance.yaml")
   );
   const transport =
-    worker === CODEX_DIRECT_WORKER_KIND && pendingPatchResume === undefined
+    worker === CODEX_DIRECT_WORKER_KIND
       ? (options.transport ??
         (runtime as Awaited<ReturnType<typeof createModelProviderRuntime>>).transport)
       : undefined;
@@ -713,8 +713,15 @@ async function runLocalAgentWorker(options: {
         ...(options.modelProviderResourceId === undefined
           ? {}
           : { modelProviderResourceId: options.modelProviderResourceId }),
+        ...(options.modelProviderNetworkDomains === undefined
+          ? {}
+          : { modelProviderNetworkDomains: options.modelProviderNetworkDomains }),
         evidenceDir: join(options.root, "evidence"),
+        ...(options.transport === undefined ? {} : { transport: options.transport }),
         pendingPatch: options.pendingPatchResume,
+        ...(maxTurns === undefined ? {} : { maxTurns }),
+        ...localAgentTaskToolBudget(options.task),
+        finalizeOnBudget: localAgentTaskFinalizeOnBudget(options.task),
         ...(options.now === undefined ? {} : { now: options.now })
       });
     }

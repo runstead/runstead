@@ -1226,7 +1226,7 @@ describe("local agent task primitives", () => {
     }
   });
 
-  it("applies approved pending patches on resume without model regeneration", async () => {
+  it("continues codex_direct model loop after an approved pending patch", async () => {
     const workspace = await mkdtemp(
       join(tmpdir(), "runstead-local-agent-pending-patch-resume-")
     );
@@ -1276,6 +1276,13 @@ describe("local agent task primitives", () => {
       expect(pendingPatch.context.pendingPatch).toMatchObject({
         mode: "replacements",
         filesTouched: ["docs/notes.txt"],
+        resumeContext: {
+          toolCall: {
+            type: "function_call",
+            call_id: "call_patch_docs",
+            name: "apply_patch"
+          }
+        },
         replacements: [
           {
             path: "docs/notes.txt",
@@ -1295,18 +1302,18 @@ describe("local agent task primitives", () => {
       const resumed = await runLocalAgentTask({
         cwd: workspace,
         taskId: created.task.id,
-        transport: rejectingTransport()
+        transport: finishAfterPatchResumeTransport()
       });
 
       expect(resumed.status).toBe("completed");
-      expect(resumed.summary).toContain("Applied approved pending patch");
+      expect(resumed.summary).toContain("Patch applied and task completed.");
       expect(resumed.task.attempt).toBe(1);
       await expect(
         readFile(join(workspace, "docs", "notes.txt"), "utf8")
       ).resolves.toBe("after\n");
       expect(
         countTaskToolCalls(created.stateDb, created.task.id, "model.inference.request")
-      ).toBe(modelCallsBefore);
+      ).toBe(modelCallsBefore + 1);
       expect(resumed.audit.toolCalls).toEqual(
         expect.arrayContaining([
           {
@@ -1439,12 +1446,28 @@ function patchDocsTransport(): CodexDirectTransport {
   };
 }
 
-function rejectingTransport(): CodexDirectTransport {
+function finishAfterPatchResumeTransport(): CodexDirectTransport {
   return {
-    createResponse() {
-      throw new Error(
-        "model transport must not be used for approved pending patch resume"
+    createResponse(request) {
+      const hasApprovedPatchOutput = request.input.some(
+        (item) =>
+          "type" in item &&
+          item.type === "function_call_output" &&
+          item.output.includes("approved_pending_patch")
       );
+
+      if (!hasApprovedPatchOutput) {
+        throw new Error("resume request must include the approved patch tool output");
+      }
+
+      return Promise.resolve({
+        id: "resp_local_agent_pending_patch_resume_2",
+        status: "completed",
+        outputText: "Patch applied and task completed.",
+        toolCalls: [],
+        finishReason: "stop",
+        outputItems: []
+      });
     }
   };
 }
