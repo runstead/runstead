@@ -1175,13 +1175,21 @@ describe("startup readiness run model", () => {
           "input[name='todo']"
         ])
       );
+      const formSubmitInputSelector =
+        "form:has(button[type='submit']) input:not([type='search']):not([aria-label*='search' i]):not([placeholder*='search' i])";
+      const addPlaceholderSelector =
+        "input[placeholder*='add' i][placeholder*='todo' i]";
       expect(
-        steps[0]?.type === "fill" ? steps[0].selectors?.indexOf("#todo-input") : -1
+        steps[0]?.type === "fill"
+          ? steps[0].selectors?.indexOf(formSubmitInputSelector)
+          : -1
       ).toBeLessThan(
         steps[0]?.type === "fill"
-          ? (steps[0].selectors?.indexOf("input[placeholder*='todo' i]") ?? -1)
+          ? (steps[0].selectors?.indexOf(addPlaceholderSelector) ?? -1)
           : -1
       );
+      expect(firstStep.selectors).not.toContain("input[placeholder*='todo' i]");
+      expect(firstStep.selectors).not.toContain("input[placeholder*='task' i]");
       const searchStep = steps[4];
       expect(searchStep?.type).toBe("fill");
       if (searchStep?.type !== "fill") {
