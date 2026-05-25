@@ -370,6 +370,19 @@ before recording the evidence artifact. Named deployment connectors
 (`vercel`, `fly`, `render`) and production connectors such as `sentry` and
 `posthog` accept `--target`, so their artifacts carry readiness tiers like
 `staging_deployment`, `production_deployment`, or `real_user_analytics`.
+Provider adapters are deliberately defensive: malformed JSON, provider HTTP
+errors, pending deployment or workflow states, and incomplete monitoring
+payloads are recorded as explicit failed or unknown evidence instead of
+crashing the run. Token-like response fields and the credential used for the
+request are redacted before evidence is persisted.
+
+| Connector        | Credential Env      | Expected Provider Shape                                                                              |
+| ---------------- | ------------------- | ---------------------------------------------------------------------------------------------------- |
+| `github_actions` | `GITHUB_TOKEN`      | workflow run JSON with `workflow`/`name`, `status`, `conclusion`, and commit/run id fields           |
+| `vercel`         | `VERCEL_TOKEN`      | deployment JSON with `readyState` or `status`, deployment URL, and commit SHA                        |
+| `render`         | `RENDER_API_KEY`    | deploy JSON with `status`/`state`, service URL, and commit id                                        |
+| `sentry`         | `SENTRY_AUTH_TOKEN` | release or issue JSON with `openReleaseBlockers`, `issueCount`, or `issues`                          |
+| `posthog`        | `POSTHOG_API_KEY`   | metric JSON with `metric`, numeric `value`, optional `threshold`, `window`, and `realUserData: true` |
 
 For `--target staging` and `--target production`, `startup ready --plan`
 promotes these connector contracts into readiness requirements. Missing

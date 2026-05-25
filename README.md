@@ -317,7 +317,9 @@ recording them.
 For staging and production targets, `startup ready --plan` also reports the
 required source connector setup for CI, deployment, monitoring, and analytics.
 Missing provider credentials are readiness blockers until the relevant
-connector evidence can be collected or verified.
+connector evidence can be collected or verified. Provider adapter collection
+records malformed, pending, and provider-error payloads as explicit evidence
+states, and redacts token-like fields before writing artifacts.
 
 ## Team Mode (Experimental)
 

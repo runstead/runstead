@@ -138,6 +138,12 @@ export interface StartupSourceProviderCollection {
   payload: JsonObject;
 }
 
+interface ConnectorResponseJsonParseResult {
+  payload: JsonObject;
+  parseError?: string;
+  responseExcerpt?: string;
+}
+
 export interface StartupSourceConnectorReadinessRequirement {
   id: string;
   title: string;
@@ -517,13 +523,21 @@ export async function collectStartupSourceEvidence(
     ...(token === undefined ? {} : { headers: providerAuthHeaders(adapter, token) })
   });
   const responseText = await readVerificationResponseText(response);
-  const responsePayload = parseConnectorResponseJson(responseText);
+  const parsedResponse = parseConnectorResponseJson(responseText, {
+    secrets: token === undefined ? [] : [token]
+  });
   const collection = collectProviderPayload({
     adapter,
     definition,
     responseStatus: response.status,
     responseOk: response.ok,
-    responsePayload
+    responsePayload: parsedResponse.payload,
+    ...(parsedResponse.parseError === undefined
+      ? {}
+      : { parseError: parsedResponse.parseError }),
+    ...(parsedResponse.responseExcerpt === undefined
+      ? {}
+      : { responseExcerpt: parsedResponse.responseExcerpt })
   });
   const result = await recordStartupSourceEvidence({
     ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
@@ -898,18 +912,40 @@ function connectorPayload(payload: string | undefined): JsonObject | undefined {
   return parsed as JsonObject;
 }
 
-function parseConnectorResponseJson(value: string): JsonObject {
+function parseConnectorResponseJson(
+  value: string,
+  options?: {
+    secrets?: string[];
+  }
+): ConnectorResponseJsonParseResult {
   if (value.trim().length === 0) {
-    return {};
+    return { payload: {} };
   }
 
-  const parsed = JSON.parse(value) as unknown;
+  try {
+    const parsed = JSON.parse(value) as unknown;
 
-  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-    throw new Error("connector response must be a JSON object");
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+      return {
+        payload: {},
+        parseError: "connector response must be a JSON object",
+        responseExcerpt: redactSecrets(
+          boundedText(value, 2_000),
+          options?.secrets ?? []
+        )
+      };
+    }
+
+    return {
+      payload: redactJsonObject(parsed as JsonObject, options?.secrets ?? [])
+    };
+  } catch (error) {
+    return {
+      payload: {},
+      parseError: error instanceof Error ? error.message : "invalid JSON response",
+      responseExcerpt: redactSecrets(boundedText(value, 2_000), options?.secrets ?? [])
+    };
   }
-
-  return parsed as JsonObject;
 }
 
 async function readVerificationResponseText(
@@ -1004,7 +1040,25 @@ function collectProviderPayload(input: {
   responseStatus: number;
   responseOk: boolean;
   responsePayload: JsonObject;
+  parseError?: string;
+  responseExcerpt?: string;
 }): StartupSourceProviderCollection {
+  if (input.parseError !== undefined) {
+    return {
+      status: "failed",
+      summary: `${input.definition.displayName} adapter returned invalid JSON`,
+      payload: {
+        connector: input.adapter.connector,
+        provider: input.adapter.provider,
+        httpStatus: input.responseStatus,
+        parseError: input.parseError,
+        ...(input.responseExcerpt === undefined
+          ? {}
+          : { responseExcerpt: input.responseExcerpt })
+      }
+    };
+  }
+
   if (!input.responseOk) {
     return {
       status: "failed",
@@ -1055,10 +1109,28 @@ function collectGithubActionsPayload(
   const status = stringPayloadValue(payload, "status");
   const workflow =
     stringPayloadValue(payload, "workflow") ?? stringPayloadValue(payload, "name");
-  const passed = conclusion === "success" || status === "success";
+  const normalizedConclusion = normalizeProviderState(conclusion);
+  const normalizedStatus = normalizeProviderState(status);
+  const passed = normalizedConclusion === "success" || normalizedStatus === "success";
+  const failed =
+    normalizedConclusion === "failure" ||
+    normalizedConclusion === "failed" ||
+    normalizedConclusion === "cancelled" ||
+    normalizedConclusion === "canceled" ||
+    normalizedConclusion === "timed_out" ||
+    normalizedConclusion === "action_required";
+  const pending =
+    normalizedStatus !== undefined &&
+    normalizedStatus !== "completed" &&
+    normalizedStatus !== "success";
+  const collectionStatus: StartupSourceProviderCollection["status"] = passed
+    ? "passed"
+    : failed
+      ? "failed"
+      : "unknown";
 
   return {
-    status: passed ? "passed" : "failed",
+    status: pending && collectionStatus !== "failed" ? "unknown" : collectionStatus,
     summary: `GitHub Actions workflow ${workflow ?? "run"} ${conclusion ?? status ?? "unknown"}`,
     payload: {
       workflow: workflow ?? "unknown",
@@ -1084,10 +1156,45 @@ function collectDeploymentPayload(input: {
     stringPayloadValue(input.payload, "state") ??
     stringPayloadValue(input.payload, "readyState") ??
     "unknown";
-  const passed = input.readyStates.includes(status);
+  const normalizedStatus = normalizeProviderState(status);
+  const readyStates = new Set(
+    input.readyStates.map((state) => normalizeProviderState(state))
+  );
+  const passed = normalizedStatus !== undefined && readyStates.has(normalizedStatus);
+  const failed =
+    normalizedStatus !== undefined &&
+    [
+      "error",
+      "failed",
+      "failure",
+      "canceled",
+      "cancelled",
+      "crashed",
+      "timed_out"
+    ].includes(normalizedStatus);
+  const unknown =
+    normalizedStatus === undefined ||
+    [
+      "unknown",
+      "initializing",
+      "queued",
+      "building",
+      "build_in_progress",
+      "deploying",
+      "pending",
+      "created",
+      "update_in_progress"
+    ].includes(normalizedStatus);
+  const collectionStatus: StartupSourceProviderCollection["status"] = passed
+    ? "passed"
+    : failed
+      ? "failed"
+      : unknown
+        ? "unknown"
+        : "failed";
 
   return {
-    status: passed ? "passed" : "failed",
+    status: collectionStatus,
     summary: `${input.displayName} deployment ${status}`,
     payload: {
       connector: input.connector,
@@ -1108,14 +1215,16 @@ function collectSentryPayload(payload: JsonObject): StartupSourceProviderCollect
   const blockers =
     numberPayloadValue(payload, "openReleaseBlockers") ??
     numberPayloadValue(payload, "issueCount") ??
-    arrayPayloadLength(payload, "issues") ??
-    0;
+    arrayPayloadLength(payload, "issues");
+  const status: StartupSourceProviderCollection["status"] =
+    blockers === undefined ? "unknown" : blockers === 0 ? "passed" : "failed";
+  const blockerSummary = blockers === undefined ? "unknown" : String(blockers);
 
   return {
-    status: blockers === 0 ? "passed" : "failed",
-    summary: `Sentry release blockers: ${blockers}`,
+    status,
+    summary: `Sentry release blockers: ${blockerSummary}`,
     payload: {
-      openReleaseBlockers: blockers,
+      openReleaseBlockers: blockers ?? "unknown",
       release: stringPayloadValue(payload, "release") ?? "unknown",
       project: stringPayloadValue(payload, "project") ?? "unknown"
     }
@@ -1123,21 +1232,31 @@ function collectSentryPayload(payload: JsonObject): StartupSourceProviderCollect
 }
 
 function collectPosthogPayload(payload: JsonObject): StartupSourceProviderCollection {
-  const value = numberPayloadValue(payload, "value") ?? 0;
+  const value = numberPayloadValue(payload, "value");
   const threshold = numberPayloadValue(payload, "threshold");
-  const passed = threshold === undefined ? true : value >= threshold;
+  const realUserData = Boolean(payload.realUserData);
+  const passed =
+    value !== undefined &&
+    realUserData &&
+    (threshold === undefined || value >= threshold);
+  const status: StartupSourceProviderCollection["status"] =
+    value === undefined ? "unknown" : passed ? "passed" : "failed";
 
   return {
-    status: passed ? "passed" : "failed",
-    summary: `PostHog metric ${stringPayloadValue(payload, "metric") ?? "activation"} value ${value}`,
+    status,
+    summary: `PostHog metric ${stringPayloadValue(payload, "metric") ?? "activation"} value ${value ?? "unknown"}`,
     payload: {
       metric: stringPayloadValue(payload, "metric") ?? "activation",
-      value,
+      value: value ?? "unknown",
       ...(threshold === undefined ? {} : { threshold }),
       window: stringPayloadValue(payload, "window") ?? "unknown",
-      realUserData: Boolean(payload.realUserData)
+      realUserData
     }
   };
+}
+
+function normalizeProviderState(value: string | undefined): string | undefined {
+  return value?.trim().toLowerCase();
 }
 
 function numberPayloadValue(payload: JsonObject, field: string): number | undefined {
@@ -1150,4 +1269,41 @@ function arrayPayloadLength(payload: JsonObject, field: string): number | undefi
   const value = payload[field];
 
   return Array.isArray(value) ? value.length : undefined;
+}
+
+function redactJsonObject(payload: JsonObject, secrets: string[]): JsonObject {
+  return redactJsonValue(payload, secrets) as JsonObject;
+}
+
+function redactJsonValue(value: unknown, secrets: string[]): unknown {
+  if (typeof value === "string") {
+    return redactSecrets(value, secrets);
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((item) => redactJsonValue(item, secrets));
+  }
+
+  if (typeof value === "object" && value !== null) {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, entry]) => [
+        key,
+        sensitiveProviderField(key) ? "[redacted]" : redactJsonValue(entry, secrets)
+      ])
+    );
+  }
+
+  return value;
+}
+
+function sensitiveProviderField(key: string): boolean {
+  return /(?:authorization|api[_-]?key|access[_-]?token|refresh[_-]?token|token|secret|password|bearer)/i.test(
+    key
+  );
+}
+
+function redactSecrets(value: string, secrets: string[]): string {
+  return secrets
+    .filter((secret) => secret.trim().length > 0)
+    .reduce((redacted, secret) => redacted.split(secret).join("[redacted]"), value);
 }

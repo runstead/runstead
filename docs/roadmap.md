@@ -38,7 +38,8 @@ just an agent wrapper. The current product surface includes:
 - runtime backend selection diagnostics for local SQLite and explicit Postgres
   team mode
 - provider source evidence collection for GitHub Actions, Vercel, Render,
-  Sentry, and PostHog
+  Sentry, and PostHog, including defensive status classification and token
+  redaction
 - staging/production source connector requirements in `startup ready --plan`
   and final readiness verdicts
 - wrapped-worker progress summaries with last-output age and
@@ -78,6 +79,9 @@ The current implementation wave closed the highest-confidence product gaps:
   windows in full-suite runs.
 - `startup source collect` records structured provider evidence through
   executable adapters.
+- Provider adapters classify success, failure, pending, malformed, and
+  provider-error payloads while redacting token-like response fields before
+  evidence is persisted.
 - `startup ready --plan` and final readiness evaluation now consume
   staging/production source connector setup requirements.
 - Dashboard operator controls can run actions and approve/deny pending
@@ -113,24 +117,7 @@ pnpm --filter @runstead/cli typecheck
 pnpm --filter @runstead/runtime typecheck
 ```
 
-### 2. Harden provider adapters beyond offline JSON fixtures
-
-Acceptance:
-
-- Each adapter has documented provider endpoint shapes and credential names.
-- Parser tests cover success, failure, pending, malformed, and provider-error
-  payloads.
-- Missing credentials remain explicit staging/production setup blockers.
-- Provider failures produce actionable blockers instead of generic unknowns.
-
-Validation:
-
-```bash
-pnpm --filter @runstead/cli exec vitest run src/startup-source-connectors.test.ts src/startup-ready.test.ts
-pnpm --filter @runstead/cli typecheck
-```
-
-### 3. Deepen operator recovery timeline UX
+### 2. Deepen operator recovery timeline UX
 
 Dogfood runs often move from blocked to ready through repair or recovery. The
 dashboard has action controls and timeline groups; the next step is a richer
@@ -149,7 +136,7 @@ Validation:
 pnpm --filter @runstead/cli exec vitest run src/dashboard.test.ts src/startup-ready.test.ts
 ```
 
-### 4. Prove domain-pack generality with a second non-startup golden path
+### 3. Prove domain-pack generality with a second non-startup golden path
 
 `ai-native-startup` is deep and `email-followup` is now richer. The pack
 abstraction still needs one more full dogfood path outside startup readiness to
@@ -174,9 +161,8 @@ pnpm run format:check
 ## Suggested Order
 
 1. Continue CLI module extraction by command/runtime ownership.
-2. Harden provider adapter parsing and documentation.
-3. Deepen operator recovery timeline explanations and action-specific forms.
-4. Add a second non-startup golden path.
+2. Deepen operator recovery timeline explanations and action-specific forms.
+3. Add a second non-startup golden path.
 
 ## Milestone Validation
 

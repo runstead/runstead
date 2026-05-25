@@ -309,6 +309,182 @@ describe("startup source connectors", () => {
     }
   });
 
+  it("classifies provider adapter edge states and redacts collected secrets", async () => {
+    const workspace = join(
+      tmpdir(),
+      `runstead-startup-source-adapter-states-${process.pid}`
+    );
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await mkdir(workspace, { recursive: true });
+      await writeFile(
+        join(workspace, "package.json"),
+        `${JSON.stringify({ name: "source-adapter-states-fixture", private: true }, null, 2)}\n`,
+        "utf8"
+      );
+      await startupOnboard({
+        cwd: workspace,
+        now: new Date("2026-05-14T00:00:00.000Z")
+      });
+
+      const pendingGithub = await collectStartupSourceEvidence({
+        cwd: workspace,
+        connector: "github_actions",
+        uri: "https://api.github.com/repos/acme/todo/actions/runs/124",
+        fetch: () =>
+          Promise.resolve({
+            ok: true,
+            status: 200,
+            text: () =>
+              Promise.resolve(
+                JSON.stringify({
+                  workflow: "launch",
+                  status: "in_progress",
+                  head_sha: "abc123",
+                  id: 124
+                })
+              )
+          })
+      });
+      const failedRender = await collectStartupSourceEvidence({
+        cwd: workspace,
+        connector: "render",
+        uri: "https://api.render.com/v1/services/srv/deploys/dep",
+        fetch: () =>
+          Promise.resolve({
+            ok: true,
+            status: 200,
+            text: () =>
+              Promise.resolve(
+                JSON.stringify({
+                  status: "failed",
+                  url: "https://todo.onrender.com",
+                  commit: "abc123"
+                })
+              )
+          })
+      });
+      const unknownSentry = await collectStartupSourceEvidence({
+        cwd: workspace,
+        connector: "sentry",
+        uri: "https://sentry.io/api/0/projects/acme/todo/releases/1.0/",
+        fetch: () =>
+          Promise.resolve({
+            ok: true,
+            status: 200,
+            text: () =>
+              Promise.resolve(
+                JSON.stringify({
+                  project: "todo",
+                  release: "1.0"
+                })
+              )
+          })
+      });
+      const syntheticPosthog = await collectStartupSourceEvidence({
+        cwd: workspace,
+        connector: "posthog",
+        uri: "https://app.posthog.com/api/projects/1/insights/activation",
+        fetch: () =>
+          Promise.resolve({
+            ok: true,
+            status: 200,
+            text: () =>
+              Promise.resolve(
+                JSON.stringify({
+                  metric: "activation",
+                  value: 0.5,
+                  threshold: 0.3,
+                  realUserData: false
+                })
+              )
+          })
+      });
+      const httpFailure = await collectStartupSourceEvidence({
+        cwd: workspace,
+        connector: "vercel",
+        uri: "https://api.vercel.com/v13/deployments/dpl_failed",
+        token: "vc_secret_token",
+        fetch: () =>
+          Promise.resolve({
+            ok: false,
+            status: 401,
+            text: () =>
+              Promise.resolve(
+                JSON.stringify({
+                  error: "unauthorized",
+                  token: "vc_secret_token",
+                  nested: {
+                    authorization: "Bearer vc_secret_token",
+                    note: "request token vc_secret_token leaked by fixture"
+                  }
+                })
+              )
+          })
+      });
+      const malformed = await collectStartupSourceEvidence({
+        cwd: workspace,
+        connector: "vercel",
+        uri: "https://api.vercel.com/v13/deployments/dpl_malformed",
+        token: "vc_secret_token",
+        fetch: () =>
+          Promise.resolve({
+            ok: true,
+            status: 200,
+            text: () => Promise.resolve("not-json vc_secret_token")
+          })
+      });
+      const httpFailureArtifact = await readFile(httpFailure.artifactPath, "utf8");
+      const malformedArtifact = await readFile(malformed.artifactPath, "utf8");
+
+      expect(pendingGithub.collection).toMatchObject({
+        status: "unknown",
+        summary: "GitHub Actions workflow launch in_progress"
+      });
+      expect(failedRender.collection).toMatchObject({
+        status: "failed",
+        summary: "Render Deployment deployment failed"
+      });
+      expect(unknownSentry.collection).toMatchObject({
+        status: "unknown",
+        summary: "Sentry release blockers: unknown"
+      });
+      expect(syntheticPosthog.collection).toMatchObject({
+        status: "failed",
+        payload: {
+          metric: "activation",
+          value: 0.5,
+          threshold: 0.3,
+          realUserData: false
+        }
+      });
+      expect(httpFailure.collection).toMatchObject({
+        status: "failed",
+        payload: {
+          response: {
+            token: "[redacted]",
+            nested: {
+              authorization: "[redacted]",
+              note: "request token [redacted] leaked by fixture"
+            }
+          }
+        }
+      });
+      expect(malformed.collection).toMatchObject({
+        status: "failed",
+        summary: "Vercel Deployment adapter returned invalid JSON",
+        payload: {
+          responseExcerpt: "not-json [redacted]"
+        }
+      });
+      expect(httpFailureArtifact).not.toContain("vc_secret_token");
+      expect(malformedArtifact).not.toContain("vc_secret_token");
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
   it("lists connector definitions with defensive copies", () => {
     const definitions = listStartupSourceConnectorDefinitions();
     const github = definitions.find(
