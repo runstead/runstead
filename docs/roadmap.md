@@ -72,6 +72,8 @@ The current implementation wave closed the highest-confidence product gaps:
 - Shared CLI RBAC guard moved out of the CLI entrypoint into `cli-rbac`.
 - CLI error type and formatting moved out of the CLI entrypoint into
   `cli-errors`.
+- Shared unmanaged-helper acknowledgement moved out of the CLI entrypoint into
+  `cli-unmanaged`.
 - Shared CLI positive integer parser moved out of the CLI entrypoint into
   `cli-parsers`.
 - Top-level `resume` command registration moved out of the CLI entrypoint into

@@ -6,6 +6,7 @@ import { pathToFileURL } from "node:url";
 import { formatCliError } from "./cli-errors.js";
 import { parseRequiredPositiveInteger } from "./cli-parsers.js";
 import { requireRbacPermission } from "./cli-rbac.js";
+import { requireUnmanagedHelperAcknowledgement } from "./cli-unmanaged.js";
 import { registerCoreCommands } from "./commands/core.js";
 import { registerDashboardCommand } from "./commands/dashboard.js";
 import { registerDoctorCommand } from "./commands/doctor.js";
@@ -28,6 +29,7 @@ export interface CreateProgramOptions {
 
 export { formatCliError, RunsteadCliError } from "./cli-errors.js";
 export { parseRequiredPositiveInteger } from "./cli-parsers.js";
+export { requireUnmanagedHelperAcknowledgement } from "./cli-unmanaged.js";
 
 export async function runCli(argv = process.argv): Promise<void> {
   try {
@@ -4028,17 +4030,6 @@ function parseRequiredInteger(value: string, optionName: string): number {
   }
 
   return parsed;
-}
-
-export function requireUnmanagedHelperAcknowledgement(
-  options: { unmanaged?: boolean },
-  action: string
-): void {
-  if (options.unmanaged !== true) {
-    throw new Error(
-      `Refusing to ${action} through an unmanaged helper. Use the governed runtime, or pass --unmanaged to acknowledge this bypass.`
-    );
-  }
 }
 
 export function requireSecretPrintAcknowledgement(
