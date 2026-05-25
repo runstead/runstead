@@ -7,6 +7,7 @@ import { requireRbacPermission } from "./cli-rbac.js";
 import { registerCoreCommands } from "./commands/core.js";
 import { registerDashboardCommand } from "./commands/dashboard.js";
 import { registerDoctorCommand } from "./commands/doctor.js";
+import { registerResumeCommand } from "./commands/resume.js";
 import { registerTeamControlPlaneCommand } from "./commands/team-control-plane.js";
 import { registerStartupCommands } from "./startup-command.js";
 import type { LocalAgentVerifierPolicy } from "./local-agent-presets.js";
@@ -87,6 +88,7 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
   registerDoctorCommand(program);
   registerTeamControlPlaneCommand(program);
   registerCoreCommands(program);
+  registerResumeCommand(program);
 
   const ops = program
     .command("ops")
@@ -125,32 +127,6 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
         );
       }
     );
-
-  program
-    .command("resume")
-    .description("Resume interrupted local work by requeueing interrupted tasks.")
-    .option("--cwd <path>", "Workspace directory")
-    .option("--actor <id>", "RBAC subject for task execution", "local-admin")
-    .action(async (options: { cwd?: string; actor: string }) => {
-      await requireRbacPermission({
-        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-        actor: options.actor,
-        permission: "task.run",
-        action: "resume tasks"
-      });
-
-      const { resumeInterruptedTasks } = await import("./resume.js");
-      const result = await resumeInterruptedTasks(options);
-
-      console.log(`Requeued tasks: ${result.requeuedTasks.length}`);
-      for (const item of result.requeuedTasks) {
-        console.log(`${item.task.id}: ${item.previousStatus} -> ${item.task.status}`);
-      }
-      console.log(`Failed tasks: ${result.failedTasks.length}`);
-      for (const item of result.failedTasks) {
-        console.log(`${item.task.id}: ${item.previousStatus} -> ${item.task.status}`);
-      }
-    });
 
   const checkpoint = program
     .command("checkpoint")

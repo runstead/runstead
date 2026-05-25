@@ -70,6 +70,8 @@ The current implementation wave closed the highest-confidence product gaps:
 - Top-level core command registration (`init`, `status`, `upgrade`) moved out
   of the CLI entrypoint into `commands/core`.
 - Shared CLI RBAC guard moved out of the CLI entrypoint into `cli-rbac`.
+- Top-level `resume` command registration moved out of the CLI entrypoint into
+  `commands/resume`.
 - `packages/cli/src/index.ts` no longer owns dashboard or doctor command
   registration.
 - Dashboard snapshot and operator API contracts moved out of the dashboard
