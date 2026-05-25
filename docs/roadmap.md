@@ -354,6 +354,8 @@ The current implementation wave closed the highest-confidence product gaps:
   phase, evidence ids, and artifacts that cleared them.
 - Dashboard operator console includes action-specific forms for verifier runs
   and manual evidence recording through the protected local API.
+- Startup complete-check markdown, JSON, event, score, and status output helpers
+  moved out of `startup-complete-check` into `startup-complete-check-output`.
 - `email-followup` now has a mature draft-only lifecycle, fixtures, evals,
   gates, report sections, and docs.
 - Non-startup golden paths are covered by a combined runbook and CLI/domain
