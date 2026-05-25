@@ -6,15 +6,9 @@ import { requireSecretPrintAcknowledgement } from "../cli-secrets.js";
 import { requireUnmanagedHelperAcknowledgement } from "../cli-unmanaged.js";
 import { resolveGitHubAuthToken } from "../github-auth-token.js";
 import { parseVerifierCommandOption } from "../verifier-command-options.js";
+import { addCiRepairOrchestrationCommand } from "./ci-repair.js";
 
-export interface RegisterGitHubCommandOptions {
-  addCiRepairOrchestrationCommand: (command: Command) => void;
-}
-
-export function registerGitHubCommand(
-  program: Command,
-  options: RegisterGitHubCommandOptions
-): Command {
+export function registerGitHubCommand(program: Command): Command {
   const github = program.command("github").description("GitHub integration.");
   const githubApp = github
     .command("app")
@@ -306,7 +300,7 @@ export function registerGitHubCommand(
       }
     );
 
-  options.addCiRepairOrchestrationCommand(
+  addCiRepairOrchestrationCommand(
     githubRun
       .command("orchestrate-repair")
       .description("Run the CI repair branch, worker, verifier, and PR loop.")
