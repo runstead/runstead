@@ -13,6 +13,18 @@ import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sql
 import { writeJsonArtifactFile } from "./artifact-store.js";
 import { requireRunsteadStateDb } from "./runstead-root.js";
 import {
+  arrayHasString,
+  artifactSources,
+  hasDecisionAssociation,
+  hasHypothesisAssociation,
+  hasNonEmptyString,
+  hasNonEmptyValue,
+  hasSourceRefs,
+  isRecord,
+  parsedArtifactContent,
+  type StartupGateEvidenceArtifact
+} from "./startup-gate-artifacts.js";
+import {
   normalizeStartupEvidenceSources,
   startupEvidenceProvenance,
   type StartupEvidenceSource,
@@ -242,15 +254,6 @@ interface StartupGateEvidenceRow {
   uri: string;
   summary: string | null;
   created_at: string;
-}
-
-interface StartupGateEvidenceArtifact {
-  sourceRefs?: unknown;
-  sources?: unknown;
-  associations?: unknown;
-  remediation?: unknown;
-  content?: unknown;
-  result?: unknown;
 }
 
 interface StartupGatePreviousEventRow {
@@ -1337,80 +1340,6 @@ function hasRemediationQualityFields(value: unknown): boolean {
     ) &&
     hasNonEmptyString(value.acceptanceCriteria)
   );
-}
-
-function parsedArtifactContent(
-  artifact: StartupGateEvidenceArtifact | undefined
-): unknown {
-  if (artifact === undefined || typeof artifact.content !== "string") {
-    return undefined;
-  }
-
-  try {
-    return JSON.parse(artifact.content) as unknown;
-  } catch {
-    return undefined;
-  }
-}
-
-function artifactSources(artifact: StartupGateEvidenceArtifact | undefined): {
-  uri?: unknown;
-  capturedAt?: unknown;
-  freshnessDays?: unknown;
-}[] {
-  return Array.isArray(artifact?.sources)
-    ? artifact.sources.filter(isRecord).map((source) => ({
-        uri: source.uri,
-        capturedAt: source.capturedAt,
-        freshnessDays: source.freshnessDays
-      }))
-    : [];
-}
-
-function hasSourceRefs(artifact: StartupGateEvidenceArtifact | undefined): boolean {
-  return (
-    artifact !== undefined &&
-    Array.isArray(artifact.sourceRefs) &&
-    artifact.sourceRefs.some((sourceRef) => hasNonEmptyString(sourceRef))
-  );
-}
-
-function hasHypothesisAssociation(
-  artifact: StartupGateEvidenceArtifact | undefined
-): boolean {
-  return (
-    isRecord(artifact?.associations) &&
-    hasNonEmptyString(artifact.associations.hypothesisId)
-  );
-}
-
-function hasDecisionAssociation(
-  artifact: StartupGateEvidenceArtifact | undefined
-): boolean {
-  return (
-    isRecord(artifact?.associations) &&
-    hasNonEmptyString(artifact.associations.decisionId)
-  );
-}
-
-function hasNonEmptyValue(value: unknown): boolean {
-  return (
-    hasNonEmptyString(value) ||
-    (typeof value === "number" && Number.isFinite(value)) ||
-    typeof value === "boolean"
-  );
-}
-
-function hasNonEmptyString(value: unknown): value is string {
-  return typeof value === "string" && value.trim().length > 0;
-}
-
-function arrayHasString(value: unknown): boolean {
-  return Array.isArray(value) && value.some((item) => hasNonEmptyString(item));
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function startupEvidenceLabel(type: string): string {

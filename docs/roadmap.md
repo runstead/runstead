@@ -280,6 +280,8 @@ The current implementation wave closed the highest-confidence product gaps:
   report helpers moved out of `local-agent` into `local-agent-result`.
 - Startup gate severity rules and blocker remediation text moved out of
   `startup-evidence` into `startup-gate-rules`.
+- Startup gate artifact parsing and structured-content helper predicates moved
+  out of `startup-evidence` into `startup-gate-artifacts`.
 - `packages/cli/src/startup-command.ts` no longer owns startup scale
   starter/workflow/memory/integration/report/SOP/GTM command registration.
 - `packages/cli/src/startup-command.ts` no longer owns startup hypothesis
