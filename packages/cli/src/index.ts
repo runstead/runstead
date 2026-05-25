@@ -43,7 +43,10 @@ import { registerStartupCommands } from "./startup-command.js";
 import { resolveGitHubAuthToken } from "./github-auth-token.js";
 import type { LocalAgentVerifierPolicy } from "./local-agent-presets.js";
 import type { CommandVerifierInput } from "./verifier-evidence.js";
-import { parseVerifierCommandOption } from "./verifier-command-options.js";
+import {
+  parseVerifierCommandOption,
+  requireVerifierCommandOptions
+} from "./verifier-command-options.js";
 
 export {
   createStartupReadinessClient,
@@ -67,6 +70,7 @@ export {
 } from "./cli-parsers.js";
 export { requireSecretPrintAcknowledgement } from "./cli-secrets.js";
 export { requireUnmanagedHelperAcknowledgement } from "./cli-unmanaged.js";
+export { requireVerifierCommandOptions } from "./verifier-command-options.js";
 
 export async function runCli(argv = process.argv): Promise<void> {
   try {
@@ -1266,19 +1270,6 @@ function localAgentReviewScope(options: AgentReviewCliOptions):
     prompt: "Review the unstaged git diff only.",
     gitDiffInstruction: "When calling git_diff, leave staged unset or false."
   };
-}
-
-export function requireVerifierCommandOptions(
-  values: string[],
-  commandName: string
-): { name: string; command: string }[] {
-  const commands = values.map(parseVerifierCommandOption);
-
-  if (commands.length === 0) {
-    throw new Error(`${commandName} requires at least one --verifier name=command`);
-  }
-
-  return commands;
 }
 
 async function resolveVerifierCommandOptions(

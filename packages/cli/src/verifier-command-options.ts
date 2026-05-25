@@ -12,3 +12,16 @@ export function parseVerifierCommandOption(value: string): CommandVerifierInput 
     command: value.slice(separator + 1).trim()
   };
 }
+
+export function requireVerifierCommandOptions(
+  values: string[],
+  commandName: string
+): CommandVerifierInput[] {
+  const commands = values.map(parseVerifierCommandOption);
+
+  if (commands.length === 0) {
+    throw new Error(`${commandName} requires at least one --verifier name=command`);
+  }
+
+  return commands;
+}

@@ -140,6 +140,8 @@ The current implementation wave closed the highest-confidence product gaps:
   `cli-secrets`.
 - `github` command registration moved out of the CLI entrypoint into
   `commands/github`.
+- Shared required verifier command validation moved out of the CLI entrypoint
+  into `verifier-command-options`.
 - `packages/cli/src/index.ts` no longer owns dashboard or doctor command
   registration.
 - Dashboard snapshot and operator API contracts moved out of the dashboard
