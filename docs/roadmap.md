@@ -188,6 +188,8 @@ The current implementation wave closed the highest-confidence product gaps:
   `dashboard-startup-timeline`.
 - Dashboard HTML rendering moved out of the dashboard server/orchestration
   module into `dashboard-render`.
+- Chrome DevTools Protocol connection handling moved out of the startup UI
+  browser runner into `startup-ui-cdp-connection`.
 - Local agent task input parsing moved out of the orchestrator into
   `local-agent-task-input`.
 - Local agent task reporting, report formatting, and audit-summary loading
