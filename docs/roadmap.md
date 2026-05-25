@@ -212,6 +212,8 @@ The current implementation wave closed the highest-confidence product gaps:
   helpers moved out of the orchestrator into `ci-repair-orchestrator-task-state`.
 - CI repair wrapped-worker/Codex Direct invocation and checkpoint rollback logic
   moved out of the orchestrator into `ci-repair-orchestrator-worker-run`.
+- CI repair branch creation and checkpoint workspace preparation moved out of
+  the orchestrator into `ci-repair-orchestrator-workspace`.
 - CI repair approval summary, durable approval record, and publish approval
   stage mapping helpers moved out of the orchestrator into
   `ci-repair-orchestrator-approval`.

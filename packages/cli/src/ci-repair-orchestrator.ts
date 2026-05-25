@@ -9,13 +9,8 @@ import {
   type CreateCiRepairTaskResult
 } from "./ci-repair.js";
 import {
-  createWorkspaceCheckpoint,
-  recordWorkspaceCheckpointCreatedEvent
-} from "./checkpoints.js";
-import {
   buildRunsteadBranchName,
   commitGitChanges,
-  createGitBranch,
   listGitChangedFiles
 } from "./git-branch.js";
 import type { GitHubCliRunner } from "./github-actions.js";
@@ -47,8 +42,6 @@ import type {
   RunCiRepairOrchestratorResult
 } from "./ci-repair-orchestrator-types.js";
 import {
-  checkpointCreateAction,
-  gitBranchCreateAction,
   gitCommitAction,
   gitDiffAction,
   gitStatusAction,
@@ -61,7 +54,6 @@ import {
   workerOutput
 } from "./ci-repair-orchestrator-worker-output.js";
 import {
-  checkpointOutput,
   diffScopeOutput,
   gitChangedFilesOutput,
   gitCommitOutput,
@@ -92,6 +84,7 @@ import {
   rollbackWorkerChanges,
   startCiRepairWorker
 } from "./ci-repair-orchestrator-worker-run.js";
+import { prepareCiRepairWorkspace } from "./ci-repair-orchestrator-workspace.js";
 import {
   createRepairPullRequestWithPublishApproval,
   ensureGovernedRepairPublishApproval,
@@ -275,114 +268,26 @@ export async function runCiRepairOrchestratorUnlocked(
     let completedWorkerResult: CiRepairWorkerResult | undefined;
 
     try {
-      if (!stageAtLeast(stageContext.stage, "branch_created")) {
-        await runGovernedToolAction({
-          cwd,
-          stateDb,
-          database,
-          policy,
-          task: orchestratorTask,
-          workerRun,
-          action: gitBranchCreateAction({
-            task: orchestratorTask,
-            cwd,
-            branchName,
-            base
-          }),
-          requestedBy: "runstead:ci-repair",
-          ...(options.now === undefined ? {} : { now: options.now }),
-          run: async () => {
-            const value = await createGitBranch({
-              cwd,
-              branchName,
-              baseRef: base,
-              ...(options.gitRunner === undefined ? {} : { runner: options.gitRunner })
-            });
-
-            return {
-              value,
-              output: {
-                branchName: value.branchName,
-                baseRef: value.baseRef ?? base
-              }
-            };
-          }
-        });
-        ({ task: orchestratorTask, context: stageContext } = writeCiRepairStage({
-          database,
-          task: orchestratorTask,
-          context: stageContext,
-          stage: "branch_created",
-          patch: {
-            branchName,
-            base
-          },
-          ...(options.onStagePersisted === undefined
-            ? {}
-            : { onStagePersisted: options.onStagePersisted }),
-          ...(options.now === undefined ? {} : { now: options.now })
-        }));
-      }
-
-      let checkpointBefore = stageContext.checkpointBefore;
-
-      if (
-        !stageAtLeast(stageContext.stage, "checkpoint_created") ||
-        checkpointBefore === undefined
-      ) {
-        const checkpointResult = await runGovernedToolAction({
-          cwd,
-          stateDb,
-          database,
-          policy,
-          task: orchestratorTask,
-          workerRun,
-          action: checkpointCreateAction({
-            task: orchestratorTask,
-            cwd,
-            checkpointDir: join(root, "checkpoints")
-          }),
-          requestedBy: "runstead:ci-repair",
-          ...(options.now === undefined ? {} : { now: options.now }),
-          run: async () => {
-            const value = await createWorkspaceCheckpoint({
-              workspace: cwd,
-              checkpointDir: join(root, "checkpoints"),
-              ...(options.now === undefined ? {} : { now: options.now }),
-              ...(options.gitRunner === undefined ? {} : { runner: options.gitRunner })
-            });
-            recordWorkspaceCheckpointCreatedEvent({
-              stateDb,
-              checkpoint: value,
-              actor: "runstead:ci-repair",
-              ...(options.now === undefined ? {} : { now: options.now })
-            });
-
-            return {
-              value,
-              output: checkpointOutput(value)
-            };
-          }
-        });
-        checkpointBefore = checkpointResult.value;
-        ({ task: orchestratorTask, context: stageContext } = writeCiRepairStage({
-          database,
-          task: orchestratorTask,
-          context: stageContext,
-          stage: "checkpoint_created",
-          patch: {
-            checkpointBefore
-          },
-          ...(options.onStagePersisted === undefined
-            ? {}
-            : { onStagePersisted: options.onStagePersisted }),
-          ...(options.now === undefined ? {} : { now: options.now })
-        }));
-      }
-
-      if (checkpointBefore === undefined) {
-        throw new Error("CI repair checkpoint context is missing");
-      }
+      const preparedWorkspace = await prepareCiRepairWorkspace({
+        cwd,
+        root,
+        stateDb,
+        database,
+        policy,
+        task: orchestratorTask,
+        workerRun,
+        context: stageContext,
+        branchName,
+        base,
+        ...(options.gitRunner === undefined ? {} : { gitRunner: options.gitRunner }),
+        ...(options.onStagePersisted === undefined
+          ? {}
+          : { onStagePersisted: options.onStagePersisted }),
+        ...(options.now === undefined ? {} : { now: options.now })
+      });
+      orchestratorTask = preparedWorkspace.task;
+      stageContext = preparedWorkspace.context;
+      const { checkpointBefore } = preparedWorkspace;
 
       let workerResult = stageContext.workerResult;
 
