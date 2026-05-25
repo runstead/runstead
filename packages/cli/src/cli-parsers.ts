@@ -2,6 +2,10 @@ import { RunsteadCliError } from "./cli-errors.js";
 
 export type CliWorkerKind = "codex_cli" | "claude_code" | "codex_direct";
 
+export function collectValues(value: string, previous: string[]): string[] {
+  return [...previous, value];
+}
+
 export function parseRequiredPositiveInteger(
   value: string,
   optionName: string

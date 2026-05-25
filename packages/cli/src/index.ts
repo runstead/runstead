@@ -5,6 +5,7 @@ import { pathToFileURL } from "node:url";
 
 import { formatCliError } from "./cli-errors.js";
 import {
+  collectValues,
   parseCiRepairWorkerKind,
   parseDateOption,
   parseOptionalInteger,
@@ -42,6 +43,7 @@ export interface CreateProgramOptions {
 
 export { formatCliError, RunsteadCliError } from "./cli-errors.js";
 export {
+  collectValues,
   parseCiRepairWorkerKind,
   parseDateOption,
   parseOptionalInteger,
@@ -3367,10 +3369,6 @@ export function inferProgramName(entrypoint?: string): "runstead" | "team" {
   return entrypoint !== undefined && basename(entrypoint) === "team"
     ? "team"
     : "runstead";
-}
-
-function collectValues(value: string, previous: string[]): string[] {
-  return [...previous, value];
 }
 
 function evidenceSummariesFromCli(values: string[]) {
