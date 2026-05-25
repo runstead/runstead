@@ -293,6 +293,9 @@ The current implementation wave closed the highest-confidence product gaps:
   `codex-direct-native-tools` into `codex-direct-package-scripts`.
 - Codex Direct apply-patch parsing and hunk application moved out of
   `codex-direct-native-tools` into `codex-direct-apply-patch`.
+- Codex Direct workspace glob matching, normalized path handling, root-escape
+  checks, symlink traversal checks, and bounded result helpers moved out of
+  `codex-direct-native-tools` into `codex-direct-workspace-paths`.
 - Local agent result semantics, worker output serialization, and governance
   report helpers moved out of `local-agent` into `local-agent-result`.
 - Startup gate severity rules and blocker remediation text moved out of
