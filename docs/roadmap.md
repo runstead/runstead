@@ -38,6 +38,8 @@ just an agent wrapper. The current product surface includes:
   team mode
 - provider source evidence collection for GitHub Actions, Vercel, Render,
   Sentry, and PostHog
+- staging/production source connector requirements in `startup ready --plan`
+  and final readiness verdicts
 - wrapped-worker progress summaries with last-output age and
   `possibly_stuck` diagnostics
 - dashboard operator UI controls for action execution and approval decisions
@@ -75,6 +77,8 @@ The current implementation wave closed the highest-confidence product gaps:
   windows in full-suite runs.
 - `startup source collect` records structured provider evidence through
   executable adapters.
+- `startup ready --plan` and final readiness evaluation now consume
+  staging/production source connector setup requirements.
 - Dashboard operator controls can run actions and approve/deny pending
   approvals through the protected local API.
 - `email-followup` now has a mature draft-only lifecycle, fixtures, evals,
@@ -105,24 +109,45 @@ pnpm --filter @runstead/cli typecheck
 pnpm --filter @runstead/runtime typecheck
 ```
 
-### 2. Harden provider adapters beyond offline JSON fixtures
+### 2. Add real Postgres integration validation
+
+`@runstead/state-postgres` has a real adapter and conformance suite, but current
+automated coverage uses a fake Postgres client. Team mode should not advance
+beyond experimental without a real Postgres service test.
+
+Acceptance:
+
+- CI proves `@runstead/state-postgres` works against a real Postgres server.
+- Local contributors can skip the integration test unless
+  `RUNSTEAD_PG_TEST_URL` or an equivalent env var is set.
+- The integration path verifies migrations, event append/projection,
+  idempotency, revision conflict, lock fencing, and artifact read/write.
+
+Validation:
+
+```bash
+pnpm --filter @runstead/state-postgres test
+RUNSTEAD_PG_TEST_URL=postgres://runstead:runstead@127.0.0.1:5432/runstead pnpm --filter @runstead/state-postgres test
+```
+
+### 3. Harden provider adapters beyond offline JSON fixtures
 
 Acceptance:
 
 - Each adapter has documented provider endpoint shapes and credential names.
-- Missing credentials become explicit staging/production setup blockers, not
-  silent local warnings.
-- `startup ready --plan` shows required connector evidence before execution.
-- Staging/production targets can require the adapters by policy.
+- Parser tests cover success, failure, pending, malformed, and provider-error
+  payloads.
+- Missing credentials remain explicit staging/production setup blockers.
+- Provider failures produce actionable blockers instead of generic unknowns.
 
 Validation:
 
 ```bash
 pnpm --filter @runstead/cli exec vitest run src/startup-source-connectors.test.ts src/startup-ready.test.ts
-pnpm run typecheck
+pnpm --filter @runstead/cli typecheck
 ```
 
-### 3. Deepen operator recovery timeline UX
+### 4. Deepen operator recovery timeline UX
 
 Dogfood runs often move from blocked to ready through repair or recovery. The
 dashboard has action controls and timeline groups; the next step is a richer
@@ -141,11 +166,35 @@ Validation:
 pnpm --filter @runstead/cli exec vitest run src/dashboard.test.ts src/startup-ready.test.ts
 ```
 
+### 5. Prove domain-pack generality with a second non-startup golden path
+
+`ai-native-startup` is deep and `email-followup` is now richer. The pack
+abstraction still needs one more full dogfood path outside startup readiness to
+prove that domain logic does not leak into CLI internals.
+
+Acceptance:
+
+- A non-startup pack has a copyable runbook comparable to the todo startup
+  golden path.
+- Task types, policy, evidence gates, evals, and reports are exercised end to
+  end.
+- Domain-specific logic stays in the pack, not hard-coded in CLI.
+
+Validation:
+
+```bash
+pnpm --filter @runstead/domain-packs test
+pnpm --filter @runstead/cli exec vitest run src/domain-pack-command.test.ts
+pnpm run format:check
+```
+
 ## Suggested Order
 
 1. Continue CLI module extraction by command/runtime ownership.
-2. Connect provider adapters into staging/production readiness planning.
-3. Expand operator recovery timeline explanations and action-specific forms.
+2. Add real Postgres integration validation.
+3. Harden provider adapter parsing and documentation.
+4. Deepen operator recovery timeline explanations and action-specific forms.
+5. Add a second non-startup golden path.
 
 ## Milestone Validation
 
