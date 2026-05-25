@@ -264,6 +264,8 @@ The current implementation wave closed the highest-confidence product gaps:
   into `startup-ui-browser-runner`.
 - Startup UI smoke asset persistence moved out of `startup-ui-validation` into
   `startup-ui-validation-assets`.
+- Launch readiness protected path git scanning moved out of
+  `launch-readiness-report` into `launch-readiness-git`.
 - `packages/cli/src/startup-command.ts` no longer owns startup scale
   starter/workflow/memory/integration/report/SOP/GTM command registration.
 - `packages/cli/src/startup-command.ts` no longer owns startup hypothesis

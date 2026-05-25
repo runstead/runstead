@@ -1,10 +1,8 @@
 import { createHash } from "node:crypto";
-import { execFile } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { promisify } from "node:util";
 
 import { createRunsteadId, type JsonObject, type RunsteadEvent } from "@runstead/core";
 import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sqlite";
@@ -13,7 +11,7 @@ import {
   collectRepoInspection,
   type RepoInspectionSnapshot
 } from "./inspection-evidence.js";
-import { matchesPolicyPathPattern } from "./policy.js";
+import { changedLaunchReadinessProtectedPaths } from "./launch-readiness-git.js";
 import { requireRunsteadStateDb } from "./runstead-root.js";
 import {
   listStartupArtifacts,
@@ -24,8 +22,6 @@ import {
   collectCommandVerifierCodeState,
   type CommandVerifierCodeState
 } from "./verifier-evidence.js";
-
-const execFileAsync = promisify(execFile);
 
 export interface GenerateLaunchReadinessReportOptions {
   cwd?: string;
@@ -165,14 +161,6 @@ interface LaunchReadinessReportData {
 
 const STARTUP_DOMAIN = "ai-native-startup";
 const STALE_EVIDENCE_APPENDIX_LIMIT = 10;
-const PROTECTED_PATH_PATTERNS = [
-  ".env",
-  ".env.*",
-  "**/secrets/**",
-  "infra/prod/**",
-  "billing/**",
-  "compliance/**"
-];
 
 export async function generateLaunchReadinessReport(
   options: GenerateLaunchReadinessReportOptions = {}
@@ -188,7 +176,7 @@ export async function generateLaunchReadinessReport(
     const data: LaunchReadinessReportData = {
       generatedAt,
       repo: await collectRepoInspection(cwd, generatedAt),
-      protectedPathChanges: await changedProtectedPaths(cwd),
+      protectedPathChanges: await changedLaunchReadinessProtectedPaths(cwd),
       gate: await launchGateEvaluation({
         cwd,
         domain,
@@ -1749,45 +1737,6 @@ function listOrNone<T>(items: T[], formatter: (item: T) => string): string {
   }
 
   return items.map(formatter).join("\n");
-}
-
-async function changedProtectedPaths(cwd: string): Promise<string[]> {
-  const changedPaths = await changedGitPaths(cwd);
-
-  return changedPaths
-    .filter((path) =>
-      PROTECTED_PATH_PATTERNS.some((pattern) => matchesPolicyPathPattern(path, pattern))
-    )
-    .sort((left, right) => left.localeCompare(right));
-}
-
-async function changedGitPaths(cwd: string): Promise<string[]> {
-  try {
-    const result = await execFileAsync("git", ["status", "--porcelain"], {
-      cwd,
-      timeout: 30_000,
-      maxBuffer: 1024 * 1024,
-      windowsHide: true
-    });
-
-    return result.stdout
-      .split("\n")
-      .map((line) => line.trimEnd())
-      .filter((line) => line.length > 3)
-      .map((line) => normalizeStatusPath(line.slice(3)))
-      .filter((path) => path.length > 0);
-  } catch {
-    return [];
-  }
-}
-
-function normalizeStatusPath(value: string): string {
-  const renameSeparator = " -> ";
-  const renamedPath = value.includes(renameSeparator)
-    ? value.slice(value.lastIndexOf(renameSeparator) + renameSeparator.length)
-    : value;
-
-  return renamedPath.replace(/^"|"$/g, "");
 }
 
 function isRecord(value: unknown): value is JsonObject {
