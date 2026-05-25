@@ -9,9 +9,11 @@ verifiers:
   required:
     - draft:preview_attached
     - draft:recipients_checked
+    - draft:factual_support_linked
     - draft:send_not_performed
 
 worker_routing:
-  preferred: codex_cli
+  preferred: codex_direct
   fallback:
+    - codex_cli
     - shell

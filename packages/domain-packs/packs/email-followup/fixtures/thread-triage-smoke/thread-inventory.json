@@ -1,0 +1,20 @@
+{
+  "threads": [
+    {
+      "threadId": "thr_customer_001",
+      "sender": "customer@example.com",
+      "receivedAt": "2026-05-14T10:00:00.000Z",
+      "followupReason": "customer asked for implementation timeline",
+      "priority": "high",
+      "riskFlags": ["customer_commitment"]
+    },
+    {
+      "threadId": "thr_sales_002",
+      "sender": "prospect@example.com",
+      "receivedAt": "2026-05-13T16:00:00.000Z",
+      "followupReason": "prospect requested pricing follow-up",
+      "priority": "medium",
+      "riskFlags": ["pricing_claim"]
+    }
+  ]
+}

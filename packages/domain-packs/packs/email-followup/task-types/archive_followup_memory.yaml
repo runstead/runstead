@@ -1,0 +1,17 @@
+id: archive_followup_memory
+domain: email-followup
+description: Record durable follow-up status, owner, next action, and future reminder.
+
+default_priority: low
+max_attempts: 1
+
+verifiers:
+  required:
+    - memory:thread_status_updated
+    - memory:next_action_recorded
+    - memory:owner_recorded
+
+worker_routing:
+  preferred: shell
+  fallback:
+    - codex_cli

@@ -193,21 +193,60 @@ describe("validateDomainPackDir", () => {
     expect(result.valid).toBe(true);
     expect(result.issues).toEqual([]);
     expect(result.domain?.id).toBe("email-followup");
+    expect(result.domain?.schemaVersion).toBe(1);
+    expect(result.domain?.repoTemplates?.map((template) => template.id)).toEqual([
+      "founder-inbox",
+      "support-followups",
+      "sales-nurture"
+    ]);
+    expect(Object.keys(result.domain?.gateThresholds ?? {})).toEqual([
+      "scan",
+      "draft",
+      "send-approval",
+      "memory"
+    ]);
     expect(result.goalTemplates.map((template) => template.id)).toEqual([
       "draft-pending-followups"
     ]);
     expect(result.taskTypes.map((taskType) => taskType.id)).toEqual([
       "scan_threads",
-      "draft_followup"
+      "classify_followup_need",
+      "verify_recipients",
+      "draft_followup",
+      "review_draft_safety",
+      "archive_followup_memory"
+    ]);
+    expect(result.goalTemplates[0]?.generated.recurringTasks).toEqual([
+      "scan_threads",
+      "classify_followup_need",
+      "verify_recipients",
+      "draft_followup",
+      "review_draft_safety",
+      "archive_followup_memory"
     ]);
     expect(result.goalTemplates[0]?.generated.acceptanceContracts).toContain(
       "send_not_performed"
     );
     expect(result.fixtures.map((fixture) => fixture.id)).toEqual([
-      "draft-followup-smoke"
+      "thread-triage-smoke",
+      "recipient-safety-review",
+      "draft-followup-smoke",
+      "send-block-regression",
+      "archive-followup-memory"
     ]);
     expect(result.evals.map((evaluation) => evaluation.id)).toEqual([
-      "draft-followup-smoke"
+      "thread-triage-smoke",
+      "recipient-safety-review",
+      "draft-followup-smoke",
+      "send-block-regression",
+      "archive-followup-memory"
+    ]);
+    expect(result.domain?.reportSections?.map((section) => section.id)).toEqual([
+      "thread-triage",
+      "recipient-safety",
+      "draft-quality",
+      "send-boundary",
+      "followup-memory"
     ]);
   });
 

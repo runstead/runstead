@@ -1,0 +1,18 @@
+id: verify_recipients
+domain: email-followup
+description: Verify intended recipients, roles, opt-out status, and ambiguity before drafting.
+
+default_priority: high
+max_attempts: 1
+
+verifiers:
+  required:
+    - recipient:identity_checked
+    - recipient:opt_out_checked
+    - recipient:ambiguity_recorded
+
+worker_routing:
+  preferred: shell
+  fallback:
+    - codex_direct
+    - codex_cli

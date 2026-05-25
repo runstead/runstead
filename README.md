@@ -419,6 +419,8 @@ Product and lifecycle:
   retention and latest-artifact view
 - [docs/research-monitor-golden-path.md](docs/research-monitor-golden-path.md):
   second mature domain pack workflow
+- [docs/email-followup-golden-path.md](docs/email-followup-golden-path.md):
+  draft-only follow-up domain pack workflow
 
 Architecture and governance:
 

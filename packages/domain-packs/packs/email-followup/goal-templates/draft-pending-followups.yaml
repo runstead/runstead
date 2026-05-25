@@ -8,10 +8,18 @@ description: >
 generated:
   recurring_tasks:
     - scan_threads
+    - classify_followup_need
+    - verify_recipients
     - draft_followup
+    - review_draft_safety
+    - archive_followup_memory
   policy_profile: email-followup-draft-only
   acceptance_contracts:
+    - mailbox_read_only
+    - followup_reason_recorded
     - draft_preview_attached
     - recipients_checked
+    - tone_and_risk_reviewed
     - send_not_performed
     - user_approval_required_to_send
+    - followup_memory_updated

@@ -1,7 +1,8 @@
 id: email-followup
+schema_version: 1
 version: 0.1.0
 name: Email Follow-up
-description: Draft follow-up email responses with recipient checks and no sending.
+description: Triage email threads, prepare safe draft-only follow-ups, and prove no send action occurred.
 
 compatibility:
   runstead_min_version: 0.0.0
@@ -11,29 +12,43 @@ scope:
     - mailbox
     - email_thread
     - contact
+    - recipient_review
     - draft
+    - draft_review
+    - followup_memory
 
 goal_templates:
   - draft-pending-followups
 
 task_types:
   - scan_threads
+  - classify_followup_need
+  - verify_recipients
   - draft_followup
+  - review_draft_safety
+  - archive_followup_memory
 
 default_policy: policies/email-followup.yaml
 
 default_verifiers:
+  - mailbox_read_only
+  - thread_triage_reason
   - recipient_check
   - draft_preview
+  - tone_and_risk_review
   - send_block
+  - memory_update
 
 required_tools:
   - email_read
+  - contact_lookup
   - email_draft
+  - filesystem
 
 supported_workers:
   - shell
   - codex_cli
+  - codex_direct
 
 security:
   untrusted_inputs:
@@ -44,3 +59,111 @@ security:
     - ".env"
     - ".env.*"
     - "**/secrets/**"
+    - "sent/**"
+    - "outbox/**"
+
+migrations:
+  - from_version: 0.0.0
+    to_version: 0.1.0
+    description: Install draft-only email follow-up triage, recipient verification, draft review, send-block, and memory contracts.
+    steps:
+      - Register mailbox thread triage, recipient review, draft preview, safety review, and follow-up memory resources.
+      - Require recipient verification before a draft can be treated as ready.
+      - Require explicit evidence that no send action occurred.
+      - Route external send or reply-send actions to deny by default.
+
+repo_templates:
+  - id: founder-inbox
+    label: Founder Inbox
+    description: Draft replies for founder-owned prospect, customer, and investor follow-ups.
+    required_signals:
+      - thread_priority
+      - recipient_identity
+      - draft_preview
+      - send_block
+  - id: support-followups
+    label: Support Follow-ups
+    description: Prepare draft-only customer support follow-ups without touching ticket or email send systems.
+    required_signals:
+      - ticket_context
+      - customer_status
+      - escalation_risk
+      - approval_to_send
+  - id: sales-nurture
+    label: Sales Nurture
+    description: Draft warm follow-ups for sales threads while preserving opt-out and compliance checks.
+    required_signals:
+      - prior_consent
+      - opt_out_check
+      - recipient_role
+      - draft_tone_review
+
+gate_thresholds:
+  scan:
+    max_critical_blockers: 0
+    max_major_blockers: 1
+    minimum_evidence_completeness: 0.75
+    minimum_report_quality: 0.7
+  draft:
+    max_critical_blockers: 0
+    max_major_blockers: 0
+    minimum_evidence_completeness: 0.9
+    minimum_report_quality: 0.85
+  send-approval:
+    max_critical_blockers: 0
+    max_major_blockers: 0
+    minimum_evidence_completeness: 0.95
+    minimum_report_quality: 0.9
+  memory:
+    max_critical_blockers: 0
+    max_major_blockers: 1
+    minimum_evidence_completeness: 0.85
+    minimum_report_quality: 0.8
+
+report_sections:
+  - id: thread-triage
+    title: Thread Triage
+    description: Candidate threads, follow-up reasons, priority, freshness, and why a reply is needed.
+    evidence_types:
+      - thread_inventory
+      - followup_reason
+      - thread_priority
+  - id: recipient-safety
+    title: Recipient Safety
+    description: Recipient identity, role, consent, opt-out status, and ambiguity checks.
+    evidence_types:
+      - recipient_review
+      - contact_lookup
+      - opt_out_check
+  - id: draft-quality
+    title: Draft Quality
+    description: Draft preview, tone, ask clarity, factual support, and risk notes.
+    evidence_types:
+      - draft_preview
+      - tone_review
+      - factual_support
+  - id: send-boundary
+    title: Send Boundary
+    description: Evidence that no send action was executed and human approval remains required.
+    evidence_types:
+      - send_block
+      - approval_required
+      - side_effect_review
+  - id: followup-memory
+    title: Follow-up Memory
+    description: Durable thread status, pending next action, owner, and future follow-up date.
+    evidence_types:
+      - followup_memory
+      - next_action
+      - owner_assignment
+
+eval_quality:
+  minimum_score: 0.85
+  required_contracts:
+    - mailbox_read_only
+    - followup_reason_recorded
+    - recipients_checked
+    - draft_preview_attached
+    - tone_and_risk_reviewed
+    - send_not_performed
+    - followup_memory_updated

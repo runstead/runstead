@@ -1,0 +1,8 @@
+{
+  "threadId": "thr_customer_001",
+  "draftId": "draft_thr_customer_001",
+  "sendAttempted": false,
+  "sendActionsDenied": ["email.send", "email.reply.send"],
+  "approvalRequiredToSend": true,
+  "toneRisk": "customer commitment reviewed"
+}

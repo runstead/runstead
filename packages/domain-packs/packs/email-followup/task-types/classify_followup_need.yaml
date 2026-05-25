@@ -1,15 +1,15 @@
-id: scan_threads
+id: classify_followup_need
 domain: email-followup
-description: Identify threads that may need a follow-up draft.
+description: Classify candidate threads by follow-up reason, urgency, and risk.
 
 default_priority: medium
 max_attempts: 1
 
 verifiers:
   required:
-    - mailbox:read_only
-    - thread:candidates_listed
     - thread:followup_reason_recorded
+    - thread:priority_assigned
+    - thread:risk_flags_recorded
 
 worker_routing:
   preferred: shell

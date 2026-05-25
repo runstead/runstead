@@ -1,5 +1,17 @@
 version: 1
 benchmarks:
+  - id: thread-triage-smoke
+    fixture: thread-triage-smoke
+    acceptance_contracts:
+      - mailbox_read_only
+      - followup_reason_recorded
+      - thread_priority_assigned
+  - id: recipient-safety-review
+    fixture: recipient-safety-review
+    acceptance_contracts:
+      - recipients_checked
+      - opt_out_checked
+      - ambiguity_recorded
   - id: draft-followup-smoke
     fixture: draft-followup-smoke
     acceptance_contracts:
@@ -7,3 +19,15 @@ benchmarks:
       - recipients_checked
       - send_not_performed
       - user_approval_required_to_send
+  - id: send-block-regression
+    fixture: send-block-regression
+    acceptance_contracts:
+      - send_not_performed
+      - user_approval_required_to_send
+      - tone_and_risk_reviewed
+  - id: archive-followup-memory
+    fixture: archive-followup-memory
+    acceptance_contracts:
+      - followup_memory_updated
+      - next_action_recorded
+      - owner_recorded

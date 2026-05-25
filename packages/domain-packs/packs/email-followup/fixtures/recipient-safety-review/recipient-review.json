@@ -1,0 +1,13 @@
+{
+  "threadId": "thr_customer_001",
+  "recipients": [
+    {
+      "email": "customer@example.com",
+      "role": "customer_admin",
+      "identityStatus": "matched_contact",
+      "optOut": false,
+      "ambiguity": "none"
+    }
+  ],
+  "approvalRequiredToSend": true
+}

@@ -1,0 +1,19 @@
+id: review_draft_safety
+domain: email-followup
+description: Review draft tone, factual claims, attachments, and send boundary before handoff.
+
+default_priority: high
+max_attempts: 1
+
+verifiers:
+  required:
+    - draft:tone_reviewed
+    - draft:factual_claims_supported
+    - draft:send_not_performed
+    - approval:human_send_required
+
+worker_routing:
+  preferred: codex_direct
+  fallback:
+    - codex_cli
+    - shell

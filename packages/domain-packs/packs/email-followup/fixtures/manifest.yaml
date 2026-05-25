@@ -1,5 +1,29 @@
 version: 1
 fixtures:
+  - id: thread-triage-smoke
+    description: Candidate inbox threads with follow-up reason and priority classification.
+    path: thread-triage-smoke
+    task_type: classify_followup_need
+    goal_template: draft-pending-followups
+    tags:
+      - smoke
+      - triage
+    acceptance_contracts:
+      - mailbox_read_only
+      - followup_reason_recorded
+      - thread_priority_assigned
+  - id: recipient-safety-review
+    description: Recipient identity, opt-out, and ambiguity review before drafting.
+    path: recipient-safety-review
+    task_type: verify_recipients
+    goal_template: draft-pending-followups
+    tags:
+      - recipient
+      - safety
+    acceptance_contracts:
+      - recipients_checked
+      - opt_out_checked
+      - ambiguity_recorded
   - id: draft-followup-smoke
     description: Draft-only follow-up input for smoke evals.
     path: draft-followup-smoke
@@ -13,3 +37,27 @@ fixtures:
       - recipients_checked
       - send_not_performed
       - user_approval_required_to_send
+  - id: send-block-regression
+    description: Regression fixture proving send actions remain denied.
+    path: send-block-regression
+    task_type: review_draft_safety
+    goal_template: draft-pending-followups
+    tags:
+      - regression
+      - send-block
+    acceptance_contracts:
+      - send_not_performed
+      - user_approval_required_to_send
+      - tone_and_risk_reviewed
+  - id: archive-followup-memory
+    description: Durable follow-up memory update after draft handoff.
+    path: archive-followup-memory
+    task_type: archive_followup_memory
+    goal_template: draft-pending-followups
+    tags:
+      - memory
+      - handoff
+    acceptance_contracts:
+      - followup_memory_updated
+      - next_action_recorded
+      - owner_recorded

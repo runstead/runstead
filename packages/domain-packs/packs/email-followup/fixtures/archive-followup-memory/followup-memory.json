@@ -1,0 +1,8 @@
+{
+  "threadId": "thr_customer_001",
+  "status": "draft_ready_for_human_review",
+  "owner": "founder",
+  "nextAction": "review and manually send draft if acceptable",
+  "remindAt": "2026-05-15T09:00:00.000Z",
+  "storedFullBody": false
+}

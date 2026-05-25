@@ -38,6 +38,15 @@ source reliability, a weekly digest smoke path, conflicting source
 regression, approval-gated publish review, and archive updates. See
 [`research-monitor-golden-path.md`](research-monitor-golden-path.md).
 
+`email-followup` is a draft-only productivity pack. It models scan →
+follow-up classification → recipient verification → draft creation → safety
+review → memory archive for inbox follow-ups. The policy allows mailbox
+read, contact lookup, draft creation, and follow-up memory updates while
+denying send actions and external send side effects. Its fixtures cover
+thread triage, recipient safety, draft-only smoke, send-block regression,
+and durable follow-up memory. See
+[`email-followup-golden-path.md`](email-followup-golden-path.md).
+
 Runtime task and goal state belongs in SQLite under `.runstead/state.db`.
 Domain YAML remains configuration and template material only.
 
