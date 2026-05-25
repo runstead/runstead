@@ -77,6 +77,7 @@ The current implementation wave closed the highest-confidence product gaps:
   `local-agent-task-input`.
 - CI repair orchestrator public option/result contracts moved into
   `ci-repair-orchestrator-types`.
+- CI repair progress stage ordering moved into `ci-repair-orchestrator-stage`.
 - Startup automation public option/result contracts moved into
   `startup-automation-types`.
 - Startup command parser helpers moved into `startup-command-parsers` with

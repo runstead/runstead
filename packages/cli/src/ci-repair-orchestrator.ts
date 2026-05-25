@@ -103,6 +103,11 @@ import type {
   RunCiRepairOrchestratorOptions,
   RunCiRepairOrchestratorResult
 } from "./ci-repair-orchestrator-types.js";
+import {
+  ciRepairProgressStageAtLeast,
+  type CiRepairOrchestratorProgressStage,
+  type CiRepairOrchestratorStage
+} from "./ci-repair-orchestrator-stage.js";
 
 export type {
   CiRepairGitRunner,
@@ -112,6 +117,7 @@ export type {
   RunCiRepairOrchestratorOptions,
   RunCiRepairOrchestratorResult
 } from "./ci-repair-orchestrator-types.js";
+export { ciRepairProgressStageAtLeast } from "./ci-repair-orchestrator-stage.js";
 
 export async function runCiRepairOrchestrator(
   options: RunCiRepairOrchestratorOptions
@@ -2303,47 +2309,6 @@ function buildPullRequestResumeContext(input: {
   };
 }
 
-type CiRepairOrchestratorProgressStage =
-  | "created"
-  | "intake_completed"
-  | "claimed"
-  | "branch_created"
-  | "checkpoint_created"
-  | "worker_completed"
-  | "committed"
-  | "verified"
-  | "ready_for_push"
-  | "publish_approval_requested"
-  | "publish_approved"
-  | "push_approval_requested"
-  | "branch_pushed"
-  | "pr_approval_requested"
-  | "completed";
-
-type CiRepairOrchestratorTerminalStage = "failed" | "blocked" | "cancelled";
-
-type CiRepairOrchestratorStage =
-  | CiRepairOrchestratorProgressStage
-  | CiRepairOrchestratorTerminalStage;
-
-const CI_REPAIR_PROGRESS_STAGE_ORDER: CiRepairOrchestratorProgressStage[] = [
-  "created",
-  "intake_completed",
-  "claimed",
-  "branch_created",
-  "checkpoint_created",
-  "worker_completed",
-  "committed",
-  "verified",
-  "ready_for_push",
-  "publish_approval_requested",
-  "publish_approved",
-  "push_approval_requested",
-  "branch_pushed",
-  "pr_approval_requested",
-  "completed"
-];
-
 interface CiRepairOrchestratorStageContext extends JsonObject {
   stage: string;
   runId: string;
@@ -2584,22 +2549,6 @@ function stageAtLeast(
   target: CiRepairOrchestratorProgressStage
 ): boolean {
   return ciRepairProgressStageAtLeast(stage, target);
-}
-
-export function ciRepairProgressStageAtLeast(
-  stage: string,
-  target: CiRepairOrchestratorProgressStage
-): boolean {
-  const stageRank = ciRepairProgressStageRank(stage);
-  const targetRank = ciRepairProgressStageRank(target);
-
-  return stageRank >= 0 && targetRank >= 0 && stageRank >= targetRank;
-}
-
-function ciRepairProgressStageRank(stage: string): number {
-  return CI_REPAIR_PROGRESS_STAGE_ORDER.indexOf(
-    stage as CiRepairOrchestratorProgressStage
-  );
 }
 
 interface EvidenceSummary extends JsonObject {
