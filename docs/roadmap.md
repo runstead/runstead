@@ -132,6 +132,8 @@ The current implementation wave closed the highest-confidence product gaps:
   `commands/git`.
 - `policy` command registration moved out of the CLI entrypoint into
   `commands/policy`.
+- `config` command registration moved out of the CLI entrypoint into
+  `commands/config`.
 - `packages/cli/src/index.ts` no longer owns dashboard or doctor command
   registration.
 - Dashboard snapshot and operator API contracts moved out of the dashboard

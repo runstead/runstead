@@ -12,6 +12,7 @@ import {
 } from "./cli-parsers.js";
 import { requireRbacPermission } from "./cli-rbac.js";
 import { requireUnmanagedHelperAcknowledgement } from "./cli-unmanaged.js";
+import { registerConfigCommand } from "./commands/config.js";
 import { registerAuditCommand } from "./commands/audit.js";
 import { registerCheckpointCommand } from "./commands/checkpoint.js";
 import { registerCoreCommands } from "./commands/core.js";
@@ -98,7 +99,7 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
       .command("codex")
       .description("Manage experimental Codex Direct provider credentials.")
   );
-  addConfigCommand(program.command("config").description("Manage local config."));
+  registerConfigCommand(program);
   addAgentCommand(program.command("agent").description("Run local repo agent tasks."));
   registerDashboardCommand(program);
   registerDoctorCommand(program);
@@ -513,10 +514,6 @@ interface CodexModelsCliOptions extends CodexCliOptions {
   refresh?: boolean;
 }
 
-interface ConfigCliOptions {
-  cwd?: string;
-}
-
 interface AgentRunCliOptions {
   cwd?: string;
   worker: string;
@@ -727,41 +724,6 @@ function addCodexCommand(command: Command): void {
       });
 
       console.log(formatCodexModels(models));
-    });
-}
-
-function addConfigCommand(command: Command): void {
-  command
-    .command("set")
-    .description("Set a supported .runstead/config.yaml value.")
-    .argument("<key>", "Config key, for example codex.model")
-    .argument("<value>", "Config value")
-    .option("--cwd <path>", "Workspace directory")
-    .action(async (key: string, value: string, options: ConfigCliOptions) => {
-      const { formatRunsteadConfigSetResult, setRunsteadConfigValue } =
-        await import("./config.js");
-      const result = await setRunsteadConfigValue({
-        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-        key,
-        value
-      });
-
-      console.log(formatRunsteadConfigSetResult(result));
-    });
-
-  command
-    .command("get")
-    .description("Read a supported .runstead/config.yaml value.")
-    .argument("<key>", "Config key, for example codex.model")
-    .option("--cwd <path>", "Workspace directory")
-    .action(async (key: string, options: ConfigCliOptions) => {
-      const { readRunsteadConfigValue } = await import("./config.js");
-      const value = await readRunsteadConfigValue({
-        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-        key
-      });
-
-      console.log(value ?? "");
     });
 }
 
