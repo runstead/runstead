@@ -230,6 +230,8 @@ The current implementation wave closed the highest-confidence product gaps:
   out of `startup-automation` into `startup-readiness-gates`.
 - Startup automation public option/result contracts moved into
   `startup-automation-types`.
+- Startup automation initialization helpers moved out of `startup-automation`
+  into `startup-automation-init`.
 - Startup launch security scanning moved out of `startup-automation` into
   `startup-security-scan`.
 - Startup command parser helpers moved into `startup-command-parsers` with
