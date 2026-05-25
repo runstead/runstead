@@ -25,6 +25,33 @@ export function parseRequiredPositiveInteger(
   return parsed;
 }
 
+export function parseOptionalInteger(
+  value: string | undefined,
+  optionName: string
+): number | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  const parsed = Number.parseInt(value, 10);
+
+  if (!Number.isInteger(parsed)) {
+    throw new Error(`${optionName} must be an integer`);
+  }
+
+  return parsed;
+}
+
+export function parseRequiredInteger(value: string, optionName: string): number {
+  const parsed = parseOptionalInteger(value, optionName);
+
+  if (parsed === undefined) {
+    throw new Error(`${optionName} is required`);
+  }
+
+  return parsed;
+}
+
 export function parseCiRepairWorkerKind(value: string): CliWorkerKind {
   if (value === "codex_cli" || value === "claude_code" || value === "codex_direct") {
     return value;

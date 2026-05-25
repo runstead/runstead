@@ -76,6 +76,8 @@ The current implementation wave closed the highest-confidence product gaps:
   `cli-unmanaged`.
 - Shared CLI positive integer parser moved out of the CLI entrypoint into
   `cli-parsers`.
+- Shared optional/required integer parsers moved out of the CLI entrypoint into
+  `cli-parsers`.
 - Shared worker-kind parser moved out of the CLI entrypoint into `cli-parsers`.
 - Top-level `resume` command registration moved out of the CLI entrypoint into
   `commands/resume`.

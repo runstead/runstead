@@ -6,6 +6,8 @@ import { pathToFileURL } from "node:url";
 import { formatCliError } from "./cli-errors.js";
 import {
   parseCiRepairWorkerKind,
+  parseOptionalInteger,
+  parseRequiredInteger,
   parseRequiredPositiveInteger
 } from "./cli-parsers.js";
 import { requireRbacPermission } from "./cli-rbac.js";
@@ -36,6 +38,8 @@ export interface CreateProgramOptions {
 export { formatCliError, RunsteadCliError } from "./cli-errors.js";
 export {
   parseCiRepairWorkerKind,
+  parseOptionalInteger,
+  parseRequiredInteger,
   parseRequiredPositiveInteger
 } from "./cli-parsers.js";
 export { requireUnmanagedHelperAcknowledgement } from "./cli-unmanaged.js";
@@ -3865,33 +3869,6 @@ function parseOptionalFloat(
 
   if (!Number.isFinite(parsed)) {
     throw new Error(`${optionName} must be a number`);
-  }
-
-  return parsed;
-}
-
-function parseOptionalInteger(
-  value: string | undefined,
-  optionName: string
-): number | undefined {
-  if (value === undefined) {
-    return undefined;
-  }
-
-  const parsed = Number.parseInt(value, 10);
-
-  if (!Number.isInteger(parsed)) {
-    throw new Error(`${optionName} must be an integer`);
-  }
-
-  return parsed;
-}
-
-function parseRequiredInteger(value: string, optionName: string): number {
-  const parsed = parseOptionalInteger(value, optionName);
-
-  if (parsed === undefined) {
-    throw new Error(`${optionName} is required`);
   }
 
   return parsed;
