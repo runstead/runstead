@@ -314,6 +314,11 @@ replace synthetic evidence before a real public launch. Use
 `runstead startup source verify` to live-fetch external evidence URIs before
 recording them.
 
+For staging and production targets, `startup ready --plan` also reports the
+required source connector setup for CI, deployment, monitoring, and analytics.
+Missing provider credentials are readiness blockers until the relevant
+connector evidence can be collected or verified.
+
 ## Team Mode (Experimental)
 
 The default product path is local workstations and CI jobs with the bundled

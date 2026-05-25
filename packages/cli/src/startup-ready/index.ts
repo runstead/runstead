@@ -162,7 +162,10 @@ export async function runStartupReady(
   }
 
   const finalRun = await finalizeRun(run, options.now ?? new Date(), {
-    extraEvidenceTiers: options.ci === true ? ["ci_verified"] : []
+    extraEvidenceTiers: options.ci === true ? ["ci_verified"] : [],
+    ...(options.sourceConnectorEnv === undefined
+      ? {}
+      : { sourceConnectorEnv: options.sourceConnectorEnv })
   });
   if (isStartupReadyVerdict(finalRun.verdict)) {
     await supersedeStartupRemediationTasks({

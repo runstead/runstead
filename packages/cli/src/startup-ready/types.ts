@@ -4,6 +4,7 @@ import type {
 } from "@runstead/runtime";
 
 import type { LocalAgentWorkerKind } from "../local-agent.js";
+import type { StartupSourceConnectorReadinessRequirement } from "../startup-source-connectors.js";
 import type {
   ResolvedStartupWorkerGovernanceProfile,
   StartupBuildMvpOptions,
@@ -85,6 +86,7 @@ export interface StartupReadyOptions {
   appType?: StartupAppType;
   maxAttempts?: number;
   forceBuild?: boolean;
+  sourceConnectorEnv?: Record<string, string | undefined>;
   workerRunner?: StartupBuildMvpOptions["workerRunner"];
   onProgress?: (event: StartupReadyProgressEvent) => void;
   now?: Date;
@@ -129,6 +131,7 @@ export interface StartupReadyPlan {
   scaffoldProfile?: StartupScaffoldProfile;
   runsteadInitialized: boolean;
   extensions: StartupReadyPlanExtensions;
+  sourceConnectors: StartupReadyPlanSourceConnectors;
   phases: StartupReadyPlanPhase[];
 }
 
@@ -136,6 +139,11 @@ export interface StartupReadyPlanExtensions {
   discoveredPaths: string[];
   loaded: string[];
   issues: string[];
+}
+
+export interface StartupReadyPlanSourceConnectors {
+  requirements: StartupSourceConnectorReadinessRequirement[];
+  blockers: string[];
 }
 
 export interface StartupReadyPlanPhase {

@@ -752,6 +752,19 @@ describe("startup readiness run model", () => {
         cwd: workspace,
         stage: "launch",
         target: "production",
+        sourceConnectorEnv: {},
+        now: new Date("2026-05-22T01:20:00.000Z")
+      });
+      const configuredPlan = await planStartupReady({
+        cwd: workspace,
+        stage: "launch",
+        target: "production",
+        sourceConnectorEnv: {
+          GITHUB_TOKEN: "ghs_fixture",
+          VERCEL_TOKEN: "vercel_fixture",
+          SENTRY_AUTH_TOKEN: "sentry_fixture",
+          POSTHOG_API_KEY: "posthog_fixture"
+        },
         now: new Date("2026-05-22T01:20:00.000Z")
       });
       const verifiers = plan.phases.find((phase) => phase.id === "verifiers");
@@ -788,14 +801,35 @@ describe("startup readiness run model", () => {
           "error-budget evidence is missing",
           "migration-validation evidence is missing",
           "real-user traffic-gate evidence is missing",
-          "post-launch watch evidence is missing"
+          "post-launch watch evidence is missing",
+          "Remote CI status connector requires GITHUB_TOKEN for production readiness",
+          "production deployment provider connector requires one of VERCEL_TOKEN, RENDER_API_KEY for production readiness",
+          "Monitoring provider connector requires SENTRY_AUTH_TOKEN for production readiness",
+          "Real-user analytics provider connector requires POSTHOG_API_KEY for production readiness"
         ])
       );
+      expect(
+        plan.sourceConnectors.requirements.map((requirement) => requirement.id)
+      ).toEqual([
+        "remote-ci",
+        "deployment-provider",
+        "monitoring-provider",
+        "analytics-provider"
+      ]);
+      expect(plan.sourceConnectors.blockers).toEqual(
+        expect.arrayContaining([
+          "Remote CI status connector requires GITHUB_TOKEN for production readiness",
+          "Real-user analytics provider connector requires POSTHOG_API_KEY for production readiness"
+        ])
+      );
+      expect(configuredPlan.sourceConnectors.blockers).toEqual([]);
       expect(plan.worker).toBe("codex_direct");
       expect(plan.governanceProfile).toBe("governed");
       expect(formatted).toContain("Worker: codex_direct");
       expect(formatted).toContain("Governance profile: governed");
       expect(formatted).toContain("Level 2 native tool proxy path");
+      expect(formatted).toContain("Source connectors:");
+      expect(formatted).toContain("- remote-ci: blocked");
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }

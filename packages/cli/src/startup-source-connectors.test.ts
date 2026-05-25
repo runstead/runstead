@@ -11,6 +11,9 @@ import {
   listStartupSourceConnectorDefinitions,
   recordStartupSourceEvidence,
   STARTUP_SOURCE_CONNECTORS,
+  startupSourceConnectorReadinessEvidenceRequirements,
+  startupSourceConnectorRequirementBlockers,
+  startupSourceConnectorRequirementsForTarget,
   verifyStartupSourceEvidence
 } from "./startup-source-connectors.js";
 
@@ -356,6 +359,74 @@ describe("startup source connectors", () => {
         (definition) => definition.connector === "github_actions"
       )?.recommendedPayloadFields
     ).not.toContain("mutated");
+  });
+
+  it("turns staging and production provider setup into readiness requirements", () => {
+    const staging = startupSourceConnectorRequirementsForTarget({
+      target: "staging",
+      env: {}
+    });
+    const configuredStaging = startupSourceConnectorRequirementsForTarget({
+      target: "staging",
+      env: {
+        GITHUB_TOKEN: "ghs_fixture",
+        RENDER_API_KEY: "rnd_fixture",
+        SENTRY_AUTH_TOKEN: "sentry_fixture"
+      }
+    });
+    const production = startupSourceConnectorRequirementsForTarget({
+      target: "production",
+      env: {}
+    });
+    const productionRequirements =
+      startupSourceConnectorReadinessEvidenceRequirements(production);
+
+    expect(startupSourceConnectorRequirementsForTarget({ target: "local" })).toEqual(
+      []
+    );
+    expect(staging.map((requirement) => requirement.id)).toEqual([
+      "remote-ci",
+      "deployment-provider",
+      "monitoring-provider"
+    ]);
+    expect(startupSourceConnectorRequirementBlockers(staging)).toEqual(
+      expect.arrayContaining([
+        "Remote CI status connector requires GITHUB_TOKEN for staging readiness",
+        "staging deployment provider connector requires one of VERCEL_TOKEN, RENDER_API_KEY for staging readiness",
+        "Monitoring provider connector requires SENTRY_AUTH_TOKEN for staging readiness"
+      ])
+    );
+    expect(startupSourceConnectorRequirementBlockers(configuredStaging)).toEqual([]);
+    expect(production.map((requirement) => requirement.id)).toEqual([
+      "remote-ci",
+      "deployment-provider",
+      "monitoring-provider",
+      "analytics-provider"
+    ]);
+    expect(productionRequirements).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          source: "startup_source",
+          sourceId: "remote-ci",
+          targets: ["production"],
+          evidenceTiers: ["ci_verified"],
+          evidenceTypes: ["startup_repo_readiness"],
+          blockers: [
+            "Remote CI status connector requires GITHUB_TOKEN for production readiness"
+          ]
+        }),
+        expect.objectContaining({
+          source: "startup_source",
+          sourceId: "analytics-provider",
+          targets: ["production"],
+          evidenceTiers: ["real_user_analytics"],
+          evidenceTypes: ["startup_metric_snapshot"],
+          blockers: [
+            "Real-user analytics provider connector requires POSTHOG_API_KEY for production readiness"
+          ]
+        })
+      ])
+    );
   });
 
   it("records target-specific deployment tiers for named hosting connectors", async () => {

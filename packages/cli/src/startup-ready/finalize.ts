@@ -3,6 +3,10 @@ import {
   startupReadinessExtensionEvidenceRequirements,
   startupReadinessExtensionPolicyBlockers
 } from "../startup-extension-loader.js";
+import {
+  startupSourceConnectorReadinessEvidenceRequirements,
+  startupSourceConnectorRequirementsForTarget
+} from "../startup-source-connectors.js";
 import type { StartupReadinessEvidenceTier, StartupReadinessRun } from "./types.js";
 import { evaluateStartupReadinessVerdict } from "./decision.js";
 import { collectRecordedStartupReadinessEvidence } from "./evidence.js";
@@ -15,7 +19,10 @@ import {
 export async function finalizeRun(
   run: StartupReadinessRun,
   now: Date,
-  options: { extraEvidenceTiers?: StartupReadinessEvidenceTier[] } = {}
+  options: {
+    extraEvidenceTiers?: StartupReadinessEvidenceTier[];
+    sourceConnectorEnv?: Record<string, string | undefined>;
+  } = {}
 ): Promise<StartupReadinessRun> {
   const codeState = await collectStartupReadyCodeState(run.cwd);
   const recordedEvidence = await collectRecordedStartupReadinessEvidence(run.cwd, {
@@ -39,6 +46,16 @@ export async function finalizeRun(
     worker: run.worker,
     governanceProfile: run.governanceProfile
   });
+  const sourceConnectorRequirements = startupSourceConnectorRequirementsForTarget({
+    target: run.target,
+    env: options.sourceConnectorEnv ?? process.env
+  });
+  const sourceConnectorEvidenceRequirements =
+    startupSourceConnectorReadinessEvidenceRequirements(sourceConnectorRequirements);
+  const readinessRequirements = [
+    ...extensionRequirements,
+    ...sourceConnectorEvidenceRequirements
+  ];
   const extensionLoaderBlockers = [...extensions.issues, ...extensionPolicyBlockers];
   const runForVerdict =
     extensionLoaderBlockers.length === 0
@@ -61,7 +78,7 @@ export async function finalizeRun(
     run: runForVerdict,
     evidenceTiers,
     evidenceTypes: recordedEvidence.evidenceTypes,
-    evidenceRequirements: extensionRequirements,
+    evidenceRequirements: readinessRequirements,
     staleEvidenceRefs: recordedEvidence.staleEvidenceRefs,
     supersededEvidenceRefs: recordedEvidence.supersededEvidenceRefs
   });
@@ -77,7 +94,7 @@ export async function finalizeRun(
     status,
     evidenceTiers,
     evidenceTypes: recordedEvidence.evidenceTypes,
-    evidenceRequirements: extensionRequirements,
+    evidenceRequirements: readinessRequirements,
     staleEvidenceRefs: recordedEvidence.staleEvidenceRefs,
     supersededEvidenceRefs: recordedEvidence.supersededEvidenceRefs,
     ...(codeState.gitHead === undefined ? {} : { gitHead: codeState.gitHead }),

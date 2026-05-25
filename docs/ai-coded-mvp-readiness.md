@@ -371,6 +371,14 @@ before recording the evidence artifact. Named deployment connectors
 `posthog` accept `--target`, so their artifacts carry readiness tiers like
 `staging_deployment`, `production_deployment`, or `real_user_analytics`.
 
+For `--target staging` and `--target production`, `startup ready --plan`
+promotes these connector contracts into readiness requirements. Missing
+`GITHUB_TOKEN`, deployment provider credentials (`VERCEL_TOKEN` or
+`RENDER_API_KEY`), `SENTRY_AUTH_TOKEN`, or production analytics credentials
+such as `POSTHOG_API_KEY` appear as explicit setup blockers instead of local
+warnings. Final readiness evaluation consumes the same requirements, so a
+staging or production verdict cannot silently ignore missing external proof.
+
 After stronger evidence is recorded, rerun the same gate:
 
 ```bash

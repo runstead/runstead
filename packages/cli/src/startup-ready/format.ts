@@ -57,6 +57,7 @@ export function formatStartupReadyPlan(plan: StartupReadyPlan): string {
     ...(plan.extensions.issues.length === 0
       ? []
       : plan.extensions.issues.map((issue) => `Extension issue: ${issue}`)),
+    ...formatStartupReadyPlanSourceConnectors(plan),
     "",
     "Phases:",
     ...plan.phases.flatMap((phase, index) => [
@@ -64,6 +65,25 @@ export function formatStartupReadyPlan(plan: StartupReadyPlan): string {
       ...(phase.nextAction === undefined ? [] : [`   next: ${phase.nextAction}`])
     ])
   ].join("\n");
+}
+
+function formatStartupReadyPlanSourceConnectors(plan: StartupReadyPlan): string[] {
+  if (plan.sourceConnectors.requirements.length === 0) {
+    return ["Source connectors: none"];
+  }
+
+  return [
+    "Source connectors:",
+    ...plan.sourceConnectors.requirements.map((requirement) => {
+      const status = requirement.blockers.length === 0 ? "ready" : "blocked";
+      const missing =
+        requirement.missingTokenEnv.length === 0
+          ? ""
+          : `; missing ${requirement.missingTokenEnv.join(", ")}`;
+
+      return `- ${requirement.id}: ${status} (${requirement.connectors.join(" or ")}${missing})`;
+    })
+  ];
 }
 
 export function formatStartupReadinessRun(run: StartupReadinessRun): string {

@@ -9,6 +9,10 @@ import {
   startupReadinessExtensionPolicyBlockers,
   startupReadinessExtensionRequirementBlockers
 } from "../startup-extension-loader.js";
+import {
+  startupSourceConnectorRequirementBlockers,
+  startupSourceConnectorRequirementsForTarget
+} from "../startup-source-connectors.js";
 import { checkStartupGate, type StartupGateStage } from "../startup-evidence.js";
 import { resolveStartupWorkerGovernance } from "../startup-founder-flow.js";
 import { resolveStartupScaffoldProfile } from "../startup-scaffold-profile.js";
@@ -73,6 +77,13 @@ export async function planStartupReady(
     worker,
     governanceProfile: governance.profile
   });
+  const sourceConnectorRequirements = startupSourceConnectorRequirementsForTarget({
+    target,
+    env: options.sourceConnectorEnv ?? process.env
+  });
+  const sourceConnectorBlockers = startupSourceConnectorRequirementBlockers(
+    sourceConnectorRequirements
+  );
 
   return {
     cwd,
@@ -86,6 +97,10 @@ export async function planStartupReady(
       discoveredPaths: extensions.discoveredPaths,
       loaded: extensions.extensions.map((extension) => extension.contract.extensionId),
       issues: extensions.issues
+    },
+    sourceConnectors: {
+      requirements: sourceConnectorRequirements,
+      blockers: sourceConnectorBlockers
     },
     phases: [
       planPhase(
@@ -129,6 +144,7 @@ export async function planStartupReady(
       planPhase("launch_report", "Launch report", [
         ...deploymentPlanBlockers(evidenceTiers, target),
         ...targetOperationalEvidencePlanBlockers(evidenceTypes, evidenceTiers, target),
+        ...sourceConnectorBlockers,
         ...extensionBlockers,
         ...extensionPolicyBlockers
       ]),
