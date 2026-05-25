@@ -260,6 +260,8 @@ The current implementation wave closed the highest-confidence product gaps:
   audit/security/report/support/git/UI/bottleneck command registration.
 - `packages/cli/src/startup-command.ts` no longer owns startup scale
   starter/workflow/memory/integration/report/SOP/GTM command registration.
+- `packages/cli/src/startup-command.ts` no longer owns startup hypothesis
+  command registration.
 - `@runstead/runtime` exposes backend selection for SQLite and Postgres.
 - `runstead doctor` reports backend setup blockers and team readiness.
 - Wrapped workers expose progress summary, last output age, and
