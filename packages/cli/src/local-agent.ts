@@ -1,11 +1,9 @@
-import { createHash } from "node:crypto";
 import { join, resolve } from "node:path";
 
 import {
   createRunsteadId,
   type Goal,
   type JsonObject,
-  type RunsteadEvent,
   type Task,
   type WorkerRun
 } from "@runstead/core";
@@ -38,6 +36,12 @@ import {
   formatLocalAgentDiagnostics,
   type LocalAgentRunDiagnosticInput
 } from "./local-agent-diagnostics.js";
+import {
+  localAgentCheckpointCreateAction,
+  localAgentCheckpointOutput,
+  localAgentEvent,
+  localAgentWorkerStartAction
+} from "./local-agent-actions.js";
 import {
   localAgentShouldIncrementAttempt,
   localAgentTaskBaseUrl,
@@ -95,7 +99,7 @@ import {
   type UndoLocalAgentTaskResult
 } from "./local-agent-types.js";
 import { loadPolicyProfileFromFile } from "./policy-loader.js";
-import type { ActionEnvelope, PolicyProfile } from "./policy.js";
+import type { PolicyProfile } from "./policy.js";
 import { requireRunsteadRoot, requireRunsteadStateDb } from "./runstead-root.js";
 import { finishWorkerRun, startWorkerRun } from "./runtime-audit.js";
 import { claimTask, showTask } from "./tasks.js";
@@ -495,7 +499,7 @@ async function runLocalAgentTaskWithDatabase(options: {
       policy: options.policy,
       task: options.task,
       workerRun: orchestratorRun,
-      action: workerStartAction({
+      action: localAgentWorkerStartAction({
         task: options.task,
         cwd: options.cwd,
         worker: options.worker
@@ -869,7 +873,7 @@ async function createLocalAgentCheckpointIfNeeded(options: {
     policy: options.policy,
     task: options.task,
     workerRun: options.workerRun,
-    action: checkpointCreateAction({
+    action: localAgentCheckpointCreateAction({
       task: options.task,
       cwd: options.cwd,
       checkpointDir
@@ -891,7 +895,7 @@ async function createLocalAgentCheckpointIfNeeded(options: {
 
       return {
         value,
-        output: checkpointOutput(value)
+        output: localAgentCheckpointOutput(value)
       };
     }
   });
@@ -949,59 +953,6 @@ function finalizeLocalAgentTask(input: {
   return task;
 }
 
-function workerStartAction(input: {
-  task: Task;
-  cwd: string;
-  worker: LocalAgentWorkerKind;
-}): ActionEnvelope {
-  const nativeWorker = input.worker === CODEX_DIRECT_WORKER_KIND;
-
-  return {
-    actionId: stableActionId(
-      nativeWorker ? "worker_native_start" : "worker_external_start",
-      [input.task.id, input.worker]
-    ),
-    actionType: nativeWorker ? "worker.native.start" : "worker.external.start",
-    resource: {
-      type: "process",
-      id: input.worker
-    },
-    context: {
-      cwd: input.cwd
-    }
-  };
-}
-
-function checkpointCreateAction(input: {
-  task: Task;
-  cwd: string;
-  checkpointDir: string;
-}): ActionEnvelope {
-  return {
-    actionId: stableActionId("checkpoint_create", [
-      input.task.id,
-      input.cwd,
-      input.checkpointDir
-    ]),
-    actionType: "checkpoint.create",
-    resource: {
-      type: "repository",
-      id: input.cwd
-    },
-    context: {
-      cwd: input.cwd
-    }
-  };
-}
-
-function checkpointOutput(checkpoint: WorkspaceCheckpoint): JsonObject {
-  return {
-    checkpointId: checkpoint.id,
-    head: checkpoint.head ?? "",
-    untrackedFiles: checkpoint.untrackedFiles
-  };
-}
-
 function readLocalAgentApprovedPendingPatch(
   stateDb: string,
   task: Task
@@ -1027,32 +978,6 @@ function readLocalAgentApprovedPendingPatch(
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
-}
-
-function stableActionId(prefix: string, parts: unknown[]): string {
-  const hash = createHash("sha256")
-    .update(JSON.stringify(parts))
-    .digest("hex")
-    .slice(0, 12);
-
-  return `act_${prefix.replaceAll(".", "_")}_${hash}`;
-}
-
-function localAgentEvent(
-  type: string,
-  aggregateType: string,
-  aggregateId: string,
-  createdAt: string,
-  payload: RunsteadEvent["payload"]
-): RunsteadEvent {
-  return {
-    eventId: createRunsteadId("evt"),
-    type,
-    aggregateType,
-    aggregateId,
-    payload,
-    createdAt
-  };
 }
 
 function localAgentTitle(prompt: string): string {

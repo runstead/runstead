@@ -315,6 +315,9 @@ The current implementation wave closed the highest-confidence product gaps:
   report helpers moved out of `local-agent` into `local-agent-result`.
 - Local agent public task, run, resume, undo, and result contracts moved out of
   `local-agent` into `local-agent-types`.
+- Local agent governed worker-start, checkpoint action envelopes, checkpoint
+  output, and event builders moved out of `local-agent` into
+  `local-agent-actions`.
 - Startup gate severity rules and blocker remediation text moved out of
   `startup-evidence` into `startup-gate-rules`.
 - Startup gate artifact parsing and structured-content helper predicates moved
