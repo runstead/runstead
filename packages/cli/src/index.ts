@@ -23,6 +23,7 @@ import { registerDoctorCommand } from "./commands/doctor.js";
 import { registerMigrateCommand } from "./commands/migrate.js";
 import { registerOpsCommand } from "./commands/ops.js";
 import { registerRbacCommand } from "./commands/rbac.js";
+import { registerReportCommand } from "./commands/report.js";
 import { registerResumeCommand } from "./commands/resume.js";
 import { registerRunCommand } from "./commands/run.js";
 import { registerSchedulerCommand } from "./commands/scheduler.js";
@@ -102,6 +103,7 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
   registerRbacCommand(program);
   registerTeamPolicyCommand(program);
   registerAuditCommand(program);
+  registerReportCommand(program);
 
   const webhook = program
     .command("webhook")
@@ -243,85 +245,6 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
           console.log(`Runstead webhook server listening on ${options.host}:${port}`);
           console.log("GitHub endpoint: /webhooks/github");
         });
-      }
-    );
-
-  const report = program.command("report").description("Generate reports.");
-
-  report
-    .command("weekly")
-    .description("Generate a weekly Runstead maintenance report.")
-    .option("--cwd <path>", "Workspace directory")
-    .option("--week <YYYY-Www>", "ISO week to report, for example 2026-W20")
-    .option("--print", "Print the generated markdown")
-    .option("--actor <id>", "RBAC subject for report generation", "local-admin")
-    .action(
-      async (options: {
-        cwd?: string;
-        week?: string;
-        print?: boolean;
-        actor: string;
-      }) => {
-        await requireRbacPermission({
-          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-          actor: options.actor,
-          permission: "audit.read",
-          action: "generate reports"
-        });
-
-        const { generateWeeklyReport } = await import("./weekly-report.js");
-        const result = await generateWeeklyReport({
-          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-          ...(options.week === undefined ? {} : { week: options.week })
-        });
-
-        console.log(`Generated weekly report: ${result.reportPath}`);
-        console.log(`Week: ${result.week}`);
-
-        if (options.print === true) {
-          console.log("");
-          console.log(result.markdown);
-        }
-      }
-    );
-
-  report
-    .command("launch-readiness")
-    .description("Generate an AI-coded MVP launch readiness report.")
-    .option("--cwd <path>", "Workspace directory")
-    .option("--domain <id>", "Domain id to evaluate", "ai-native-startup")
-    .option("--print", "Print the generated markdown")
-    .option("--actor <id>", "RBAC subject for report generation", "local-admin")
-    .action(
-      async (options: {
-        cwd?: string;
-        domain: string;
-        print?: boolean;
-        actor: string;
-      }) => {
-        await requireRbacPermission({
-          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-          actor: options.actor,
-          permission: "audit.read",
-          action: "generate launch readiness reports"
-        });
-
-        const { generateLaunchReadinessReport } =
-          await import("./launch-readiness-report.js");
-        const result = await generateLaunchReadinessReport({
-          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-          domain: options.domain
-        });
-
-        console.log(`Generated launch readiness report: ${result.reportPath}`);
-        console.log(`Domain: ${result.domain}`);
-        console.log(`Status: ${result.status}`);
-        console.log(`Blockers: ${result.blockers.length}`);
-
-        if (options.print === true) {
-          console.log("");
-          console.log(result.markdown);
-        }
       }
     );
 
