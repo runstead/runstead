@@ -157,6 +157,8 @@ The current implementation wave closed the highest-confidence product gaps:
   server/rendering module into `dashboard-event-payload`.
 - Local agent task input parsing moved out of the orchestrator into
   `local-agent-task-input`.
+- Local agent task reporting, report formatting, and audit-summary loading
+  moved out of the orchestrator into `local-agent-report`.
 - CI repair orchestrator public option/result contracts moved into
   `ci-repair-orchestrator-types`.
 - CI repair progress stage ordering moved into `ci-repair-orchestrator-stage`.
