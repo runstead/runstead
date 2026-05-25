@@ -32,6 +32,7 @@ import { registerTeamPolicyCommand } from "./commands/team-policy.js";
 import { registerStartupCommands } from "./startup-command.js";
 import type { LocalAgentVerifierPolicy } from "./local-agent-presets.js";
 import type { CommandVerifierInput } from "./verifier-evidence.js";
+import { parseVerifierCommandOption } from "./verifier-command-options.js";
 
 export {
   createStartupReadinessClient,
@@ -3271,19 +3272,6 @@ function localAgentReviewScope(options: AgentReviewCliOptions):
     title: "unstaged diff",
     prompt: "Review the unstaged git diff only.",
     gitDiffInstruction: "When calling git_diff, leave staged unset or false."
-  };
-}
-
-function parseVerifierCommandOption(value: string): { name: string; command: string } {
-  const separator = value.indexOf("=");
-
-  if (separator <= 0 || separator === value.length - 1) {
-    throw new Error("--verifier must use name=command");
-  }
-
-  return {
-    name: value.slice(0, separator).trim(),
-    command: value.slice(separator + 1).trim()
   };
 }
 

@@ -104,6 +104,8 @@ The current implementation wave closed the highest-confidence product gaps:
   `commands/audit`.
 - `report` command registration moved out of the CLI entrypoint into
   `commands/report`.
+- Shared verifier command option parsing moved out of the CLI entrypoint into
+  `verifier-command-options`.
 - `packages/cli/src/index.ts` no longer owns dashboard or doctor command
   registration.
 - Dashboard snapshot and operator API contracts moved out of the dashboard
