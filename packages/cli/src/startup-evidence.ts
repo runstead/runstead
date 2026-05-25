@@ -1,6 +1,4 @@
-import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 
 import {
   createRunsteadId,
@@ -12,6 +10,7 @@ import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sql
 
 import { writeJsonArtifactFile } from "./artifact-store.js";
 import { requireRunsteadStateDb } from "./runstead-root.js";
+import { readStartupGateEvidenceArtifacts } from "./startup-gate-artifact-store.js";
 import {
   arrayHasString,
   artifactSources,
@@ -1008,34 +1007,6 @@ function hasCompletedTask(tasks: StartupGateTaskRow[], type: string): boolean {
 
 function hasEvidenceType(evidence: StartupGateEvidenceRow[], type: string): boolean {
   return evidence.some((item) => item.type === type);
-}
-
-function readStartupGateEvidenceArtifacts(
-  evidence: StartupGateEvidenceRow[]
-): Map<string, StartupGateEvidenceArtifact> {
-  const artifacts = new Map<string, StartupGateEvidenceArtifact>();
-
-  for (const item of evidence) {
-    const artifact = readStartupGateEvidenceArtifact(item.uri);
-
-    if (artifact !== undefined) {
-      artifacts.set(item.id, artifact);
-    }
-  }
-
-  return artifacts;
-}
-
-function readStartupGateEvidenceArtifact(
-  uri: string
-): StartupGateEvidenceArtifact | undefined {
-  try {
-    const parsed = JSON.parse(readFileSync(fileURLToPath(uri), "utf8")) as unknown;
-
-    return isRecord(parsed) ? parsed : undefined;
-  } catch {
-    return undefined;
-  }
 }
 
 function hasPassingCommandOutput(
