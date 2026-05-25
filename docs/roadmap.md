@@ -32,7 +32,18 @@ just an agent wrapper. The current product surface includes:
   operator endpoints
 - `RuntimeControlPlaneBackend` contracts plus SQLite and Postgres backend
   implementations/conformance coverage
-- richer `ai-native-startup` and `research-monitor` domain packs
+- CI package smoke coverage for publishable packages including
+  `@runstead/state-postgres`
+- runtime backend selection diagnostics for local SQLite and explicit Postgres
+  team mode
+- provider source evidence collection for GitHub Actions, Vercel, Render,
+  Sentry, and PostHog
+- wrapped-worker progress summaries with last-output age and
+  `possibly_stuck` diagnostics
+- dashboard operator UI controls for action execution and approval decisions
+- command registration extracted for dashboard, doctor, and startup source
+- richer `ai-native-startup`, `research-monitor`, and `email-followup` domain
+  packs
 
 ## Execution Rules
 
@@ -45,77 +56,35 @@ just an agent wrapper. The current product surface includes:
 - Update docs in the same commit when behavior changes.
 - Add focused tests for each behavioral change before broad validation.
 
-## P0 - Keep Product Truth Complete
+## Completed In This Wave
 
-### 1. Keep CI and release packaging complete
+The current implementation wave closed the highest-confidence product gaps:
 
-CI is the public proof that every publishable package builds, tests, and packs.
-`@runstead/state-postgres` is now part of the team-runtime story and must stay
-inside package smoke.
+- `docs/roadmap.md` is the tracked roadmap; local ignored `plan.md` remains a
+  scratch mirror only.
+- CI package smoke now includes `@runstead/state-postgres`.
+- `packages/cli/src/index.ts` no longer owns dashboard or doctor command
+  registration.
+- `packages/cli/src/startup-command.ts` no longer owns startup source command
+  registration.
+- `@runstead/runtime` exposes backend selection for SQLite and Postgres.
+- `runstead doctor` reports backend setup blockers and team readiness.
+- Wrapped workers expose progress summary, last output age, and
+  `possibly_stuck` diagnostics.
+- `startup source collect` records structured provider evidence through
+  executable adapters.
+- Dashboard operator controls can run actions and approve/deny pending
+  approvals through the protected local API.
+- `email-followup` now has a mature draft-only lifecycle, fixtures, evals,
+  gates, report sections, and docs.
 
-Acceptance:
+## Remaining Backlog
 
-- CI dry-runs package creation for every publishable workspace package.
-- Private/internal packages remain out of public package smoke unless
-  intentionally released.
-- Future package omissions are easy to spot from the workflow structure.
-
-Validation:
-
-```bash
-pnpm --filter @runstead/state-postgres pack --dry-run
-pnpm run format:check
-```
-
-### 2. Keep roadmap documents aligned with shipped behavior
-
-The roadmap is used as an implementation contract. Completed P0/P1 items belong
-in the current baseline, not the active backlog.
-
-Acceptance:
-
-- Active roadmap items describe current gaps only.
-- Each active item maps to concrete files, tests, or commands.
-
-Validation:
-
-```bash
-rg -n "Current state:|already defines|still mostly|about 3900|about 3776" docs/roadmap.md
-```
-
-## P1 - Reduce CLI Structural Risk
-
-### 3. Extract command registration from `packages/cli/src/index.ts`
-
-`index.ts` remains one of the largest files in the repo. New command groups
-should not keep increasing its ownership.
-
-Implement:
-
-- Move command registration into focused modules under
-  `packages/cli/src/commands/`.
-- Start with low-risk groups such as dashboard, doctor, startup source, and
-  agent run.
-- Keep `index.ts` as the binary entrypoint, option parsing coordinator, and
-  compatibility export surface.
-
-Acceptance:
-
-- `index.ts` no longer owns each command group's full action body.
-- Existing command help output remains stable.
-- Command tests pass without broad fixture rewrites.
-
-Validation:
-
-```bash
-pnpm --filter @runstead/cli exec vitest run src/index.test.ts src/dashboard.test.ts src/doctor.test.ts
-pnpm --filter @runstead/cli typecheck
-```
-
-### 4. Split long CLI runtime modules by ownership
+### 1. Continue splitting long CLI runtime modules
 
 `dashboard.ts`, `ci-repair-orchestrator.ts`, `startup-automation.ts`,
-`startup-command.ts`, and `local-agent.ts` still carry too much behavior.
+`startup-command.ts`, `local-agent.ts`, and the remaining command groups still
+carry too much behavior.
 
 Acceptance:
 
@@ -132,34 +101,11 @@ pnpm --filter @runstead/cli typecheck
 pnpm --filter @runstead/runtime typecheck
 ```
 
-## P1 - Make Team Runtime Usable
+### 2. Turn team runtime diagnostics into a bootstrap command
 
-### 5. Add runtime backend selection
-
-SQLite is correct for local and CI. Postgres backend contracts exist, but users
-need an intentional runtime path for team control-plane mode.
-
-Acceptance:
-
-- Runtime config can resolve `sqlite` or `postgres`.
-- SQLite remains the default.
-- Missing Postgres configuration produces precise setup guidance.
-- `runstead doctor` can report whether the selected backend satisfies team
-  control-plane requirements.
-
-Validation:
-
-```bash
-pnpm --filter @runstead/runtime test
-pnpm --filter @runstead/state-postgres test
-pnpm --filter @runstead/cli exec vitest run src/doctor.test.ts
-```
-
-### 6. Add a team-control-plane bootstrap path
-
-Operators need a repeatable setup path for Postgres connection, runner id, lock
-lease, audit hash chain, artifact base URI, OIDC/RBAC, and secret-store
-configuration.
+Doctor can now assess backend selection, but operators still need a dedicated
+bootstrap/check command for Postgres connection, runner id, lock lease, audit
+hash chain, artifact base URI, OIDC/RBAC, and secret-store configuration.
 
 Acceptance:
 
@@ -175,39 +121,13 @@ pnpm --filter @runstead/cli exec vitest run src/doctor.test.ts
 pnpm run format:check
 ```
 
-## P2 - Deepen Production Evidence Connectors
-
-### 7. Promote startup source connectors into executable adapters
-
-Startup source connectors can record and verify evidence, but production systems
-still need stronger adapter contracts.
+### 3. Harden provider adapters beyond offline JSON fixtures
 
 Acceptance:
 
-- A connector can collect structured evidence through a governed action path.
+- Each adapter has documented provider endpoint shapes and credential names.
 - Missing credentials become explicit staging/production setup blockers, not
   silent local warnings.
-- Offline fixture adapters continue to support tests and demos.
-
-Validation:
-
-```bash
-pnpm --filter @runstead/cli exec vitest run src/startup-source-connectors.test.ts
-pnpm --filter @runstead/sdk test
-```
-
-### 8. Ship first real provider adapters
-
-Implement first:
-
-- GitHub Actions workflow conclusion evidence
-- Vercel or Render deployment status evidence
-- Sentry release/error blocker evidence
-- PostHog activation metric evidence
-
-Acceptance:
-
-- Each adapter has an offline fixture test and documented environment contract.
 - `startup ready --plan` shows required connector evidence before execution.
 - Staging/production targets can require the adapters by policy.
 
@@ -218,31 +138,11 @@ pnpm --filter @runstead/cli exec vitest run src/startup-source-connectors.test.t
 pnpm run typecheck
 ```
 
-## P2 - Improve Operator Experience
-
-### 9. Turn operator actions into first-class UI controls
-
-The protected operator API exists, but the dashboard should let an operator
-resolve common local blocked runs without copying terminal commands.
-
-Acceptance:
-
-- UI controls exist for approve/deny, resume, rerun verifiers, run recovery, and
-  record manual evidence.
-- Mutating API remains disabled by default.
-- Every mutation still requires session token, CSRF token, same-origin checks,
-  and audit events.
-
-Validation:
-
-```bash
-pnpm --filter @runstead/cli exec vitest run src/dashboard.test.ts
-```
-
-### 10. Add run comparison and recovery timelines
+### 4. Deepen operator recovery timeline UX
 
 Dogfood runs often move from blocked to ready through repair or recovery. The
-dashboard should explain why the final verdict is trustworthy.
+dashboard has action controls and timeline groups; the next step is a richer
+explanation of why the final verdict is trustworthy.
 
 Acceptance:
 
@@ -257,57 +157,12 @@ Validation:
 pnpm --filter @runstead/cli exec vitest run src/dashboard.test.ts src/startup-ready.test.ts
 ```
 
-## P2 - Improve Wrapped-Worker Observability
-
-### 11. Add `codex_cli` progress heartbeat and stuck detection
-
-Wrapped workers are intentionally weaker governance boundaries. Operators still
-need to know whether a long `codex_cli` run is active, silent, or likely stuck.
-
-Acceptance:
-
-- Wrapped-worker runs record heartbeat events while the child process is alive.
-- Dashboard and CLI show child process age, last output age, and a
-  `possibly_stuck` warning after a configurable silence window.
-- Documentation remains honest that this is observability, not hard proof of
-  internal tool behavior.
-
-Validation:
-
-```bash
-pnpm --filter @runstead/cli exec vitest run src/wrapped-worker.test.ts src/local-agent.test.ts
-```
-
-## P3 - Domain Pack Depth
-
-### 12. Bring `email-followup` to real pack parity
-
-`ai-native-startup` is rich and `research-monitor` is credible. A third mature
-pack would better prove the domain-pack abstraction.
-
-Acceptance:
-
-- `email-followup` has mature task types, evidence gates, policy, verifier
-  expectations, fixtures, and golden-path docs.
-- Pack validation tests cover the mature shape.
-
-Validation:
-
-```bash
-pnpm --filter @runstead/domain-packs test
-pnpm run format:check
-```
-
 ## Suggested Order
 
-1. CI package smoke completeness.
-2. Roadmap alignment.
-3. First command-registration extraction from `index.ts`.
-4. Backend selection and team bootstrap diagnostics.
-5. Wrapped-worker observability for `codex_cli` dogfood.
-6. Production connector adapter path.
-7. Executable dashboard UX and recovery timeline.
-8. Mature `email-followup`.
+1. Continue CLI module extraction by command/runtime ownership.
+2. Add the team-control-plane bootstrap/check command.
+3. Connect provider adapters into staging/production readiness planning.
+4. Expand operator recovery timeline explanations and action-specific forms.
 
 ## Milestone Validation
 
