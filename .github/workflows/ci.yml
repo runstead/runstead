@@ -65,6 +65,7 @@ jobs:
           pnpm --filter @runstead/skills pack --dry-run
           pnpm --filter @runstead/runtime pack --dry-run
           pnpm --filter @runstead/sdk pack --dry-run
+          pnpm --filter @runstead/state-postgres pack --dry-run
           pnpm --filter @runstead/state-sqlite pack --dry-run
           pnpm --filter @runstead/tools pack --dry-run
           pnpm --filter @runstead/verifiers pack --dry-run
