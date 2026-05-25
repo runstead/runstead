@@ -451,6 +451,10 @@ describe("cli entrypoint", () => {
     const buildMvp = startup?.commands.find(
       (command) => command.name() === "build-mvp"
     );
+    const source = startup?.commands.find((command) => command.name() === "source");
+    const sourceCollect = source?.commands.find(
+      (command) => command.name() === "collect"
+    );
     const evidenceAdd = evidence?.commands.find((command) => command.name() === "add");
     const evidenceManualChange = evidence?.commands.find(
       (command) => command.name() === "manual-change"
@@ -479,6 +483,7 @@ describe("cli entrypoint", () => {
         "remediate",
         "scale",
         "scale-check",
+        "source",
         "team"
       ])
     );
@@ -518,6 +523,19 @@ describe("cli entrypoint", () => {
         "--model",
         "--prompt",
         "--worker"
+      ])
+    );
+    expect(source?.commands.map((command) => command.name())).toEqual(
+      expect.arrayContaining(["collect", "list", "record", "verify"])
+    );
+    expect(sourceCollect?.options.map((option) => option.long)).toEqual(
+      expect.arrayContaining([
+        "--actor",
+        "--connector",
+        "--cwd",
+        "--source-uri",
+        "--target",
+        "--token"
       ])
     );
     expect(contextGenerate?.options.map((option) => option.long)).toEqual(

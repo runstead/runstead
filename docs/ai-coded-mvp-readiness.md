@@ -352,6 +352,8 @@ runstead startup evidence manual-change \
   --gate launch
 runstead startup source list
 runstead startup source record --cwd /path/to/mvp --connector vercel --target staging --source-uri https://vercel.com/acme/todo/deployments/dpl_123 --summary "Staging deployment smoke passed" --status pass
+runstead startup source collect --cwd /path/to/mvp --connector github_actions --target staging --source-uri https://api.github.com/repos/acme/todo/actions/runs/123
+runstead startup source collect --cwd /path/to/mvp --connector posthog --target production --source-uri https://app.posthog.com/api/projects/1/insights/activation
 runstead startup source verify --cwd /path/to/mvp --connector render --target production --source-uri https://todo.onrender.com/health --expect-status 200 --expect-text "ok"
 runstead startup source record --cwd /path/to/mvp --connector posthog --target production --source-uri https://app.posthog.com/project/1/insights/activation --summary "Activation funnel uses real-user analytics" --status pass
 runstead startup source verify --cwd /path/to/mvp --connector sentry --target production --source-uri https://sentry.io/organizations/acme/issues/?project=todo --expect-status 200 --expect-text "no open release blockers"
@@ -361,11 +363,12 @@ runstead startup source verify --cwd /path/to/mvp --connector sentry --target pr
 outside an agent loop. Launch reports show these records under Change
 Authorship, separate from agent and verifier evidence.
 
-`startup source verify` is the preferred escape hatch for staging and
-production integrations because it performs a live HTTP check before
-recording the evidence artifact. Named deployment connectors (`vercel`,
-`fly`, `render`) and production connectors such as `sentry` and `posthog`
-accept `--target`, so their artifacts carry readiness tiers like
+`startup source collect` uses executable provider adapters for common systems
+such as GitHub Actions, Vercel, Render, Sentry, and PostHog. `startup source
+verify` remains the generic HTTP escape hatch because it performs a live check
+before recording the evidence artifact. Named deployment connectors
+(`vercel`, `fly`, `render`) and production connectors such as `sentry` and
+`posthog` accept `--target`, so their artifacts carry readiness tiers like
 `staging_deployment`, `production_deployment`, or `real_user_analytics`.
 
 After stronger evidence is recorded, rerun the same gate:

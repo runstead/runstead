@@ -6,6 +6,8 @@ import { describe, expect, it } from "vitest";
 
 import { startupOnboard } from "./startup-founder-flow.js";
 import {
+  collectStartupSourceEvidence,
+  getStartupSourceProviderAdapter,
   listStartupSourceConnectorDefinitions,
   recordStartupSourceEvidence,
   STARTUP_SOURCE_CONNECTORS,
@@ -110,6 +112,195 @@ describe("startup source connectors", () => {
           conclusion: "success"
         }
       });
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("collects GitHub Actions evidence through the executable adapter", async () => {
+    const workspace = join(tmpdir(), `runstead-startup-source-gh-${process.pid}`);
+    const fetchCalls: {
+      input: string;
+      auth?: string;
+    }[] = [];
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await mkdir(workspace, { recursive: true });
+      await writeFile(
+        join(workspace, "package.json"),
+        `${JSON.stringify({ name: "source-gh-fixture", private: true }, null, 2)}\n`,
+        "utf8"
+      );
+      await startupOnboard({
+        cwd: workspace,
+        now: new Date("2026-05-14T00:00:00.000Z")
+      });
+
+      const result = await collectStartupSourceEvidence({
+        cwd: workspace,
+        connector: "github_actions",
+        uri: "https://api.github.com/repos/acme/todo/actions/runs/123",
+        token: "ghs_redacted",
+        target: "staging",
+        fetch: (input, init) => {
+          fetchCalls.push({
+            input,
+            ...(init?.headers?.Authorization === undefined
+              ? {}
+              : { auth: init.headers.Authorization })
+          });
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            text: () =>
+              Promise.resolve(
+                JSON.stringify({
+                  workflow: "launch",
+                  conclusion: "success",
+                  status: "completed",
+                  head_sha: "abc123",
+                  id: 123
+                })
+              )
+          });
+        },
+        now: new Date("2026-05-14T00:15:00.000Z")
+      });
+      const artifact = JSON.parse(await readFile(result.artifactPath, "utf8")) as {
+        content: string;
+      };
+      const content = JSON.parse(artifact.content) as {
+        status: string;
+        payload: {
+          workflow: string;
+          conclusion: string;
+        };
+      };
+
+      expect(getStartupSourceProviderAdapter("github_actions")).toMatchObject({
+        provider: "github",
+        requiredTokenEnv: "GITHUB_TOKEN"
+      });
+      expect(fetchCalls).toEqual([
+        {
+          input: "https://api.github.com/repos/acme/todo/actions/runs/123",
+          auth: "Bearer ghs_redacted"
+        }
+      ]);
+      expect(result.adapter.provider).toBe("github");
+      expect(result.collection.status).toBe("passed");
+      expect(result.readinessTiers).toEqual(["ci_verified"]);
+      expect(content).toMatchObject({
+        status: "passed",
+        payload: {
+          workflow: "launch",
+          conclusion: "success"
+        }
+      });
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("collects deployment and production metric adapters offline", async () => {
+    const workspace = join(tmpdir(), `runstead-startup-source-adapters-${process.pid}`);
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await mkdir(workspace, { recursive: true });
+      await writeFile(
+        join(workspace, "package.json"),
+        `${JSON.stringify({ name: "source-adapters-fixture", private: true }, null, 2)}\n`,
+        "utf8"
+      );
+      await startupOnboard({
+        cwd: workspace,
+        now: new Date("2026-05-14T00:00:00.000Z")
+      });
+
+      const vercel = await collectStartupSourceEvidence({
+        cwd: workspace,
+        connector: "vercel",
+        uri: "https://api.vercel.com/v13/deployments/dpl_123",
+        target: "staging",
+        fetch: () =>
+          Promise.resolve({
+            ok: true,
+            status: 200,
+            text: () =>
+              Promise.resolve(
+                JSON.stringify({
+                  readyState: "READY",
+                  deploymentUrl: "https://todo.vercel.app",
+                  commitSha: "abc123"
+                })
+              )
+          }),
+        now: new Date("2026-05-14T00:15:00.000Z")
+      });
+      const sentry = await collectStartupSourceEvidence({
+        cwd: workspace,
+        connector: "sentry",
+        uri: "https://sentry.io/api/0/projects/acme/todo/releases/1.0/",
+        target: "production",
+        fetch: () =>
+          Promise.resolve({
+            ok: true,
+            status: 200,
+            text: () =>
+              Promise.resolve(
+                JSON.stringify({
+                  project: "todo",
+                  release: "1.0",
+                  openReleaseBlockers: 0
+                })
+              )
+          }),
+        now: new Date("2026-05-14T00:20:00.000Z")
+      });
+      const posthog = await collectStartupSourceEvidence({
+        cwd: workspace,
+        connector: "posthog",
+        uri: "https://app.posthog.com/api/projects/1/insights/activation",
+        target: "production",
+        fetch: () =>
+          Promise.resolve({
+            ok: true,
+            status: 200,
+            text: () =>
+              Promise.resolve(
+                JSON.stringify({
+                  metric: "activation",
+                  value: 0.42,
+                  threshold: 0.3,
+                  window: "7d",
+                  realUserData: true
+                })
+              )
+          }),
+        now: new Date("2026-05-14T00:25:00.000Z")
+      });
+
+      expect(vercel.collection).toMatchObject({
+        status: "passed",
+        summary: "Vercel Deployment deployment READY"
+      });
+      expect(vercel.readinessTiers).toEqual(["staging_deployment"]);
+      expect(sentry.collection).toMatchObject({
+        status: "passed",
+        summary: "Sentry release blockers: 0"
+      });
+      expect(posthog.collection).toMatchObject({
+        status: "passed",
+        payload: {
+          metric: "activation",
+          value: 0.42,
+          threshold: 0.3,
+          realUserData: true
+        }
+      });
+      expect(posthog.readinessTiers).toEqual(["real_user_analytics"]);
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }

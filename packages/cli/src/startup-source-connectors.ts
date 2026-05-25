@@ -105,6 +105,38 @@ export interface VerifyStartupSourceEvidenceResult extends RecordStartupSourceEv
   verification: StartupSourceVerificationResult;
 }
 
+export interface CollectStartupSourceEvidenceOptions {
+  cwd?: string;
+  connector: string;
+  uri: string;
+  target?: string;
+  token?: string;
+  capturedAt?: string;
+  freshnessDays?: number;
+  sourceHash?: string;
+  trustLevel?: string;
+  goalId?: string;
+  fetch?: StartupSourceVerificationFetch;
+  now?: Date;
+}
+
+export interface CollectStartupSourceEvidenceResult extends RecordStartupSourceEvidenceResult {
+  adapter: StartupSourceProviderAdapter;
+  collection: StartupSourceProviderCollection;
+}
+
+export interface StartupSourceProviderAdapter {
+  connector: StartupSourceConnector;
+  provider: "github" | "vercel" | "render" | "sentry" | "posthog";
+  requiredTokenEnv?: string;
+}
+
+export interface StartupSourceProviderCollection {
+  status: "passed" | "failed" | "unknown";
+  summary: string;
+  payload: JsonObject;
+}
+
 export type StartupSourceVerificationFetch = (
   input: string,
   init?: {
@@ -119,6 +151,34 @@ export interface StartupSourceVerificationResponse {
   status: number;
   text?: () => Promise<string>;
 }
+
+const STARTUP_SOURCE_PROVIDER_ADAPTERS: StartupSourceProviderAdapter[] = [
+  {
+    connector: "github_actions",
+    provider: "github",
+    requiredTokenEnv: "GITHUB_TOKEN"
+  },
+  {
+    connector: "vercel",
+    provider: "vercel",
+    requiredTokenEnv: "VERCEL_TOKEN"
+  },
+  {
+    connector: "render",
+    provider: "render",
+    requiredTokenEnv: "RENDER_API_KEY"
+  },
+  {
+    connector: "sentry",
+    provider: "sentry",
+    requiredTokenEnv: "SENTRY_AUTH_TOKEN"
+  },
+  {
+    connector: "posthog",
+    provider: "posthog",
+    requiredTokenEnv: "POSTHOG_API_KEY"
+  }
+];
 
 const STARTUP_SOURCE_CONNECTOR_DEFINITIONS: StartupSourceConnectorDefinition[] = [
   connectorDefinition({
@@ -424,6 +484,58 @@ export async function verifyStartupSourceEvidence(
   };
 }
 
+export async function collectStartupSourceEvidence(
+  options: CollectStartupSourceEvidenceOptions
+): Promise<CollectStartupSourceEvidenceResult> {
+  const connector = parseStartupSourceConnector(options.connector);
+  const adapter = requireStartupSourceProviderAdapter(connector);
+  const definition = requireStartupSourceConnectorDefinition(connector);
+  const fetcher = options.fetch ?? globalThis.fetch;
+
+  if (fetcher === undefined) {
+    throw new Error("fetch API is unavailable; provide a fetch implementation");
+  }
+
+  const token = options.token ?? adapterTokenFromEnv(adapter);
+  const response = await fetcher(options.uri, {
+    method: "GET",
+    signal: AbortSignal.timeout(10_000),
+    ...(token === undefined ? {} : { headers: providerAuthHeaders(adapter, token) })
+  });
+  const responseText = await readVerificationResponseText(response);
+  const responsePayload = parseConnectorResponseJson(responseText);
+  const collection = collectProviderPayload({
+    adapter,
+    definition,
+    responseStatus: response.status,
+    responseOk: response.ok,
+    responsePayload
+  });
+  const result = await recordStartupSourceEvidence({
+    ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+    connector,
+    uri: options.uri,
+    summary: collection.summary,
+    status: collection.status,
+    ...(options.capturedAt === undefined ? {} : { capturedAt: options.capturedAt }),
+    ...(options.target === undefined ? {} : { target: options.target }),
+    ...(options.freshnessDays === undefined
+      ? {}
+      : { freshnessDays: options.freshnessDays }),
+    ...(options.sourceHash === undefined ? {} : { sourceHash: options.sourceHash }),
+    ...(options.trustLevel === undefined ? {} : { trustLevel: options.trustLevel }),
+    payload: JSON.stringify(collection.payload),
+    ...(options.goalId === undefined ? {} : { goalId: options.goalId }),
+    ...(options.now === undefined ? {} : { now: options.now })
+  });
+
+  return {
+    ...result,
+    adapter,
+    collection
+  };
+}
+
 export function parseStartupSourceConnector(value: string): StartupSourceConnector {
   if (STARTUP_SOURCE_CONNECTORS.includes(value as StartupSourceConnector)) {
     return value as StartupSourceConnector;
@@ -468,6 +580,14 @@ export function getStartupSourceConnectorDefinition(
   };
 }
 
+export function getStartupSourceProviderAdapter(
+  connector: StartupSourceConnector
+): StartupSourceProviderAdapter | undefined {
+  return STARTUP_SOURCE_PROVIDER_ADAPTERS.find(
+    (candidate) => candidate.connector === connector
+  );
+}
+
 function requireStartupSourceConnectorDefinition(
   connector: StartupSourceConnector
 ): StartupSourceConnectorDefinition {
@@ -478,6 +598,20 @@ function requireStartupSourceConnectorDefinition(
   }
 
   return definition;
+}
+
+function requireStartupSourceProviderAdapter(
+  connector: StartupSourceConnector
+): StartupSourceProviderAdapter {
+  const adapter = getStartupSourceProviderAdapter(connector);
+
+  if (adapter === undefined) {
+    throw new Error(
+      `Startup source connector ${connector} does not have an executable adapter`
+    );
+  }
+
+  return adapter;
 }
 
 function parseOptionalStartupSourceTarget(
@@ -614,6 +748,20 @@ function connectorPayload(payload: string | undefined): JsonObject | undefined {
   return parsed as JsonObject;
 }
 
+function parseConnectorResponseJson(value: string): JsonObject {
+  if (value.trim().length === 0) {
+    return {};
+  }
+
+  const parsed = JSON.parse(value) as unknown;
+
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    throw new Error("connector response must be a JSON object");
+  }
+
+  return parsed as JsonObject;
+}
+
 async function readVerificationResponseText(
   response: StartupSourceVerificationResponse
 ): Promise<string> {
@@ -666,4 +814,190 @@ function connectorPayloadWarnings(
   return definition.recommendedPayloadFields
     .filter((field) => payload[field] === undefined)
     .map((field) => `payload missing recommended field: ${field}`);
+}
+
+function adapterTokenFromEnv(
+  adapter: StartupSourceProviderAdapter
+): string | undefined {
+  if (adapter.requiredTokenEnv === undefined) {
+    return undefined;
+  }
+
+  const token = process.env[adapter.requiredTokenEnv];
+
+  return token === undefined || token.trim().length === 0 ? undefined : token;
+}
+
+function providerAuthHeaders(
+  adapter: StartupSourceProviderAdapter,
+  token: string
+): Record<string, string> {
+  switch (adapter.provider) {
+    case "github":
+      return {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/vnd.github+json"
+      };
+    case "sentry":
+    case "posthog":
+    case "vercel":
+    case "render":
+      return {
+        Authorization: `Bearer ${token}`
+      };
+  }
+}
+
+function collectProviderPayload(input: {
+  adapter: StartupSourceProviderAdapter;
+  definition: StartupSourceConnectorDefinition;
+  responseStatus: number;
+  responseOk: boolean;
+  responsePayload: JsonObject;
+}): StartupSourceProviderCollection {
+  if (!input.responseOk) {
+    return {
+      status: "failed",
+      summary: `${input.definition.displayName} adapter fetch failed with HTTP ${input.responseStatus}`,
+      payload: {
+        connector: input.adapter.connector,
+        provider: input.adapter.provider,
+        httpStatus: input.responseStatus,
+        response: input.responsePayload
+      }
+    };
+  }
+
+  switch (input.adapter.connector) {
+    case "github_actions":
+      return collectGithubActionsPayload(input.responsePayload);
+    case "vercel":
+      return collectDeploymentPayload({
+        connector: "vercel",
+        displayName: input.definition.displayName,
+        readyStates: ["READY", "SUCCESS", "SUCCEEDED"],
+        payload: input.responsePayload
+      });
+    case "render":
+      return collectDeploymentPayload({
+        connector: "render",
+        displayName: input.definition.displayName,
+        readyStates: ["live", "deployed", "succeeded", "success"],
+        payload: input.responsePayload
+      });
+    case "sentry":
+      return collectSentryPayload(input.responsePayload);
+    case "posthog":
+      return collectPosthogPayload(input.responsePayload);
+    default:
+      return {
+        status: "unknown",
+        summary: `${input.definition.displayName} adapter has no parser`,
+        payload: input.responsePayload
+      };
+  }
+}
+
+function collectGithubActionsPayload(
+  payload: JsonObject
+): StartupSourceProviderCollection {
+  const conclusion = stringPayloadValue(payload, "conclusion");
+  const status = stringPayloadValue(payload, "status");
+  const workflow =
+    stringPayloadValue(payload, "workflow") ?? stringPayloadValue(payload, "name");
+  const passed = conclusion === "success" || status === "success";
+
+  return {
+    status: passed ? "passed" : "failed",
+    summary: `GitHub Actions workflow ${workflow ?? "run"} ${conclusion ?? status ?? "unknown"}`,
+    payload: {
+      workflow: workflow ?? "unknown",
+      conclusion: conclusion ?? "unknown",
+      status: status ?? "unknown",
+      headSha:
+        stringPayloadValue(payload, "headSha") ??
+        stringPayloadValue(payload, "head_sha") ??
+        "unknown",
+      runId: payload.runId ?? payload.id ?? "unknown"
+    }
+  };
+}
+
+function collectDeploymentPayload(input: {
+  connector: StartupSourceConnector;
+  displayName: string;
+  readyStates: string[];
+  payload: JsonObject;
+}): StartupSourceProviderCollection {
+  const status =
+    stringPayloadValue(input.payload, "status") ??
+    stringPayloadValue(input.payload, "state") ??
+    stringPayloadValue(input.payload, "readyState") ??
+    "unknown";
+  const passed = input.readyStates.includes(status);
+
+  return {
+    status: passed ? "passed" : "failed",
+    summary: `${input.displayName} deployment ${status}`,
+    payload: {
+      connector: input.connector,
+      status,
+      deploymentUrl:
+        stringPayloadValue(input.payload, "deploymentUrl") ??
+        stringPayloadValue(input.payload, "url") ??
+        "unknown",
+      commitSha:
+        stringPayloadValue(input.payload, "commitSha") ??
+        stringPayloadValue(input.payload, "commit") ??
+        "unknown"
+    }
+  };
+}
+
+function collectSentryPayload(payload: JsonObject): StartupSourceProviderCollection {
+  const blockers =
+    numberPayloadValue(payload, "openReleaseBlockers") ??
+    numberPayloadValue(payload, "issueCount") ??
+    arrayPayloadLength(payload, "issues") ??
+    0;
+
+  return {
+    status: blockers === 0 ? "passed" : "failed",
+    summary: `Sentry release blockers: ${blockers}`,
+    payload: {
+      openReleaseBlockers: blockers,
+      release: stringPayloadValue(payload, "release") ?? "unknown",
+      project: stringPayloadValue(payload, "project") ?? "unknown"
+    }
+  };
+}
+
+function collectPosthogPayload(payload: JsonObject): StartupSourceProviderCollection {
+  const value = numberPayloadValue(payload, "value") ?? 0;
+  const threshold = numberPayloadValue(payload, "threshold");
+  const passed = threshold === undefined ? true : value >= threshold;
+
+  return {
+    status: passed ? "passed" : "failed",
+    summary: `PostHog metric ${stringPayloadValue(payload, "metric") ?? "activation"} value ${value}`,
+    payload: {
+      metric: stringPayloadValue(payload, "metric") ?? "activation",
+      value,
+      ...(threshold === undefined ? {} : { threshold }),
+      window: stringPayloadValue(payload, "window") ?? "unknown",
+      realUserData: Boolean(payload.realUserData)
+    }
+  };
+}
+
+function numberPayloadValue(payload: JsonObject, field: string): number | undefined {
+  const value = payload[field];
+
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function arrayPayloadLength(payload: JsonObject, field: string): number | undefined {
+  const value = payload[field];
+
+  return Array.isArray(value) ? value.length : undefined;
 }

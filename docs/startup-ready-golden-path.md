@@ -223,6 +223,11 @@ runstead startup source record \
   --source-uri https://github.com/acme/todo/actions/runs/1 \
   --summary "CI passed" \
   --status passed
+runstead startup source collect \
+  --cwd /tmp/runstead-todo \
+  --connector github_actions \
+  --target staging \
+  --source-uri https://api.github.com/repos/acme/todo/actions/runs/1
 runstead startup source verify \
   --cwd /tmp/runstead-todo \
   --connector vercel \

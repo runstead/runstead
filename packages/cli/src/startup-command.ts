@@ -562,10 +562,12 @@ export function registerStartupCommands(program: Command): void {
     .command("list")
     .description("List startup source connector contracts.")
     .action(async () => {
-      const { listStartupSourceConnectorDefinitions } =
+      const { getStartupSourceProviderAdapter, listStartupSourceConnectorDefinitions } =
         await import("./startup-source-connectors.js");
 
       for (const definition of listStartupSourceConnectorDefinitions()) {
+        const adapter = getStartupSourceProviderAdapter(definition.connector);
+
         console.log(
           [
             definition.connector,
@@ -574,6 +576,7 @@ export function registerStartupCommands(program: Command): void {
             `quality=${definition.qualityTier}`,
             `trust=${definition.defaultTrustLevel}`,
             `freshness=${definition.defaultFreshnessDays}d`,
+            `adapter=${adapter?.provider ?? "none"}`,
             `payload=${definition.recommendedPayloadFields.join(",") || "none"}`
           ].join(" ")
         );
@@ -754,6 +757,84 @@ export function registerStartupCommands(program: Command): void {
         console.log(
           `Verification: ${result.verification.status} http=${result.verification.statusCode} expected=${result.verification.expectedStatus}`
         );
+        console.log(`Evidence type: startup_${result.evidenceType}`);
+        console.log(`Artifact: ${result.artifactPath}`);
+      }
+    );
+
+  startupSource
+    .command("collect")
+    .description(
+      "Collect structured evidence from an executable provider adapter before recording it."
+    )
+    .option("--cwd <path>", "Workspace directory")
+    .requiredOption(
+      "--connector <kind>",
+      "Executable connector: github_actions, vercel, render, sentry, or posthog"
+    )
+    .requiredOption("--source-uri <uri>", "Provider API URI to collect")
+    .option(
+      "--target <target>",
+      "Readiness target this source supports: local, staging, or production"
+    )
+    .option("--token <token>", "Provider token; defaults to connector-specific env var")
+    .option("--captured-at <iso>", "Timestamp when the source was captured")
+    .option("--freshness-days <days>", "Maximum acceptable source age in days")
+    .option("--source-hash <hash>", "Optional hash of the captured source payload")
+    .option("--trust <level>", "Source trust level: low, medium, high, authoritative")
+    .option("--goal <id>", "Associated goal id")
+    .option("--actor <id>", "RBAC subject for source evidence writes", "local-admin")
+    .action(
+      async (options: {
+        cwd?: string;
+        connector: string;
+        sourceUri: string;
+        target?: string;
+        token?: string;
+        capturedAt?: string;
+        freshnessDays?: string;
+        sourceHash?: string;
+        trust?: string;
+        goal?: string;
+        actor: string;
+      }) => {
+        await requireRbacPermission({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          actor: options.actor,
+          permission: "evidence.write",
+          action: "collect startup source evidence"
+        });
+
+        const { collectStartupSourceEvidence } =
+          await import("./startup-source-connectors.js");
+        const result = await collectStartupSourceEvidence({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          connector: options.connector,
+          uri: options.sourceUri,
+          ...(options.target === undefined ? {} : { target: options.target }),
+          ...(options.token === undefined ? {} : { token: options.token }),
+          ...(options.capturedAt === undefined
+            ? {}
+            : { capturedAt: options.capturedAt }),
+          ...(options.freshnessDays === undefined
+            ? {}
+            : {
+                freshnessDays: parsePositiveInteger(
+                  options.freshnessDays,
+                  "--freshness-days"
+                )
+              }),
+          ...(options.sourceHash === undefined
+            ? {}
+            : { sourceHash: options.sourceHash }),
+          ...(options.trust === undefined ? {} : { trustLevel: options.trust }),
+          ...(options.goal === undefined ? {} : { goalId: options.goal })
+        });
+
+        console.log(`Collected source evidence: ${result.evidence.id}`);
+        console.log(`Connector: ${result.connector}`);
+        console.log(`Adapter: ${result.adapter.provider}`);
+        console.log(`Collection: ${result.collection.status}`);
         console.log(`Evidence type: startup_${result.evidenceType}`);
         console.log(`Artifact: ${result.artifactPath}`);
       }
