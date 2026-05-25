@@ -3,6 +3,7 @@ import { basename, join } from "node:path";
 import { Command } from "commander";
 import { pathToFileURL } from "node:url";
 
+import { registerDashboardCommand } from "./commands/dashboard.js";
 import { getRunsteadStatus } from "./status.js";
 import { registerStartupCommands } from "./startup-command.js";
 import type { LocalAgentVerifierPolicy } from "./local-agent-presets.js";
@@ -79,6 +80,7 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
   );
   addConfigCommand(program.command("config").description("Manage local config."));
   addAgentCommand(program.command("agent").description("Run local repo agent tasks."));
+  registerDashboardCommand(program);
 
   program
     .command("init")
@@ -664,104 +666,6 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
           console.log(`Runstead webhook server listening on ${options.host}:${port}`);
           console.log("GitHub endpoint: /webhooks/github");
         });
-      }
-    );
-
-  const dashboard = program
-    .command("dashboard")
-    .description("Build dashboards. Experimental.");
-
-  dashboard
-    .command("build")
-    .description("Build the local static dashboard.")
-    .option("--cwd <path>", "Workspace directory")
-    .option("--output <path>", "Dashboard output directory")
-    .option("--actor <id>", "RBAC subject for dashboard generation", "local-admin")
-    .action(async (options: { cwd?: string; output?: string; actor: string }) => {
-      const { checkPermission } = await import("./rbac.js");
-      const permission = await checkPermission({
-        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-        subject: options.actor,
-        permission: "dashboard.manage"
-      });
-
-      if (permission.decision !== "allow") {
-        throw new Error(
-          `Subject ${options.actor} cannot build dashboard: ${permission.reason}`
-        );
-      }
-
-      const { buildDashboard } = await import("./dashboard.js");
-      const result = await buildDashboard({
-        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-        ...(options.output === undefined ? {} : { outputDir: options.output })
-      });
-
-      console.log(`Dashboard HTML: ${result.htmlPath}`);
-      console.log(`Dashboard data: ${result.dataPath}`);
-    });
-
-  dashboard
-    .command("serve")
-    .description("Build and serve the local dashboard over HTTP.")
-    .option("--cwd <path>", "Workspace directory")
-    .option("--output <path>", "Dashboard output directory")
-    .option("--host <host>", "Host interface to bind", "127.0.0.1")
-    .option("--port <port>", "Port to bind", "4173")
-    .option("--actor <id>", "RBAC subject for dashboard generation", "local-admin")
-    .option(
-      "--enable-operator-api",
-      "Enable protected local mutating Operator Console endpoints"
-    )
-    .option("--operator-token <token>", "Operator API session token")
-    .option("--csrf-token <token>", "Operator API CSRF token")
-    .action(
-      async (options: {
-        cwd?: string;
-        output?: string;
-        host: string;
-        port: string;
-        actor: string;
-        enableOperatorApi?: boolean;
-        operatorToken?: string;
-        csrfToken?: string;
-      }) => {
-        const { checkPermission } = await import("./rbac.js");
-        const permission = await checkPermission({
-          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-          subject: options.actor,
-          permission: "dashboard.manage"
-        });
-
-        if (permission.decision !== "allow") {
-          throw new Error(
-            `Subject ${options.actor} cannot serve dashboard: ${permission.reason}`
-          );
-        }
-
-        const port = parseDashboardPort(options.port);
-        const { serveDashboard } = await import("./dashboard.js");
-        const result = await serveDashboard({
-          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-          ...(options.output === undefined ? {} : { outputDir: options.output }),
-          host: options.host,
-          port,
-          enableOperatorApi: options.enableOperatorApi === true,
-          ...(options.operatorToken === undefined
-            ? {}
-            : { sessionToken: options.operatorToken }),
-          ...(options.csrfToken === undefined ? {} : { csrfToken: options.csrfToken }),
-          actor: options.actor
-        });
-
-        console.log(`Dashboard URL: ${result.url}`);
-        console.log(`Dashboard HTML: ${result.build.htmlPath}`);
-        console.log(`Dashboard data: ${result.build.dataPath}`);
-        if (result.operatorApi !== undefined) {
-          console.log("Operator API: enabled");
-          console.log(`Operator API session token: ${result.operatorApi.sessionToken}`);
-          console.log(`Operator API CSRF token: ${result.operatorApi.csrfToken}`);
-        }
       }
     );
 
@@ -4331,16 +4235,6 @@ function parseOptionalInteger(
   }
 
   return parsed;
-}
-
-function parseDashboardPort(value: string): number {
-  const port = parseRequiredInteger(value, "--port");
-
-  if (port < 0 || port > 65_535) {
-    throw new Error("--port must be between 0 and 65535");
-  }
-
-  return port;
 }
 
 function parseRequiredInteger(value: string, optionName: string): number {
