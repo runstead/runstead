@@ -282,6 +282,8 @@ The current implementation wave closed the highest-confidence product gaps:
   out of `launch-readiness-report` into `launch-readiness-evidence`.
 - Launch readiness trust summary scoring and trend analysis moved out of
   `launch-readiness-report` into `launch-readiness-trust`.
+- Launch readiness public option, result, target, and target-status contracts
+  moved out of `launch-readiness-report` into `launch-readiness-types`.
 - Startup evidence source normalization and provenance helpers moved out of
   `startup-evidence` into `startup-evidence-sources`.
 - Startup evidence type constants and validation helpers moved out of

@@ -40,41 +40,23 @@ import {
   type LaunchReadinessStatus,
   type LaunchReadinessTrustSummary
 } from "./launch-readiness-trust.js";
+import type {
+  GenerateLaunchReadinessReportOptions,
+  LaunchReadinessReportResult,
+  LaunchReadinessTarget,
+  LaunchReadinessTargetStatus
+} from "./launch-readiness-types.js";
 import { requireRunsteadStateDb } from "./runstead-root.js";
 import { listStartupArtifacts } from "./startup-artifacts.js";
 import { checkStartupGate } from "./startup-evidence.js";
 import { collectCommandVerifierCodeState } from "./verifier-evidence.js";
 
-export interface GenerateLaunchReadinessReportOptions {
-  cwd?: string;
-  domain?: string;
-  target?: LaunchReadinessTarget;
-  now?: Date;
-}
-
-export interface LaunchReadinessReportResult {
-  root: string;
-  stateDb: string;
-  domain: string;
-  reportPath: string;
-  jsonPath: string;
-  markdown: string;
-  event: RunsteadEvent;
-  status: LaunchReadinessStatus;
-  targetStatus: LaunchReadinessTargetStatus;
-  blockers: string[];
-  trustSummary: LaunchReadinessTrustSummary;
-}
-
-export type LaunchReadinessTarget = "local" | "staging" | "production";
-type LaunchReadinessTargetStatus =
-  | "local_launch_ready"
-  | "local_launch_blocked"
-  | "staging_launch_ready"
-  | "staging_launch_blocked"
-  | "public_launch_ready"
-  | "public_launch_blocked";
-
+export type {
+  GenerateLaunchReadinessReportOptions,
+  LaunchReadinessReportResult,
+  LaunchReadinessTarget,
+  LaunchReadinessTargetStatus
+} from "./launch-readiness-types.js";
 export type { LaunchReadinessTrustSummary } from "./launch-readiness-trust.js";
 
 const STARTUP_DOMAIN = "ai-native-startup";
