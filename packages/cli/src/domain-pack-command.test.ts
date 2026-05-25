@@ -31,4 +31,33 @@ describe("domain pack command helpers", () => {
     expect(report).toContain("Migrations: 1 (0.0.0->0.1.0)");
     expect(report).toContain("Maturity: passed (100%)");
   });
+
+  it("shows non-startup golden-path metadata for mature built-in packs", async () => {
+    const research = await showDomainPack("research-monitor");
+    const researchReport = formatDomainPackShowResult(research);
+    const email = await showDomainPack("email-followup");
+    const emailReport = formatDomainPackShowResult(email);
+
+    expect(research.maturity.passed).toBe(true);
+    expect(researchReport).toContain("Domain pack: research-monitor");
+    expect(researchReport).toContain(
+      "Task types: 7 (discover_sources, scan_sources, evaluate_source_reliability, summarize_findings, triage_source_conflicts, prepare_digest_release, archive_research_memory)"
+    );
+    expect(researchReport).toContain(
+      "Fixtures: 6 (source-discovery-review, source-reliability-review, weekly-research-digest-smoke, conflicting-sources-regression, publish-gate-review, archive-memory-update)"
+    );
+    expect(researchReport).toContain("Report sections: 5");
+    expect(researchReport).toContain("Maturity: passed (100%)");
+
+    expect(email.maturity.passed).toBe(true);
+    expect(emailReport).toContain("Domain pack: email-followup");
+    expect(emailReport).toContain(
+      "Task types: 6 (scan_threads, classify_followup_need, verify_recipients, draft_followup, review_draft_safety, archive_followup_memory)"
+    );
+    expect(emailReport).toContain(
+      "Fixtures: 5 (thread-triage-smoke, recipient-safety-review, draft-followup-smoke, send-block-regression, archive-followup-memory)"
+    );
+    expect(emailReport).toContain("Report sections: 5");
+    expect(emailReport).toContain("Maturity: passed (100%)");
+  });
 });

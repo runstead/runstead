@@ -92,6 +92,8 @@ The current implementation wave closed the highest-confidence product gaps:
   phase, evidence ids, and artifacts that cleared them.
 - `email-followup` now has a mature draft-only lifecycle, fixtures, evals,
   gates, report sections, and docs.
+- Non-startup golden paths are covered by a combined runbook and CLI/domain
+  maturity regression tests for `research-monitor` and `email-followup`.
 - `runstead team control-plane bootstrap/check` gives operators a dedicated
   team backend assertion surface.
 - CI runs `@runstead/state-postgres` against a real Postgres service via
@@ -140,33 +142,10 @@ Validation:
 pnpm --filter @runstead/cli exec vitest run src/dashboard.test.ts src/startup-ready.test.ts
 ```
 
-### 3. Prove domain-pack generality with a second non-startup golden path
-
-`ai-native-startup` is deep and `email-followup` is now richer. The pack
-abstraction still needs one more full dogfood path outside startup readiness to
-prove that domain logic does not leak into CLI internals.
-
-Acceptance:
-
-- A non-startup pack has a copyable runbook comparable to the todo startup
-  golden path.
-- Task types, policy, evidence gates, evals, and reports are exercised end to
-  end.
-- Domain-specific logic stays in the pack, not hard-coded in CLI.
-
-Validation:
-
-```bash
-pnpm --filter @runstead/domain-packs test
-pnpm --filter @runstead/cli exec vitest run src/domain-pack-command.test.ts
-pnpm run format:check
-```
-
 ## Suggested Order
 
 1. Continue CLI module extraction by command/runtime ownership.
 2. Deepen operator recovery timeline explanations and action-specific forms.
-3. Add a second non-startup golden path.
 
 ## Milestone Validation
 

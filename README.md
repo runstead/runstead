@@ -413,7 +413,7 @@ Concrete implementations and host surfaces:
 - `@runstead/state-sqlite`: default SQLite state-store adapter
 - `@runstead/state-postgres`: Postgres team-runtime adapter
 - `@runstead/domain-packs`: built-in `repo-maintenance`, `ai-native-startup`,
-  and `research-monitor` packs
+  `research-monitor`, and `email-followup` packs
 - `@runstead/cli`: local command surface, dashboard server, codex-direct
   worker, startup-ready orchestrator
 - `@runstead/testkit`: control-plane conformance suite, fixture and temp
@@ -439,6 +439,8 @@ Product and lifecycle:
   second mature domain pack workflow
 - [docs/email-followup-golden-path.md](docs/email-followup-golden-path.md):
   draft-only follow-up domain pack workflow
+- [docs/non-startup-domain-golden-paths.md](docs/non-startup-domain-golden-paths.md):
+  combined non-startup domain proof
 
 Architecture and governance:
 

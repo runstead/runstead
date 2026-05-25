@@ -47,6 +47,11 @@ thread triage, recipient safety, draft-only smoke, send-block regression,
 and durable follow-up memory. See
 [`email-followup-golden-path.md`](email-followup-golden-path.md).
 
+The two non-startup packs are also summarized together in
+[`non-startup-domain-golden-paths.md`](non-startup-domain-golden-paths.md),
+which lists the copyable commands and executable regression gates that prove
+the pack abstraction is not hard-coded to startup readiness.
+
 Runtime task and goal state belongs in SQLite under `.runstead/state.db`.
 Domain YAML remains configuration and template material only.
 

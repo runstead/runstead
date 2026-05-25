@@ -51,6 +51,20 @@ describe("assessDomainPackMaturity", () => {
     expect(report).toContain("archive");
   });
 
+  it("passes the email-followup pack maturity gate", async () => {
+    const packRoot = fileURLToPath(new URL("../packs/email-followup", import.meta.url));
+
+    const result = await assessDomainPackMaturity(packRoot);
+    const report = formatDomainPackMaturityResult(result);
+
+    expect(result.passed).toBe(true);
+    expect(result.score).toBe(1);
+    expect(report).toContain("Status: passed");
+    expect(report).toContain("send-approval");
+    expect(report).toContain("draft-quality");
+    expect(report).toContain("send_not_performed");
+  });
+
   it("flags starter packs that lack domain maturity metadata", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "runstead-domain-maturity-"));
 
