@@ -159,6 +159,8 @@ The current implementation wave closed the highest-confidence product gaps:
   `local-agent-task-input`.
 - Local agent task reporting, report formatting, and audit-summary loading
   moved out of the orchestrator into `local-agent-report`.
+- Local agent prompt, scope, approval, and verifier-evidence input helpers moved
+  out of the orchestrator into `local-agent-prompt`.
 - CI repair orchestrator public option/result contracts moved into
   `ci-repair-orchestrator-types`.
 - CI repair progress stage ordering moved into `ci-repair-orchestrator-stage`.
