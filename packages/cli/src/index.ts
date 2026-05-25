@@ -4,6 +4,7 @@ import { Command } from "commander";
 import { pathToFileURL } from "node:url";
 
 import { registerDashboardCommand } from "./commands/dashboard.js";
+import { registerDoctorCommand } from "./commands/doctor.js";
 import { getRunsteadStatus } from "./status.js";
 import { registerStartupCommands } from "./startup-command.js";
 import type { LocalAgentVerifierPolicy } from "./local-agent-presets.js";
@@ -81,6 +82,7 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
   addConfigCommand(program.command("config").description("Manage local config."));
   addAgentCommand(program.command("agent").description("Run local repo agent tasks."));
   registerDashboardCommand(program);
+  registerDoctorCommand(program);
 
   program
     .command("init")
@@ -160,45 +162,6 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
         );
       }
     });
-
-  program
-    .command("doctor")
-    .description("Check local Runstead state and scaffold health.")
-    .option("--cwd <path>", "Workspace directory")
-    .option("--codex", "Check local-agent worker readiness")
-    .option(
-      "--worker <worker>",
-      "Worker to check: codex_direct, codex_cli, or claude_code"
-    )
-    .option("--model <model>", "Model to use for wrapped worker probes")
-    .action(
-      async (options: {
-        cwd?: string;
-        codex?: boolean;
-        worker?: string;
-        model?: string;
-      }) => {
-        const { doctorRunstead } = await import("./doctor.js");
-        const worker =
-          options.worker === undefined ? undefined : parseDoctorWorker(options.worker);
-        const result = await doctorRunstead({
-          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-          ...(options.codex === undefined ? {} : { codex: options.codex }),
-          ...(worker === undefined ? {} : { worker }),
-          ...(options.model === undefined ? {} : { model: options.model })
-        });
-
-        console.log(`Runstead doctor for ${result.root}`);
-
-        for (const check of result.checks) {
-          console.log(`[${check.status}] ${check.label}: ${check.message}`);
-        }
-
-        if (!result.ok) {
-          process.exitCode = 1;
-        }
-      }
-    );
 
   const ops = program
     .command("ops")
@@ -3967,18 +3930,6 @@ function parseCiRepairWorkerKind(
   }
 
   throw new Error("--worker must be codex_cli, claude_code, or codex_direct");
-}
-
-function parseDoctorWorker(
-  value: string
-): "codex_direct" | "codex_cli" | "claude_code" {
-  if (value === "codex_direct" || value === "codex_cli" || value === "claude_code") {
-    return value;
-  }
-
-  throw new Error(
-    "--worker must be codex_direct, codex_cli, or claude_code for doctor --codex"
-  );
 }
 
 function parseLocalAgentMode(value: string): "read-only" | "edit" | "repair" {
