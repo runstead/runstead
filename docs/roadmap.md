@@ -108,6 +108,8 @@ The current implementation wave closed the highest-confidence product gaps:
   `verifier-command-options`.
 - Shared GitHub App auth token resolution moved out of the CLI entrypoint into
   `github-auth-token`.
+- `webhook serve` command registration moved out of the CLI entrypoint into
+  `commands/webhook`.
 - `packages/cli/src/index.ts` no longer owns dashboard or doctor command
   registration.
 - Dashboard snapshot and operator API contracts moved out of the dashboard
