@@ -69,6 +69,8 @@ The current implementation wave closed the highest-confidence product gaps:
 - CI package smoke now includes `@runstead/state-postgres`.
 - `packages/cli/src/index.ts` no longer owns dashboard or doctor command
   registration.
+- Dashboard snapshot and operator API contracts moved out of the dashboard
+  server/rendering module into `dashboard-types`.
 - `packages/cli/src/startup-command.ts` no longer owns startup source command
   registration.
 - `@runstead/runtime` exposes backend selection for SQLite and Postgres.
