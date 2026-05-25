@@ -73,6 +73,8 @@ The current implementation wave closed the highest-confidence product gaps:
   server/rendering module into `dashboard-types`.
 - Dashboard audit event payload generation moved out of the dashboard
   server/rendering module into `dashboard-event-payload`.
+- Local agent task input parsing moved out of the orchestrator into
+  `local-agent-task-input`.
 - `packages/cli/src/startup-command.ts` no longer owns startup source command
   registration.
 - `@runstead/runtime` exposes backend selection for SQLite and Postgres.
