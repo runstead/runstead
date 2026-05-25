@@ -24,6 +24,11 @@ import {
   ToolActionApprovalRequiredError,
   ToolActionDeniedError
 } from "./governed-action.js";
+import {
+  ciRepairApprovalRecord,
+  ciRepairApprovalSummary,
+  ciRepairPublishApprovalStage
+} from "./ci-repair-orchestrator-approval.js";
 import { showGoal } from "./goals.js";
 import { loadPolicyProfileFromFile } from "./policy-loader.js";
 import { requireRunsteadRootSync } from "./runstead-root.js";
@@ -1047,12 +1052,7 @@ export async function runCiRepairOrchestratorUnlocked(
         }
 
         if (error instanceof ToolActionApprovalRequiredError) {
-          const approvalStage =
-            error.toolCall.actionType === "repo.publish_repair"
-              ? "publish_approval_requested"
-              : error.toolCall.actionType === "git.push"
-                ? "push_approval_requested"
-                : "pr_approval_requested";
+          const approvalStage = ciRepairPublishApprovalStage(error.toolCall.actionType);
           const waitingContext = {
             ...publishContext,
             counters: incrementCiRepairCounter(publishContext, "approvalRound")
@@ -1096,7 +1096,7 @@ export async function runCiRepairOrchestratorUnlocked(
               ...normalizedVerifierResult,
               task: waitingTask
             },
-            approval: approvalSummary(error)
+            approval: ciRepairApprovalSummary(error)
           };
         }
 
@@ -1136,13 +1136,7 @@ export async function runCiRepairOrchestratorUnlocked(
               ...waitingContext,
               approvalId: error.approval.id
             },
-            approval: {
-              id: error.approval.id,
-              status: error.approval.status,
-              actionId: error.approval.actionId,
-              policyDecisionId: error.approval.policyDecisionId,
-              reason: error.approval.reason
-            }
+            approval: ciRepairApprovalRecord(error)
           },
           ...(options.now === undefined ? {} : { now: options.now })
         });
@@ -1167,7 +1161,7 @@ export async function runCiRepairOrchestratorUnlocked(
           ...(completedWorkerResult === undefined
             ? {}
             : { workerResult: completedWorkerResult }),
-          approval: approvalSummary(error)
+          approval: ciRepairApprovalSummary(error)
         };
       }
 
@@ -1406,12 +1400,7 @@ async function resumeCiRepairPullRequest(options: {
       }
 
       if (error instanceof ToolActionApprovalRequiredError) {
-        const approvalStage =
-          error.toolCall.actionType === "repo.publish_repair"
-            ? "publish_approval_requested"
-            : error.toolCall.actionType === "git.push"
-              ? "push_approval_requested"
-              : "pr_approval_requested";
+        const approvalStage = ciRepairPublishApprovalStage(error.toolCall.actionType);
         const waitingContext = {
           ...resumeContext,
           counters: incrementCiRepairCounter(resumeContext, "approvalRound")
@@ -1455,7 +1444,7 @@ async function resumeCiRepairPullRequest(options: {
             task: waitingTask,
             commandResults: context.verifierCommandResults
           },
-          approval: approvalSummary(error)
+          approval: ciRepairApprovalSummary(error)
         };
       }
 
@@ -1498,13 +1487,4 @@ async function resumeCiRepairPullRequest(options: {
   } finally {
     database.close();
   }
-}
-
-function approvalSummary(error: ToolActionApprovalRequiredError) {
-  return {
-    id: error.approval.id,
-    actionId: error.approval.actionId,
-    policyDecisionId: error.approval.policyDecisionId,
-    reason: error.approval.reason
-  };
 }
