@@ -1,15 +1,7 @@
 import { join, resolve } from "node:path";
 
+import { type Evidence, type Goal, type JsonObject, type Task } from "@runstead/core";
 import {
-  createRunsteadId,
-  type Evidence,
-  type Goal,
-  type JsonObject,
-  type RunsteadEvent,
-  type Task
-} from "@runstead/core";
-import {
-  appendEventAndProject,
   appendEventsAndProjects,
   openRunsteadDatabase,
   type RunsteadDatabase
@@ -134,6 +126,14 @@ import {
   type CiRepairOrchestratorStageContext,
   type PublishCoverage
 } from "./ci-repair-orchestrator-context.js";
+import {
+  errorMessage,
+  failCiRepairOrchestratorRun,
+  isStagePersistenceInterruption,
+  markTaskTerminal,
+  taskEvent,
+  writeTaskOutput
+} from "./ci-repair-orchestrator-task-state.js";
 
 export { formatCiRepairOrchestratorReport } from "./ci-repair-orchestrator-report.js";
 
@@ -2151,107 +2151,5 @@ function approvalSummary(error: ToolActionApprovalRequiredError) {
     actionId: error.approval.actionId,
     policyDecisionId: error.approval.policyDecisionId,
     reason: error.approval.reason
-  };
-}
-
-function markTaskTerminal(input: {
-  database: RunsteadDatabase;
-  task: Task;
-  status: Task["status"];
-  output: JsonObject;
-  now?: Date;
-}): Task {
-  return writeTaskOutput({
-    database: input.database,
-    task: input.task,
-    status: input.status,
-    output: input.output,
-    eventType: `task.${input.status}`,
-    ...(input.now === undefined ? {} : { now: input.now })
-  });
-}
-
-function writeTaskOutput(input: {
-  database: RunsteadDatabase;
-  task: Task;
-  status?: Task["status"];
-  output: JsonObject;
-  eventType: string;
-  now?: Date;
-}): Task {
-  const updatedAt = (input.now ?? new Date()).toISOString();
-  const task: Task = {
-    ...input.task,
-    ...(input.status === undefined ? {} : { status: input.status }),
-    output: input.output,
-    updatedAt
-  };
-
-  appendEventAndProject(input.database, {
-    event: taskEvent(input.eventType, task, input.output, updatedAt),
-    projection: {
-      type: "task",
-      value: task
-    }
-  });
-
-  return task;
-}
-
-function failCiRepairOrchestratorRun(input: {
-  database: RunsteadDatabase;
-  task: Task;
-  workerRun: ReturnType<typeof startWorkerRun>;
-  summary: string;
-  error: unknown;
-  now?: Date;
-}): Task {
-  const output = {
-    ...(input.task.output ?? {}),
-    summary: input.summary,
-    error: errorMessage(input.error)
-  };
-  const task = markTaskTerminal({
-    database: input.database,
-    task: input.task,
-    status: "failed",
-    output,
-    ...(input.now === undefined ? {} : { now: input.now })
-  });
-
-  finishWorkerRun({
-    database: input.database,
-    workerRun: input.workerRun,
-    status: "failed",
-    output,
-    ...(input.now === undefined ? {} : { now: input.now })
-  });
-
-  return task;
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
-function isStagePersistenceInterruption(error: unknown): boolean {
-  return (
-    error instanceof Error && error.name === "RunsteadStagePersistenceInterruption"
-  );
-}
-
-function taskEvent(
-  type: string,
-  task: Task,
-  payload: JsonObject,
-  createdAt: string
-): RunsteadEvent {
-  return {
-    eventId: createRunsteadId("evt"),
-    type,
-    aggregateType: "task",
-    aggregateId: task.id,
-    payload,
-    createdAt
   };
 }
