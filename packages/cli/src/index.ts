@@ -19,6 +19,7 @@ import { registerDaemonCommand } from "./commands/daemon.js";
 import { registerDashboardCommand } from "./commands/dashboard.js";
 import { registerDoctorCommand } from "./commands/doctor.js";
 import { registerDomainCommand } from "./commands/domain.js";
+import { registerGitCommand } from "./commands/git.js";
 import { registerGoalCommand } from "./commands/goal.js";
 import { registerMemoryCommand } from "./commands/memory.js";
 import { registerMigrateCommand } from "./commands/migrate.js";
@@ -122,6 +123,7 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
   registerTaskCommand(program);
   registerApprovalCommand(program);
   registerVerifierCommand(program);
+  registerGitCommand(program);
 
   registerStartupCommands(program);
 
@@ -473,48 +475,6 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
         });
 
         console.log(`Created PR: ${result.url ?? result.stdout.trim()}`);
-      }
-    );
-
-  const git = program.command("git").description("Git helpers for repo maintenance.");
-  const gitBranch = git.command("branch").description("Manage Runstead git branches.");
-
-  gitBranch
-    .command("create")
-    .description(
-      "Create a git branch without overwriting existing branches. Unmanaged helper; governed branch creation runs through CI repair."
-    )
-    .argument("<branch-name>", "Branch name")
-    .option("--cwd <path>", "Workspace directory")
-    .option("--base <ref>", "Base ref")
-    .option("--actor <id>", "RBAC subject for git branch management", "local-admin")
-    .option("--unmanaged", "Acknowledge this helper bypasses governed runtime")
-    .action(
-      async (
-        branchName: string,
-        options: {
-          cwd?: string;
-          base?: string;
-          actor: string;
-          unmanaged?: boolean;
-        }
-      ) => {
-        requireUnmanagedHelperAcknowledgement(options, "manage git branches");
-        await requireRbacPermission({
-          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-          actor: options.actor,
-          permission: "repo.manage",
-          action: "manage git branches"
-        });
-
-        const { createGitBranch } = await import("./git-branch.js");
-        const result = await createGitBranch({
-          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-          branchName,
-          ...(options.base === undefined ? {} : { baseRef: options.base })
-        });
-
-        console.log(`Created branch: ${result.branchName}`);
       }
     );
 
