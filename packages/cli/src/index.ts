@@ -11,6 +11,7 @@ import {
   parseRequiredPositiveInteger
 } from "./cli-parsers.js";
 import { requireRbacPermission } from "./cli-rbac.js";
+import { requireSecretPrintAcknowledgement } from "./cli-secrets.js";
 import { requireUnmanagedHelperAcknowledgement } from "./cli-unmanaged.js";
 import { registerAuditCommand } from "./commands/audit.js";
 import { registerCheckpointCommand } from "./commands/checkpoint.js";
@@ -65,6 +66,7 @@ export {
   parseRequiredInteger,
   parseRequiredPositiveInteger
 } from "./cli-parsers.js";
+export { requireSecretPrintAcknowledgement } from "./cli-secrets.js";
 export { requireUnmanagedHelperAcknowledgement } from "./cli-unmanaged.js";
 
 export async function runCli(argv = process.argv): Promise<void> {
@@ -1748,17 +1750,6 @@ function mergeVerifierCommands(
   }
 
   return [...merged.values()];
-}
-
-export function requireSecretPrintAcknowledgement(
-  options: { printSecret?: boolean },
-  secretName: string
-): void {
-  if (options.printSecret !== true) {
-    throw new Error(
-      `Refusing to print ${secretName}. Pass --print-secret to acknowledge stdout will contain a credential.`
-    );
-  }
 }
 
 const entrypoint = process.argv[1] ? pathToFileURL(process.argv[1]).href : undefined;
