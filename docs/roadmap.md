@@ -69,6 +69,7 @@ The current implementation wave closed the highest-confidence product gaps:
 - CI package smoke now includes `@runstead/state-postgres`.
 - Top-level core command registration (`init`, `status`, `upgrade`) moved out
   of the CLI entrypoint into `commands/core`.
+- Shared CLI RBAC guard moved out of the CLI entrypoint into `cli-rbac`.
 - `packages/cli/src/index.ts` no longer owns dashboard or doctor command
   registration.
 - Dashboard snapshot and operator API contracts moved out of the dashboard

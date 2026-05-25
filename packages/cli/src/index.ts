@@ -3,6 +3,7 @@ import { basename, join } from "node:path";
 import { Command } from "commander";
 import { pathToFileURL } from "node:url";
 
+import { requireRbacPermission } from "./cli-rbac.js";
 import { registerCoreCommands } from "./commands/core.js";
 import { registerDashboardCommand } from "./commands/dashboard.js";
 import { registerDoctorCommand } from "./commands/doctor.js";
@@ -4131,26 +4132,6 @@ export function parseRequiredPositiveInteger(
   }
 
   return parsed;
-}
-
-async function requireRbacPermission(options: {
-  cwd?: string;
-  actor: string;
-  permission: string;
-  action: string;
-}): Promise<void> {
-  const { checkPermission } = await import("./rbac.js");
-  const result = await checkPermission({
-    ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-    subject: options.actor,
-    permission: options.permission
-  });
-
-  if (result.decision !== "allow") {
-    throw new Error(
-      `Subject ${options.actor} cannot ${options.action}: ${result.reason}`
-    );
-  }
 }
 
 export function requireUnmanagedHelperAcknowledgement(
