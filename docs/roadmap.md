@@ -282,6 +282,8 @@ The current implementation wave closed the highest-confidence product gaps:
   `startup-evidence` into `startup-gate-rules`.
 - Startup gate artifact parsing and structured-content helper predicates moved
   out of `startup-evidence` into `startup-gate-artifacts`.
+- CI repair stage/context persistence helpers moved out of
+  `ci-repair-orchestrator` into `ci-repair-orchestrator-stage-persistence`.
 - `packages/cli/src/startup-command.ts` no longer owns startup scale
   starter/workflow/memory/integration/report/SOP/GTM command registration.
 - `packages/cli/src/startup-command.ts` no longer owns startup hypothesis

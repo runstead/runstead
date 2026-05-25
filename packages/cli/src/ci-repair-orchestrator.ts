@@ -1,7 +1,7 @@
 import { join, resolve } from "node:path";
 
 import type { Task } from "@runstead/core";
-import { openRunsteadDatabase, type RunsteadDatabase } from "@runstead/state-sqlite";
+import { openRunsteadDatabase } from "@runstead/state-sqlite";
 
 import {
   createCiRepairTaskFromWorkflowRunUnlocked,
@@ -41,7 +41,6 @@ import type {
   RunCiRepairOrchestratorOptions,
   RunCiRepairOrchestratorResult
 } from "./ci-repair-orchestrator-types.js";
-import type { CiRepairOrchestratorStage } from "./ci-repair-orchestrator-stage.js";
 import {
   checkpointCreateAction,
   gitBranchCreateAction,
@@ -72,8 +71,7 @@ import {
   publishCoverageFromContext,
   publishCoverageStagePatch,
   stageAtLeast,
-  type CiRepairOrchestratorResumeContext,
-  type CiRepairOrchestratorStageContext
+  type CiRepairOrchestratorResumeContext
 } from "./ci-repair-orchestrator-context.js";
 import {
   failCiRepairOrchestratorRun,
@@ -81,6 +79,10 @@ import {
   markTaskTerminal,
   writeTaskOutput
 } from "./ci-repair-orchestrator-task-state.js";
+import {
+  writeCiRepairContextPatch,
+  writeCiRepairStage
+} from "./ci-repair-orchestrator-stage-persistence.js";
 import {
   rollbackWorkerChanges,
   startCiRepairWorker
@@ -1496,66 +1498,6 @@ async function resumeCiRepairPullRequest(options: {
   } finally {
     database.close();
   }
-}
-
-function writeCiRepairStage(input: {
-  database: RunsteadDatabase;
-  task: Task;
-  context: CiRepairOrchestratorStageContext;
-  stage: CiRepairOrchestratorStage;
-  patch?: Partial<CiRepairOrchestratorStageContext>;
-  onStagePersisted?: (stage: string, task: Task) => void;
-  now?: Date;
-}): { task: Task; context: CiRepairOrchestratorStageContext } {
-  const context: CiRepairOrchestratorStageContext = {
-    ...input.context,
-    ...(input.patch ?? {}),
-    stage: input.stage
-  };
-  const task = writeTaskOutput({
-    database: input.database,
-    task: input.task,
-    output: {
-      ...(input.task.output ?? {}),
-      ciRepairOrchestrator: context
-    },
-    eventType: "task.updated",
-    ...(input.now === undefined ? {} : { now: input.now })
-  });
-  input.onStagePersisted?.(input.stage, task);
-
-  return {
-    task,
-    context
-  };
-}
-
-function writeCiRepairContextPatch(input: {
-  database: RunsteadDatabase;
-  task: Task;
-  context: CiRepairOrchestratorStageContext;
-  patch: Partial<CiRepairOrchestratorStageContext>;
-  now?: Date;
-}): { task: Task; context: CiRepairOrchestratorStageContext } {
-  const context: CiRepairOrchestratorStageContext = {
-    ...input.context,
-    ...input.patch
-  };
-  const task = writeTaskOutput({
-    database: input.database,
-    task: input.task,
-    output: {
-      ...(input.task.output ?? {}),
-      ciRepairOrchestrator: context
-    },
-    eventType: "task.updated",
-    ...(input.now === undefined ? {} : { now: input.now })
-  });
-
-  return {
-    task,
-    context
-  };
 }
 
 function approvalSummary(error: ToolActionApprovalRequiredError) {
