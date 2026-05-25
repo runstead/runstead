@@ -206,6 +206,8 @@ The current implementation wave closed the highest-confidence product gaps:
 - CI repair report formatting, pull-request body construction, and pull-request
   audit-summary query logic moved out of the orchestrator into
   `ci-repair-orchestrator-report`.
+- CI repair stage context, resume context, publish coverage, and retry-counter
+  helpers moved out of the orchestrator into `ci-repair-orchestrator-context`.
 - Startup automation public option/result contracts moved into
   `startup-automation-types`.
 - Startup launch security scanning moved out of `startup-automation` into
