@@ -1,7 +1,5 @@
-import { createHash } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { pathToFileURL } from "node:url";
 
 import { createRunsteadId, type JsonObject, type RunsteadEvent } from "@runstead/core";
 import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sqlite";
@@ -14,13 +12,16 @@ import {
   readLaunchReadinessData,
   type EvidenceReportRow,
   type LaunchReadinessReportData,
-  type PreviousLaunchReadinessReport,
   type TaskReportRow
 } from "./launch-readiness-data.js";
 import {
   launchReadinessTargetStatus,
   releaseBlockers
 } from "./launch-readiness-decision.js";
+import {
+  launchReadinessReportEventPayload,
+  readPreviousLaunchReadinessEvent
+} from "./launch-readiness-events.js";
 import {
   commandEvidenceCodeState,
   commandEvidenceGovernance,
@@ -163,7 +164,7 @@ export async function generateLaunchReadinessReport(
       type: "report.generated",
       aggregateType: "report",
       aggregateId,
-      payload: reportEventPayload({
+      payload: launchReadinessReportEventPayload({
         domain,
         status,
         target,
@@ -931,89 +932,4 @@ function stringArrayValue(value: unknown): string[] {
   return Array.isArray(value)
     ? value.filter((item): item is string => typeof item === "string")
     : [];
-}
-
-function readPreviousLaunchReadinessEvent(
-  database: ReturnType<typeof openRunsteadDatabase>,
-  aggregateId: string
-): PreviousLaunchReadinessReport | undefined {
-  const row = database
-    .prepare(
-      `
-      SELECT event_id, payload_json
-      FROM events
-      WHERE type = 'report.generated'
-        AND aggregate_id = ?
-      ORDER BY created_at DESC, event_id DESC
-      LIMIT 1
-    `
-    )
-    .get(aggregateId) as { event_id: string; payload_json: string } | undefined;
-
-  if (row === undefined) {
-    return undefined;
-  }
-
-  try {
-    const payload = JSON.parse(row.payload_json) as unknown;
-
-    if (!isRecord(payload)) {
-      return {
-        eventId: row.event_id,
-        blockers: []
-      };
-    }
-
-    return {
-      eventId: row.event_id,
-      ...(typeof payload.status === "string" ? { status: payload.status } : {}),
-      blockers: Array.isArray(payload.blockers)
-        ? payload.blockers.filter((item): item is string => typeof item === "string")
-        : []
-    };
-  } catch {
-    return {
-      eventId: row.event_id,
-      blockers: []
-    };
-  }
-}
-
-function reportEventPayload(input: {
-  domain: string;
-  status: LaunchReadinessStatus;
-  target: LaunchReadinessTarget;
-  targetStatus: LaunchReadinessTargetStatus;
-  blockers: string[];
-  reportPath: string;
-  jsonPath: string;
-  markdown: string;
-  trustSummary: LaunchReadinessTrustSummary;
-  data: LaunchReadinessReportData;
-}): JsonObject {
-  return {
-    reportType: "launch_readiness",
-    domain: input.domain,
-    target: input.target,
-    status: input.status,
-    targetStatus: input.targetStatus,
-    blockers: input.blockers,
-    uri: pathToFileURL(input.reportPath).href,
-    jsonUri: pathToFileURL(input.jsonPath).href,
-    hash: sha256(input.markdown),
-    trustSummary: input.trustSummary,
-    summary: {
-      blockers: input.blockers.length,
-      goals: input.data.goals.length,
-      tasks: input.data.tasks.length,
-      evidence: currentEvidenceRows(input.data).length,
-      staleEvidence: staleEvidenceRows(input.data).length,
-      structuredArtifacts: input.data.structuredArtifacts.length,
-      protectedPathChanges: input.data.protectedPathChanges.length
-    }
-  };
-}
-
-function sha256(contents: string): string {
-  return createHash("sha256").update(contents).digest("hex");
 }

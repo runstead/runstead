@@ -286,6 +286,8 @@ The current implementation wave closed the highest-confidence product gaps:
   moved out of `launch-readiness-report` into `launch-readiness-types`.
 - Launch readiness target-status mapping and release blocker evaluation moved
   out of `launch-readiness-report` into `launch-readiness-decision`.
+- Launch readiness previous-report lookup and report event payload construction
+  moved out of `launch-readiness-report` into `launch-readiness-events`.
 - Startup evidence source normalization and provenance helpers moved out of
   `startup-evidence` into `startup-evidence-sources`.
 - Startup evidence type constants and validation helpers moved out of
