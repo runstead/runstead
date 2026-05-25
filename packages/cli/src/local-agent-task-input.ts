@@ -1,6 +1,6 @@
 import type { Task } from "@runstead/core";
 
-import type { CiRepairWorkerKind } from "./ci-repair-orchestrator.js";
+import type { CiRepairWorkerKind } from "./ci-repair-orchestrator-types.js";
 import type { CommandVerifierInput } from "./verifier-evidence.js";
 
 export type LocalAgentMode = "read-only" | "edit" | "repair";

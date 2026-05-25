@@ -19,14 +19,12 @@ import {
 import {
   createCiRepairTaskFromWorkflowRunUnlocked,
   isCreatedCiRepairTaskResult,
-  type CreateCiRepairTaskFromWorkflowRunResult,
   type CreateCiRepairTaskResult
 } from "./ci-repair.js";
 import {
   CODEX_DIRECT_WORKER_KIND,
   runCodexDirectWorker,
-  type CodexDirectTransport,
-  type CodexDirectWorkerResult
+  type CodexDirectTransport
 } from "./codex-direct-worker.js";
 import {
   createWorkspaceCheckpoint,
@@ -43,7 +41,6 @@ import {
   listGitChangedFiles,
   pushGitBranch,
   type CommitGitChangesResult,
-  type GitRunner,
   type ListGitChangedFilesResult
 } from "./git-branch.js";
 import type {
@@ -81,76 +78,40 @@ import { claimTask, listTasks } from "./tasks.js";
 import { preflightToolAction } from "./tool-proxy.js";
 import {
   runTaskVerifiersUnlocked,
-  type RunTaskVerifiersOptions,
   type RunTaskVerifiersResult
 } from "./verifier-runner.js";
 import type { CommandVerifierInput } from "./verifier-evidence.js";
 import {
   verifyGitDiffScope,
-  type GitDiffRunner,
   type GitDiffScopeVerification
 } from "./diff-scope-verifier.js";
 import { withRunsteadManagerLock } from "./manager-lock.js";
 import {
   startWrappedWorker,
   type WorkerProcessRunner,
-  type WrappedWorkerKind,
   type WrappedWorkerRunResult
 } from "./wrapped-worker.js";
 import {
   createModelProviderRuntime,
   resolveModelProviderModel
 } from "./model-provider-runtime.js";
+import type {
+  CiRepairGitRunner,
+  CiRepairWorkerKind,
+  CiRepairWorkerResult,
+  CodexDirectCiRepairWorkerResult,
+  RunCiRepairOrchestratorOptions,
+  RunCiRepairOrchestratorResult
+} from "./ci-repair-orchestrator-types.js";
 
-export type CiRepairGitRunner = GitRunner & GitDiffRunner;
-export type CiRepairWorkerKind = WrappedWorkerKind | typeof CODEX_DIRECT_WORKER_KIND;
-export type CodexDirectCiRepairWorkerResult = CodexDirectWorkerResult & {
-  checkpointBefore?: WorkspaceCheckpoint;
-};
-export type CiRepairWorkerResult =
-  | WrappedWorkerRunResult
-  | CodexDirectCiRepairWorkerResult;
-
-export interface RunCiRepairOrchestratorOptions {
-  cwd?: string;
-  runId: string;
-  worker: CiRepairWorkerKind;
-  provider?: string;
-  model?: string;
-  baseUrl?: string;
-  base?: string;
-  draft?: boolean;
-  allowedPaths?: string[];
-  deniedPaths?: string[];
-  verifierCommands: CommandVerifierInput[];
-  authToken?: string;
-  githubRunner?: GitHubCliRunner;
-  gitRunner?: CiRepairGitRunner;
-  workerRunner?: WorkerProcessRunner;
-  codexDirectTransport?: CodexDirectTransport;
-  verifierRunner?: (
-    options: RunTaskVerifiersOptions
-  ) => Promise<RunTaskVerifiersResult>;
-  onStagePersisted?: (stage: string, task: Task) => void;
-  now?: Date;
-}
-
-export interface RunCiRepairOrchestratorResult {
-  status: "completed" | "waiting_approval" | "ignored";
-  ciRepair: CreateCiRepairTaskFromWorkflowRunResult;
-  branchName?: string;
-  workerResult?: CiRepairWorkerResult;
-  commit?: CommitGitChangesResult;
-  diffScope?: GitDiffScopeVerification;
-  verifierResult?: RunTaskVerifiersResult;
-  pullRequest?: CreateGitHubPullRequestResult;
-  approval?: {
-    id: string;
-    actionId: string;
-    policyDecisionId: string;
-    reason: string;
-  };
-}
+export type {
+  CiRepairGitRunner,
+  CiRepairWorkerKind,
+  CiRepairWorkerResult,
+  CodexDirectCiRepairWorkerResult,
+  RunCiRepairOrchestratorOptions,
+  RunCiRepairOrchestratorResult
+} from "./ci-repair-orchestrator-types.js";
 
 export async function runCiRepairOrchestrator(
   options: RunCiRepairOrchestratorOptions

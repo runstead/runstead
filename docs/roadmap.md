@@ -75,6 +75,8 @@ The current implementation wave closed the highest-confidence product gaps:
   server/rendering module into `dashboard-event-payload`.
 - Local agent task input parsing moved out of the orchestrator into
   `local-agent-task-input`.
+- CI repair orchestrator public option/result contracts moved into
+  `ci-repair-orchestrator-types`.
 - `packages/cli/src/startup-command.ts` no longer owns startup source command
   registration.
 - `@runstead/runtime` exposes backend selection for SQLite and Postgres.
