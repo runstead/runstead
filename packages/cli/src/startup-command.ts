@@ -1,6 +1,7 @@
 import type { Command } from "commander";
 
 import { registerStartupApiCommand } from "./commands/startup-api.js";
+import { registerStartupAssessCommand } from "./commands/startup-assess.js";
 import { registerStartupArtifactCommand } from "./commands/startup-artifact.js";
 import { registerStartupCiCommand } from "./commands/startup-ci.js";
 import { registerStartupGateCommand } from "./commands/startup-gate.js";
@@ -11,7 +12,6 @@ import {
   emptyAsUndefined,
   parseLocalAgentWorker,
   parsePositiveInteger,
-  parseStartupAssessStages,
   parseStartupGateStage,
   parseStartupHypothesisKind,
   parseStartupHypothesisStatus,
@@ -89,49 +89,7 @@ export function registerStartupCommands(program: Command): void {
 
   registerStartupApiCommand(startup);
 
-  startup
-    .command("assess")
-    .description("Assess startup gates across MVP, launch, and scale.")
-    .option("--cwd <path>", "Workspace directory")
-    .option("--stage <stage>", "Stage to assess: all, mvp, launch, or scale", "all")
-    .option("--domain <id>", "Domain id to evaluate", "ai-native-startup")
-    .option("--actor <id>", "RBAC subject for assessment", "local-admin")
-    .action(
-      async (options: {
-        cwd?: string;
-        stage: string;
-        domain: string;
-        actor: string;
-      }) => {
-        await requireRbacPermission({
-          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-          actor: options.actor,
-          permission: "evidence.read",
-          action: "assess startup gates"
-        });
-
-        const { checkStartupGate } = await import("./startup-evidence.js");
-        const stages = parseStartupAssessStages(options.stage);
-        const results = [];
-
-        for (const stage of stages) {
-          results.push(
-            await checkStartupGate({
-              ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-              domain: options.domain,
-              stage
-            })
-          );
-        }
-
-        console.log("Startup assessment:");
-        for (const result of results) {
-          console.log(
-            `- ${result.stage}: ${result.passed ? "passed" : "blocked"} (${result.blockers.length} blocker${result.blockers.length === 1 ? "" : "s"})`
-          );
-        }
-      }
-    );
+  registerStartupAssessCommand(startup);
 
   startup
     .command("ready")
