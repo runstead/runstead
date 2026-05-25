@@ -79,6 +79,8 @@ The current implementation wave closed the highest-confidence product gaps:
   `ci-repair-orchestrator-types`.
 - Startup automation public option/result contracts moved into
   `startup-automation-types`.
+- Startup command parser helpers moved into `startup-command-parsers` with
+  focused unit coverage.
 - `packages/cli/src/startup-command.ts` no longer owns startup source command
   registration.
 - `@runstead/runtime` exposes backend selection for SQLite and Postgres.

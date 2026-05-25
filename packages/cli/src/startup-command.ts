@@ -2,6 +2,19 @@ import type { Command } from "commander";
 
 import { registerStartupSourceCommand } from "./commands/startup-source.js";
 import { checkPermission } from "./rbac.js";
+import {
+  collectValues,
+  emptyAsUndefined,
+  parseLocalAgentWorker,
+  parsePositiveInteger,
+  parseStartupAssessStages,
+  parseStartupGateDecision,
+  parseStartupGateStage,
+  parseStartupHypothesisKind,
+  parseStartupHypothesisStatus,
+  parseStartupInitStage,
+  requireUiValidationUrl
+} from "./startup-command-parsers.js";
 import type { StartupEvidenceSourceInput } from "./startup-evidence.js";
 import type { StartupReadyProgressEvent } from "./startup-ready.js";
 import {
@@ -2380,14 +2393,6 @@ export function registerStartupCommands(program: Command): void {
     );
 }
 
-function collectValues(value: string, previous: string[]): string[] {
-  return [...previous, value];
-}
-
-function emptyAsUndefined(values: string[]): string[] | undefined {
-  return values.length === 0 ? undefined : values;
-}
-
 function logStructuredFiles(files: string[]): void {
   for (const file of files) {
     console.log(`Wrote structured artifact: ${file}`);
@@ -2434,103 +2439,6 @@ function evidenceSourceDetails(options: {
       }
     ]
   };
-}
-
-function parseStartupGateStage(value: string): "idea" | "mvp" | "launch" | "scale" {
-  if (value === "idea" || value === "mvp" || value === "launch" || value === "scale") {
-    return value;
-  }
-
-  throw new Error("--stage must be one of: idea, mvp, launch, scale");
-}
-
-function parseStartupGateDecision(
-  value: string
-): "launch" | "no_launch" | "launch_with_accepted_debt" {
-  if (
-    value === "launch" ||
-    value === "no_launch" ||
-    value === "launch_with_accepted_debt"
-  ) {
-    return value;
-  }
-
-  throw new Error(
-    "--decision must be one of: launch, no_launch, launch_with_accepted_debt"
-  );
-}
-
-function parseStartupAssessStages(value: string): ("mvp" | "launch" | "scale")[] {
-  if (value === "all") {
-    return ["mvp", "launch", "scale"];
-  }
-
-  if (value === "mvp" || value === "launch" || value === "scale") {
-    return [value];
-  }
-
-  throw new Error("--stage must be one of: all, mvp, launch, scale");
-}
-
-function parseStartupInitStage(value: string): "mvp" | "launch" | "scale" {
-  if (value === "mvp" || value === "launch" || value === "scale") {
-    return value;
-  }
-
-  throw new Error("--stage must be one of: mvp, launch, scale");
-}
-
-function parseStartupHypothesisKind(value: string): "problem" | "user" | "solution" {
-  if (value === "problem" || value === "user" || value === "solution") {
-    return value;
-  }
-
-  throw new Error("--kind must be one of: problem, user, solution");
-}
-
-function parseStartupHypothesisStatus(
-  value: string
-): "open" | "validated" | "invalidated" | "needs-more-evidence" {
-  if (
-    value === "open" ||
-    value === "validated" ||
-    value === "invalidated" ||
-    value === "needs-more-evidence"
-  ) {
-    return value;
-  }
-
-  throw new Error(
-    "--status must be one of: open, validated, invalidated, needs-more-evidence"
-  );
-}
-
-function parseLocalAgentWorker(
-  value: string
-): "codex_direct" | "codex_cli" | "claude_code" {
-  if (value === "codex_direct" || value === "codex_cli" || value === "claude_code") {
-    return value;
-  }
-
-  throw new Error("--worker must be one of: codex_direct, codex_cli, claude_code");
-}
-
-function parsePositiveInteger(value: string, optionName: string): number {
-  const parsed = Number(value);
-
-  if (!Number.isInteger(parsed) || parsed <= 0) {
-    throw new Error(`${optionName} must be a positive integer`);
-  }
-
-  return parsed;
-}
-
-function requireUiValidationUrl(value: string | undefined): string {
-  if (value !== undefined && value.trim().length > 0) {
-    return value;
-  }
-
-  throw new Error("--url is required unless --execute starts a dev server");
 }
 
 async function requireRbacPermission(options: {
