@@ -260,6 +260,8 @@ The current implementation wave closed the highest-confidence product gaps:
   audit/security/report/support/git/UI/bottleneck command registration.
 - Startup automation markdown and metric formatting helpers moved out of
   `startup-automation` into `startup-automation-format`.
+- Startup UI smoke default browser runner moved out of `startup-ui-validation`
+  into `startup-ui-browser-runner`.
 - `packages/cli/src/startup-command.ts` no longer owns startup scale
   starter/workflow/memory/integration/report/SOP/GTM command registration.
 - `packages/cli/src/startup-command.ts` no longer owns startup hypothesis
