@@ -3056,6 +3056,7 @@ function workerOutput(workerResult: CiRepairWorkerResult): JsonObject {
     governance: workerResult.governance,
     exitCode: workerResult.exitCode,
     outputValidation: workerResult.outputValidation,
+    progress: workerResult.progress,
     ...(workerResult.structuredOutput === undefined
       ? {}
       : {

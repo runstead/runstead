@@ -1737,6 +1737,7 @@ function localAgentWorkerOutput(input: {
       status: input.workerResult.exitCode === 0 ? "completed" : "failed",
       exitCode: input.workerResult.exitCode,
       outputValidation: input.workerResult.outputValidation,
+      progress: input.workerResult.progress,
       stdoutBytes: Buffer.byteLength(input.workerResult.stdout, "utf8"),
       stderrBytes: Buffer.byteLength(input.workerResult.stderr, "utf8"),
       stdoutOmitted: input.workerResult.stdout.length > 0,

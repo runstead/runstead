@@ -89,9 +89,14 @@ Runstead can:
 - constrain paths and dependency policy around the run
 - run verifiers after the worker exits
 - record command output, reports, and audit state
+- emit wrapper heartbeats that show elapsed time, last output age, output
+  volume, changed-file count, and a `possibly_stuck` warning after prolonged
+  silence
 
 Runstead cannot hard-proxy every internal tool call made by the external
 worker. The worker's own sandbox or permission flags are the inner boundary.
+The heartbeat is operator observability only; it does not prove which internal
+tools the wrapped worker used.
 
 ### Level 2: Native Proxy
 

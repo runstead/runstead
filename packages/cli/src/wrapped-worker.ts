@@ -13,6 +13,7 @@ import {
 
 export const DEFAULT_WORKER_TIMEOUT_MS = 30 * 60_000;
 export const DEFAULT_WORKER_MAX_OUTPUT_BYTES = 1024 * 1024 * 10;
+export const DEFAULT_WORKER_STUCK_SILENCE_MS = 5 * 60_000;
 
 export type WrappedWorkerKind = "claude_code" | "codex_cli";
 export type WrappedWorkerInternalToolProxyMode = "none" | "hard_proxy";
@@ -82,6 +83,7 @@ export interface WrappedWorkerRunOptions extends WrappedWorkerPromptInput {
   timeoutMs?: number;
   maxOutputBytes?: number;
   progressIntervalMs?: number;
+  stuckSilenceMs?: number;
   onProgress?: (progress: WorkerProcessProgress) => void;
 }
 
@@ -97,6 +99,8 @@ export interface WorkerProcessProgress {
   stdoutBytes: number;
   stderrBytes: number;
   capturedBytes: number;
+  lastOutputElapsedMs: number;
+  possiblyStuck: boolean;
   workspaceChangedFiles?: number;
   workspaceRecentFiles?: string[];
 }
@@ -124,6 +128,7 @@ export type WorkerProcessRunner = (
     timeoutMs?: number;
     maxOutputBytes?: number;
     progressIntervalMs?: number;
+    stuckSilenceMs?: number;
     onProgress?: (progress: WorkerProcessProgress) => void;
   }
 ) => Promise<WorkerProcessResult>;
@@ -135,8 +140,19 @@ export interface WrappedWorkerRunResult extends WorkerProcessResult {
   args: string[];
   governance: WrappedWorkerGovernanceManifest;
   outputValidation: WrappedWorkerOutputValidation;
+  progress: WrappedWorkerProgressSummary;
   structuredOutput?: WrappedWorkerStructuredOutput;
   checkpointBefore?: WorkspaceCheckpoint;
+}
+
+export interface WrappedWorkerProgressSummary {
+  heartbeatCount: number;
+  possiblyStuck: boolean;
+  lastHeartbeatElapsedMs?: number;
+  lastOutputElapsedMs?: number;
+  stdoutBytes?: number;
+  stderrBytes?: number;
+  capturedBytes?: number;
 }
 
 export class WrappedWorkerHardProxyUnavailableError extends Error {
@@ -344,6 +360,13 @@ export async function startWrappedWorker(
             ? {}
             : { runner: options.checkpointRunner })
         }));
+  let heartbeatCount = 0;
+  let latestProgress: WorkerProcessProgress | undefined;
+  const onProgress = (progress: WorkerProcessProgress): void => {
+    heartbeatCount += 1;
+    latestProgress = progress;
+    options.onProgress?.(progress);
+  };
   const result = await (options.runner ?? runWorkerProcess)(
     command.command,
     command.args,
@@ -355,7 +378,10 @@ export async function startWrappedWorker(
       ...(options.progressIntervalMs === undefined
         ? {}
         : { progressIntervalMs: options.progressIntervalMs }),
-      ...(options.onProgress === undefined ? {} : { onProgress: options.onProgress })
+      ...(options.stuckSilenceMs === undefined
+        ? {}
+        : { stuckSilenceMs: options.stuckSilenceMs }),
+      onProgress
     }
   );
   const validation = validateWrappedWorkerStructuredOutput(result.stdout);
@@ -382,11 +408,31 @@ export async function startWrappedWorker(
     args: command.args,
     governance,
     outputValidation,
+    progress: wrappedWorkerProgressSummary(heartbeatCount, latestProgress),
     ...(validation.output === undefined ? {} : { structuredOutput: validation.output }),
     ...(checkpointBefore === undefined ? {} : { checkpointBefore }),
     stdout: finalResult.stdout,
     stderr: finalResult.stderr,
     exitCode: finalResult.exitCode
+  };
+}
+
+function wrappedWorkerProgressSummary(
+  heartbeatCount: number,
+  latestProgress: WorkerProcessProgress | undefined
+): WrappedWorkerProgressSummary {
+  return {
+    heartbeatCount,
+    possiblyStuck: latestProgress?.possiblyStuck ?? false,
+    ...(latestProgress === undefined
+      ? {}
+      : {
+          lastHeartbeatElapsedMs: latestProgress.elapsedMs,
+          lastOutputElapsedMs: latestProgress.lastOutputElapsedMs,
+          stdoutBytes: latestProgress.stdoutBytes,
+          stderrBytes: latestProgress.stderrBytes,
+          capturedBytes: latestProgress.capturedBytes
+        })
   };
 }
 
@@ -489,6 +535,8 @@ export function formatWorkerProcessProgress(progress: WorkerProcessProgress): st
     "[runstead]",
     `wrapped worker still running: ${progress.command}`,
     `elapsed=${formatElapsed(progress.elapsedMs)}`,
+    `last_output=${formatElapsed(progress.lastOutputElapsedMs)}`,
+    `status=${progress.possiblyStuck ? "possibly_stuck" : "active"}`,
     `stdout=${progress.stdoutBytes}B`,
     `stderr=${progress.stderrBytes}B`,
     ...(progress.workspaceChangedFiles === undefined
@@ -522,12 +570,14 @@ export async function runWorkerProcess(
     timeoutMs?: number;
     maxOutputBytes?: number;
     progressIntervalMs?: number;
+    stuckSilenceMs?: number;
     onProgress?: (progress: WorkerProcessProgress) => void;
   }
 ): Promise<WorkerProcessResult> {
   const maxOutputBytes = options.maxOutputBytes ?? DEFAULT_WORKER_MAX_OUTPUT_BYTES;
   const timeoutMs = options.timeoutMs ?? DEFAULT_WORKER_TIMEOUT_MS;
   const progressIntervalMs = options.progressIntervalMs ?? 30_000;
+  const stuckSilenceMs = options.stuckSilenceMs ?? DEFAULT_WORKER_STUCK_SILENCE_MS;
 
   return await new Promise<WorkerProcessResult>((resolveResult) => {
     let stdout = "";
@@ -539,6 +589,7 @@ export async function runWorkerProcess(
     let timedOut = false;
     let settled = false;
     const startedAt = Date.now();
+    let lastOutputAt = startedAt;
 
     const child = spawn(command, args, {
       cwd: options.cwd,
@@ -555,14 +606,18 @@ export async function runWorkerProcess(
       options.onProgress === undefined
         ? undefined
         : setInterval(() => {
+            const now = Date.now();
             const workspace = workerWorkspaceProgress(options.cwd);
+            const lastOutputElapsedMs = now - lastOutputAt;
 
             options.onProgress?.({
               command,
-              elapsedMs: Date.now() - startedAt,
+              elapsedMs: now - startedAt,
               stdoutBytes,
               stderrBytes,
               capturedBytes,
+              lastOutputElapsedMs,
+              possiblyStuck: lastOutputElapsedMs >= stuckSilenceMs,
               workspaceChangedFiles: workspace.changedFiles,
               workspaceRecentFiles: workspace.recentFiles
             });
@@ -582,6 +637,8 @@ export async function runWorkerProcess(
     };
 
     const capture = (key: "stdout" | "stderr", chunk: Buffer): void => {
+      lastOutputAt = Date.now();
+
       if (capturedBytes >= maxOutputBytes) {
         outputTruncated = true;
         return;

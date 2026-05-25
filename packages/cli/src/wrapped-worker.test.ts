@@ -296,6 +296,10 @@ describe("startWrappedWorker", () => {
       exitCode: 0
     });
     expect(result.outputValidation).toEqual({ valid: true });
+    expect(result.progress).toEqual({
+      heartbeatCount: 0,
+      possiblyStuck: false
+    });
     expect(result.structuredOutput).toMatchObject({
       summary: "done",
       needs_approval: false
@@ -413,6 +417,7 @@ describe("startWrappedWorker", () => {
     };
     const calls: {
       progressIntervalMs?: number;
+      stuckSilenceMs?: number;
       onProgress?: (progress: WorkerProcessProgress) => void;
     }[] = [];
     const runner: WorkerProcessRunner = (_command, _args, options) => {
@@ -420,6 +425,9 @@ describe("startWrappedWorker", () => {
         ...(options.progressIntervalMs === undefined
           ? {}
           : { progressIntervalMs: options.progressIntervalMs }),
+        ...(options.stuckSilenceMs === undefined
+          ? {}
+          : { stuckSilenceMs: options.stuckSilenceMs }),
         ...(options.onProgress === undefined ? {} : { onProgress: options.onProgress })
       });
 
@@ -438,16 +446,26 @@ describe("startWrappedWorker", () => {
       evidenceDir: "/repo/.runstead/evidence",
       env: { CODEX_HOME: "/codex-home" },
       progressIntervalMs: 123,
+      stuckSilenceMs: 456,
       onProgress,
       runner
     });
 
-    expect(calls).toEqual([
-      {
-        progressIntervalMs: 123,
-        onProgress
-      }
-    ]);
+    expect(calls[0]?.progressIntervalMs).toBe(123);
+    expect(calls[0]?.stuckSilenceMs).toBe(456);
+    expect(typeof calls[0]?.onProgress).toBe("function");
+    calls[0]?.onProgress?.({
+      command: "codex",
+      elapsedMs: 1000,
+      stdoutBytes: 1,
+      stderrBytes: 2,
+      capturedBytes: 3,
+      lastOutputElapsedMs: 1000,
+      possiblyStuck: false
+    });
+    expect(observedProgress).toHaveLength(1);
+    expect(observedProgress[0]?.command).toBe("codex");
+    expect(observedProgress[0]?.stdoutBytes).toBe(1);
   });
 
   it("respects an explicitly supplied Codex CLI home", async () => {
@@ -678,6 +696,29 @@ describe("runWorkerProcess", () => {
       command: process.execPath
     });
     expect(progress[0]?.elapsedMs).toBeGreaterThanOrEqual(0);
+    expect(progress[0]?.lastOutputElapsedMs).toBeGreaterThanOrEqual(0);
+    expect(progress[0]?.possiblyStuck).toBe(false);
+  });
+
+  it("marks silent wrapped workers as possibly stuck", async () => {
+    const progress: WorkerProcessProgress[] = [];
+
+    await runWorkerProcess(
+      process.execPath,
+      ["-e", "setTimeout(() => console.log('done'), 200);"],
+      {
+        cwd: process.cwd(),
+        timeoutMs: 5_000,
+        maxOutputBytes: 10_000,
+        progressIntervalMs: 10,
+        stuckSilenceMs: 30,
+        onProgress: (item) => {
+          progress.push(item);
+        }
+      }
+    );
+
+    expect(progress.some((item) => item.possiblyStuck)).toBe(true);
   });
 
   it("formats worker progress as a concise CLI heartbeat", () => {
@@ -688,11 +729,13 @@ describe("runWorkerProcess", () => {
         stdoutBytes: 5,
         stderrBytes: 7,
         capturedBytes: 12,
+        lastOutputElapsedMs: 30_000,
+        possiblyStuck: true,
         workspaceChangedFiles: 2,
         workspaceRecentFiles: ["src/app.ts", "package.json"]
       })
     ).toBe(
-      "[runstead] wrapped worker still running: codex elapsed=1m5s stdout=5B stderr=7B files=2 recent=src/app.ts,package.json"
+      "[runstead] wrapped worker still running: codex elapsed=1m5s last_output=30s status=possibly_stuck stdout=5B stderr=7B files=2 recent=src/app.ts,package.json"
     );
   });
 });
