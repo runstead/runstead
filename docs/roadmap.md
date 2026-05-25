@@ -280,6 +280,9 @@ The current implementation wave closed the highest-confidence product gaps:
   `startup-evidence` into `startup-evidence-types`.
 - Startup source connector definitions and provider adapter registry moved out
   of `startup-source-connectors` into `startup-source-connector-definitions`.
+- Startup source provider response parsing, status classification, auth headers,
+  and redaction moved out of `startup-source-connectors` into
+  `startup-source-provider-payload`.
 - Codex Direct package script and verifier-candidate inspection moved out of
   `codex-direct-native-tools` into `codex-direct-package-scripts`.
 - Codex Direct apply-patch parsing and hunk application moved out of
