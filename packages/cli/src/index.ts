@@ -30,6 +30,7 @@ import { registerSchedulerCommand } from "./commands/scheduler.js";
 import { registerTeamControlPlaneCommand } from "./commands/team-control-plane.js";
 import { registerTeamPolicyCommand } from "./commands/team-policy.js";
 import { registerStartupCommands } from "./startup-command.js";
+import { resolveGitHubAuthToken } from "./github-auth-token.js";
 import type { LocalAgentVerifierPolicy } from "./local-agent-presets.js";
 import type { CommandVerifierInput } from "./verifier-evidence.js";
 import { parseVerifierCommandOption } from "./verifier-command-options.js";
@@ -3426,27 +3427,6 @@ export function requireSecretPrintAcknowledgement(
       `Refusing to print ${secretName}. Pass --print-secret to acknowledge stdout will contain a credential.`
     );
   }
-}
-
-async function resolveGitHubAuthToken(options: {
-  cwd?: string;
-  githubApp?: boolean;
-  installationId?: string;
-}): Promise<string | undefined> {
-  if (options.githubApp !== true) {
-    return undefined;
-  }
-
-  const { createGitHubAppInstallationTokenFromConfig } =
-    await import("./github-app.js");
-  const result = await createGitHubAppInstallationTokenFromConfig({
-    ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-    ...(options.installationId === undefined
-      ? {}
-      : { installationId: options.installationId })
-  });
-
-  return result.token;
 }
 
 function parseCommaSeparatedList(value: string | undefined): string[] {
