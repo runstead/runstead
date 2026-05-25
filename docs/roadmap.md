@@ -272,6 +272,8 @@ The current implementation wave closed the highest-confidence product gaps:
   out of `launch-readiness-report` into `launch-readiness-evidence`.
 - Launch readiness trust summary scoring and trend analysis moved out of
   `launch-readiness-report` into `launch-readiness-trust`.
+- Startup evidence source normalization and provenance helpers moved out of
+  `startup-evidence` into `startup-evidence-sources`.
 - `packages/cli/src/startup-command.ts` no longer owns startup scale
   starter/workflow/memory/integration/report/SOP/GTM command registration.
 - `packages/cli/src/startup-command.ts` no longer owns startup hypothesis
