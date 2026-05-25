@@ -4,6 +4,7 @@ import { registerStartupApiCommand } from "./commands/startup-api.js";
 import { registerStartupAssessCommand } from "./commands/startup-assess.js";
 import { registerStartupArtifactCommand } from "./commands/startup-artifact.js";
 import { registerStartupCiCommand } from "./commands/startup-ci.js";
+import { registerStartupContextCommand } from "./commands/startup-context.js";
 import { registerStartupFounderCommands } from "./commands/startup-founder.js";
 import { registerStartupGateCommand } from "./commands/startup-gate.js";
 import { registerStartupReadyCommand } from "./commands/startup-ready.js";
@@ -11,7 +12,6 @@ import { registerStartupSourceCommand } from "./commands/startup-source.js";
 import { checkPermission } from "./rbac.js";
 import {
   collectValues,
-  emptyAsUndefined,
   parseLocalAgentWorker,
   parsePositiveInteger,
   parseStartupGateStage,
@@ -98,59 +98,7 @@ export function registerStartupCommands(program: Command): void {
 
   registerStartupCiCommand(startup);
 
-  const startupContext = startup
-    .command("context")
-    .description("Generate startup agent context artifacts.");
-
-  startupContext
-    .command("generate")
-    .description("Generate AGENTS.md, CLAUDE.md, CODEX.md, and evidence.")
-    .option("--cwd <path>", "Workspace directory")
-    .option("--force", "Overwrite existing context files")
-    .option(
-      "--architecture <text>",
-      "Architecture principle to include",
-      collectValues,
-      []
-    )
-    .option("--constraint <text>", "Technical constraint to include", collectValues, [])
-    .option("--accepted-debt <text>", "Accepted technical debt", collectValues, [])
-    .option("--actor <id>", "RBAC subject for context generation", "local-admin")
-    .action(
-      async (options: {
-        cwd?: string;
-        force?: boolean;
-        architecture: string[];
-        constraint: string[];
-        acceptedDebt: string[];
-        actor: string;
-      }) => {
-        await requireRbacPermission({
-          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-          actor: options.actor,
-          permission: "evidence.write",
-          action: "generate startup context"
-        });
-
-        const { generateStartupContext } = await import("./startup-automation.js");
-        const architecturePrinciples = emptyAsUndefined(options.architecture);
-        const technicalConstraints = emptyAsUndefined(options.constraint);
-        const acceptedDebt = emptyAsUndefined(options.acceptedDebt);
-        const result = await generateStartupContext({
-          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-          force: options.force === true,
-          ...(architecturePrinciples === undefined ? {} : { architecturePrinciples }),
-          ...(technicalConstraints === undefined ? {} : { technicalConstraints }),
-          ...(acceptedDebt === undefined ? {} : { acceptedDebt })
-        });
-
-        console.log(`Generated startup context evidence: ${result.evidenceId}`);
-        for (const file of result.files) {
-          console.log(`Wrote context file: ${file}`);
-        }
-        logStructuredFiles(result.structuredFiles);
-      }
-    );
+  registerStartupContextCommand(startup);
 
   const startupMeasurement = startup
     .command("measurement")

@@ -250,6 +250,8 @@ The current implementation wave closed the highest-confidence product gaps:
   registration.
 - `packages/cli/src/startup-command.ts` no longer owns startup founder shortcut
   command registration.
+- `packages/cli/src/startup-command.ts` no longer owns startup context generate
+  command registration.
 - `@runstead/runtime` exposes backend selection for SQLite and Postgres.
 - `runstead doctor` reports backend setup blockers and team readiness.
 - Wrapped workers expose progress summary, last output age, and
