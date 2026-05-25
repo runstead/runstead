@@ -167,6 +167,8 @@ The current implementation wave closed the highest-confidence product gaps:
   server/rendering module into `dashboard-types`.
 - Dashboard audit event payload generation moved out of the dashboard
   server/rendering module into `dashboard-event-payload`.
+- Dashboard operator API HTTP/auth helpers moved out of the dashboard
+  server/rendering module into `dashboard-operator-api-http`.
 - Local agent task input parsing moved out of the orchestrator into
   `local-agent-task-input`.
 - Local agent task reporting, report formatting, and audit-summary loading
