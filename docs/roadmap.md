@@ -114,6 +114,8 @@ The current implementation wave closed the highest-confidence product gaps:
   `commands/webhook`.
 - `memory` command registration moved out of the CLI entrypoint into
   `commands/memory`.
+- `skill` command registration moved out of the CLI entrypoint into
+  `commands/skill`.
 - `packages/cli/src/index.ts` no longer owns dashboard or doctor command
   registration.
 - Dashboard snapshot and operator API contracts moved out of the dashboard
