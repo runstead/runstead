@@ -237,6 +237,9 @@ The current implementation wave closed the highest-confidence product gaps:
   into `startup-automation-init`.
 - Startup launch security scanning moved out of `startup-automation` into
   `startup-security-scan`.
+- Startup scale, support, memory, integration, SOP, GTM, and recurring ops
+  artifact generation moved out of `startup-automation` into
+  `startup-scale-automation`.
 - Startup command parser helpers moved into `startup-command-parsers` with
   focused unit coverage.
 - `packages/cli/src/startup-command.ts` no longer owns startup source command
