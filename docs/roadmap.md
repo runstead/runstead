@@ -147,6 +147,8 @@ The current implementation wave closed the highest-confidence product gaps:
   command module directly.
 - Top-level `agent` command registration and local-agent CLI option helpers
   moved out of the CLI entrypoint into `commands/agent`.
+- Agent provider listing moved out of the agent command adapter into
+  `commands/agent-providers`.
 - Local-agent lifecycle subcommands (`report`, `resume`, `undo`) moved out of
   the agent command adapter into `commands/agent-lifecycle`.
 - Local-agent verifier option resolution moved out of the agent command adapter
