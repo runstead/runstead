@@ -14,6 +14,7 @@ import {
   type LaunchReadinessReportData,
   type TaskReportRow
 } from "./launch-readiness-data.js";
+import { launchReadinessAuditExport } from "./launch-readiness-audit-export.js";
 import {
   launchReadinessTargetStatus,
   releaseBlockers
@@ -124,8 +125,7 @@ export async function generateLaunchReadinessReport(
       "reports",
       `launch-readiness-${domain}.json`
     );
-    const auditExport = {
-      schemaVersion: 1,
+    const auditExport = launchReadinessAuditExport({
       generatedAt,
       domain,
       target,
@@ -133,32 +133,8 @@ export async function generateLaunchReadinessReport(
       targetStatus,
       blockers,
       trustSummary,
-      evidence: currentEvidenceRows(data).map((item) => ({
-        id: item.id,
-        type: item.type,
-        summary: item.summary,
-        uri: item.uri,
-        createdAt: item.created_at
-      })),
-      staleEvidence: staleEvidenceRows(data).map((item) => ({
-        id: item.id,
-        type: item.type,
-        summary: item.summary,
-        uri: item.uri,
-        createdAt: item.created_at,
-        reason: staleEvidenceReason(data, item)
-      })),
-      staleEvidenceSummary: staleEvidenceReasonGroups(data).map((group) => ({
-        reason: group.reason,
-        count: group.count
-      })),
-      structuredArtifacts: data.structuredArtifacts.map((item) => ({
-        id: item.id,
-        kind: item.kind,
-        path: item.path,
-        sourceEvidenceIds: item.sourceEvidenceIds
-      }))
-    };
+      data
+    });
     const event: RunsteadEvent = {
       eventId: createRunsteadId("evt"),
       type: "report.generated",
