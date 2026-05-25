@@ -181,6 +181,9 @@ The current implementation wave closed the highest-confidence product gaps:
   dashboard server/rendering module into `dashboard-daemon-status`.
 - Dashboard base snapshot and summary SQL queries moved out of the dashboard
   server/rendering module into `dashboard-snapshot`.
+- Dashboard startup recovery comparison, timeline groups, and latest agent
+  patch audit helpers moved out of the dashboard server/rendering module into
+  `dashboard-startup-timeline`.
 - Local agent task input parsing moved out of the orchestrator into
   `local-agent-task-input`.
 - Local agent task reporting, report formatting, and audit-summary loading
