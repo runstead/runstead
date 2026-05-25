@@ -72,6 +72,8 @@ The current implementation wave closed the highest-confidence product gaps:
 - Shared CLI RBAC guard moved out of the CLI entrypoint into `cli-rbac`.
 - CLI error type and formatting moved out of the CLI entrypoint into
   `cli-errors`.
+- Shared CLI positive integer parser moved out of the CLI entrypoint into
+  `cli-parsers`.
 - Top-level `resume` command registration moved out of the CLI entrypoint into
   `commands/resume`.
 - `packages/cli/src/index.ts` no longer owns dashboard or doctor command

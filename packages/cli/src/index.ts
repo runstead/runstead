@@ -3,7 +3,8 @@ import { basename, join } from "node:path";
 import { Command } from "commander";
 import { pathToFileURL } from "node:url";
 
-import { formatCliError, RunsteadCliError } from "./cli-errors.js";
+import { formatCliError } from "./cli-errors.js";
+import { parseRequiredPositiveInteger } from "./cli-parsers.js";
 import { requireRbacPermission } from "./cli-rbac.js";
 import { registerCoreCommands } from "./commands/core.js";
 import { registerDashboardCommand } from "./commands/dashboard.js";
@@ -25,6 +26,7 @@ export interface CreateProgramOptions {
 }
 
 export { formatCliError, RunsteadCliError } from "./cli-errors.js";
+export { parseRequiredPositiveInteger } from "./cli-parsers.js";
 
 export async function runCli(argv = process.argv): Promise<void> {
   try {
@@ -4059,29 +4061,6 @@ function parseRequiredInteger(value: string, optionName: string): number {
 
   if (parsed === undefined) {
     throw new Error(`${optionName} is required`);
-  }
-
-  return parsed;
-}
-
-export function parseRequiredPositiveInteger(
-  value: string,
-  optionName: string
-): number {
-  if (!/^[1-9]\d*$/.test(value)) {
-    throw new RunsteadCliError(
-      `${optionName} must be a positive integer`,
-      `use ${optionName} 8`
-    );
-  }
-
-  const parsed = Number(value);
-
-  if (!Number.isSafeInteger(parsed)) {
-    throw new RunsteadCliError(
-      `${optionName} must be a positive integer`,
-      `use ${optionName} 8`
-    );
   }
 
   return parsed;
