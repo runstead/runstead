@@ -71,6 +71,8 @@ The current implementation wave closed the highest-confidence product gaps:
   registration.
 - Dashboard snapshot and operator API contracts moved out of the dashboard
   server/rendering module into `dashboard-types`.
+- Dashboard audit event payload generation moved out of the dashboard
+  server/rendering module into `dashboard-event-payload`.
 - `packages/cli/src/startup-command.ts` no longer owns startup source command
   registration.
 - `@runstead/runtime` exposes backend selection for SQLite and Postgres.
