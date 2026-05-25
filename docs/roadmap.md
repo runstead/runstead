@@ -157,6 +157,8 @@ The current implementation wave closed the highest-confidence product gaps:
   the agent command adapter into `commands/agent-lifecycle`.
 - Agent review subcommand and diff-scope parsing moved out of the agent command
   adapter into `commands/agent-review`.
+- Agent test triage subcommand moved out of the agent command adapter into
+  `commands/agent-test`.
 - Local-agent verifier option resolution moved out of the agent command adapter
   into `local-agent-verifier-options`.
 - `packages/cli/src/index.ts` no longer owns dashboard or doctor command
