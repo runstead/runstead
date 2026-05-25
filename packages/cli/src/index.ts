@@ -22,6 +22,7 @@ import { registerMigrateCommand } from "./commands/migrate.js";
 import { registerOpsCommand } from "./commands/ops.js";
 import { registerResumeCommand } from "./commands/resume.js";
 import { registerRunCommand } from "./commands/run.js";
+import { registerSchedulerCommand } from "./commands/scheduler.js";
 import { registerTeamControlPlaneCommand } from "./commands/team-control-plane.js";
 import { registerStartupCommands } from "./startup-command.js";
 import type { LocalAgentVerifierPolicy } from "./local-agent-presets.js";
@@ -92,55 +93,7 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
   registerMigrateCommand(program);
   registerRunCommand(program);
   registerDaemonCommand(program);
-
-  const scheduler = program
-    .command("scheduler")
-    .description("Manage background scheduling.");
-
-  scheduler
-    .command("tick")
-    .description("Schedule due recurring tasks once.")
-    .option("--cwd <path>", "Workspace directory")
-    .option(
-      "--interval-ms <number>",
-      "Default recurrence interval for goals without scheduler metadata",
-      "86400000"
-    )
-    .option("--now <iso>", "Override the current timestamp")
-    .option("--actor <id>", "RBAC subject for scheduler management", "local-admin")
-    .action(
-      async (options: {
-        cwd?: string;
-        intervalMs: string;
-        now?: string;
-        actor: string;
-      }) => {
-        const { checkPermission } = await import("./rbac.js");
-        const permission = await checkPermission({
-          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-          subject: options.actor,
-          permission: "daemon.manage"
-        });
-
-        if (permission.decision !== "allow") {
-          throw new Error(
-            `Subject ${options.actor} cannot manage scheduler: ${permission.reason}`
-          );
-        }
-
-        const { formatSchedulerReport, scheduleDueTasks } =
-          await import("./scheduler.js");
-        const result = await scheduleDueTasks({
-          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-          defaultIntervalMs: parseRequiredInteger(options.intervalMs, "--interval-ms"),
-          ...(options.now === undefined
-            ? {}
-            : { now: parseDateOption(options.now, "--now") })
-        });
-
-        console.log(formatSchedulerReport(result));
-      }
-    );
+  registerSchedulerCommand(program);
 
   const webhook = program
     .command("webhook")
