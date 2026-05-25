@@ -124,6 +124,8 @@ The current implementation wave closed the highest-confidence product gaps:
   `commands/goal`.
 - `task` command registration moved out of the CLI entrypoint into
   `commands/task`.
+- `approval` command registration and approval-display helpers moved out of
+  the CLI entrypoint into `commands/approval`.
 - `packages/cli/src/index.ts` no longer owns dashboard or doctor command
   registration.
 - Dashboard snapshot and operator API contracts moved out of the dashboard
