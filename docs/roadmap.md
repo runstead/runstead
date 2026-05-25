@@ -94,6 +94,8 @@ The current implementation wave closed the highest-confidence product gaps:
   `commands/daemon`.
 - `scheduler tick` command registration moved out of the CLI entrypoint into
   `commands/scheduler`.
+- `rbac` command registration moved out of the CLI entrypoint into
+  `commands/rbac`.
 - `packages/cli/src/index.ts` no longer owns dashboard or doctor command
   registration.
 - Dashboard snapshot and operator API contracts moved out of the dashboard
