@@ -286,6 +286,9 @@ The current implementation wave closed the highest-confidence product gaps:
 - Startup source target readiness requirements and evidence requirement mapping
   moved out of `startup-source-connectors` into
   `startup-source-readiness-requirements`.
+- Startup source evidence content, target tier mapping, payload parsing, payload
+  warnings, and trust parsing moved out of `startup-source-connectors` into
+  `startup-source-evidence-content`.
 - Codex Direct package script and verifier-candidate inspection moved out of
   `codex-direct-native-tools` into `codex-direct-package-scripts`.
 - Codex Direct apply-patch parsing and hunk application moved out of
