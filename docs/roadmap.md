@@ -276,6 +276,8 @@ The current implementation wave closed the highest-confidence product gaps:
   `startup-evidence` into `startup-evidence-sources`.
 - Codex Direct package script and verifier-candidate inspection moved out of
   `codex-direct-native-tools` into `codex-direct-package-scripts`.
+- Local agent result semantics, worker output serialization, and governance
+  report helpers moved out of `local-agent` into `local-agent-result`.
 - `packages/cli/src/startup-command.ts` no longer owns startup scale
   starter/workflow/memory/integration/report/SOP/GTM command registration.
 - `packages/cli/src/startup-command.ts` no longer owns startup hypothesis
