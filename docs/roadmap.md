@@ -79,6 +79,8 @@ The current implementation wave closed the highest-confidence product gaps:
 - Shared optional/required integer parsers moved out of the CLI entrypoint into
   `cli-parsers`.
 - Shared date option parser moved out of the CLI entrypoint into `cli-parsers`.
+- Shared optional float parser moved out of the CLI entrypoint into
+  `cli-parsers`.
 - Shared repeated-option value collector moved out of the CLI entrypoint into
   `cli-parsers`.
 - Shared worker-kind parser moved out of the CLI entrypoint into `cli-parsers`.

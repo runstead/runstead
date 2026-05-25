@@ -8,6 +8,7 @@ import {
   collectValues,
   parseCiRepairWorkerKind,
   parseDateOption,
+  parseOptionalFloat,
   parseOptionalInteger,
   parseRequiredPositiveInteger
 } from "./cli-parsers.js";
@@ -50,6 +51,7 @@ export {
   collectValues,
   parseCiRepairWorkerKind,
   parseDateOption,
+  parseOptionalFloat,
   parseOptionalInteger,
   parseRequiredInteger,
   parseRequiredPositiveInteger
@@ -3257,23 +3259,6 @@ function mergeVerifierCommands(
   }
 
   return [...merged.values()];
-}
-
-function parseOptionalFloat(
-  value: string | undefined,
-  optionName: string
-): number | undefined {
-  if (value === undefined) {
-    return undefined;
-  }
-
-  const parsed = Number.parseFloat(value);
-
-  if (!Number.isFinite(parsed)) {
-    throw new Error(`${optionName} must be a number`);
-  }
-
-  return parsed;
 }
 
 export function requireSecretPrintAcknowledgement(

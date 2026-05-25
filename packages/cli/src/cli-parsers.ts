@@ -46,6 +46,23 @@ export function parseOptionalInteger(
   return parsed;
 }
 
+export function parseOptionalFloat(
+  value: string | undefined,
+  optionName: string
+): number | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  const parsed = Number.parseFloat(value);
+
+  if (!Number.isFinite(parsed)) {
+    throw new Error(`${optionName} must be a number`);
+  }
+
+  return parsed;
+}
+
 export function parseRequiredInteger(value: string, optionName: string): number {
   const parsed = parseOptionalInteger(value, optionName);
 
