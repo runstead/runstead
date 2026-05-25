@@ -197,6 +197,9 @@ The current implementation wave closed the highest-confidence product gaps:
 - CI repair progress stage ordering moved into `ci-repair-orchestrator-stage`.
 - CI repair governed action-envelope builders moved out of the orchestrator
   into `ci-repair-orchestrator-actions`.
+- CI repair worker-result serialization, redaction, and Codex Direct result
+  guards moved out of the orchestrator into
+  `ci-repair-orchestrator-worker-output`.
 - Startup automation public option/result contracts moved into
   `startup-automation-types`.
 - Startup launch security scanning moved out of `startup-automation` into
