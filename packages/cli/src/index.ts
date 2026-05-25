@@ -9,6 +9,7 @@ import { requireRbacPermission } from "./cli-rbac.js";
 import { registerCoreCommands } from "./commands/core.js";
 import { registerDashboardCommand } from "./commands/dashboard.js";
 import { registerDoctorCommand } from "./commands/doctor.js";
+import { registerOpsCommand } from "./commands/ops.js";
 import { registerResumeCommand } from "./commands/resume.js";
 import { registerTeamControlPlaneCommand } from "./commands/team-control-plane.js";
 import { registerStartupCommands } from "./startup-command.js";
@@ -68,44 +69,7 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
   registerTeamControlPlaneCommand(program);
   registerCoreCommands(program);
   registerResumeCommand(program);
-
-  const ops = program
-    .command("ops")
-    .description("Inspect Runstead control-plane operations.");
-
-  ops
-    .command("diagnostics")
-    .description(
-      "Generate a local diagnostics bundle with doctor, daemon, state, artifact, lock, and retention data."
-    )
-    .option("--cwd <path>", "Workspace directory")
-    .option("--retention-days <days>", "Retention window for cleanup planning", "30")
-    .option("--no-state-backup", "Do not copy state.db into the diagnostics directory")
-    .action(
-      async (options: {
-        cwd?: string;
-        retentionDays: string;
-        stateBackup?: boolean;
-      }) => {
-        const { generateOpsDiagnosticsBundle } = await import("./ops-diagnostics.js");
-        const result = await generateOpsDiagnosticsBundle({
-          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-          retentionDays: parseRequiredPositiveInteger(
-            options.retentionDays,
-            "--retention-days"
-          ),
-          includeStateBackup: options.stateBackup !== false
-        });
-
-        console.log(`Generated ops diagnostics: ${result.markdownPath}`);
-        console.log(`JSON: ${result.jsonPath}`);
-        console.log(`State backup: ${result.stateBackupPath ?? "skipped"}`);
-        console.log(`Doctor: ${result.summary.doctorOk ? "ok" : "failed"}`);
-        console.log(
-          `Cleanup candidates: ${result.summary.retention.cleanupCandidates.length}`
-        );
-      }
-    );
+  registerOpsCommand(program);
 
   const checkpoint = program
     .command("checkpoint")
