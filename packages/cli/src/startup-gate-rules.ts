@@ -1,4 +1,4 @@
-import type { StartupGateStage } from "./startup-evidence.js";
+import type { StartupGateStage } from "./startup-evidence-types.js";
 
 export type StartupGateFindingSeverity = "critical" | "major" | "minor" | "warning";
 

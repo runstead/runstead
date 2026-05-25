@@ -276,6 +276,8 @@ The current implementation wave closed the highest-confidence product gaps:
   `launch-readiness-report` into `launch-readiness-trust`.
 - Startup evidence source normalization and provenance helpers moved out of
   `startup-evidence` into `startup-evidence-sources`.
+- Startup evidence type constants and validation helpers moved out of
+  `startup-evidence` into `startup-evidence-types`.
 - Codex Direct package script and verifier-candidate inspection moved out of
   `codex-direct-native-tools` into `codex-direct-package-scripts`.
 - Codex Direct apply-patch parsing and hunk application moved out of
