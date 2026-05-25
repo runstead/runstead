@@ -9,7 +9,6 @@ import {
   type Task,
   type WorkerRun
 } from "@runstead/core";
-import { type RuntimeExecutionSemantics } from "@runstead/runtime";
 import {
   appendEventAndProject,
   openRunsteadDatabase,
@@ -21,8 +20,6 @@ import {
   recordWorkspaceCheckpointCreatedEvent,
   recordWorkspaceCheckpointRestoreEvent,
   restoreWorkspaceCheckpoint,
-  type GitCheckpointRunner,
-  type RestoreWorkspaceCheckpointResult,
   type WorkspaceCheckpoint
 } from "./checkpoints.js";
 import {
@@ -31,8 +28,7 @@ import {
   runCodexDirectPendingPatchResume,
   runCodexDirectWorker,
   type CodexDirectTransport,
-  type CodexDirectPendingPatchResume,
-  type CodexDirectWorkerResult
+  type CodexDirectPendingPatchResume
 } from "./codex-direct-worker.js";
 import { showApproval } from "./approvals.js";
 import { runGovernedToolAction } from "./governed-action.js";
@@ -56,7 +52,6 @@ import {
   localAgentTaskToolBudget,
   localAgentTaskWorker,
   verifierCommandsFromLocalAgentTask,
-  type LocalAgentMode,
   type LocalAgentWorkerKind
 } from "./local-agent-task-input.js";
 import {
@@ -77,8 +72,7 @@ import {
 import {
   formatLocalAgentAuditSummary,
   formatLocalAgentWarnings,
-  summarizeLocalAgentAudit,
-  type LocalAgentAuditSummary
+  summarizeLocalAgentAudit
 } from "./local-agent-report.js";
 import {
   buildLocalAgentPrompt,
@@ -90,6 +84,16 @@ import {
   requiredTaskString,
   verifierEvidenceInput
 } from "./local-agent-prompt.js";
+import {
+  LOCAL_AGENT_TASK_TYPE,
+  type CreateLocalAgentTaskOptions,
+  type CreateLocalAgentTaskResult,
+  type ResolveLocalAgentResumeTargetResult,
+  type RunLocalAgentTaskOptions,
+  type RunLocalAgentTaskResult,
+  type UndoLocalAgentTaskOptions,
+  type UndoLocalAgentTaskResult
+} from "./local-agent-types.js";
 import { loadPolicyProfileFromFile } from "./policy-loader.js";
 import type { ActionEnvelope, PolicyProfile } from "./policy.js";
 import { requireRunsteadRoot, requireRunsteadStateDb } from "./runstead-root.js";
@@ -97,10 +101,8 @@ import { finishWorkerRun, startWorkerRun } from "./runtime-audit.js";
 import { claimTask, showTask } from "./tasks.js";
 import {
   runTaskVerifiersUnlocked,
-  type RunTaskVerifierCommandResult,
   type RunTaskVerifiersResult
 } from "./verifier-runner.js";
-import type { CommandVerifierInput } from "./verifier-evidence.js";
 import {
   createModelProviderRuntime,
   resolveModelProviderModel
@@ -110,15 +112,22 @@ import {
   type WorkerProcessRunner,
   type WorkerProcessProgress
 } from "./wrapped-worker.js";
-import type { StartupScaffoldProfile } from "./startup-scaffold-profile.js";
 
-export const LOCAL_AGENT_TASK_TYPE = "local_agent_task";
-
+export { LOCAL_AGENT_TASK_TYPE } from "./local-agent-types.js";
 export type { LocalAgentMode, LocalAgentWorkerKind } from "./local-agent-task-input.js";
 export type {
   LocalAgentWorkerGovernanceProfile,
   LocalAgentWorkerResult
 } from "./local-agent-result.js";
+export type {
+  CreateLocalAgentTaskOptions,
+  CreateLocalAgentTaskResult,
+  ResolveLocalAgentResumeTargetResult,
+  RunLocalAgentTaskOptions,
+  RunLocalAgentTaskResult,
+  UndoLocalAgentTaskOptions,
+  UndoLocalAgentTaskResult
+} from "./local-agent-types.js";
 export {
   formatLocalAgentTaskReport,
   formatLocalAgentTaskReportJson,
@@ -132,86 +141,6 @@ export type {
   LocalAgentReportToolCall,
   LocalAgentToolFailureKind
 } from "./local-agent-report.js";
-
-export interface CreateLocalAgentTaskOptions {
-  cwd?: string;
-  prompt: string;
-  preset?: string;
-  title?: string;
-  worker?: LocalAgentWorkerKind;
-  provider?: string;
-  model?: string;
-  baseUrl?: string;
-  mode?: LocalAgentMode;
-  allowedPaths?: string[];
-  deniedPaths?: string[];
-  approvalRequired?: string[];
-  verifierCommands?: CommandVerifierInput[];
-  maxTurns?: number;
-  maxToolCalls?: number;
-  maxFailedToolCalls?: number;
-  modelRequestTimeoutMs?: number;
-  modelRequestHeartbeatMs?: number;
-  finalizeOnBudget?: boolean;
-  scaffoldProfile?: StartupScaffoldProfile;
-  gitDiffStaged?: boolean;
-  gitDiffBase?: string;
-  checkpoint?: boolean;
-  commit?: boolean;
-  now?: Date;
-}
-
-export interface CreateLocalAgentTaskResult {
-  stateDb: string;
-  goal: Goal;
-  task: Task;
-  events: RunsteadEvent[];
-}
-
-export interface RunLocalAgentTaskOptions {
-  cwd?: string;
-  taskId: string;
-  transport?: CodexDirectTransport;
-  workerRunner?: WorkerProcessRunner;
-  workerProgressIntervalMs?: number;
-  onWorkerProgress?: (progress: WorkerProcessProgress) => void;
-  now?: Date;
-}
-
-export interface UndoLocalAgentTaskOptions {
-  cwd?: string;
-  taskId: string;
-  actor?: string;
-  allowHeadMismatch?: boolean;
-  runner?: GitCheckpointRunner;
-  now?: Date;
-}
-
-export interface UndoLocalAgentTaskResult {
-  task: Task;
-  checkpointId: string;
-  restore: RestoreWorkspaceCheckpointResult;
-}
-
-export interface RunLocalAgentTaskResult {
-  cwd: string;
-  task: Task;
-  goal: Goal;
-  workerResult?: LocalAgentWorkerResult;
-  status:
-    | "completed"
-    | "completed_with_warnings"
-    | "waiting_approval"
-    | "interrupted"
-    | "blocked"
-    | "failed";
-  summary: string;
-  execution: RuntimeExecutionSemantics;
-  audit: LocalAgentAuditSummary;
-  checkpoint?: WorkspaceCheckpoint;
-  verifierResults?: RunTaskVerifierCommandResult[];
-  approval?: CodexDirectWorkerResult["approval"];
-}
 
 export async function attachLocalAgentVerifierEvidence(options: {
   cwd?: string;
@@ -484,12 +413,6 @@ export async function runLocalAgentTask(
   } finally {
     database.close();
   }
-}
-
-export interface ResolveLocalAgentResumeTargetResult {
-  taskId: string;
-  approvalId?: string;
-  note?: string;
 }
 
 export function resolveLocalAgentResumeTarget(input: {

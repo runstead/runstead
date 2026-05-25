@@ -6,7 +6,7 @@ import {
   type LocalAgentMode,
   type LocalAgentWorkerKind
 } from "./local-agent-task-input.js";
-import type { CreateLocalAgentTaskOptions } from "./local-agent.js";
+import type { CreateLocalAgentTaskOptions } from "./local-agent-types.js";
 import type { RunTaskVerifierCommandResult } from "./verifier-runner.js";
 
 export function localAgentTaskInput(input: {
