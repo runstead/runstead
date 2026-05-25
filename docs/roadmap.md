@@ -153,6 +153,8 @@ The current implementation wave closed the highest-confidence product gaps:
   into `commands/agent-fix`.
 - Local-agent lifecycle subcommands (`report`, `resume`, `undo`) moved out of
   the agent command adapter into `commands/agent-lifecycle`.
+- Agent review subcommand and diff-scope parsing moved out of the agent command
+  adapter into `commands/agent-review`.
 - Local-agent verifier option resolution moved out of the agent command adapter
   into `local-agent-verifier-options`.
 - `packages/cli/src/index.ts` no longer owns dashboard or doctor command
