@@ -28,19 +28,27 @@ import {
   serverPort,
   urlHost
 } from "./dashboard-operator-api-http.js";
+import {
+  rowToApproval,
+  rowToEvent,
+  rowToGoal,
+  rowToRepository,
+  rowToTask,
+  type ApprovalRow,
+  type EventRow,
+  type GoalRow,
+  type RepositoryRow,
+  type TaskRow
+} from "./dashboard-row-mappers.js";
 import { readStartupRuns } from "./dashboard-startup-runs.js";
 import { requireRunsteadStateDb } from "./runstead-root.js";
 import { getStartupStatus } from "./startup-status.js";
 import type {
   BuildDashboardOptions,
   BuildDashboardResult,
-  DashboardApproval,
   DashboardDaemonStatus,
-  DashboardEvent,
-  DashboardGoal,
   DashboardOperatorApiConfig,
   DashboardOperatorConsole,
-  DashboardRepository,
   DashboardSnapshot,
   DashboardStartupAgentPatch,
   DashboardStartupResolvedBlocker,
@@ -51,7 +59,6 @@ import type {
   DashboardStartupTimelineGroup,
   DashboardStartupTimelineItem,
   DashboardSummary,
-  DashboardTask,
   ServeDashboardOptions,
   ServeDashboardResult
 } from "./dashboard-types.js";
@@ -1796,64 +1803,6 @@ function riskCell(risk: string): string {
   return `<span class="risk-${escapeHtml(risk)}">${escapeHtml(risk)}</span>`;
 }
 
-function rowToRepository(row: RepositoryRow): DashboardRepository {
-  return {
-    id: row.id,
-    alias: row.alias,
-    localPath: row.local_path,
-    status: row.status,
-    ...(row.remote_url === null ? {} : { remoteUrl: row.remote_url })
-  };
-}
-
-function rowToGoal(row: GoalRow): DashboardGoal {
-  const scope = JSON.parse(row.scope_json) as { repositoryAlias?: unknown };
-  const repositoryAlias =
-    typeof scope.repositoryAlias === "string" ? scope.repositoryAlias : undefined;
-
-  return {
-    id: row.id,
-    title: row.title,
-    domain: row.domain,
-    status: row.status,
-    priority: row.priority,
-    ...(repositoryAlias === undefined ? {} : { repositoryAlias }),
-    updatedAt: row.updated_at
-  };
-}
-
-function rowToTask(row: TaskRow): DashboardTask {
-  return {
-    id: row.id,
-    goalId: row.goal_id,
-    type: row.type,
-    status: row.status,
-    priority: row.priority,
-    updatedAt: row.updated_at
-  };
-}
-
-function rowToApproval(row: ApprovalRow): DashboardApproval {
-  return {
-    id: row.id,
-    actionId: row.action_id,
-    status: row.status,
-    risk: row.risk,
-    reason: row.reason,
-    updatedAt: row.updated_at
-  };
-}
-
-function rowToEvent(row: EventRow): DashboardEvent {
-  return {
-    eventId: row.event_id,
-    type: row.type,
-    aggregateType: row.aggregate_type,
-    aggregateId: row.aggregate_id,
-    createdAt: row.created_at
-  };
-}
-
 function escapeHtml(value: string): string {
   return value
     .replaceAll("&", "&amp;")
@@ -1886,50 +1835,6 @@ function stringArrayField(value: unknown): string[] {
   return Array.isArray(value)
     ? value.filter((item): item is string => typeof item === "string")
     : [];
-}
-
-interface RepositoryRow {
-  id: string;
-  alias: string;
-  local_path: string;
-  remote_url: string | null;
-  status: string;
-}
-
-interface GoalRow {
-  id: string;
-  domain: string;
-  title: string;
-  status: string;
-  priority: string;
-  scope_json: string;
-  updated_at: string;
-}
-
-interface TaskRow {
-  id: string;
-  goal_id: string;
-  type: string;
-  status: string;
-  priority: string;
-  updated_at: string;
-}
-
-interface ApprovalRow {
-  id: string;
-  action_id: string;
-  status: string;
-  risk: string;
-  reason: string;
-  updated_at: string;
-}
-
-interface EventRow {
-  event_id: string;
-  type: string;
-  aggregate_type: string;
-  aggregate_id: string;
-  created_at: string;
 }
 
 interface WorkerRunTimelineRow {

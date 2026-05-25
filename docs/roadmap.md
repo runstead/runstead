@@ -175,6 +175,8 @@ The current implementation wave closed the highest-confidence product gaps:
   server/rendering module into `dashboard-operator-console`.
 - Dashboard startup readiness-run snapshot parsing moved out of the dashboard
   server/rendering module into `dashboard-startup-runs`.
+- Dashboard SQLite row-to-view-model mappers moved out of the dashboard
+  server/rendering module into `dashboard-row-mappers`.
 - Local agent task input parsing moved out of the orchestrator into
   `local-agent-task-input`.
 - Local agent task reporting, report formatting, and audit-summary loading
