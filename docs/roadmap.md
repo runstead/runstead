@@ -82,6 +82,8 @@ The current implementation wave closed the highest-confidence product gaps:
   `commands/ops`.
 - `checkpoint restore` command registration moved out of the CLI entrypoint into
   `commands/checkpoint`.
+- Top-level `migrate` command registration moved out of the CLI entrypoint into
+  `commands/migrate`.
 - `packages/cli/src/index.ts` no longer owns dashboard or doctor command
   registration.
 - Dashboard snapshot and operator API contracts moved out of the dashboard
