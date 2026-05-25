@@ -21,6 +21,11 @@ import {
   parseCodexApplyPatchTouchedFiles
 } from "./codex-direct-apply-patch.js";
 import {
+  contextForSearchTextMatch,
+  createTextMatcher,
+  truncateSearchTextPreview
+} from "./codex-direct-search-text.js";
+import {
   assertNoWorkspaceSymlinkTraversal,
   boundedMaxResults,
   matchesAnyPattern,
@@ -49,7 +54,6 @@ const DEFAULT_SEARCH_TEXT_MAX_MATCHES = 100;
 const SEARCH_TEXT_MAX_MATCHES_LIMIT = 500;
 const SEARCH_TEXT_FILE_SCAN_LIMIT = 1_000;
 const SEARCH_TEXT_CONTEXT_LIMIT = 5;
-const SEARCH_TEXT_PREVIEW_LIMIT = 500;
 const DEFAULT_SEARCH_TEXT_MAX_BYTES_PER_FILE = 512 * 1024;
 const SEARCH_TEXT_MAX_BYTES_PER_FILE_LIMIT = 2 * 1024 * 1024;
 const DEFAULT_READ_MANY_BYTES_PER_FILE = 64 * 1024;
@@ -593,8 +597,8 @@ export async function searchWorkspaceText(
       matches.push({
         path: entry.path,
         line: index + 1,
-        preview: truncatePreview(line),
-        ...contextForMatch(lines, index, contextLines)
+        preview: truncateSearchTextPreview(line),
+        ...contextForSearchTextMatch(lines, index, contextLines)
       });
 
       if (matches.length >= maxMatches) {
@@ -901,53 +905,4 @@ function shellQuote(value: string): string {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
-}
-
-function createTextMatcher(
-  query: string,
-  options: { regex: boolean; caseSensitive: boolean }
-): (line: string) => boolean {
-  if (options.regex) {
-    const expression = new RegExp(query, options.caseSensitive ? "" : "i");
-
-    return (line) => expression.test(line);
-  }
-
-  const needle = options.caseSensitive ? query : query.toLowerCase();
-
-  return (line) => (options.caseSensitive ? line : line.toLowerCase()).includes(needle);
-}
-
-function contextForMatch(
-  lines: string[],
-  index: number,
-  contextLines: number
-): Pick<SearchWorkspaceTextMatch, "before" | "after"> {
-  if (contextLines <= 0) {
-    return {};
-  }
-
-  const before = lines
-    .slice(Math.max(0, index - contextLines), index)
-    .map((line, offset, selected) => ({
-      line: index - selected.length + offset + 1,
-      text: truncatePreview(line)
-    }));
-  const after = lines
-    .slice(index + 1, index + 1 + contextLines)
-    .map((line, offset) => ({
-      line: index + offset + 2,
-      text: truncatePreview(line)
-    }));
-
-  return {
-    ...(before.length === 0 ? {} : { before }),
-    ...(after.length === 0 ? {} : { after })
-  };
-}
-
-function truncatePreview(value: string): string {
-  return value.length <= SEARCH_TEXT_PREVIEW_LIMIT
-    ? value
-    : `${value.slice(0, SEARCH_TEXT_PREVIEW_LIMIT)}...`;
 }
