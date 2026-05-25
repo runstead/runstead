@@ -262,6 +262,8 @@ The current implementation wave closed the highest-confidence product gaps:
   `startup-automation` into `startup-automation-format`.
 - Startup UI smoke default browser runner moved out of `startup-ui-validation`
   into `startup-ui-browser-runner`.
+- Startup UI smoke asset persistence moved out of `startup-ui-validation` into
+  `startup-ui-validation-assets`.
 - `packages/cli/src/startup-command.ts` no longer owns startup scale
   starter/workflow/memory/integration/report/SOP/GTM command registration.
 - `packages/cli/src/startup-command.ts` no longer owns startup hypothesis
