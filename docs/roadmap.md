@@ -258,6 +258,8 @@ The current implementation wave closed the highest-confidence product gaps:
   command registration.
 - `packages/cli/src/startup-command.ts` no longer owns startup launch
   audit/security/report/support/git/UI/bottleneck command registration.
+- Startup automation markdown and metric formatting helpers moved out of
+  `startup-automation` into `startup-automation-format`.
 - `packages/cli/src/startup-command.ts` no longer owns startup scale
   starter/workflow/memory/integration/report/SOP/GTM command registration.
 - `packages/cli/src/startup-command.ts` no longer owns startup hypothesis
