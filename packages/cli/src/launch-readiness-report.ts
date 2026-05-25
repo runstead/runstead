@@ -1,8 +1,7 @@
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { pathToFileURL } from "node:url";
 
 import { createRunsteadId, type JsonObject, type RunsteadEvent } from "@runstead/core";
 import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sqlite";
@@ -13,20 +12,33 @@ import {
 } from "./inspection-evidence.js";
 import {
   readLaunchReadinessData,
-  type EvidenceProvenanceArtifact,
   type EvidenceReportRow,
   type LaunchReadinessReportData,
   type PreviousLaunchReadinessReport,
   type TaskReportRow
 } from "./launch-readiness-data.js";
+import {
+  artifactSources,
+  commandEvidenceCodeState,
+  commandEvidenceGovernance,
+  currentCommandEvidence,
+  currentEvidenceRows,
+  evidenceSourceSummary,
+  formatCurrentCodeFingerprint,
+  isStaleCommandEvidence,
+  parsedEvidenceContent,
+  readEvidenceProvenanceArtifact,
+  staleCommandEvidence,
+  staleEvidenceReason,
+  staleEvidenceReasonGroupLabel,
+  staleEvidenceReasonGroups,
+  staleEvidenceRows
+} from "./launch-readiness-evidence.js";
 import { changedLaunchReadinessProtectedPaths } from "./launch-readiness-git.js";
 import { requireRunsteadStateDb } from "./runstead-root.js";
 import { listStartupArtifacts } from "./startup-artifacts.js";
 import { checkStartupGate } from "./startup-evidence.js";
-import {
-  collectCommandVerifierCodeState,
-  type CommandVerifierCodeState
-} from "./verifier-evidence.js";
+import { collectCommandVerifierCodeState } from "./verifier-evidence.js";
 
 export interface GenerateLaunchReadinessReportOptions {
   cwd?: string;
@@ -607,47 +619,6 @@ function verifierStatus(data: LaunchReadinessReportData): string {
   ].join("\n");
 }
 
-function currentCommandEvidence(data: LaunchReadinessReportData): EvidenceReportRow[] {
-  const stale = staleEvidenceReasons(data);
-
-  return data.evidence
-    .filter((item) => item.type === "command_output")
-    .filter((item) => !stale.has(item.id));
-}
-
-function staleCommandEvidence(data: LaunchReadinessReportData): EvidenceReportRow[] {
-  const stale = staleEvidenceReasons(data);
-
-  return data.evidence
-    .filter((item) => item.type === "command_output")
-    .filter((item) => stale.has(item.id));
-}
-
-function currentEvidenceRows(data: LaunchReadinessReportData): EvidenceReportRow[] {
-  const stale = staleEvidenceReasons(data);
-
-  return data.evidence.filter((item) => !stale.has(item.id));
-}
-
-function staleEvidenceRows(data: LaunchReadinessReportData): EvidenceReportRow[] {
-  const stale = staleEvidenceReasons(data);
-
-  return data.evidence.filter((item) => stale.has(item.id));
-}
-
-function staleEvidenceReason(
-  data: LaunchReadinessReportData,
-  item: EvidenceReportRow
-): string {
-  return staleEvidenceReasons(data).get(item.id) ?? "not stale";
-}
-
-type StaleEvidenceReasonGroup =
-  | "freshness_expired"
-  | "code_fingerprint_mismatch"
-  | "superseded_same_subject"
-  | "other";
-
 function staleEvidenceSummary(data: LaunchReadinessReportData): string {
   const current = currentEvidenceRows(data).length;
   const stale = staleEvidenceRows(data).length;
@@ -670,229 +641,6 @@ function staleEvidenceSummary(data: LaunchReadinessReportData): string {
   ].join("\n");
 }
 
-function staleEvidenceReasonGroups(data: LaunchReadinessReportData): {
-  reason: StaleEvidenceReasonGroup;
-  count: number;
-}[] {
-  const counts = new Map<StaleEvidenceReasonGroup, number>();
-
-  for (const reason of staleEvidenceReasons(data).values()) {
-    const group = staleEvidenceReasonGroup(reason);
-    counts.set(group, (counts.get(group) ?? 0) + 1);
-  }
-
-  const groupOrder = [
-    "freshness_expired",
-    "code_fingerprint_mismatch",
-    "superseded_same_subject",
-    "other"
-  ] as const satisfies readonly StaleEvidenceReasonGroup[];
-
-  return groupOrder.flatMap((reason) => {
-    const count = counts.get(reason);
-
-    return count === undefined ? [] : [{ reason, count }];
-  });
-}
-
-function staleEvidenceReasonGroup(reason: string): StaleEvidenceReasonGroup {
-  if (reason.startsWith("source freshness expired")) {
-    return "freshness_expired";
-  }
-
-  if (reason.includes("code_state=stale")) {
-    return "code_fingerprint_mismatch";
-  }
-
-  if (reason.startsWith("superseded by newer")) {
-    return "superseded_same_subject";
-  }
-
-  return "other";
-}
-
-function staleEvidenceReasonGroupLabel(reason: StaleEvidenceReasonGroup): string {
-  switch (reason) {
-    case "freshness_expired":
-      return "source freshness expired";
-    case "code_fingerprint_mismatch":
-      return "stale code fingerprint";
-    case "superseded_same_subject":
-      return "superseded by newer same-subject evidence";
-    case "other":
-      return "other stale evidence";
-  }
-}
-
-function staleEvidenceReasons(data: LaunchReadinessReportData): Map<string, string> {
-  const reasons = new Map<string, string>();
-  const latestCommandEvidence = latestCommandEvidenceByCurrentKey(data);
-  const latestStartupEvidence = latestEvidenceByCurrentKey(
-    data.evidence.filter((item) => item.type.startsWith("startup_"))
-  );
-
-  for (const item of data.evidence) {
-    const freshnessReason = staleSourceFreshnessReason(data, item);
-
-    if (freshnessReason !== undefined) {
-      reasons.set(item.id, freshnessReason);
-      continue;
-    }
-
-    if (item.type === "command_output" && isStaleCommandEvidence(data, item)) {
-      reasons.set(
-        item.id,
-        `${commandEvidenceCodeState(data, item)}; ${commandEvidenceGovernance(item)}`
-      );
-      continue;
-    }
-
-    if (item.type === "command_output") {
-      const key = commandEvidenceCurrentKey(data, item);
-      const latest = latestCommandEvidence.get(key);
-
-      if (latest !== undefined && latest.id !== item.id) {
-        reasons.set(item.id, `superseded by newer command evidence for ${key}`);
-      }
-
-      continue;
-    }
-
-    if (!item.type.startsWith("startup_")) {
-      continue;
-    }
-
-    const key = evidenceCurrentKey(item);
-    const latest = latestStartupEvidence.get(key);
-
-    if (latest !== undefined && latest.id !== item.id) {
-      reasons.set(item.id, `superseded by newer evidence for ${key}`);
-    }
-  }
-
-  return reasons;
-}
-
-function staleSourceFreshnessReason(
-  data: LaunchReadinessReportData,
-  item: EvidenceReportRow
-): string | undefined {
-  const generatedAt = Date.parse(data.generatedAt);
-
-  if (Number.isNaN(generatedAt)) {
-    return undefined;
-  }
-
-  const sources = artifactSources(readEvidenceProvenanceArtifact(item.uri));
-
-  for (const source of sources) {
-    const capturedAt = stringValue(source.capturedAt);
-    const freshnessDays =
-      typeof source.freshnessDays === "number" ? source.freshnessDays : undefined;
-
-    if (capturedAt === undefined || freshnessDays === undefined) {
-      continue;
-    }
-
-    const capturedAtMs = Date.parse(capturedAt);
-
-    if (Number.isNaN(capturedAtMs)) {
-      continue;
-    }
-
-    const ageDays = Math.floor((generatedAt - capturedAtMs) / 86_400_000);
-
-    if (ageDays > freshnessDays) {
-      const kind = stringValue(source.kind) ?? "unknown";
-
-      return `source freshness expired: ${kind} source is ${ageDays}d old (freshness ${freshnessDays}d)`;
-    }
-  }
-
-  return undefined;
-}
-
-function latestCommandEvidenceByCurrentKey(
-  data: LaunchReadinessReportData
-): Map<string, EvidenceReportRow> {
-  return latestEvidenceByCurrentKey(
-    data.evidence
-      .filter((item) => item.type === "command_output")
-      .filter((item) => !isStaleCommandEvidence(data, item)),
-    (item) => commandEvidenceCurrentKey(data, item)
-  );
-}
-
-function latestEvidenceByCurrentKey(
-  rows: EvidenceReportRow[],
-  keyForRow: (row: EvidenceReportRow) => string = evidenceCurrentKey
-): Map<string, EvidenceReportRow> {
-  const latest = new Map<string, EvidenceReportRow>();
-
-  for (const row of rows) {
-    const key = keyForRow(row);
-    const current = latest.get(key);
-
-    if (
-      current === undefined ||
-      Date.parse(row.created_at) > Date.parse(current.created_at) ||
-      (row.created_at === current.created_at && row.id.localeCompare(current.id) > 0)
-    ) {
-      latest.set(key, row);
-    }
-  }
-
-  return latest;
-}
-
-function commandEvidenceCurrentKey(
-  data: LaunchReadinessReportData,
-  item: EvidenceReportRow
-): string {
-  const artifact = readEvidenceProvenanceArtifact(item.uri);
-  const codeState = isRecord(artifact?.codeState) ? artifact.codeState : undefined;
-  const fingerprint =
-    codeState === undefined
-      ? data.currentCodeState.fingerprint
-      : (stringValue(codeState.fingerprint) ?? "missing");
-  const verifier = stringValue(artifact?.verifier) ?? item.summary ?? item.id;
-  const command = stringValue(artifact?.command) ?? "unknown";
-
-  return [
-    "command_output",
-    commandEvidenceGovernance(item),
-    verifier,
-    command,
-    fingerprint
-  ].join(":");
-}
-
-function evidenceCurrentKey(item: EvidenceReportRow): string {
-  if (item.type === "startup_ui_validation") {
-    const content = parsedEvidenceContent(item.uri);
-    const url = isRecord(content) ? stringValue(content.url) : undefined;
-    const viewport = isRecord(content) ? stringValue(content.viewport) : undefined;
-
-    return `${item.type}:${url ?? item.subject_id}:${viewport ?? "unknown"}`;
-  }
-
-  if (item.type === "startup_metric" || item.type === "startup_metric_snapshot") {
-    const content = parsedEvidenceContent(item.uri);
-    const metric = isRecord(content) ? stringValue(content.metric) : undefined;
-
-    return `${item.type}:${metric ?? item.subject_id}`;
-  }
-
-  return item.type;
-}
-
-function isStaleCommandEvidence(
-  data: LaunchReadinessReportData,
-  item: EvidenceReportRow
-): boolean {
-  return commandEvidenceCodeState(data, item).startsWith("code_state=stale");
-}
-
 function governanceBoundary(data: LaunchReadinessReportData): string {
   const commandEvidence = currentCommandEvidence(data);
 
@@ -910,71 +658,6 @@ function governanceBoundary(data: LaunchReadinessReportData): string {
           )
         ])
   ].join("\n");
-}
-
-function commandEvidenceGovernance(item: EvidenceReportRow): string {
-  if (item.task_type === "local_agent_task") {
-    const worker = taskInputWorker(item.task_input_json);
-
-    if (worker === "codex_direct") {
-      return "codex_direct governed verifier evidence";
-    }
-
-    if (worker === "codex_cli" || worker === "claude_code") {
-      return "wrapped worker post-run verifier evidence";
-    }
-
-    return "local agent post-run verifier evidence";
-  }
-
-  if (
-    item.task_type === "run_mvp_verifiers" ||
-    item.task_type === "run_local_verifiers"
-  ) {
-    return "Runstead verifier task evidence";
-  }
-
-  return "command verifier evidence";
-}
-
-function taskInputWorker(inputJson: string | null): string | undefined {
-  if (inputJson === null) {
-    return undefined;
-  }
-
-  try {
-    const input = JSON.parse(inputJson) as unknown;
-
-    return isRecord(input) && typeof input.worker === "string"
-      ? input.worker
-      : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-function formatCurrentCodeFingerprint(codeState: CommandVerifierCodeState): string {
-  return codeState.available
-    ? `${codeState.fingerprint}${codeState.dirty ? " dirty" : " clean"}`
-    : "unavailable";
-}
-
-function commandEvidenceCodeState(
-  data: LaunchReadinessReportData,
-  item: EvidenceReportRow
-): string {
-  const artifact = readEvidenceProvenanceArtifact(item.uri);
-  const codeState = isRecord(artifact?.codeState) ? artifact.codeState : undefined;
-  const fingerprint =
-    codeState === undefined ? undefined : stringValue(codeState.fingerprint);
-
-  if (fingerprint === undefined) {
-    return "code_state=missing";
-  }
-
-  return fingerprint === data.currentCodeState.fingerprint
-    ? "code_state=current"
-    : `code_state=stale current=${data.currentCodeState.fingerprint}`;
 }
 
 function testCoverageGaps(data: LaunchReadinessReportData): string {
@@ -1083,20 +766,6 @@ function frontendUiValidation(data: LaunchReadinessReportData): string {
   });
 }
 
-function parsedEvidenceContent(uri: string): unknown {
-  const artifact = readEvidenceProvenanceArtifact(uri);
-
-  if (!isRecord(artifact) || typeof artifact.content !== "string") {
-    return undefined;
-  }
-
-  try {
-    return JSON.parse(artifact.content) as unknown;
-  } catch {
-    return undefined;
-  }
-}
-
 function structuredStartupArtifacts(data: LaunchReadinessReportData): string {
   return listOrNone(
     data.structuredArtifacts,
@@ -1177,52 +846,6 @@ function staleEvidenceAppendix(data: LaunchReadinessReportData): string {
           `- ${omitted} additional stale evidence record${omitted === 1 ? "" : "s"} omitted from markdown; inspect staleEvidence in the JSON artifact.`
         ])
   ].join("\n");
-}
-
-function evidenceSourceSummary(item: EvidenceReportRow): string {
-  const artifact = readEvidenceProvenanceArtifact(item.uri);
-  const sources = artifactSources(artifact);
-
-  if (sources.length === 0) {
-    return `${item.type} artifact=${item.uri}`;
-  }
-
-  return `${item.type} ${sources.map(formatArtifactSource).join("; ")}`;
-}
-
-function readEvidenceProvenanceArtifact(
-  uri: string
-): EvidenceProvenanceArtifact | undefined {
-  try {
-    const parsed = JSON.parse(readFileSync(fileURLToPath(uri), "utf8")) as unknown;
-
-    return isRecord(parsed) ? parsed : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-function artifactSources(
-  artifact: EvidenceProvenanceArtifact | undefined
-): JsonObject[] {
-  if (artifact === undefined || !Array.isArray(artifact.sources)) {
-    return [];
-  }
-
-  return artifact.sources.filter((source): source is JsonObject => isRecord(source));
-}
-
-function formatArtifactSource(source: JsonObject): string {
-  const kind = stringValue(source.kind) ?? "unknown";
-  const uri = stringValue(source.uri) ?? "missing";
-  const capturedAt = stringValue(source.capturedAt) ?? "unknown";
-  const freshness =
-    typeof source.freshnessDays === "number"
-      ? ` freshness=${source.freshnessDays}d`
-      : "";
-  const hash = stringValue(source.hash);
-
-  return `source=${kind} uri=${uri} captured=${capturedAt}${freshness}${hash === undefined ? "" : ` hash=${hash}`}`;
 }
 
 function acceptableDebt(data: LaunchReadinessReportData): string {

@@ -268,6 +268,8 @@ The current implementation wave closed the highest-confidence product gaps:
   `launch-readiness-report` into `launch-readiness-git`.
 - Launch readiness SQL row contracts and data loading moved out of
   `launch-readiness-report` into `launch-readiness-data`.
+- Launch readiness evidence freshness, currentness, and provenance helpers moved
+  out of `launch-readiness-report` into `launch-readiness-evidence`.
 - `packages/cli/src/startup-command.ts` no longer owns startup scale
   starter/workflow/memory/integration/report/SOP/GTM command registration.
 - `packages/cli/src/startup-command.ts` no longer owns startup hypothesis
