@@ -266,6 +266,8 @@ The current implementation wave closed the highest-confidence product gaps:
   customer/competitor/add/manual-change command registration.
 - `packages/cli/src/startup-command.ts` no longer owns startup complete-check
   command registration.
+- `packages/cli/src/startup-command.ts` no longer owns startup remediate
+  command registration.
 - `@runstead/runtime` exposes backend selection for SQLite and Postgres.
 - `runstead doctor` reports backend setup blockers and team readiness.
 - Wrapped workers expose progress summary, last output age, and

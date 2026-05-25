@@ -13,20 +13,11 @@ import { registerStartupHypothesisCommand } from "./commands/startup-hypothesis.
 import { registerStartupLaunchCommand } from "./commands/startup-launch.js";
 import { registerStartupMeasurementCommand } from "./commands/startup-measurement.js";
 import { registerStartupReadyCommand } from "./commands/startup-ready.js";
+import { registerStartupRemediateCommand } from "./commands/startup-remediate.js";
 import { registerStartupScaleCommand } from "./commands/startup-scale.js";
 import { registerStartupSourceCommand } from "./commands/startup-source.js";
 import { registerStartupTeamCommand } from "./commands/startup-team.js";
-import { checkPermission } from "./rbac.js";
-import {
-  parseLocalAgentWorker,
-  parsePositiveInteger,
-  parseStartupGateStage,
-  parseStartupInitStage
-} from "./startup-command-parsers.js";
-import {
-  formatWorkerProcessProgress,
-  type WorkerProcessProgress
-} from "./wrapped-worker.js";
+import { parseStartupInitStage } from "./startup-command-parsers.js";
 
 export function registerStartupCommands(program: Command): void {
   const startup = program
@@ -120,100 +111,7 @@ export function registerStartupCommands(program: Command): void {
 
   registerStartupCompleteCheckCommand(startup);
 
-  startup
-    .command("remediate")
-    .description(
-      "Generate or execute worker-ready remediation tasks for startup gate blockers."
-    )
-    .option("--cwd <path>", "Workspace directory")
-    .option(
-      "--stage <stage>",
-      "Stage to remediate: idea, mvp, launch, or scale",
-      "launch"
-    )
-    .option("--domain <id>", "Domain id to evaluate", "ai-native-startup")
-    .option("--execute", "Create local agent tasks and run the remediation loop")
-    .option(
-      "--worker <worker>",
-      "Worker for --execute: codex_direct, codex_cli, or claude_code",
-      "codex_cli"
-    )
-    .option("--model <model>", "Model override for wrapped/direct worker execution")
-    .option("--max-tasks <count>", "Maximum blockers to execute in this run")
-    .option("--actor <id>", "RBAC subject for remediation task creation", "local-admin")
-    .action(
-      async (options: {
-        cwd?: string;
-        stage: string;
-        domain: string;
-        execute?: boolean;
-        worker: string;
-        model?: string;
-        maxTasks?: string;
-        actor: string;
-      }) => {
-        await requireRbacPermission({
-          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-          actor: options.actor,
-          permission: "task.run",
-          action: "create startup remediation tasks"
-        });
-
-        const {
-          executeStartupRemediationPlan,
-          formatStartupRemediationExecution,
-          formatStartupRemediationPlan,
-          generateStartupRemediationPlan
-        } = await import("./startup-remediation.js");
-        const common = {
-          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-          domain: options.domain,
-          stage: parseStartupGateStage(options.stage)
-        };
-
-        if (options.execute === true) {
-          const result = await executeStartupRemediationPlan({
-            ...common,
-            worker: parseLocalAgentWorker(options.worker),
-            ...(options.model === undefined ? {} : { model: options.model }),
-            ...(options.maxTasks === undefined
-              ? {}
-              : { maxTasks: parsePositiveInteger(options.maxTasks, "--max-tasks") }),
-            onWorkerProgress: logWrappedWorkerProgress
-          });
-
-          console.log(formatStartupRemediationExecution(result));
-          return;
-        }
-
-        const result = await generateStartupRemediationPlan(common);
-
-        console.log(formatStartupRemediationPlan(result));
-      }
-    );
+  registerStartupRemediateCommand(startup);
 
   registerStartupGateCommand(startup);
-}
-
-async function requireRbacPermission(options: {
-  cwd?: string;
-  actor: string;
-  permission: string;
-  action: string;
-}): Promise<void> {
-  const result = await checkPermission({
-    ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-    subject: options.actor,
-    permission: options.permission
-  });
-
-  if (result.decision !== "allow") {
-    throw new Error(
-      `Subject ${options.actor} cannot ${options.action}: ${result.reason}`
-    );
-  }
-}
-
-function logWrappedWorkerProgress(progress: WorkerProcessProgress): void {
-  console.error(formatWorkerProcessProgress(progress));
 }
