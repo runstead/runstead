@@ -341,6 +341,9 @@ The current implementation wave closed the highest-confidence product gaps:
   `local-agent-actions`.
 - Local agent run, undo, exit-code, and diagnostic report formatting moved out
   of `local-agent` into `local-agent-run-report`.
+- Startup remediation blocker guidance, prioritization, deduplication, evidence
+  expectations, and next-command helpers moved out of `startup-remediation` into
+  `startup-remediation-guidance`.
 - Startup gate severity rules and blocker remediation text moved out of
   `startup-evidence` into `startup-gate-rules`.
 - Startup gate artifact parsing and structured-content helper predicates moved
