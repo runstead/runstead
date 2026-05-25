@@ -200,6 +200,9 @@ The current implementation wave closed the highest-confidence product gaps:
 - CI repair worker-result serialization, redaction, and Codex Direct result
   guards moved out of the orchestrator into
   `ci-repair-orchestrator-worker-output`.
+- CI repair checkpoint, git, diff-scope, publish coverage, and pull-request
+  output serializers moved out of the orchestrator into
+  `ci-repair-orchestrator-output`.
 - Startup automation public option/result contracts moved into
   `startup-automation-types`.
 - Startup launch security scanning moved out of `startup-automation` into

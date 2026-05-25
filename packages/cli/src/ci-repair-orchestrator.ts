@@ -39,8 +39,7 @@ import {
   createGitBranch,
   listGitChangedFiles,
   pushGitBranch,
-  type CommitGitChangesResult,
-  type ListGitChangedFilesResult
+  type CommitGitChangesResult
 } from "./git-branch.js";
 import type {
   GitHubCliRunner,
@@ -122,6 +121,14 @@ import {
   workerFailureText,
   workerOutput
 } from "./ci-repair-orchestrator-worker-output.js";
+import {
+  checkpointOutput,
+  coveredByOutput,
+  diffScopeOutput,
+  gitChangedFilesOutput,
+  gitCommitOutput,
+  pullRequestOutput
+} from "./ci-repair-orchestrator-output.js";
 
 export type {
   CiRepairGitRunner,
@@ -2209,16 +2216,6 @@ async function runPublishCoveredToolAction<T>(options: {
   }
 }
 
-function coveredByOutput(coverage: PublishCoverage): JsonObject {
-  return {
-    coveredByToolCallId: coverage.toolCallId,
-    coveredByPolicyDecisionId: coverage.policyDecisionId,
-    ...(coverage.approvalId === undefined
-      ? {}
-      : { coveredByApprovalId: coverage.approvalId })
-  };
-}
-
 function findPullRequestResumeTask(options: {
   cwd: string;
   runId: string;
@@ -2724,51 +2721,6 @@ function evidenceSummary(evidence: Evidence): EvidenceSummary {
     ...(evidence.summary === undefined ? {} : { summary: evidence.summary }),
     ...(evidence.hash === undefined ? {} : { hash: evidence.hash }),
     createdAt: evidence.createdAt
-  };
-}
-
-function checkpointOutput(checkpoint: WorkspaceCheckpoint): JsonObject {
-  return {
-    checkpointId: checkpoint.id,
-    head: checkpoint.head ?? "",
-    untrackedFiles: checkpoint.untrackedFiles
-  };
-}
-
-function gitChangedFilesOutput(changedFiles: ListGitChangedFilesResult): JsonObject {
-  return {
-    changedFiles: changedFiles.changedFiles,
-    trackedFiles: changedFiles.trackedFiles,
-    stagedFiles: changedFiles.stagedFiles,
-    untrackedFiles: changedFiles.untrackedFiles,
-    excludedFiles: changedFiles.excludedFiles
-  };
-}
-
-function gitCommitOutput(commit: CommitGitChangesResult): JsonObject {
-  return {
-    commitSha: commit.commitSha,
-    changedFiles: commit.changedFiles,
-    committedFiles: commit.committedFiles,
-    stdout: commit.stdout
-  };
-}
-
-function diffScopeOutput(diffScope: GitDiffScopeVerification): JsonObject {
-  return {
-    passed: diffScope.passed,
-    changedFiles: diffScope.changedFiles,
-    violations: diffScope.violations
-  };
-}
-
-function pullRequestOutput(pullRequest: CreateGitHubPullRequestResult): JsonObject {
-  return {
-    title: pullRequest.title,
-    base: pullRequest.base,
-    head: pullRequest.head,
-    stdout: pullRequest.stdout,
-    ...(pullRequest.url === undefined ? {} : { url: pullRequest.url })
   };
 }
 
