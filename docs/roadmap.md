@@ -226,6 +226,8 @@ The current implementation wave closed the highest-confidence product gaps:
 - Startup evidence summary rows, recent evidence formatting, and support
   category aggregation moved out of `startup-automation` into
   `startup-evidence-summary`.
+- Startup repo readiness and launch security blocker/warning evaluation moved
+  out of `startup-automation` into `startup-readiness-gates`.
 - Startup automation public option/result contracts moved into
   `startup-automation-types`.
 - Startup launch security scanning moved out of `startup-automation` into

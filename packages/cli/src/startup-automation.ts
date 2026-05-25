@@ -38,6 +38,12 @@ import {
   supportCategoryCountsFromArtifacts,
   type StartupEvidenceSummaryRow
 } from "./startup-evidence-summary.js";
+import {
+  repoReadinessBlockers,
+  repoReadinessWarnings,
+  securityBaselineBlockers,
+  securityBaselineWarnings
+} from "./startup-readiness-gates.js";
 import type {
   CaptureInstitutionalMemoryOptions,
   CaptureInstitutionalMemoryResult,
@@ -2160,70 +2166,6 @@ function formatGtmVerification(input: {
     ]),
     ""
   ].join("\n");
-}
-
-function repoReadinessBlockers(
-  inspection: Awaited<ReturnType<typeof collectRepoInspection>>,
-  changedProtected: string[]
-): string[] {
-  return [
-    ...(inspection.commands.test.detected ? [] : ["test command is missing"]),
-    ...(inspection.commands.lint.detected ? [] : ["lint command is missing"]),
-    ...(inspection.commands.typecheck.detected ? [] : ["typecheck command is missing"]),
-    ...(inspection.commands.build.detected ? [] : ["build command is missing"]),
-    ...(inspection.ci.detected ? [] : ["CI configuration is missing"]),
-    ...(changedProtected.length === 0
-      ? []
-      : [`protected path changes require review: ${changedProtected.join(", ")}`])
-  ];
-}
-
-function repoReadinessWarnings(
-  inspection: Awaited<ReturnType<typeof collectRepoInspection>>
-): string[] {
-  return [
-    ...(inspection.git.isGitRepo ? [] : ["workspace is not a Git repository"]),
-    ...(inspection.packageManager.detected
-      ? []
-      : ["package manager could not be detected"])
-  ];
-}
-
-function securityBaselineBlockers(
-  changedProtected: string[],
-  riskScan: LaunchSecurityRiskScan
-): string[] {
-  return [
-    ...(changedProtected.length === 0
-      ? []
-      : [`protected path changes require review: ${changedProtected.join(", ")}`]),
-    ...(riskScan.secretFindings.length === 0
-      ? []
-      : [
-          `potential secret exposure requires review: ${riskScan.secretFindings.join(", ")}`
-        ])
-  ];
-}
-
-function securityBaselineWarnings(input: {
-  envFiles: string[];
-  dependencyFiles: string[];
-  riskScan: LaunchSecurityRiskScan;
-}): string[] {
-  return [
-    ...(input.envFiles.length === 0
-      ? []
-      : [`local env files present: ${input.envFiles.join(", ")}`]),
-    ...(input.dependencyFiles.length === 0
-      ? ["no dependency manifest or lockfile detected"]
-      : []),
-    ...input.riskScan.licenseFindings,
-    ...input.riskScan.dependencyFindings,
-    ...input.riskScan.backupRestoreFindings,
-    ...input.riskScan.authAndPrivacyFindings,
-    ...input.riskScan.prodConfigFindings,
-    ...input.riskScan.thirdPartyFindings
-  ];
 }
 
 function formatDetectedCommand(command: {
