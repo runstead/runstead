@@ -80,6 +80,8 @@ The current implementation wave closed the highest-confidence product gaps:
 - CI repair progress stage ordering moved into `ci-repair-orchestrator-stage`.
 - Startup automation public option/result contracts moved into
   `startup-automation-types`.
+- Startup launch security scanning moved out of `startup-automation` into
+  `startup-security-scan`.
 - Startup command parser helpers moved into `startup-command-parsers` with
   focused unit coverage.
 - `packages/cli/src/startup-command.ts` no longer owns startup source command
