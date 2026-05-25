@@ -149,6 +149,8 @@ The current implementation wave closed the highest-confidence product gaps:
   moved out of the CLI entrypoint into `commands/agent`.
 - Agent provider listing moved out of the agent command adapter into
   `commands/agent-providers`.
+- Agent inspect subcommand and depth-to-preset parsing moved out of the agent
+  command adapter into `commands/agent-inspect`.
 - Agent fix and repair-test subcommands moved out of the agent command adapter
   into `commands/agent-fix`.
 - Local-agent lifecycle subcommands (`report`, `resume`, `undo`) moved out of
