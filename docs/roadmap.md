@@ -67,6 +67,8 @@ The current implementation wave closed the highest-confidence product gaps:
 - `docs/roadmap.md` is the tracked roadmap; local ignored `plan.md` remains a
   scratch mirror only.
 - CI package smoke now includes `@runstead/state-postgres`.
+- Top-level core command registration (`init`, `status`, `upgrade`) moved out
+  of the CLI entrypoint into `commands/core`.
 - `packages/cli/src/index.ts` no longer owns dashboard or doctor command
   registration.
 - Dashboard snapshot and operator API contracts moved out of the dashboard
