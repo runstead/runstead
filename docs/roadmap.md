@@ -214,6 +214,9 @@ The current implementation wave closed the highest-confidence product gaps:
   moved out of the orchestrator into `ci-repair-orchestrator-worker-run`.
 - CI repair branch creation and checkpoint workspace preparation moved out of
   the orchestrator into `ci-repair-orchestrator-workspace`.
+- CI repair post-worker git status, commit, diff-scope verification, verifier
+  execution, and rollback-on-failure logic moved into
+  `ci-repair-orchestrator-verification`.
 - CI repair approval summary, durable approval record, and publish approval
   stage mapping helpers moved out of the orchestrator into
   `ci-repair-orchestrator-approval`.

@@ -7,11 +7,7 @@ import {
   isCreatedCiRepairTaskResult,
   type CreateCiRepairTaskResult
 } from "./ci-repair.js";
-import {
-  buildRunsteadBranchName,
-  commitGitChanges,
-  listGitChangedFiles
-} from "./git-branch.js";
+import { buildRunsteadBranchName } from "./git-branch.js";
 import {
   runGovernedToolAction,
   ToolActionApprovalRequiredError,
@@ -26,34 +22,19 @@ import { loadPolicyProfileFromFile } from "./policy-loader.js";
 import { requireRunsteadRootSync } from "./runstead-root.js";
 import { finishWorkerRun, startWorkerRun } from "./runtime-audit.js";
 import { claimTask } from "./tasks.js";
-import {
-  runTaskVerifiersUnlocked,
-  type RunTaskVerifiersResult
-} from "./verifier-runner.js";
-import { verifyGitDiffScope } from "./diff-scope-verifier.js";
 import { withRunsteadManagerLock } from "./manager-lock.js";
 import type {
   CiRepairWorkerResult,
   RunCiRepairOrchestratorOptions,
   RunCiRepairOrchestratorResult
 } from "./ci-repair-orchestrator-types.js";
-import {
-  gitCommitAction,
-  gitDiffAction,
-  gitStatusAction,
-  workerStartAction
-} from "./ci-repair-orchestrator-actions.js";
+import { workerStartAction } from "./ci-repair-orchestrator-actions.js";
 import {
   durableWorkerResult,
   isCodexDirectWorkerResult,
   workerFailureText,
   workerOutput
 } from "./ci-repair-orchestrator-worker-output.js";
-import {
-  diffScopeOutput,
-  gitChangedFilesOutput,
-  gitCommitOutput
-} from "./ci-repair-orchestrator-output.js";
 import {
   buildInitialCiRepairStageContext,
   buildPullRequestResumeContext,
@@ -76,6 +57,7 @@ import {
 } from "./ci-repair-orchestrator-worker-run.js";
 import { prepareCiRepairWorkspace } from "./ci-repair-orchestrator-workspace.js";
 import { publishCiRepairPullRequest } from "./ci-repair-orchestrator-publish-flow.js";
+import { verifyCiRepairWorkerChanges } from "./ci-repair-orchestrator-verification.js";
 import {
   assertNoRunningCiRepairOrchestratorWorker,
   findPullRequestResumeTask,
@@ -493,287 +475,40 @@ export async function runCiRepairOrchestratorUnlocked(
         );
       }
 
-      const changedFiles = await runGovernedToolAction({
+      const verifiedChanges = await verifyCiRepairWorkerChanges({
         cwd,
+        root,
         stateDb,
         database,
         policy,
         task: orchestratorTask,
         workerRun,
-        action: gitStatusAction({
-          task: orchestratorTask,
-          cwd
-        }),
-        requestedBy: "runstead:ci-repair",
-        ...(options.now === undefined ? {} : { now: options.now }),
-        run: async () => {
-          const value = await listGitChangedFiles({
-            cwd,
-            ...(options.gitRunner === undefined ? {} : { runner: options.gitRunner })
-          });
-
-          return {
-            value,
-            output: gitChangedFilesOutput(value)
-          };
-        }
-      }).then((result) => result.value);
-      const hasCommittableChanges =
-        changedFiles.changedFiles.length > changedFiles.excludedFiles.length;
-      let commit = stageContext.commit;
-
-      if (
-        (!stageAtLeast(stageContext.stage, "committed") || commit === undefined) &&
-        hasCommittableChanges
-      ) {
-        commit = await runGovernedToolAction({
-          cwd,
-          stateDb,
-          database,
-          policy,
-          task: orchestratorTask,
-          workerRun,
-          action: gitCommitAction({
-            task: orchestratorTask,
-            cwd,
-            changedFiles: changedFiles.changedFiles
-          }),
-          requestedBy: "runstead:ci-repair",
-          ...(options.now === undefined ? {} : { now: options.now }),
-          run: async () => {
-            const value = await commitGitChanges({
-              cwd,
-              message: `Runstead repair CI run ${ciRepair.workflowRun.runId}`,
-              changedFiles: changedFiles.changedFiles,
-              ...(options.gitRunner === undefined ? {} : { runner: options.gitRunner })
-            });
-
-            return {
-              value,
-              output: gitCommitOutput(value)
-            };
-          }
-        }).then((result) => result.value);
-        if (commit === undefined) {
-          throw new Error("CI repair commit context is missing");
-        }
-        ({ task: orchestratorTask, context: stageContext } = writeCiRepairStage({
-          database,
-          task: orchestratorTask,
-          context: stageContext,
-          stage: "committed",
-          patch: {
-            commit
-          },
-          ...(options.onStagePersisted === undefined
-            ? {}
-            : { onStagePersisted: options.onStagePersisted }),
-          ...(options.now === undefined ? {} : { now: options.now })
-        }));
-      }
-
-      let diffScope = stageContext.diffScope;
-
-      if (!stageAtLeast(stageContext.stage, "verified") || diffScope === undefined) {
-        diffScope = await runGovernedToolAction({
-          cwd,
-          stateDb,
-          database,
-          policy,
-          task: orchestratorTask,
-          workerRun,
-          action: gitDiffAction({
-            task: orchestratorTask,
-            cwd,
-            base,
-            head: "HEAD"
-          }),
-          requestedBy: "runstead:ci-repair",
-          ...(options.now === undefined ? {} : { now: options.now }),
-          run: async () => {
-            const value = await verifyGitDiffScope({
-              cwd,
-              baseRef: base,
-              headRef: "HEAD",
-              allowedPaths: options.allowedPaths ?? [],
-              deniedPaths: options.deniedPaths ?? [],
-              ...(options.gitRunner === undefined ? {} : { runner: options.gitRunner })
-            });
-
-            return {
-              value,
-              output: diffScopeOutput(value)
-            };
-          }
-        }).then((result) => result.value);
-      }
-
-      if (diffScope === undefined) {
-        throw new Error("CI repair diff scope context is missing");
-      }
-
-      if (diffScope.changedFiles.length === 0) {
-        await rollbackWorkerChanges({
-          cwd,
-          root,
-          stateDb,
-          database,
-          policy,
-          task: orchestratorTask,
-          workerRun,
-          workerResult,
-          ...(options.gitRunner === undefined ? {} : { gitRunner: options.gitRunner }),
-          ...(options.now === undefined ? {} : { now: options.now })
-        });
-        markTaskTerminal({
-          database,
-          task: orchestratorTask,
-          status: "failed",
-          output: {
-            ...(orchestratorTask.output ?? {}),
-            ciRepairOrchestrator: {
-              ...stageContext,
-              stage: "failed"
-            },
-            summary: "CI repair produced no git diff"
-          },
-          ...(options.now === undefined ? {} : { now: options.now })
-        });
-        finishWorkerRun({
-          database,
-          workerRun,
-          status: "failed",
-          output: diffScopeOutput(diffScope),
-          ...(options.now === undefined ? {} : { now: options.now })
-        });
-        throw new Error("CI repair produced no git diff");
-      }
-
-      if (!diffScope.passed) {
-        await rollbackWorkerChanges({
-          cwd,
-          root,
-          stateDb,
-          database,
-          policy,
-          task: orchestratorTask,
-          workerRun,
-          workerResult,
-          ...(options.gitRunner === undefined ? {} : { gitRunner: options.gitRunner }),
-          ...(options.now === undefined ? {} : { now: options.now })
-        });
-        markTaskTerminal({
-          database,
-          task: orchestratorTask,
-          status: "failed",
-          output: {
-            ...(orchestratorTask.output ?? {}),
-            ciRepairOrchestrator: {
-              ...stageContext,
-              stage: "failed"
-            },
-            summary: "CI repair diff scope failed",
-            violations: diffScope.violations
-          },
-          ...(options.now === undefined ? {} : { now: options.now })
-        });
-        finishWorkerRun({
-          database,
-          workerRun,
-          status: "failed",
-          output: diffScopeOutput(diffScope),
-          ...(options.now === undefined ? {} : { now: options.now })
-        });
-        throw new Error(
-          `CI repair diff scope failed with ${diffScope.violations.length} violation(s)`
-        );
-      }
-
-      const verifierResult =
-        stageAtLeast(stageContext.stage, "verified") &&
-        stageContext.verifierTask !== undefined &&
-        stageContext.verifierCommandResults !== undefined
-          ? {
-              task: stageContext.verifierTask,
-              commandResults: stageContext.verifierCommandResults
-            }
-          : await (options.verifierRunner ?? runTaskVerifiersUnlocked)({
-              cwd,
-              taskId: orchestratorTask.id,
-              claim: false,
-              mode: "evidence_only",
-              ...(options.now === undefined ? {} : { now: options.now })
-            });
-      const normalizedVerifierResult: RunTaskVerifiersResult = {
-        ...verifierResult,
-        task: {
-          ...verifierResult.task,
-          goalId: ciRepair.task.goalId,
-          input: ciRepair.task.input,
-          verifiers: ciRepair.task.verifiers,
-          createdAt: ciRepair.task.createdAt
-        }
-      };
-
-      if (normalizedVerifierResult.task.status !== "completed") {
-        await rollbackWorkerChanges({
-          cwd,
-          root,
-          stateDb,
-          database,
-          policy,
-          task: normalizedVerifierResult.task,
-          workerRun,
-          workerResult,
-          ...(options.gitRunner === undefined ? {} : { gitRunner: options.gitRunner }),
-          ...(options.now === undefined ? {} : { now: options.now })
-        });
-        markTaskTerminal({
-          database,
-          task: orchestratorTask,
-          status: "failed",
-          output: {
-            ...(orchestratorTask.output ?? {}),
-            summary: "CI repair verifier failed",
-            verifierTaskStatus: normalizedVerifierResult.task.status,
-            ciRepairOrchestrator: {
-              ...stageContext,
-              stage: "failed"
-            }
-          },
-          ...(options.now === undefined ? {} : { now: options.now })
-        });
-        finishWorkerRun({
-          database,
-          workerRun,
-          status: "failed",
-          output: {
-            verifierTaskStatus: normalizedVerifierResult.task.status
-          },
-          ...(options.now === undefined ? {} : { now: options.now })
-        });
-        throw new Error(
-          `CI repair verifier ended with task status ${normalizedVerifierResult.task.status}`
-        );
-      }
-
-      if (!stageAtLeast(stageContext.stage, "verified")) {
-        ({ task: orchestratorTask, context: stageContext } = writeCiRepairStage({
-          database,
-          task: orchestratorTask,
-          context: stageContext,
-          stage: "verified",
-          patch: {
-            diffScope,
-            verifierTask: normalizedVerifierResult.task,
-            verifierCommandResults: normalizedVerifierResult.commandResults
-          },
-          ...(options.onStagePersisted === undefined
-            ? {}
-            : { onStagePersisted: options.onStagePersisted }),
-          ...(options.now === undefined ? {} : { now: options.now })
-        }));
-      }
+        context: stageContext,
+        ciRepair,
+        base,
+        workerResult,
+        ...(options.allowedPaths === undefined
+          ? {}
+          : { allowedPaths: options.allowedPaths }),
+        ...(options.deniedPaths === undefined
+          ? {}
+          : { deniedPaths: options.deniedPaths }),
+        ...(options.gitRunner === undefined ? {} : { gitRunner: options.gitRunner }),
+        ...(options.verifierRunner === undefined
+          ? {}
+          : { verifierRunner: options.verifierRunner }),
+        ...(options.onStagePersisted === undefined
+          ? {}
+          : { onStagePersisted: options.onStagePersisted }),
+        ...(options.now === undefined ? {} : { now: options.now })
+      });
+      orchestratorTask = verifiedChanges.task;
+      stageContext = verifiedChanges.context;
+      const {
+        commit,
+        diffScope,
+        verifierResult: normalizedVerifierResult
+      } = verifiedChanges;
 
       const resumeContext: CiRepairOrchestratorResumeContext = {
         ...stageContext,
