@@ -214,6 +214,9 @@ The current implementation wave closed the highest-confidence product gaps:
   moved out of the orchestrator into `ci-repair-orchestrator-worker-run`.
 - CI repair publish approval, covered git push, and GitHub pull-request
   creation helpers moved out of the orchestrator into `ci-repair-orchestrator-publish`.
+- CI repair pull-request resume discovery, running-worker guard, and resume
+  intake reconstruction moved out of the orchestrator into
+  `ci-repair-orchestrator-resume`.
 - Startup automation public option/result contracts moved into
   `startup-automation-types`.
 - Startup launch security scanning moved out of `startup-automation` into

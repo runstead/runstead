@@ -1,6 +1,6 @@
 import { join, resolve } from "node:path";
 
-import { type Evidence, type Task } from "@runstead/core";
+import type { Task } from "@runstead/core";
 import { openRunsteadDatabase, type RunsteadDatabase } from "@runstead/state-sqlite";
 
 import {
@@ -18,7 +18,7 @@ import {
   createGitBranch,
   listGitChangedFiles
 } from "./git-branch.js";
-import type { GitHubCliRunner, GitHubWorkflowRunLog } from "./github-actions.js";
+import type { GitHubCliRunner } from "./github-actions.js";
 import {
   runGovernedToolAction,
   ToolActionApprovalRequiredError,
@@ -28,7 +28,7 @@ import { showGoal } from "./goals.js";
 import { loadPolicyProfileFromFile } from "./policy-loader.js";
 import { requireRunsteadRootSync } from "./runstead-root.js";
 import { finishWorkerRun, startWorkerRun } from "./runtime-audit.js";
-import { claimTask, listTasks } from "./tasks.js";
+import { claimTask } from "./tasks.js";
 import {
   runTaskVerifiersUnlocked,
   type RunTaskVerifiersResult
@@ -71,7 +71,6 @@ import {
   parsePullRequestResumeContext,
   publishCoverageFromContext,
   publishCoverageStagePatch,
-  pullRequestResumeContext,
   stageAtLeast,
   type CiRepairOrchestratorResumeContext,
   type CiRepairOrchestratorStageContext
@@ -80,7 +79,6 @@ import {
   failCiRepairOrchestratorRun,
   isStagePersistenceInterruption,
   markTaskTerminal,
-  taskEvent,
   writeTaskOutput
 } from "./ci-repair-orchestrator-task-state.js";
 import {
@@ -92,6 +90,16 @@ import {
   ensureGovernedRepairPublishApproval,
   pushRepairBranchWithPublishApproval
 } from "./ci-repair-orchestrator-publish.js";
+import {
+  assertNoRunningCiRepairOrchestratorWorker,
+  ciRepairResultFromResume,
+  findPullRequestResumeTask
+} from "./ci-repair-orchestrator-resume.js";
+
+export {
+  ciRepairPullRequestResumeRunId,
+  isCiRepairPullRequestResumeTask
+} from "./ci-repair-orchestrator-resume.js";
 
 export { formatCiRepairOrchestratorReport } from "./ci-repair-orchestrator-report.js";
 
@@ -1490,63 +1498,6 @@ async function resumeCiRepairPullRequest(options: {
   }
 }
 
-function findPullRequestResumeTask(options: {
-  cwd: string;
-  runId: string;
-}): Task | undefined {
-  return listTasks({ cwd: options.cwd }).tasks.find((task) => {
-    if (task.domain !== "repo-maintenance" || task.type !== "ci_repair") {
-      return false;
-    }
-
-    if (task.status !== "queued") {
-      return false;
-    }
-
-    if (String(task.input.runId) !== options.runId) {
-      return false;
-    }
-
-    return pullRequestResumeContext(task) !== undefined;
-  });
-}
-
-export function isCiRepairPullRequestResumeTask(task: Task): boolean {
-  return (
-    task.domain === "repo-maintenance" &&
-    task.type === "ci_repair" &&
-    task.status === "queued" &&
-    pullRequestResumeContext(task) !== undefined
-  );
-}
-
-export function ciRepairPullRequestResumeRunId(task: Task): string | undefined {
-  return pullRequestResumeContext(task)?.runId;
-}
-
-function assertNoRunningCiRepairOrchestratorWorker(input: {
-  database: RunsteadDatabase;
-  task: Task;
-}): void {
-  const row = input.database
-    .prepare(
-      `
-      SELECT id
-      FROM worker_runs
-      WHERE task_id = ? AND worker_type = 'ci_repair_orchestrator' AND status = 'running'
-      ORDER BY started_at DESC, id ASC
-      LIMIT 1
-    `
-    )
-    .get(input.task.id) as { id: string } | undefined;
-
-  if (row !== undefined) {
-    throw new Error(
-      `CI repair task ${input.task.id} already has a running CI repair orchestrator: ${row.id}`
-    );
-  }
-}
-
 function writeCiRepairStage(input: {
   database: RunsteadDatabase;
   task: Task;
@@ -1604,53 +1555,6 @@ function writeCiRepairContextPatch(input: {
   return {
     task,
     context
-  };
-}
-
-function ciRepairResultFromResume(input: {
-  cwd: string;
-  stateDb: string;
-  task: Task;
-  context: CiRepairOrchestratorResumeContext;
-}): CreateCiRepairTaskResult {
-  const evidence: Evidence = {
-    id: input.context.evidence.id,
-    type: input.context.evidence.type,
-    subjectType: input.context.evidence.subjectType,
-    subjectId: input.context.evidence.subjectId,
-    uri: input.context.evidence.uri,
-    ...(input.context.evidence.hash === undefined
-      ? {}
-      : { hash: input.context.evidence.hash }),
-    ...(input.context.evidence.summary === undefined
-      ? {}
-      : { summary: input.context.evidence.summary }),
-    createdAt: input.context.evidence.createdAt
-  };
-
-  return {
-    status: "created",
-    cwd: input.cwd,
-    stateDb: input.stateDb,
-    task: input.task,
-    event: taskEvent(
-      "task.resumed",
-      input.task,
-      {
-        runId: input.context.runId,
-        stage: input.context.stage
-      },
-      input.task.updatedAt || input.task.createdAt
-    ),
-    evidence,
-    evidencePath: evidence.uri,
-    workflowRun: input.context.workflowRun,
-    log: {
-      runId: input.context.runId,
-      log: "",
-      byteLength: 0
-    } satisfies GitHubWorkflowRunLog,
-    created: false
   };
 }
 
