@@ -300,6 +300,9 @@ The current implementation wave closed the highest-confidence product gaps:
   `codex-direct-native-tools` into `codex-direct-unified-diff`.
 - Codex Direct text-search matcher, context-line, and preview formatting helpers
   moved out of `codex-direct-native-tools` into `codex-direct-search-text`.
+- Codex Direct workspace entry types, directory summary, dirent/stat mapping,
+  sorted directory reads, and binary-file probing moved out of
+  `codex-direct-native-tools` into `codex-direct-workspace-entries`.
 - Local agent result semantics, worker output serialization, and governance
   report helpers moved out of `local-agent` into `local-agent-result`.
 - Startup gate severity rules and blocker remediation text moved out of
