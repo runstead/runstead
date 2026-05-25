@@ -380,6 +380,10 @@ describe("buildDashboard", () => {
       expect(html).toContain('data-approval-decision="approve"');
       expect(html).toContain("data-operator-session");
       expect(html).toContain("data-operator-csrf");
+      expect(html).toContain("data-verifier-task-id");
+      expect(html).toContain('onclick="runVerifiersForm(this)"');
+      expect(html).toContain("data-manual-evidence-summary");
+      expect(html).toContain('onclick="recordManualEvidenceForm(this)"');
       expect(html).toContain("Startup Readiness");
       expect(html).toContain("run_dashboard_ready");
       expect(html).toContain("Run comparison");
@@ -856,6 +860,99 @@ describe("buildDashboard", () => {
         expect(crossOriginBody.error).toBe("origin_denied");
       } finally {
         await closeServer(served.server);
+      }
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("records manual evidence through the operator API", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-dashboard-api-evidence-"));
+    const root = join(workspace, ".runstead");
+    const stateDb = join(root, "state.db");
+
+    try {
+      await mkdir(root, { recursive: true });
+      await writeFile(
+        join(root, "config.yaml"),
+        "version: 1\ndomain: repo-maintenance\n",
+        "utf8"
+      );
+      openRunsteadDatabase(stateDb).close();
+
+      const served = await serveDashboard({
+        cwd: workspace,
+        host: "127.0.0.1",
+        port: 0,
+        enableOperatorApi: true,
+        sessionToken: "session-evidence",
+        csrfToken: "csrf-evidence",
+        actor: "local-admin",
+        now: new Date("2026-05-23T02:18:00.000Z")
+      });
+
+      try {
+        const response = await fetch(`${served.url}/evidence/manual`, {
+          method: "POST",
+          headers: {
+            authorization: "Bearer session-evidence",
+            "x-runstead-csrf-token": "csrf-evidence"
+          },
+          body: JSON.stringify({
+            type: "manual_change",
+            summary: "Operator checked launch notes",
+            gate: "launch",
+            sourceRefs: ["docs/launch.md"],
+            content: "Manual operator note"
+          })
+        });
+        const body = (await response.json()) as {
+          ok: boolean;
+          result: {
+            evidenceId: string;
+            evidenceType: string;
+            artifactPath: string;
+          };
+        };
+
+        expect(response.status).toBe(200);
+        expect(body).toMatchObject({
+          ok: true,
+          result: {
+            evidenceType: "startup_manual_change"
+          }
+        });
+        await expect(readFile(body.result.artifactPath, "utf8")).resolves.toContain(
+          "Operator checked launch notes"
+        );
+      } finally {
+        await closeServer(served.server);
+      }
+
+      const verified = openRunsteadDatabase(stateDb);
+
+      try {
+        const evidence = verified
+          .prepare("SELECT type, summary FROM evidence WHERE type = ?")
+          .get("startup_manual_change") as { type: string; summary: string };
+        const audit = verified
+          .prepare(
+            `
+            SELECT COUNT(*) AS count
+            FROM events
+            WHERE type = 'dashboard.operator_action.completed'
+              AND aggregate_id = 'manual_change'
+          `
+          )
+          .get() as { count: number };
+
+        expect(evidence).toMatchObject({
+          type: "startup_manual_change",
+          summary: "Operator checked launch notes"
+        });
+        expect(audit.count).toBe(1);
+      } finally {
+        verified.close();
       }
     } finally {
       await rm(workspace, { force: true, recursive: true });

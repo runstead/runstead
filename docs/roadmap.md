@@ -90,6 +90,8 @@ The current implementation wave closed the highest-confidence product gaps:
   approvals through the protected local API.
 - Dashboard recovery timelines now link resolved blockers to the ready run
   phase, evidence ids, and artifacts that cleared them.
+- Dashboard operator console includes action-specific forms for verifier runs
+  and manual evidence recording through the protected local API.
 - `email-followup` now has a mature draft-only lifecycle, fixtures, evals,
   gates, report sections, and docs.
 - Non-startup golden paths are covered by a combined runbook and CLI/domain
@@ -123,29 +125,9 @@ pnpm --filter @runstead/cli typecheck
 pnpm --filter @runstead/runtime typecheck
 ```
 
-### 2. Deepen operator recovery timeline UX
-
-Dogfood runs often move from blocked to ready through repair or recovery. The
-dashboard has action controls and timeline groups; the next step is a richer
-explanation of why the final verdict is trustworthy.
-
-Acceptance:
-
-- Latest blocked/interrupted run can be compared with latest ready run.
-- Timeline groups phases, worker runs, model requests, tool calls, approvals,
-  evidence, reports, and recovery decisions.
-- UI smoke artifacts and stale evidence groups are linked from the timeline.
-
-Validation:
-
-```bash
-pnpm --filter @runstead/cli exec vitest run src/dashboard.test.ts src/startup-ready.test.ts
-```
-
 ## Suggested Order
 
 1. Continue CLI module extraction by command/runtime ownership.
-2. Deepen operator recovery timeline explanations and action-specific forms.
 
 ## Milestone Validation
 

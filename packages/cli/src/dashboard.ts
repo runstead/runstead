@@ -2105,7 +2105,8 @@ function formatDashboardHtml(snapshot: DashboardSnapshot): string {
       color: #ffffff;
     }
     .operator-action button:focus-visible, .operator-api button:focus-visible,
-    .operator-api input:focus-visible {
+    .operator-api input:focus-visible, .operator-api select:focus-visible,
+    .operator-api textarea:focus-visible {
       outline: 2px solid var(--accent);
       outline-offset: 2px;
     }
@@ -2117,13 +2118,17 @@ function formatDashboardHtml(snapshot: DashboardSnapshot): string {
       border-top: 1px solid var(--line);
       background: #f9fafb;
     }
-    .operator-api input {
+    .operator-api input, .operator-api select, .operator-api textarea {
       width: 100%;
       border: 1px solid var(--line);
       border-radius: 6px;
       font: inherit;
       min-height: 32px;
       padding: 5px 8px;
+    }
+    .operator-api textarea {
+      min-height: 64px;
+      resize: vertical;
     }
     .operator-result {
       grid-column: 1 / -1;
@@ -2163,6 +2168,12 @@ function formatDashboardHtml(snapshot: DashboardSnapshot): string {
       const target = document.querySelector("[data-operator-result]");
       if (target) target.textContent = message;
     }
+    function operatorField(selector) {
+      return document.querySelector(selector)?.value || "";
+    }
+    function splitOperatorList(value) {
+      return value.split(/[\\n,]/).map((item) => item.trim()).filter(Boolean);
+    }
     async function postOperatorApi(path, body) {
       const response = await fetch(path, {
         method: "POST",
@@ -2196,6 +2207,48 @@ function formatDashboardHtml(snapshot: DashboardSnapshot): string {
       try {
         const payload = await postOperatorApi("/approvals/" + encodeURIComponent(id) + "/" + decision, {});
         setOperatorResult("Approval " + id + " " + decision + ": " + JSON.stringify(payload.result || payload));
+      } catch (error) {
+        setOperatorResult(error instanceof Error ? error.message : String(error));
+      } finally {
+        button.disabled = false;
+      }
+    }
+    async function runVerifiersForm(button) {
+      const taskId = operatorField("[data-verifier-task-id]").trim();
+      if (!taskId) {
+        setOperatorResult("taskId is required");
+        return;
+      }
+      button.disabled = true;
+      try {
+        const payload = await postOperatorApi("/verifiers/run", {
+          taskId,
+          mode: operatorField("[data-verifier-mode]") || "evidence_only"
+        });
+        setOperatorResult("Verifiers completed: " + JSON.stringify(payload.result || payload));
+      } catch (error) {
+        setOperatorResult(error instanceof Error ? error.message : String(error));
+      } finally {
+        button.disabled = false;
+      }
+    }
+    async function recordManualEvidenceForm(button) {
+      const summary = operatorField("[data-manual-evidence-summary]").trim();
+      if (!summary) {
+        setOperatorResult("summary is required");
+        return;
+      }
+      const body = {
+        type: operatorField("[data-manual-evidence-type]") || "manual_change",
+        summary,
+        gate: operatorField("[data-manual-evidence-gate]"),
+        sourceRefs: splitOperatorList(operatorField("[data-manual-evidence-source-refs]")),
+        content: operatorField("[data-manual-evidence-content]")
+      };
+      button.disabled = true;
+      try {
+        const payload = await postOperatorApi("/evidence/manual", body);
+        setOperatorResult("Evidence recorded: " + JSON.stringify(payload.result || payload));
       } catch (error) {
         setOperatorResult(error instanceof Error ? error.message : String(error));
       } finally {
@@ -2304,7 +2357,7 @@ function operatorConsoleSection(operator: DashboardOperatorConsole): string {
           .join("<br>");
 
   if (operator.actions.length === 0) {
-    return `<section><header><h2>Operator Console</h2><span class="muted">0 actions</span></header>${operatorConsoleContextTable(operator, pendingApprovals)}<div class="empty">No operator actions are available.</div></section>`;
+    return `<section><header><h2>Operator Console</h2><span class="muted">0 actions</span></header>${operatorConsoleContextTable(operator, pendingApprovals)}<div class="empty">No operator actions are available.</div>${operatorApiPanel()}</section>`;
   }
 
   const rows = operator.actions
@@ -2334,12 +2387,25 @@ function operatorConsoleSection(operator: DashboardOperatorConsole): string {
       <tr><th>API</th><td><code>/operator-actions.json</code></td></tr>
     </tbody></table>
     <div class="operator-actions">${rows}</div>
-    <div class="operator-api">
-      <label><span class="muted">Session token</span><input type="password" autocomplete="off" data-operator-session></label>
-      <label><span class="muted">CSRF token</span><input type="password" autocomplete="off" data-operator-csrf></label>
-      <div class="operator-result" data-operator-result></div>
-    </div>
+    ${operatorApiPanel()}
   </section>`;
+}
+
+function operatorApiPanel(): string {
+  return `<div class="operator-api">
+    <label><span class="muted">Session token</span><input type="password" autocomplete="off" data-operator-session></label>
+    <label><span class="muted">CSRF token</span><input type="password" autocomplete="off" data-operator-csrf></label>
+    <label><span class="muted">Verifier task</span><input type="text" autocomplete="off" data-verifier-task-id></label>
+    <label><span class="muted">Verifier mode</span><select data-verifier-mode><option value="evidence_only">evidence_only</option><option value="finalize_task">finalize_task</option></select></label>
+    <button type="button" class="primary" onclick="runVerifiersForm(this)">Run verifiers</button>
+    <label><span class="muted">Evidence type</span><input type="text" value="manual_change" autocomplete="off" data-manual-evidence-type></label>
+    <label><span class="muted">Gate</span><select data-manual-evidence-gate><option value="">none</option><option value="idea">idea</option><option value="mvp">mvp</option><option value="launch">launch</option><option value="scale">scale</option></select></label>
+    <label><span class="muted">Summary</span><input type="text" autocomplete="off" data-manual-evidence-summary></label>
+    <label><span class="muted">Source refs</span><textarea data-manual-evidence-source-refs></textarea></label>
+    <label><span class="muted">Content</span><textarea data-manual-evidence-content></textarea></label>
+    <button type="button" class="primary" onclick="recordManualEvidenceForm(this)">Record evidence</button>
+    <div class="operator-result" data-operator-result></div>
+  </div>`;
 }
 
 function operatorConsoleContextTable(
