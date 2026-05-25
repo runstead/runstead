@@ -100,6 +100,8 @@ The current implementation wave closed the highest-confidence product gaps:
   `commands/rbac`.
 - `team-policy` command registration moved out of the CLI entrypoint into
   `commands/team-policy`.
+- `audit` command registration moved out of the CLI entrypoint into
+  `commands/audit`.
 - `packages/cli/src/index.ts` no longer owns dashboard or doctor command
   registration.
 - Dashboard snapshot and operator API contracts moved out of the dashboard
