@@ -2236,14 +2236,14 @@ function formatDashboardHtml(snapshot: DashboardSnapshot): string {
     }
     .operator-action {
       display: grid;
-      grid-template-columns: minmax(180px, 1fr) minmax(240px, 2fr) auto;
+      grid-template-columns: minmax(180px, 1fr) minmax(240px, 2fr) auto auto;
       gap: 12px;
       align-items: center;
       padding: 12px 16px;
       border-bottom: 1px solid var(--line);
     }
     .operator-action:last-child { border-bottom: 0; }
-    .operator-action button {
+    .operator-action button, .operator-api button {
       border: 1px solid var(--line);
       background: var(--panel);
       border-radius: 6px;
@@ -2254,9 +2254,36 @@ function formatDashboardHtml(snapshot: DashboardSnapshot): string {
       padding: 5px 10px;
       white-space: nowrap;
     }
-    .operator-action button:focus-visible {
+    .operator-action button.primary, .operator-api button.primary {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #ffffff;
+    }
+    .operator-action button:focus-visible, .operator-api button:focus-visible,
+    .operator-api input:focus-visible {
       outline: 2px solid var(--accent);
       outline-offset: 2px;
+    }
+    .operator-api {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 8px;
+      padding: 12px 16px;
+      border-top: 1px solid var(--line);
+      background: #f9fafb;
+    }
+    .operator-api input {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      font: inherit;
+      min-height: 32px;
+      padding: 5px 8px;
+    }
+    .operator-result {
+      grid-column: 1 / -1;
+      min-height: 20px;
+      color: var(--muted);
     }
     @media (max-width: 720px) {
       .operator-action {
@@ -2277,6 +2304,58 @@ function formatDashboardHtml(snapshot: DashboardSnapshot): string {
         button.textContent = "Copy failed";
       }
       window.setTimeout(() => { button.textContent = "Copy"; }, 1400);
+    }
+    function operatorApiHeaders() {
+      const session = document.querySelector("[data-operator-session]")?.value || "";
+      const csrf = document.querySelector("[data-operator-csrf]")?.value || "";
+      return {
+        "content-type": "application/json",
+        "authorization": "Bearer " + session,
+        "x-runstead-csrf-token": csrf
+      };
+    }
+    function setOperatorResult(message) {
+      const target = document.querySelector("[data-operator-result]");
+      if (target) target.textContent = message;
+    }
+    async function postOperatorApi(path, body) {
+      const response = await fetch(path, {
+        method: "POST",
+        headers: operatorApiHeaders(),
+        body: JSON.stringify(body || {})
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload.message || payload.error || "operator action failed");
+      }
+      return payload;
+    }
+    async function runOperatorAction(button) {
+      const id = button.getAttribute("data-operator-action-id");
+      if (!id) return;
+      button.disabled = true;
+      try {
+        const payload = await postOperatorApi("/operator-actions/" + encodeURIComponent(id) + "/run", {});
+        setOperatorResult("Completed " + id + ": " + JSON.stringify(payload.result || payload));
+      } catch (error) {
+        setOperatorResult(error instanceof Error ? error.message : String(error));
+      } finally {
+        button.disabled = false;
+      }
+    }
+    async function decideOperatorApproval(button) {
+      const id = button.getAttribute("data-approval-id");
+      const decision = button.getAttribute("data-approval-decision");
+      if (!id || !decision) return;
+      button.disabled = true;
+      try {
+        const payload = await postOperatorApi("/approvals/" + encodeURIComponent(id) + "/" + decision, {});
+        setOperatorResult("Approval " + id + " " + decision + ": " + JSON.stringify(payload.result || payload));
+      } catch (error) {
+        setOperatorResult(error instanceof Error ? error.message : String(error));
+      } finally {
+        button.disabled = false;
+      }
     }
   </script>
 </head>
@@ -2372,7 +2451,10 @@ function operatorConsoleSection(operator: DashboardOperatorConsole): string {
       : operator.pendingApprovals
           .map(
             (approval) =>
-              `<code>${escapeHtml(approval.id)}</code> ${escapeHtml(approval.risk)}<br><code>${escapeHtml(approval.command)}</code>`
+              `<code>${escapeHtml(approval.id)}</code> ${escapeHtml(approval.risk)}
+              <button type="button" class="primary" data-approval-id="${escapeHtml(approval.id)}" data-approval-decision="approve" onclick="decideOperatorApproval(this)">Approve</button>
+              <button type="button" data-approval-id="${escapeHtml(approval.id)}" data-approval-decision="deny" onclick="decideOperatorApproval(this)">Deny</button>
+              <br><code>${escapeHtml(approval.command)}</code>`
           )
           .join("<br>");
 
@@ -2386,6 +2468,7 @@ function operatorConsoleSection(operator: DashboardOperatorConsole): string {
         <div><strong>${escapeHtml(action.title)}</strong><br><span class="muted">${escapeHtml(action.source)} · ${statusCell(action.status)}</span></div>
         <div><code>${escapeHtml(action.command)}</code><br><span class="muted">${escapeHtml(action.reason)}</span></div>
         <button type="button" data-command="${escapeHtml(action.command)}" onclick="copyOperatorCommand(this)">Copy</button>
+        <button type="button" class="primary" data-operator-action-id="${escapeHtml(action.id)}" onclick="runOperatorAction(this)">Run</button>
       </div>`
     )
     .join("");
@@ -2406,6 +2489,11 @@ function operatorConsoleSection(operator: DashboardOperatorConsole): string {
       <tr><th>API</th><td><code>/operator-actions.json</code></td></tr>
     </tbody></table>
     <div class="operator-actions">${rows}</div>
+    <div class="operator-api">
+      <label><span class="muted">Session token</span><input type="password" autocomplete="off" data-operator-session></label>
+      <label><span class="muted">CSRF token</span><input type="password" autocomplete="off" data-operator-csrf></label>
+      <div class="operator-result" data-operator-result></div>
+    </div>
   </section>`;
 }
 

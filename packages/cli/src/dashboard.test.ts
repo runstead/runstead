@@ -375,6 +375,11 @@ describe("buildDashboard", () => {
       expect(html).toContain("Current run");
       expect(html).toContain("Pending approvals");
       expect(html).toContain("Recommended command");
+      expect(html).toContain("data-operator-action-id=");
+      expect(html).toContain('onclick="runOperatorAction(this)"');
+      expect(html).toContain('data-approval-decision="approve"');
+      expect(html).toContain("data-operator-session");
+      expect(html).toContain("data-operator-csrf");
       expect(html).toContain("Startup Readiness");
       expect(html).toContain("run_dashboard_ready");
       expect(html).toContain("Run comparison");
