@@ -177,6 +177,8 @@ The current implementation wave closed the highest-confidence product gaps:
   server/rendering module into `dashboard-startup-runs`.
 - Dashboard SQLite row-to-view-model mappers moved out of the dashboard
   server/rendering module into `dashboard-row-mappers`.
+- Dashboard daemon status and heartbeat health parsing moved out of the
+  dashboard server/rendering module into `dashboard-daemon-status`.
 - Local agent task input parsing moved out of the orchestrator into
   `local-agent-task-input`.
 - Local agent task reporting, report formatting, and audit-summary loading
