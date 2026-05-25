@@ -223,6 +223,9 @@ The current implementation wave closed the highest-confidence product gaps:
 - Startup structured artifact writing, stable generated-at reuse, artifact path
   helpers, and write-if-changed behavior moved from `startup-automation` into
   `startup-artifacts`.
+- Startup evidence summary rows, recent evidence formatting, and support
+  category aggregation moved out of `startup-automation` into
+  `startup-evidence-summary`.
 - Startup automation public option/result contracts moved into
   `startup-automation-types`.
 - Startup launch security scanning moved out of `startup-automation` into

@@ -21,8 +21,7 @@ import {
   stableStartupGeneratedAt,
   structuredArtifactFileName,
   writeStartupStructuredArtifact,
-  writeTextFileIfChanged,
-  type StartupArtifactListItem
+  writeTextFileIfChanged
 } from "./startup-artifacts.js";
 import { addStartupEvidence, checkStartupGate } from "./startup-evidence.js";
 import { collectLaunchSecurityRiskScan } from "./startup-security-scan.js";
@@ -32,6 +31,13 @@ import {
   exists,
   findTopLevelEnvFiles
 } from "./startup-workspace-hygiene.js";
+import {
+  formatCategoryCounts,
+  formatEvidenceSummary,
+  readStartupEvidenceSummaries,
+  supportCategoryCountsFromArtifacts,
+  type StartupEvidenceSummaryRow
+} from "./startup-evidence-summary.js";
 import type {
   CaptureInstitutionalMemoryOptions,
   CaptureInstitutionalMemoryResult,
@@ -69,13 +75,6 @@ import type {
 } from "./startup-automation-types.js";
 
 export type * from "./startup-automation-types.js";
-
-interface StartupEvidenceSummaryRow {
-  id: string;
-  type: string;
-  summary: string | null;
-  created_at: string;
-}
 
 const STARTUP_DOMAIN = "ai-native-startup";
 const STARTUP_CONTEXT_FILES = ["AGENTS.md", "CLAUDE.md", "CODEX.md"];
@@ -2161,61 +2160,6 @@ function formatGtmVerification(input: {
     ]),
     ""
   ].join("\n");
-}
-
-function formatEvidenceSummary(evidence: StartupEvidenceSummaryRow[]): string {
-  return evidence.length === 0
-    ? "- none"
-    : evidence
-        .map((item) => `- ${item.id}: ${item.type}: ${item.summary ?? "no summary"}`)
-        .join("\n");
-}
-
-function formatCategoryCounts(counts: Record<string, number>): string {
-  const entries = Object.entries(counts).sort(([left], [right]) =>
-    left.localeCompare(right)
-  );
-
-  return entries.length === 0
-    ? "- none"
-    : entries.map(([category, count]) => `- ${category}: ${count}`).join("\n");
-}
-
-function supportCategoryCountsFromArtifacts(
-  artifacts: StartupArtifactListItem[]
-): Record<string, number> {
-  const counts: Record<string, number> = {};
-
-  for (const item of artifacts) {
-    if (item.kind !== "startup_support_triage") {
-      continue;
-    }
-
-    const category =
-      typeof item.artifact.data.category === "string"
-        ? item.artifact.data.category
-        : "uncategorized";
-
-    counts[category] = (counts[category] ?? 0) + 1;
-  }
-
-  return counts;
-}
-
-function readStartupEvidenceSummaries(
-  database: ReturnType<typeof openRunsteadDatabase>
-): StartupEvidenceSummaryRow[] {
-  return database
-    .prepare(
-      `
-      SELECT id, type, summary, created_at
-      FROM evidence
-      WHERE type LIKE 'startup_%'
-      ORDER BY created_at DESC, id ASC
-      LIMIT 50
-    `
-    )
-    .all() as unknown as StartupEvidenceSummaryRow[];
 }
 
 function repoReadinessBlockers(
