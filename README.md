@@ -392,6 +392,8 @@ Concrete implementations and host surfaces:
 
 Product and lifecycle:
 
+- [docs/roadmap.md](docs/roadmap.md): current implementation backlog and
+  validation order
 - [docs/product-positioning.md](docs/product-positioning.md): product stance
   and boundaries
 - [docs/startup-lifecycle.md](docs/startup-lifecycle.md): stage model and
