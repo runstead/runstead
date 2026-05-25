@@ -187,6 +187,14 @@ satisfies the assessment. A local `.runstead/state.db` can be good audit
 evidence for one workspace, but it must not be presented as an
 organization-wide, multi-tenant security boundary.
 
+Runtime backend selection is explicit. The default is local SQLite. Set
+`RUNSTEAD_RUNTIME_BACKEND=postgres` only when the team backend is configured
+with `RUNSTEAD_POSTGRES_URL`, `RUNSTEAD_ARTIFACT_BASE_URI`,
+`RUNSTEAD_TEAM_ORG_ID`, `RUNSTEAD_RUNNER_ID`, and
+`RUNSTEAD_AUDIT_SINK_URI`. `runstead doctor` reports missing values and runs
+the team-control-plane readiness assessment before treating the selected
+backend as team-ready.
+
 ## Dashboard Operator API
 
 The dashboard HTTP server is read-only by default. With

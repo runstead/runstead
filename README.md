@@ -338,6 +338,19 @@ runner identity, IdP/RBAC, central secret handling, and shared artifact
 storage on top of the adapter. See
 [docs/security-model.md](docs/security-model.md) for the boundary.
 
+`runstead doctor` now reports the selected runtime backend. SQLite is the
+default. Team mode is explicit:
+
+```bash
+RUNSTEAD_RUNTIME_BACKEND=postgres \
+RUNSTEAD_POSTGRES_URL=postgres://runstead/state \
+RUNSTEAD_ARTIFACT_BASE_URI=s3://runstead/evidence \
+RUNSTEAD_TEAM_ORG_ID=org_123 \
+RUNSTEAD_RUNNER_ID=runner_1 \
+RUNSTEAD_AUDIT_SINK_URI=s3://runstead/audit \
+runstead doctor --cwd /path/to/repo
+```
+
 ## Setup For This Monorepo
 
 This repository is a pnpm workspace targeting Node.js 24 LTS.

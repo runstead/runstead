@@ -10,6 +10,10 @@ import {
   formatRunsteadSchemaValidation,
   validateRunsteadDatabaseSchema
 } from "@runstead/state-sqlite";
+import {
+  resolveRuntimeBackendSelection,
+  type RuntimeBackendConfigEnv
+} from "@runstead/runtime";
 
 import { getCodexAuthStatus, type CodexAuthStatus } from "./codex-auth.js";
 import { resolveCodexModel, type ResolveCodexModelResult } from "./codex-model.js";
@@ -52,6 +56,7 @@ export interface DoctorRunsteadOptions {
   codexCliProbeRunner?: WorkerProcessRunner;
   wrappedWorkerProbeRunner?: WorkerProcessRunner;
   modelProviderEnv?: NodeJS.ProcessEnv;
+  runtimeBackendEnv?: RuntimeBackendConfigEnv;
 }
 
 export async function doctorRunstead(
@@ -109,6 +114,7 @@ export async function doctorRunstead(
     await checkDirectory("reports-dir", "reports directory", join(root, "reports"))
   );
   checks.push(await checkStateDatabase(join(root, "state.db")));
+  checks.push(checkRuntimeBackend(root, options.runtimeBackendEnv ?? process.env));
 
   if (options.codex === true) {
     checks.push(checkRunsteadInitialized(resolvedRoot));
@@ -849,6 +855,41 @@ async function checkStateDatabase(path: string): Promise<DoctorCheck> {
     }
   } catch (error) {
     return fail("state-db", "state.db", errorMessage(error));
+  }
+}
+
+function checkRuntimeBackend(root: string, env: RuntimeBackendConfigEnv): DoctorCheck {
+  try {
+    const selection = resolveRuntimeBackendSelection({
+      rootPath: root,
+      env
+    });
+
+    if (selection.backend === "sqlite") {
+      return pass(
+        "runtime-backend",
+        "runtime backend",
+        `sqlite local backend: ${selection.storage.stateUri}`
+      );
+    }
+
+    if (selection.setupBlockers.length > 0) {
+      return fail(
+        "runtime-backend",
+        "runtime backend",
+        selection.setupBlockers.join("; ")
+      );
+    }
+
+    const capabilities = selection.teamAssessment?.capabilities;
+
+    return pass(
+      "runtime-backend",
+      "runtime backend",
+      `postgres team backend: runners=${capabilities?.registeredRunners ?? 0} storage=${selection.storage.stateUri}`
+    );
+  } catch (error) {
+    return fail("runtime-backend", "runtime backend", errorMessage(error));
   }
 }
 

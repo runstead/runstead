@@ -36,7 +36,8 @@ describe("doctorRunstead", () => {
           "github-app-config",
           "daemon-dir",
           "daemon-heartbeat",
-          "state-db"
+          "state-db",
+          "runtime-backend"
         ])
       );
       expect(result.checks.every((check) => check.status === "pass")).toBe(true);
@@ -64,6 +65,91 @@ describe("doctorRunstead", () => {
       expect(result.checks.find((check) => check.id === "state-db")?.status).toBe(
         "fail"
       );
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("reports local SQLite as the default runtime backend", async () => {
+    const workspace = join(tmpdir(), `runstead-doctor-runtime-local-${process.pid}`);
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await mkdir(workspace, { recursive: true });
+      await initRunstead({ cwd: workspace });
+
+      const result = await doctorRunstead({
+        cwd: workspace,
+        runtimeBackendEnv: {}
+      });
+
+      expect(result.ok).toBe(true);
+      const runtimeCheck = result.checks.find(
+        (check) => check.id === "runtime-backend"
+      );
+      expect(runtimeCheck?.status).toBe("pass");
+      expect(runtimeCheck?.message).toContain("sqlite local backend");
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("reports missing Postgres team runtime setup", async () => {
+    const workspace = join(
+      tmpdir(),
+      `runstead-doctor-runtime-pg-missing-${process.pid}`
+    );
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await mkdir(workspace, { recursive: true });
+      await initRunstead({ cwd: workspace });
+
+      const result = await doctorRunstead({
+        cwd: workspace,
+        runtimeBackendEnv: {
+          RUNSTEAD_RUNTIME_BACKEND: "postgres",
+          RUNSTEAD_POSTGRES_URL: "postgres://runstead/state"
+        }
+      });
+
+      expect(result.ok).toBe(false);
+      const runtimeCheck = result.checks.find(
+        (check) => check.id === "runtime-backend"
+      );
+      expect(runtimeCheck?.status).toBe("fail");
+      expect(runtimeCheck?.message).toContain("RUNSTEAD_TEAM_ORG_ID is required");
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("passes with complete Postgres team runtime setup", async () => {
+    const workspace = join(tmpdir(), `runstead-doctor-runtime-pg-${process.pid}`);
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await mkdir(workspace, { recursive: true });
+      await initRunstead({ cwd: workspace });
+
+      const result = await doctorRunstead({
+        cwd: workspace,
+        runtimeBackendEnv: {
+          RUNSTEAD_RUNTIME_BACKEND: "postgres",
+          RUNSTEAD_POSTGRES_URL: "postgres://runstead/state",
+          RUNSTEAD_ARTIFACT_BASE_URI: "s3://runstead/evidence",
+          RUNSTEAD_TEAM_ORG_ID: "org_123",
+          RUNSTEAD_RUNNER_ID: "runner_1,runner_2",
+          RUNSTEAD_AUDIT_SINK_URI: "s3://runstead/audit"
+        }
+      });
+
+      expect(result.ok).toBe(true);
+      const runtimeCheck = result.checks.find(
+        (check) => check.id === "runtime-backend"
+      );
+      expect(runtimeCheck?.status).toBe("pass");
+      expect(runtimeCheck?.message).toContain("postgres team backend: runners=2");
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }
