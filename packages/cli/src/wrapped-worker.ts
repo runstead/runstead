@@ -602,25 +602,28 @@ export async function runWorkerProcess(
       timedOut = true;
       child.kill("SIGTERM");
     }, timeoutMs);
+    const emitProgress = (now: number, lastOutputElapsedMs: number): void => {
+      const workspace = workerWorkspaceProgress(options.cwd);
+
+      options.onProgress?.({
+        command,
+        elapsedMs: now - startedAt,
+        stdoutBytes,
+        stderrBytes,
+        capturedBytes,
+        lastOutputElapsedMs,
+        possiblyStuck: lastOutputElapsedMs >= stuckSilenceMs,
+        workspaceChangedFiles: workspace.changedFiles,
+        workspaceRecentFiles: workspace.recentFiles
+      });
+    };
     const progress =
       options.onProgress === undefined
         ? undefined
         : setInterval(() => {
             const now = Date.now();
-            const workspace = workerWorkspaceProgress(options.cwd);
-            const lastOutputElapsedMs = now - lastOutputAt;
 
-            options.onProgress?.({
-              command,
-              elapsedMs: now - startedAt,
-              stdoutBytes,
-              stderrBytes,
-              capturedBytes,
-              lastOutputElapsedMs,
-              possiblyStuck: lastOutputElapsedMs >= stuckSilenceMs,
-              workspaceChangedFiles: workspace.changedFiles,
-              workspaceRecentFiles: workspace.recentFiles
-            });
+            emitProgress(now, now - lastOutputAt);
           }, progressIntervalMs);
 
     const resolveOnce = (result: WorkerProcessResult): void => {
@@ -637,7 +640,14 @@ export async function runWorkerProcess(
     };
 
     const capture = (key: "stdout" | "stderr", chunk: Buffer): void => {
-      lastOutputAt = Date.now();
+      const now = Date.now();
+      const silentForMs = now - lastOutputAt;
+
+      if (options.onProgress !== undefined && silentForMs >= stuckSilenceMs) {
+        emitProgress(now, silentForMs);
+      }
+
+      lastOutputAt = now;
 
       if (capturedBytes >= maxOutputBytes) {
         outputTruncated = true;
