@@ -705,13 +705,13 @@ describe("runWorkerProcess", () => {
 
     await runWorkerProcess(
       process.execPath,
-      ["-e", "setTimeout(() => console.log('done'), 200);"],
+      ["-e", "setTimeout(() => console.log('done'), 1200);"],
       {
         cwd: process.cwd(),
         timeoutMs: 5_000,
         maxOutputBytes: 10_000,
-        progressIntervalMs: 10,
-        stuckSilenceMs: 30,
+        progressIntervalMs: 25,
+        stuckSilenceMs: 100,
         onProgress: (item) => {
           progress.push(item);
         }
@@ -719,6 +719,9 @@ describe("runWorkerProcess", () => {
     );
 
     expect(progress.some((item) => item.possiblyStuck)).toBe(true);
+    expect(
+      progress.some((item) => item.lastOutputElapsedMs >= 100 && item.possiblyStuck)
+    ).toBe(true);
   });
 
   it("formats worker progress as a concise CLI heartbeat", () => {
