@@ -203,6 +203,9 @@ The current implementation wave closed the highest-confidence product gaps:
 - CI repair checkpoint, git, diff-scope, publish coverage, and pull-request
   output serializers moved out of the orchestrator into
   `ci-repair-orchestrator-output`.
+- CI repair report formatting, pull-request body construction, and pull-request
+  audit-summary query logic moved out of the orchestrator into
+  `ci-repair-orchestrator-report`.
 - Startup automation public option/result contracts moved into
   `startup-automation-types`.
 - Startup launch security scanning moved out of `startup-automation` into
