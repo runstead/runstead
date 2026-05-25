@@ -219,6 +219,8 @@ The current implementation wave closed the highest-confidence product gaps:
   `ci-repair-orchestrator-approval`.
 - CI repair publish approval, covered git push, and GitHub pull-request
   creation helpers moved out of the orchestrator into `ci-repair-orchestrator-publish`.
+- CI repair publish execution, approval waits, denied sub-action handling, and
+  publish failure finalization moved into `ci-repair-orchestrator-publish-flow`.
 - CI repair pull-request resume discovery, running-worker guard, and resume
   intake reconstruction moved out of the orchestrator into
   `ci-repair-orchestrator-resume`.

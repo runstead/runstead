@@ -5,46 +5,21 @@ import { openRunsteadDatabase, type RunsteadDatabase } from "@runstead/state-sql
 
 import type { CreateCiRepairTaskResult } from "./ci-repair.js";
 import {
-  ciRepairApprovalSummary,
-  ciRepairPublishApprovalStage
-} from "./ci-repair-orchestrator-approval.js";
-import {
   incrementCiRepairCounter,
   parsePullRequestResumeContext,
-  publishCoverageFromContext,
-  publishCoverageStagePatch,
   pullRequestResumeContext,
-  stageAtLeast,
   type CiRepairOrchestratorResumeContext
 } from "./ci-repair-orchestrator-context.js";
-import { pullRequestOutput } from "./ci-repair-orchestrator-output.js";
-import {
-  createRepairPullRequestWithPublishApproval,
-  ensureGovernedRepairPublishApproval,
-  pushRepairBranchWithPublishApproval
-} from "./ci-repair-orchestrator-publish.js";
-import {
-  failCiRepairOrchestratorRun,
-  isStagePersistenceInterruption,
-  markTaskTerminal,
-  taskEvent,
-  writeTaskOutput
-} from "./ci-repair-orchestrator-task-state.js";
-import {
-  writeCiRepairContextPatch,
-  writeCiRepairStage
-} from "./ci-repair-orchestrator-stage-persistence.js";
+import { publishCiRepairPullRequest } from "./ci-repair-orchestrator-publish-flow.js";
+import { taskEvent } from "./ci-repair-orchestrator-task-state.js";
+import { writeCiRepairContextPatch } from "./ci-repair-orchestrator-stage-persistence.js";
 import type {
   CiRepairGitRunner,
   RunCiRepairOrchestratorResult
 } from "./ci-repair-orchestrator-types.js";
 import type { GitHubCliRunner, GitHubWorkflowRunLog } from "./github-actions.js";
-import {
-  ToolActionApprovalRequiredError,
-  ToolActionDeniedError
-} from "./governed-action.js";
 import { loadPolicyProfileFromFile } from "./policy-loader.js";
-import { finishWorkerRun, startWorkerRun } from "./runtime-audit.js";
+import { startWorkerRun } from "./runtime-audit.js";
 import { claimTask, listTasks } from "./tasks.js";
 
 export function findPullRequestResumeTask(options: {
@@ -212,229 +187,62 @@ export async function resumeCiRepairPullRequest(options: {
       context: CiRepairOrchestratorResumeContext;
     });
 
-    try {
-      if (!stageAtLeast(resumeContext.stage, "branch_pushed")) {
-        let publishCoverage = publishCoverageFromContext(resumeContext);
+    const publishResult = await publishCiRepairPullRequest({
+      cwd: options.cwd,
+      stateDb,
+      database,
+      policy,
+      task: resumeTask,
+      workerRun,
+      ciRepair,
+      context: resumeContext,
+      deniedAction: "mark_blocked",
+      ...(options.gitRunner === undefined ? {} : { gitRunner: options.gitRunner }),
+      ...(options.githubRunner === undefined
+        ? {}
+        : { githubRunner: options.githubRunner }),
+      ...(options.authToken === undefined ? {} : { authToken: options.authToken }),
+      ...(options.onStagePersisted === undefined
+        ? {}
+        : { onStagePersisted: options.onStagePersisted }),
+      ...(options.now === undefined ? {} : { now: options.now })
+    });
 
-        if (
-          !stageAtLeast(resumeContext.stage, "publish_approved") ||
-          publishCoverage === undefined
-        ) {
-          publishCoverage = await ensureGovernedRepairPublishApproval({
-            cwd: options.cwd,
-            stateDb,
-            database,
-            policy,
-            task: resumeTask,
-            workerRun,
-            context: resumeContext,
-            ...(options.now === undefined ? {} : { now: options.now })
-          });
-          resumeContext = {
-            ...resumeContext,
-            counters: incrementCiRepairCounter(resumeContext, "publishAttempt")
-          };
-          ({ task: resumeTask, context: resumeContext } = writeCiRepairStage({
-            database,
-            task: resumeTask,
-            context: resumeContext,
-            stage: "publish_approved",
-            patch: publishCoverageStagePatch(publishCoverage),
-            ...(options.onStagePersisted === undefined
-              ? {}
-              : { onStagePersisted: options.onStagePersisted }),
-            ...(options.now === undefined ? {} : { now: options.now })
-          }) as {
-            task: Task;
-            context: CiRepairOrchestratorResumeContext;
-          });
-        }
-        await pushRepairBranchWithPublishApproval({
-          cwd: options.cwd,
-          stateDb,
-          database,
-          policy,
-          task: resumeTask,
-          workerRun,
-          context: resumeContext,
-          coverage: publishCoverage,
-          ...(resumeContext.approvalId === undefined
-            ? {}
-            : { approvalId: resumeContext.approvalId }),
-          ...(options.gitRunner === undefined ? {} : { gitRunner: options.gitRunner }),
-          ...(options.now === undefined ? {} : { now: options.now })
-        });
-        ({ task: resumeTask, context: resumeContext } = writeCiRepairStage({
-          database,
-          task: resumeTask,
-          context: resumeContext,
-          stage: "branch_pushed",
-          patch: {
-            branchPushed: true,
-            ...publishCoverageStagePatch(publishCoverage)
-          },
-          ...(options.onStagePersisted === undefined
-            ? {}
-            : { onStagePersisted: options.onStagePersisted }),
-          ...(options.now === undefined ? {} : { now: options.now })
-        }) as {
-          task: Task;
-          context: CiRepairOrchestratorResumeContext;
-        });
-      }
-
-      const publishCoverage = publishCoverageFromContext(resumeContext);
-      const pullRequest = await createRepairPullRequestWithPublishApproval({
-        cwd: options.cwd,
-        stateDb,
-        database,
-        policy,
-        task: resumeTask,
-        workerRun,
-        ciRepair,
-        context: resumeContext,
-        ...(publishCoverage === undefined ? {} : { coverage: publishCoverage }),
-        ...(resumeContext.approvalId === undefined
-          ? {}
-          : { approvalId: resumeContext.approvalId }),
-        ...(options.githubRunner === undefined
-          ? {}
-          : { githubRunner: options.githubRunner }),
-        ...(options.authToken === undefined ? {} : { authToken: options.authToken }),
-        ...(options.now === undefined ? {} : { now: options.now })
-      });
-      const completedTask = writeTaskOutput({
-        database,
-        task: resumeTask,
-        status: "completed",
-        output: {
-          ...(resumeTask.output ?? {}),
-          ciRepairOrchestrator: {
-            ...resumeContext,
-            stage: "completed",
-            pullRequest
-          }
-        },
-        eventType: "task.completed",
-        ...(options.now === undefined ? {} : { now: options.now })
-      });
-
-      finishWorkerRun({
-        database,
-        workerRun,
-        status: "completed",
-        output: {
-          pullRequest: pullRequestOutput(pullRequest)
-        },
-        ...(options.now === undefined ? {} : { now: options.now })
-      });
-
+    if (publishResult.status === "waiting_approval") {
       return {
-        status: "completed",
+        status: "waiting_approval",
         ciRepair: {
           ...ciRepair,
-          task: completedTask
+          task: publishResult.task
         },
         branchName: context.branchName,
         workerResult: context.workerResult,
         ...(context.commit === undefined ? {} : { commit: context.commit }),
         diffScope: context.diffScope,
         verifierResult: {
-          task: completedTask,
+          task: publishResult.task,
           commandResults: context.verifierCommandResults
         },
-        pullRequest
+        approval: publishResult.approval
       };
-    } catch (error) {
-      if (isStagePersistenceInterruption(error)) {
-        throw error;
-      }
-
-      if (error instanceof ToolActionApprovalRequiredError) {
-        const approvalStage = ciRepairPublishApprovalStage(error.toolCall.actionType);
-        const waitingContext = {
-          ...resumeContext,
-          counters: incrementCiRepairCounter(resumeContext, "approvalRound")
-        };
-        const waitingTask = markTaskTerminal({
-          database,
-          task: resumeTask,
-          status: "waiting_approval",
-          output: {
-            ...(resumeTask.output ?? {}),
-            ciRepairOrchestrator: {
-              ...waitingContext,
-              stage: approvalStage,
-              approvalId: error.approval.id
-            }
-          },
-          ...(options.now === undefined ? {} : { now: options.now })
-        });
-        finishWorkerRun({
-          database,
-          workerRun,
-          status: "waiting_approval",
-          output: {
-            approvalId: error.approval.id,
-            actionType: error.toolCall.actionType
-          },
-          ...(options.now === undefined ? {} : { now: options.now })
-        });
-
-        return {
-          status: "waiting_approval",
-          ciRepair: {
-            ...ciRepair,
-            task: waitingTask
-          },
-          branchName: context.branchName,
-          workerResult: context.workerResult,
-          ...(context.commit === undefined ? {} : { commit: context.commit }),
-          diffScope: context.diffScope,
-          verifierResult: {
-            task: waitingTask,
-            commandResults: context.verifierCommandResults
-          },
-          approval: ciRepairApprovalSummary(error)
-        };
-      }
-
-      if (error instanceof ToolActionDeniedError) {
-        markTaskTerminal({
-          database,
-          task: resumeTask,
-          status: "blocked",
-          output: {
-            summary: error.message,
-            policyDecisionId: error.policyDecision.id
-          },
-          ...(options.now === undefined ? {} : { now: options.now })
-        });
-        finishWorkerRun({
-          database,
-          workerRun,
-          status: "blocked",
-          output: {
-            error: error.message,
-            policyDecisionId: error.policyDecision.id
-          },
-          ...(options.now === undefined ? {} : { now: options.now })
-        });
-
-        throw error;
-      }
-
-      failCiRepairOrchestratorRun({
-        database,
-        task: resumeTask,
-        workerRun,
-        summary: "CI repair publish failed",
-        error,
-        ...(options.now === undefined ? {} : { now: options.now })
-      });
-
-      throw error;
     }
+
+    return {
+      status: "completed",
+      ciRepair: {
+        ...ciRepair,
+        task: publishResult.task
+      },
+      branchName: context.branchName,
+      workerResult: context.workerResult,
+      ...(context.commit === undefined ? {} : { commit: context.commit }),
+      diffScope: context.diffScope,
+      verifierResult: {
+        task: publishResult.task,
+        commandResults: context.verifierCommandResults
+      },
+      pullRequest: publishResult.pullRequest
+    };
   } finally {
     database.close();
   }
