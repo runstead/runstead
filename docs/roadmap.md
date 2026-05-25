@@ -32,6 +32,7 @@ just an agent wrapper. The current product surface includes:
   operator endpoints
 - `RuntimeControlPlaneBackend` contracts plus SQLite and Postgres backend
   implementations/conformance coverage
+- CI-backed real Postgres integration validation for `@runstead/state-postgres`
 - CI package smoke coverage for publishable packages including
   `@runstead/state-postgres`
 - runtime backend selection diagnostics for local SQLite and explicit Postgres
@@ -85,6 +86,9 @@ The current implementation wave closed the highest-confidence product gaps:
   gates, report sections, and docs.
 - `runstead team control-plane bootstrap/check` gives operators a dedicated
   team backend assertion surface.
+- CI runs `@runstead/state-postgres` against a real Postgres service via
+  `RUNSTEAD_PG_TEST_URL`; local runs skip this integration path unless the env
+  var is set.
 
 ## Remaining Backlog
 
@@ -109,28 +113,7 @@ pnpm --filter @runstead/cli typecheck
 pnpm --filter @runstead/runtime typecheck
 ```
 
-### 2. Add real Postgres integration validation
-
-`@runstead/state-postgres` has a real adapter and conformance suite, but current
-automated coverage uses a fake Postgres client. Team mode should not advance
-beyond experimental without a real Postgres service test.
-
-Acceptance:
-
-- CI proves `@runstead/state-postgres` works against a real Postgres server.
-- Local contributors can skip the integration test unless
-  `RUNSTEAD_PG_TEST_URL` or an equivalent env var is set.
-- The integration path verifies migrations, event append/projection,
-  idempotency, revision conflict, lock fencing, and artifact read/write.
-
-Validation:
-
-```bash
-pnpm --filter @runstead/state-postgres test
-RUNSTEAD_PG_TEST_URL=postgres://runstead:runstead@127.0.0.1:5432/runstead pnpm --filter @runstead/state-postgres test
-```
-
-### 3. Harden provider adapters beyond offline JSON fixtures
+### 2. Harden provider adapters beyond offline JSON fixtures
 
 Acceptance:
 
@@ -147,7 +130,7 @@ pnpm --filter @runstead/cli exec vitest run src/startup-source-connectors.test.t
 pnpm --filter @runstead/cli typecheck
 ```
 
-### 4. Deepen operator recovery timeline UX
+### 3. Deepen operator recovery timeline UX
 
 Dogfood runs often move from blocked to ready through repair or recovery. The
 dashboard has action controls and timeline groups; the next step is a richer
@@ -166,7 +149,7 @@ Validation:
 pnpm --filter @runstead/cli exec vitest run src/dashboard.test.ts src/startup-ready.test.ts
 ```
 
-### 5. Prove domain-pack generality with a second non-startup golden path
+### 4. Prove domain-pack generality with a second non-startup golden path
 
 `ai-native-startup` is deep and `email-followup` is now richer. The pack
 abstraction still needs one more full dogfood path outside startup readiness to
@@ -191,10 +174,9 @@ pnpm run format:check
 ## Suggested Order
 
 1. Continue CLI module extraction by command/runtime ownership.
-2. Add real Postgres integration validation.
-3. Harden provider adapter parsing and documentation.
-4. Deepen operator recovery timeline explanations and action-specific forms.
-5. Add a second non-startup golden path.
+2. Harden provider adapter parsing and documentation.
+3. Deepen operator recovery timeline explanations and action-specific forms.
+4. Add a second non-startup golden path.
 
 ## Milestone Validation
 

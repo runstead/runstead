@@ -18,9 +18,24 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: runstead
+          POSTGRES_PASSWORD: runstead
+          POSTGRES_DB: runstead
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U runstead -d runstead"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     env:
       CI: true
       DO_NOT_TRACK: "1"
+      RUNSTEAD_PG_TEST_URL: postgres://runstead:runstead@127.0.0.1:5432/runstead
       TURBO_TELEMETRY_DISABLED: "1"
 
     steps:
@@ -40,6 +55,11 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Install Postgres client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
 
       - name: Check formatting
         run: pnpm run format:check
