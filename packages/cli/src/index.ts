@@ -4,7 +4,10 @@ import { Command } from "commander";
 import { pathToFileURL } from "node:url";
 
 import { formatCliError } from "./cli-errors.js";
-import { parseRequiredPositiveInteger } from "./cli-parsers.js";
+import {
+  parseCiRepairWorkerKind,
+  parseRequiredPositiveInteger
+} from "./cli-parsers.js";
 import { requireRbacPermission } from "./cli-rbac.js";
 import { requireUnmanagedHelperAcknowledgement } from "./cli-unmanaged.js";
 import { registerCheckpointCommand } from "./commands/checkpoint.js";
@@ -30,7 +33,10 @@ export interface CreateProgramOptions {
 }
 
 export { formatCliError, RunsteadCliError } from "./cli-errors.js";
-export { parseRequiredPositiveInteger } from "./cli-parsers.js";
+export {
+  parseCiRepairWorkerKind,
+  parseRequiredPositiveInteger
+} from "./cli-parsers.js";
 export { requireUnmanagedHelperAcknowledgement } from "./cli-unmanaged.js";
 
 export async function runCli(argv = process.argv): Promise<void> {
@@ -3672,16 +3678,6 @@ function evidenceSummariesFromCli(values: string[]) {
     type: "manual",
     summary
   }));
-}
-
-function parseCiRepairWorkerKind(
-  value: string
-): "codex_cli" | "claude_code" | "codex_direct" {
-  if (value === "codex_cli" || value === "claude_code" || value === "codex_direct") {
-    return value;
-  }
-
-  throw new Error("--worker must be codex_cli, claude_code, or codex_direct");
 }
 
 function parseLocalAgentMode(value: string): "read-only" | "edit" | "repair" {
