@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
-import { readdir, readFile } from "node:fs/promises";
-import { basename, join, relative, resolve } from "node:path";
+import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
+import { basename, dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { z } from "zod";
@@ -50,6 +50,14 @@ export interface StartupArtifactShowResult {
   root: string;
   stateDb: string;
   artifact: StartupArtifactListItem;
+}
+
+export interface WriteStartupStructuredArtifactOptions {
+  kind: string;
+  generatedAt: string;
+  markdownPath: string;
+  structuredPath?: string;
+  data: Record<string, unknown>;
 }
 
 interface EvidenceSourceRefRow {
@@ -175,7 +183,7 @@ async function jsonPaths(dir: string): Promise<string[]> {
   }
 }
 
-async function readStartupStructuredArtifact(
+export async function readStartupStructuredArtifact(
   path: string
 ): Promise<StartupStructuredArtifact | undefined> {
   try {
@@ -186,6 +194,84 @@ async function readStartupStructuredArtifact(
   } catch {
     return undefined;
   }
+}
+
+export async function writeStartupStructuredArtifact(
+  input: WriteStartupStructuredArtifactOptions
+): Promise<string> {
+  const structuredPath =
+    input.structuredPath ?? structuredArtifactPath(input.markdownPath);
+  const artifact: StartupStructuredArtifact = {
+    schemaVersion: STARTUP_STRUCTURED_ARTIFACT_SCHEMA_VERSION,
+    schema: STARTUP_STRUCTURED_ARTIFACT_SCHEMA,
+    kind: input.kind,
+    generatedAt: input.generatedAt,
+    markdownPath: input.markdownPath,
+    data: input.data
+  };
+
+  await mkdir(dirname(structuredPath), { recursive: true });
+  await writeTextFileIfChanged(
+    structuredPath,
+    `${JSON.stringify(artifact, null, 2)}\n`
+  );
+
+  return structuredPath;
+}
+
+export async function stableStartupGeneratedAt(input: {
+  kind: string;
+  markdownPath: string;
+  data: Record<string, unknown>;
+  fallback: string;
+}): Promise<string> {
+  const existing = await readStartupStructuredArtifact(
+    structuredArtifactPath(input.markdownPath)
+  );
+
+  if (
+    existing?.kind === input.kind &&
+    JSON.stringify(existing.data) === JSON.stringify(input.data)
+  ) {
+    return existing.generatedAt;
+  }
+
+  return input.fallback;
+}
+
+export function stableRepoInspectionData(inspection: object): Record<string, unknown> {
+  const stableInspection = { ...inspection } as Record<string, unknown>;
+
+  delete stableInspection.inspectedAt;
+
+  return stableInspection;
+}
+
+export async function writeTextFileIfChanged(
+  path: string,
+  content: string
+): Promise<void> {
+  try {
+    if ((await readFile(path, "utf8")) === content) {
+      return;
+    }
+  } catch {
+    // Missing files are created below.
+  }
+
+  await writeFile(path, content, "utf8");
+}
+
+export function structuredArtifactPath(markdownPath: string): string {
+  return markdownPath.endsWith(".md")
+    ? `${markdownPath.slice(0, -3)}.json`
+    : `${markdownPath}.json`;
+}
+
+export function structuredArtifactFileName(markdownFileName: string): string {
+  return markdownFileName.endsWith(".md")
+    ? `${markdownFileName.slice(0, -3)}.json`
+    : `${markdownFileName}.json`;
 }
 
 export function migrateStartupArtifact(value: unknown): unknown {

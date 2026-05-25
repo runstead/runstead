@@ -220,6 +220,9 @@ The current implementation wave closed the highest-confidence product gaps:
 - Startup workspace hygiene helpers for protected path, environment file,
   dependency file, and path-existence checks moved out of `startup-automation`
   into `startup-workspace-hygiene`.
+- Startup structured artifact writing, stable generated-at reuse, artifact path
+  helpers, and write-if-changed behavior moved from `startup-automation` into
+  `startup-artifacts`.
 - Startup automation public option/result contracts moved into
   `startup-automation-types`.
 - Startup launch security scanning moved out of `startup-automation` into

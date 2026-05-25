@@ -1,5 +1,5 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import type { Goal } from "@runstead/core";
@@ -16,9 +16,12 @@ import {
 } from "./memory.js";
 import { resolveRunsteadRoot, requireRunsteadStateDb } from "./runstead-root.js";
 import {
-  STARTUP_STRUCTURED_ARTIFACT_SCHEMA,
-  STARTUP_STRUCTURED_ARTIFACT_SCHEMA_VERSION,
   listStartupArtifacts,
+  stableRepoInspectionData,
+  stableStartupGeneratedAt,
+  structuredArtifactFileName,
+  writeStartupStructuredArtifact,
+  writeTextFileIfChanged,
   type StartupArtifactListItem
 } from "./startup-artifacts.js";
 import { addStartupEvidence, checkStartupGate } from "./startup-evidence.js";
@@ -66,15 +69,6 @@ import type {
 } from "./startup-automation-types.js";
 
 export type * from "./startup-automation-types.js";
-
-interface StartupStructuredArtifact {
-  schemaVersion: typeof STARTUP_STRUCTURED_ARTIFACT_SCHEMA_VERSION;
-  schema: typeof STARTUP_STRUCTURED_ARTIFACT_SCHEMA;
-  kind: string;
-  generatedAt: string;
-  markdownPath: string;
-  data: Record<string, unknown>;
-}
 
 interface StartupEvidenceSummaryRow {
   id: string;
@@ -1543,111 +1537,6 @@ function contextForFile(filename: string, baseContext: string): string {
   return [`# ${filename}`, "", baseContext].join("\n");
 }
 
-async function writeStartupStructuredArtifact(input: {
-  kind: string;
-  generatedAt: string;
-  markdownPath: string;
-  structuredPath?: string;
-  data: Record<string, unknown>;
-}): Promise<string> {
-  const structuredPath =
-    input.structuredPath ?? structuredArtifactPath(input.markdownPath);
-  const artifact: StartupStructuredArtifact = {
-    schemaVersion: STARTUP_STRUCTURED_ARTIFACT_SCHEMA_VERSION,
-    schema: STARTUP_STRUCTURED_ARTIFACT_SCHEMA,
-    kind: input.kind,
-    generatedAt: input.generatedAt,
-    markdownPath: input.markdownPath,
-    data: input.data
-  };
-
-  await mkdir(dirname(structuredPath), { recursive: true });
-  await writeTextFileIfChanged(
-    structuredPath,
-    `${JSON.stringify(artifact, null, 2)}\n`
-  );
-
-  return structuredPath;
-}
-
-async function stableStartupGeneratedAt(input: {
-  kind: string;
-  markdownPath: string;
-  data: Record<string, unknown>;
-  fallback: string;
-}): Promise<string> {
-  const existing = await readStartupStructuredArtifact(
-    structuredArtifactPath(input.markdownPath)
-  );
-
-  if (
-    existing?.kind === input.kind &&
-    JSON.stringify(existing.data) === JSON.stringify(input.data)
-  ) {
-    return existing.generatedAt;
-  }
-
-  return input.fallback;
-}
-
-async function readStartupStructuredArtifact(
-  path: string
-): Promise<StartupStructuredArtifact | undefined> {
-  try {
-    const parsed = JSON.parse(await readFile(path, "utf8")) as unknown;
-
-    if (
-      isRecord(parsed) &&
-      typeof parsed.schemaVersion === "number" &&
-      typeof parsed.schema === "string" &&
-      typeof parsed.kind === "string" &&
-      typeof parsed.generatedAt === "string" &&
-      typeof parsed.markdownPath === "string" &&
-      isRecord(parsed.data)
-    ) {
-      return parsed as unknown as StartupStructuredArtifact;
-    }
-  } catch {
-    return undefined;
-  }
-
-  return undefined;
-}
-
-function stableRepoInspectionData(
-  inspection: Awaited<ReturnType<typeof collectRepoInspection>>
-): Record<string, unknown> {
-  const stableInspection = { ...inspection };
-
-  delete (stableInspection as { inspectedAt?: string }).inspectedAt;
-
-  return stableInspection;
-}
-
-async function writeTextFileIfChanged(path: string, content: string): Promise<void> {
-  try {
-    if ((await readFile(path, "utf8")) === content) {
-      return;
-    }
-  } catch {
-    // Missing files are created below.
-  }
-
-  await writeFile(path, content, "utf8");
-}
-
-function structuredArtifactPath(markdownPath: string): string {
-  return markdownPath.endsWith(".md")
-    ? `${markdownPath.slice(0, -3)}.json`
-    : `${markdownPath}.json`;
-}
-
-function structuredArtifactFileName(markdownFileName: string): string {
-  return markdownFileName.endsWith(".md")
-    ? `${markdownFileName.slice(0, -3)}.json`
-    : `${markdownFileName}.json`;
-}
-
 function formatMeasurementFramework(input: {
   generatedAt: string;
   activationMetric?: string;
@@ -2406,8 +2295,4 @@ function listItemsOrNone(items: string[]): string {
 
 function safeTimestamp(value: string): string {
   return value.replace(/[:.]/g, "-");
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
