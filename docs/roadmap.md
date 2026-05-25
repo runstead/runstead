@@ -210,6 +210,8 @@ The current implementation wave closed the highest-confidence product gaps:
   helpers moved out of the orchestrator into `ci-repair-orchestrator-context`.
 - CI repair task output projection, terminal task handling, and task event
   helpers moved out of the orchestrator into `ci-repair-orchestrator-task-state`.
+- CI repair wrapped-worker/Codex Direct invocation and checkpoint rollback logic
+  moved out of the orchestrator into `ci-repair-orchestrator-worker-run`.
 - Startup automation public option/result contracts moved into
   `startup-automation-types`.
 - Startup launch security scanning moved out of `startup-automation` into
