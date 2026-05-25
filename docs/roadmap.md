@@ -88,6 +88,8 @@ The current implementation wave closed the highest-confidence product gaps:
   staging/production source connector setup requirements.
 - Dashboard operator controls can run actions and approve/deny pending
   approvals through the protected local API.
+- Dashboard recovery timelines now link resolved blockers to the ready run
+  phase, evidence ids, and artifacts that cleared them.
 - `email-followup` now has a mature draft-only lifecycle, fixtures, evals,
   gates, report sections, and docs.
 - `runstead team control-plane bootstrap/check` gives operators a dedicated

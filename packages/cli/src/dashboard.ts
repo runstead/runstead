@@ -39,11 +39,13 @@ import type {
   DashboardStartupAgentPatch,
   DashboardStartupGuidedStep,
   DashboardStartupOperatorCommand,
+  DashboardStartupResolvedBlocker,
   DashboardStartupRun,
   DashboardStartupRunComparison,
   DashboardStartupRunSummary,
   DashboardStartupSnapshot,
   DashboardStartupTimelineGroup,
+  DashboardStartupTimelineItem,
   DashboardSummary,
   DashboardTask,
   ServeDashboardOptions,
@@ -68,6 +70,7 @@ export type {
   DashboardStartupAgentPatch,
   DashboardStartupGuidedStep,
   DashboardStartupOperatorCommand,
+  DashboardStartupResolvedBlocker,
   DashboardStartupRun,
   DashboardStartupRunComparison,
   DashboardStartupRunPhaseSummary,
@@ -1134,16 +1137,20 @@ async function readDashboardStartupStatus(input: {
       cwd: input.cwd,
       now: new Date(input.generatedAt)
     });
+    const runComparison = dashboardStartupRunComparison(runs);
 
     return {
       available: true,
       status,
       ...report,
       ...(latestRun === undefined ? {} : { latestRun }),
-      ...dashboardStartupRunComparison(runs),
+      ...runComparison,
       timelineGroups: dashboardStartupTimelineGroups({
         database: input.database,
         ...(latestRun === undefined ? {} : { latestRun }),
+        ...(runComparison.runComparison === undefined
+          ? {}
+          : { runComparison: runComparison.runComparison }),
         ...(report.latestReportPath === undefined
           ? {}
           : { latestReportPath: report.latestReportPath })
@@ -1236,12 +1243,14 @@ async function readStartupRunFile(
       timeline: phases.map((phase) => {
         const phaseId = stringField(phase.id) ?? "unknown";
         const nextAction = stringField(phase.nextAction);
+        const evidenceIds = stringArrayField(phase.evidenceIds);
 
         return {
           phase: phaseId,
           title: stringField(phase.title) ?? phaseId,
           status: stringField(phase.status) ?? "unknown",
-          evidence: stringArrayField(phase.evidenceIds).length,
+          evidence: evidenceIds.length,
+          evidenceIds,
           artifacts: stringArrayField(phase.artifacts),
           blockers: stringArrayField(phase.blockers),
           ...(nextAction === undefined ? {} : { nextAction })
@@ -1310,6 +1319,11 @@ function dashboardStartupRunComparison(runs: DashboardStartupRun[]): {
   const stillBlocked = [...blockedBlockers].filter((blocker) =>
     completedBlockers.has(blocker)
   );
+  const resolvedBlockerDetails = dashboardStartupResolvedBlockerDetails({
+    latestCompleted,
+    latestBlocked,
+    resolvedBlockers
+  });
 
   return {
     runComparison: {
@@ -1320,6 +1334,7 @@ function dashboardStartupRunComparison(runs: DashboardStartupRun[]): {
         ? {}
         : { latestBlocked: dashboardStartupRunSummary(latestBlocked) }),
       resolvedBlockers,
+      resolvedBlockerDetails,
       stillBlocked,
       narrative: startupRunComparisonNarrative({
         latestCompleted,
@@ -1359,6 +1374,49 @@ function dashboardStartupRunSummary(
   };
 }
 
+function dashboardStartupResolvedBlockerDetails(input: {
+  latestCompleted: DashboardStartupRun | undefined;
+  latestBlocked: DashboardStartupRun | undefined;
+  resolvedBlockers: string[];
+}): DashboardStartupResolvedBlocker[] {
+  if (input.latestCompleted === undefined || input.latestBlocked === undefined) {
+    return [];
+  }
+
+  const completedByPhase = new Map(
+    input.latestCompleted.timeline.map((item) => [item.phase, item])
+  );
+
+  return input.resolvedBlockers.map((blocker) => {
+    const blockedPhases = input.latestBlocked?.timeline.filter((item) =>
+      item.blockers.includes(blocker)
+    );
+    const phases = [...new Set(blockedPhases?.map((item) => item.phase) ?? [])];
+    const completedPhases = phases
+      .map((phase) => completedByPhase.get(phase))
+      .filter((item): item is DashboardStartupTimelineItem => item !== undefined);
+    const evidenceIds = [
+      ...new Set(completedPhases.flatMap((item) => item.evidenceIds))
+    ];
+    const artifacts = [...new Set(completedPhases.flatMap((item) => item.artifacts))];
+    const successfulPhase = completedPhases.find((item) => item.status === "passed");
+    const resolution =
+      successfulPhase === undefined
+        ? phases.length === 0
+          ? "Resolved in the latest completed run; no matching phase was recorded."
+          : `Resolved in the latest completed run after phase(s): ${phases.join(", ")}.`
+        : `Resolved by phase ${successfulPhase.title} with status ${successfulPhase.status}.`;
+
+    return {
+      blocker,
+      phases,
+      evidenceIds,
+      artifacts,
+      resolution
+    };
+  });
+}
+
 function startupRunComparisonNarrative(input: {
   latestCompleted: DashboardStartupRun | undefined;
   latestBlocked: DashboardStartupRun | undefined;
@@ -1379,9 +1437,11 @@ function startupRunComparisonNarrative(input: {
 function dashboardStartupTimelineGroups(input: {
   database: RunsteadDatabase;
   latestRun?: DashboardStartupRun;
+  runComparison?: DashboardStartupRunComparison;
   latestReportPath?: string;
 }): DashboardStartupTimelineGroup[] {
   return [
+    dashboardRecoveryTimelineGroup(input.runComparison),
     dashboardPhaseTimelineGroup(input.latestRun),
     dashboardWorkerRunTimelineGroup(input.database),
     dashboardModelRequestTimelineGroup(input.database),
@@ -1392,6 +1452,23 @@ function dashboardStartupTimelineGroups(input: {
   ].filter((group): group is DashboardStartupTimelineGroup => group.items.length > 0);
 }
 
+function dashboardRecoveryTimelineGroup(
+  comparison: DashboardStartupRunComparison | undefined
+): DashboardStartupTimelineGroup {
+  return {
+    group: "recovery",
+    title: "Recovery Decisions",
+    items:
+      comparison?.resolvedBlockerDetails.map((detail, index) => ({
+        id: `resolved-blocker-${index + 1}`,
+        title: detail.blocker,
+        status: "resolved",
+        detail: `${detail.resolution} evidence=${detail.evidenceIds.join(", ") || "none"}`,
+        artifacts: detail.artifacts
+      })) ?? []
+  };
+}
+
 function dashboardPhaseTimelineGroup(
   run: DashboardStartupRun | undefined
 ): DashboardStartupTimelineGroup {
@@ -1400,13 +1477,20 @@ function dashboardPhaseTimelineGroup(
     title: "Phases",
     items:
       run?.timeline.map((item) => {
-        const detail = item.blockers[0] ?? item.nextAction;
+        const topDetail = item.blockers[0] ?? item.nextAction;
+        const evidenceDetail =
+          item.evidenceIds.length === 0
+            ? undefined
+            : `evidence=${item.evidenceIds.join(", ")}`;
+        const detail = [topDetail, evidenceDetail]
+          .filter((part): part is string => part !== undefined)
+          .join("; ");
 
         return {
           id: item.phase,
           title: item.title,
           status: item.status,
-          ...(detail === undefined ? {} : { detail }),
+          ...(detail.length === 0 ? {} : { detail }),
           artifacts: item.artifacts
         };
       }) ?? []
@@ -2412,6 +2496,15 @@ function startupRunComparisonTable(
 
   const completed = comparison.latestCompleted;
   const blocked = comparison.latestBlocked;
+  const resolutionRows =
+    comparison.resolvedBlockerDetails.length === 0
+      ? "none"
+      : comparison.resolvedBlockerDetails
+          .map(
+            (detail) =>
+              `<strong>${escapeHtml(detail.blocker)}</strong><br>${escapeHtml(detail.resolution)}<br>phases: ${escapeHtml(detail.phases.join(", ") || "none")}<br>evidence: ${escapeHtml(detail.evidenceIds.join(", ") || "none")}<br>${detail.artifacts.map((artifact) => `<code>${escapeHtml(artifact)}</code>`).join("<br>") || "artifacts: none"}`
+          )
+          .join("<hr>");
 
   return `<table>
     <thead><tr><th>Run comparison</th><th>Run</th><th>Verdict</th><th>Blockers</th></tr></thead>
@@ -2427,6 +2520,7 @@ function startupRunComparisonTable(
           : `<code>${escapeHtml(blocked.id)}</code> ${statusCell(blocked.status)}`
       }</td><td>${escapeHtml(blocked?.verdict ?? "none")}</td><td>${blocked?.blockerCount ?? 0}</td></tr>
       <tr><td>Resolved blockers</td><td colspan="3">${comparison.resolvedBlockers.length === 0 ? "none" : comparison.resolvedBlockers.map(escapeHtml).join("<br>")}</td></tr>
+      <tr><td>Resolution evidence</td><td colspan="3">${resolutionRows}</td></tr>
       <tr><td>Still shared</td><td colspan="3">${comparison.stillBlocked.length === 0 ? "none" : comparison.stillBlocked.map(escapeHtml).join("<br>")}</td></tr>
       <tr><td>Summary</td><td colspan="3">${escapeHtml(comparison.narrative)}</td></tr>
     </tbody>
@@ -2620,6 +2714,8 @@ function dashboardEventPayload(
                     snapshot.startup.runComparison.latestBlocked?.id ?? null,
                   resolvedBlockers:
                     snapshot.startup.runComparison.resolvedBlockers.length,
+                  resolvedBlockerDetails:
+                    snapshot.startup.runComparison.resolvedBlockerDetails.length,
                   stillBlocked: snapshot.startup.runComparison.stillBlocked.length
                 }
               }),

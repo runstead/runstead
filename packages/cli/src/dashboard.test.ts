@@ -383,7 +383,11 @@ describe("buildDashboard", () => {
       expect(html).toContain("Startup Readiness");
       expect(html).toContain("run_dashboard_ready");
       expect(html).toContain("Run comparison");
+      expect(html).toContain("Resolution evidence");
       expect(html).toContain("run_dashboard_blocked");
+      expect(html).toContain("Resolved by phase UI smoke");
+      expect(html).toContain("ev_ui_dashboard");
+      expect(html).toContain("Timeline: Recovery Decisions");
       expect(html).toContain("Timeline: Phases");
       expect(html).toContain("Timeline: Worker Runs");
       expect(html).toContain("Timeline: Model Requests");
@@ -474,7 +478,17 @@ describe("buildDashboard", () => {
         },
         resolvedBlockers: ["UI smoke failed"]
       });
+      expect(snapshot.startup.runComparison?.resolvedBlockerDetails).toEqual([
+        {
+          blocker: "UI smoke failed",
+          phases: ["ui_smoke"],
+          evidenceIds: ["ev_ui_dashboard"],
+          artifacts: [join(root, "evidence", "ui-smoke-dom.html")],
+          resolution: "Resolved by phase UI smoke with status passed."
+        }
+      ]);
       expect(snapshot.startup.timelineGroups.map((group) => group.group)).toEqual([
+        "recovery",
         "phases",
         "worker_runs",
         "model_requests",
@@ -575,7 +589,8 @@ describe("buildDashboard", () => {
             runComparison: {
               latestCompleted: "run_dashboard_ready",
               latestBlocked: "run_dashboard_blocked",
-              resolvedBlockers: 1
+              resolvedBlockers: 1,
+              resolvedBlockerDetails: 1
             }
           },
           operator: {

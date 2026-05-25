@@ -174,8 +174,17 @@ export interface DashboardStartupRunComparison {
   latestCompleted?: DashboardStartupRunSummary;
   latestBlocked?: DashboardStartupRunSummary;
   resolvedBlockers: string[];
+  resolvedBlockerDetails: DashboardStartupResolvedBlocker[];
   stillBlocked: string[];
   narrative: string;
+}
+
+export interface DashboardStartupResolvedBlocker {
+  blocker: string;
+  phases: string[];
+  evidenceIds: string[];
+  artifacts: string[];
+  resolution: string;
 }
 
 export interface DashboardStartupRunSummary {
@@ -199,6 +208,7 @@ export interface DashboardStartupTimelineItem {
   title: string;
   status: string;
   evidence: number;
+  evidenceIds: string[];
   artifacts: string[];
   blockers: string[];
   nextAction?: string;
@@ -206,6 +216,7 @@ export interface DashboardStartupTimelineItem {
 
 export interface DashboardStartupTimelineGroup {
   group:
+    | "recovery"
     | "phases"
     | "worker_runs"
     | "model_requests"
