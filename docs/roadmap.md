@@ -272,6 +272,8 @@ The current implementation wave closed the highest-confidence product gaps:
   into `startup-ui-browser-runner`.
 - Startup UI smoke asset persistence moved out of `startup-ui-validation` into
   `startup-ui-validation-assets`.
+- Startup ready UI smoke todo-flow inference and scaffold layout actions moved
+  out of `startup-ready-ui-smoke` into `startup-ready-ui-smoke-flow`.
 - Launch readiness protected path git scanning moved out of
   `launch-readiness-report` into `launch-readiness-git`.
 - Launch readiness SQL row contracts and data loading moved out of
