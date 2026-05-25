@@ -52,6 +52,16 @@ export function parseRequiredInteger(value: string, optionName: string): number 
   return parsed;
 }
 
+export function parseDateOption(value: string, optionName: string): Date {
+  const parsed = new Date(value);
+
+  if (!Number.isFinite(parsed.getTime())) {
+    throw new Error(`${optionName} must be a valid date`);
+  }
+
+  return parsed;
+}
+
 export function parseCiRepairWorkerKind(value: string): CliWorkerKind {
   if (value === "codex_cli" || value === "claude_code" || value === "codex_direct") {
     return value;

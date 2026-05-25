@@ -6,6 +6,7 @@ import { pathToFileURL } from "node:url";
 import { formatCliError } from "./cli-errors.js";
 import {
   parseCiRepairWorkerKind,
+  parseDateOption,
   parseOptionalInteger,
   parseRequiredInteger,
   parseRequiredPositiveInteger
@@ -39,6 +40,7 @@ export interface CreateProgramOptions {
 export { formatCliError, RunsteadCliError } from "./cli-errors.js";
 export {
   parseCiRepairWorkerKind,
+  parseDateOption,
   parseOptionalInteger,
   parseRequiredInteger,
   parseRequiredPositiveInteger
@@ -3842,16 +3844,6 @@ async function resolveGitHubAuthToken(options: {
   });
 
   return result.token;
-}
-
-function parseDateOption(value: string, optionName: string): Date {
-  const parsed = new Date(value);
-
-  if (!Number.isFinite(parsed.getTime())) {
-    throw new Error(`${optionName} must be a valid date`);
-  }
-
-  return parsed;
 }
 
 function parseCommaSeparatedList(value: string | undefined): string[] {
