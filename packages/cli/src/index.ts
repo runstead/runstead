@@ -5,6 +5,7 @@ import { pathToFileURL } from "node:url";
 
 import { registerDashboardCommand } from "./commands/dashboard.js";
 import { registerDoctorCommand } from "./commands/doctor.js";
+import { registerTeamControlPlaneCommand } from "./commands/team-control-plane.js";
 import { getRunsteadStatus } from "./status.js";
 import { registerStartupCommands } from "./startup-command.js";
 import type { LocalAgentVerifierPolicy } from "./local-agent-presets.js";
@@ -83,6 +84,7 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
   addAgentCommand(program.command("agent").description("Run local repo agent tasks."));
   registerDashboardCommand(program);
   registerDoctorCommand(program);
+  registerTeamControlPlaneCommand(program);
 
   program
     .command("init")

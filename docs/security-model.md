@@ -193,7 +193,17 @@ with `RUNSTEAD_POSTGRES_URL`, `RUNSTEAD_ARTIFACT_BASE_URI`,
 `RUNSTEAD_TEAM_ORG_ID`, `RUNSTEAD_RUNNER_ID`, and
 `RUNSTEAD_AUDIT_SINK_URI`. `runstead doctor` reports missing values and runs
 the team-control-plane readiness assessment before treating the selected
-backend as team-ready.
+backend as team-ready. Operators can also run:
+
+```bash
+runstead team control-plane bootstrap --cwd /path/to/repo
+runstead team control-plane check --cwd /path/to/repo
+```
+
+The dedicated check reports the concrete assertions required for team mode:
+Postgres backend selection, connection string, shared artifact URI, runner
+identity, distributed lease fencing, hash-chain or append-only audit export,
+OIDC/RBAC/tenant isolation, and central secret-store boundaries.
 
 ## Dashboard Operator API
 

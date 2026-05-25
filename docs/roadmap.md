@@ -71,12 +71,16 @@ The current implementation wave closed the highest-confidence product gaps:
 - `runstead doctor` reports backend setup blockers and team readiness.
 - Wrapped workers expose progress summary, last output age, and
   `possibly_stuck` diagnostics.
+- Wrapped-worker stuck progress coverage is stabilized against short timing
+  windows in full-suite runs.
 - `startup source collect` records structured provider evidence through
   executable adapters.
 - Dashboard operator controls can run actions and approve/deny pending
   approvals through the protected local API.
 - `email-followup` now has a mature draft-only lifecycle, fixtures, evals,
   gates, report sections, and docs.
+- `runstead team control-plane bootstrap/check` gives operators a dedicated
+  team backend assertion surface.
 
 ## Remaining Backlog
 
@@ -101,27 +105,7 @@ pnpm --filter @runstead/cli typecheck
 pnpm --filter @runstead/runtime typecheck
 ```
 
-### 2. Turn team runtime diagnostics into a bootstrap command
-
-Doctor can now assess backend selection, but operators still need a dedicated
-bootstrap/check command for Postgres connection, runner id, lock lease, audit
-hash chain, artifact base URI, OIDC/RBAC, and secret-store configuration.
-
-Acceptance:
-
-- A team operator can run one diagnostic command and see missing readiness
-  assertions.
-- The security model continues to state that local SQLite is not a
-  multi-tenant security boundary.
-
-Validation:
-
-```bash
-pnpm --filter @runstead/cli exec vitest run src/doctor.test.ts
-pnpm run format:check
-```
-
-### 3. Harden provider adapters beyond offline JSON fixtures
+### 2. Harden provider adapters beyond offline JSON fixtures
 
 Acceptance:
 
@@ -138,7 +122,7 @@ pnpm --filter @runstead/cli exec vitest run src/startup-source-connectors.test.t
 pnpm run typecheck
 ```
 
-### 4. Deepen operator recovery timeline UX
+### 3. Deepen operator recovery timeline UX
 
 Dogfood runs often move from blocked to ready through repair or recovery. The
 dashboard has action controls and timeline groups; the next step is a richer
@@ -160,9 +144,8 @@ pnpm --filter @runstead/cli exec vitest run src/dashboard.test.ts src/startup-re
 ## Suggested Order
 
 1. Continue CLI module extraction by command/runtime ownership.
-2. Add the team-control-plane bootstrap/check command.
-3. Connect provider adapters into staging/production readiness planning.
-4. Expand operator recovery timeline explanations and action-specific forms.
+2. Connect provider adapters into staging/production readiness planning.
+3. Expand operator recovery timeline explanations and action-specific forms.
 
 ## Milestone Validation
 

@@ -339,7 +339,13 @@ storage on top of the adapter. See
 [docs/security-model.md](docs/security-model.md) for the boundary.
 
 `runstead doctor` now reports the selected runtime backend. SQLite is the
-default. Team mode is explicit:
+default. Team mode is explicit. Start by generating a checked env template:
+
+```bash
+runstead team control-plane bootstrap --cwd /path/to/repo
+```
+
+Then run the dedicated team backend check:
 
 ```bash
 RUNSTEAD_RUNTIME_BACKEND=postgres \
@@ -348,8 +354,13 @@ RUNSTEAD_ARTIFACT_BASE_URI=s3://runstead/evidence \
 RUNSTEAD_TEAM_ORG_ID=org_123 \
 RUNSTEAD_RUNNER_ID=runner_1 \
 RUNSTEAD_AUDIT_SINK_URI=s3://runstead/audit \
-runstead doctor --cwd /path/to/repo
+runstead team control-plane check --cwd /path/to/repo
 ```
+
+The command reports backend selection, Postgres connection string presence,
+shared artifact URI, runner identity, database lease fencing, hash-chain audit,
+OIDC/RBAC, and central secret-store boundaries. `runstead doctor` includes the
+same backend assessment as part of the broader local health check.
 
 ## Setup For This Monorepo
 

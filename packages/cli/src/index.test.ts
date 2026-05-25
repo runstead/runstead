@@ -60,6 +60,24 @@ describe("cli entrypoint", () => {
     );
   });
 
+  it("exposes team control-plane bootstrap and check commands", () => {
+    const team = createProgram().commands.find((command) => command.name() === "team");
+    const controlPlane = team?.commands.find(
+      (command) => command.name() === "control-plane"
+    );
+    const check = controlPlane?.commands.find((command) => command.name() === "check");
+    const bootstrap = controlPlane?.commands.find(
+      (command) => command.name() === "bootstrap"
+    );
+
+    expect(check?.options.map((option) => option.long)).toEqual(
+      expect.arrayContaining(["--cwd", "--json"])
+    );
+    expect(bootstrap?.options.map((option) => option.long)).toEqual(
+      expect.arrayContaining(["--actor", "--cwd", "--force", "--output"])
+    );
+  });
+
   it("exposes domain pack manifest generation", () => {
     const domain = createProgram().commands.find(
       (command) => command.name() === "domain"
