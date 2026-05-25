@@ -116,6 +116,8 @@ The current implementation wave closed the highest-confidence product gaps:
   `commands/memory`.
 - `skill` command registration moved out of the CLI entrypoint into
   `commands/skill`.
+- `repo` command registration moved out of the CLI entrypoint into
+  `commands/repo`.
 - `packages/cli/src/index.ts` no longer owns dashboard or doctor command
   registration.
 - Dashboard snapshot and operator API contracts moved out of the dashboard
