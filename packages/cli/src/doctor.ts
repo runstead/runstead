@@ -15,8 +15,19 @@ import {
   type RuntimeBackendConfigEnv
 } from "@runstead/runtime";
 
-import { getCodexAuthStatus, type CodexAuthStatus } from "./codex-auth.js";
-import { resolveCodexModel, type ResolveCodexModelResult } from "./codex-model.js";
+import { getCodexAuthStatus } from "./codex-auth.js";
+import { resolveCodexModel } from "./codex-model.js";
+import {
+  checkNodeRuntime,
+  errorMessage,
+  fail,
+  isRecord,
+  pass,
+  truncateDoctorMessage,
+  type DoctorCheck,
+  type DoctorResult,
+  type DoctorRunsteadOptions
+} from "./doctor-types.js";
 import { resolveModelProvider, type ResolvedModelProvider } from "./model-provider.js";
 import { loadPolicyProfileFromFile } from "./policy-loader.js";
 import { evaluatePolicy } from "./policy.js";
@@ -24,40 +35,15 @@ import { resolveRunsteadRoot } from "./runstead-root.js";
 import {
   runWorkerProcess,
   workerCommand,
-  type WorkerProcessRunner,
-  type WrappedWorkerKind
+  type WorkerProcessRunner
 } from "./wrapped-worker.js";
 
-export type DoctorCheckStatus = "pass" | "fail";
-
-export interface DoctorCheck {
-  id: string;
-  label: string;
-  status: DoctorCheckStatus;
-  message: string;
-}
-
-export interface DoctorResult {
-  ok: boolean;
-  root: string;
-  checks: DoctorCheck[];
-}
-
-export interface DoctorRunsteadOptions {
-  cwd?: string;
-  codex?: boolean;
-  worker?: "codex_direct" | WrappedWorkerKind;
-  model?: string;
-  nodeVersion?: string;
-  codexAuthStatus?: () => Promise<
-    Pick<CodexAuthStatus, "loggedIn" | "accessTokenExpired" | "authPath">
-  >;
-  codexModelResolver?: (options: { cwd?: string }) => Promise<ResolveCodexModelResult>;
-  codexCliProbeRunner?: WorkerProcessRunner;
-  wrappedWorkerProbeRunner?: WorkerProcessRunner;
-  modelProviderEnv?: NodeJS.ProcessEnv;
-  runtimeBackendEnv?: RuntimeBackendConfigEnv;
-}
+export type {
+  DoctorCheck,
+  DoctorCheckStatus,
+  DoctorResult,
+  DoctorRunsteadOptions
+} from "./doctor-types.js";
 
 export async function doctorRunstead(
   options: DoctorRunsteadOptions = {}
@@ -783,10 +769,6 @@ function claudeCodeProbeSucceeded(stdout: string): boolean {
   }
 }
 
-function truncateDoctorMessage(value: string, maxLength = 500): string {
-  return value.length <= maxLength ? value : `${value.slice(0, maxLength)}...`;
-}
-
 function modelProviderResourceId(selection: ResolvedModelProvider): string {
   return selection.provider === "codex" ? "chatgpt_codex" : selection.provider;
 }
@@ -1076,70 +1058,4 @@ async function checkGitHubAppConfig(cwd: string, root: string): Promise<DoctorCh
   } catch (error) {
     return fail("github-app-config", "GitHub App config", errorMessage(error));
   }
-}
-
-function pass(id: string, label: string, message: string): DoctorCheck {
-  return {
-    id,
-    label,
-    status: "pass",
-    message
-  };
-}
-
-function fail(id: string, label: string, message: string): DoctorCheck {
-  return {
-    id,
-    label,
-    status: "fail",
-    message
-  };
-}
-
-function checkNodeRuntime(version: string): DoctorCheck {
-  const parsed = parseNodeVersion(version);
-
-  if (parsed === undefined) {
-    return pass(
-      "node-runtime",
-      "Node runtime",
-      `could not parse ${version}; Runstead CLI expects Node >=24.15 <27`
-    );
-  }
-
-  const supported =
-    (parsed.major > 24 || (parsed.major === 24 && parsed.minor >= 15)) &&
-    parsed.major < 27;
-
-  return pass(
-    "node-runtime",
-    "Node runtime",
-    supported
-      ? `${version} satisfies package engines >=24.15 <27`
-      : `${version} is outside package engines >=24.15 <27; use Node 24.15+ before release packaging`
-  );
-}
-
-function parseNodeVersion(
-  version: string
-): { major: number; minor: number; patch: number } | undefined {
-  const match = /^v?(\d+)\.(\d+)\.(\d+)/.exec(version);
-
-  if (match === null) {
-    return undefined;
-  }
-
-  return {
-    major: Number(match[1] ?? "0"),
-    minor: Number(match[2] ?? "0"),
-    patch: Number(match[3] ?? "0")
-  };
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

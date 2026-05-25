@@ -361,6 +361,8 @@ The current implementation wave closed the highest-confidence product gaps:
   phase, evidence ids, and artifacts that cleared them.
 - Dashboard operator console includes action-specific forms for verifier runs
   and manual evidence recording through the protected local API.
+- Doctor public result/options contracts and shared pass/fail/node/error helpers
+  moved out of `doctor` into `doctor-types`.
 - Startup complete-check markdown, JSON, event, score, and status output helpers
   moved out of `startup-complete-check` into `startup-complete-check-output`.
 - `email-followup` now has a mature draft-only lifecycle, fixtures, evals,
