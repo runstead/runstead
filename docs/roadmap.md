@@ -217,6 +217,9 @@ The current implementation wave closed the highest-confidence product gaps:
 - CI repair pull-request resume discovery, running-worker guard, and resume
   intake reconstruction moved out of the orchestrator into
   `ci-repair-orchestrator-resume`.
+- Startup workspace hygiene helpers for protected path, environment file,
+  dependency file, and path-existence checks moved out of `startup-automation`
+  into `startup-workspace-hygiene`.
 - Startup automation public option/result contracts moved into
   `startup-automation-types`.
 - Startup launch security scanning moved out of `startup-automation` into

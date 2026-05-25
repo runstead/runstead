@@ -1,9 +1,6 @@
-import { execFile } from "node:child_process";
-import { constants } from "node:fs";
-import { access, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { promisify } from "node:util";
 
 import type { Goal } from "@runstead/core";
 import { openRunsteadDatabase } from "@runstead/state-sqlite";
@@ -17,7 +14,6 @@ import {
   retrieveProjectFacts,
   type RetrieveProjectFactsResult
 } from "./memory.js";
-import { matchesPolicyPathPattern } from "./policy.js";
 import { resolveRunsteadRoot, requireRunsteadStateDb } from "./runstead-root.js";
 import {
   STARTUP_STRUCTURED_ARTIFACT_SCHEMA,
@@ -27,6 +23,12 @@ import {
 } from "./startup-artifacts.js";
 import { addStartupEvidence, checkStartupGate } from "./startup-evidence.js";
 import { collectLaunchSecurityRiskScan } from "./startup-security-scan.js";
+import {
+  changedProtectedPaths,
+  existingDependencyFiles,
+  exists,
+  findTopLevelEnvFiles
+} from "./startup-workspace-hygiene.js";
 import type {
   CaptureInstitutionalMemoryOptions,
   CaptureInstitutionalMemoryResult,
@@ -65,8 +67,6 @@ import type {
 
 export type * from "./startup-automation-types.js";
 
-const execFileAsync = promisify(execFile);
-
 interface StartupStructuredArtifact {
   schemaVersion: typeof STARTUP_STRUCTURED_ARTIFACT_SCHEMA_VERSION;
   schema: typeof STARTUP_STRUCTURED_ARTIFACT_SCHEMA;
@@ -85,23 +85,6 @@ interface StartupEvidenceSummaryRow {
 
 const STARTUP_DOMAIN = "ai-native-startup";
 const STARTUP_CONTEXT_FILES = ["AGENTS.md", "CLAUDE.md", "CODEX.md"];
-const PROTECTED_PATH_PATTERNS = [
-  ".env",
-  ".env.*",
-  "**/secrets/**",
-  "infra/prod/**",
-  "billing/**",
-  "compliance/**"
-];
-const DEPENDENCY_FILES = [
-  "package.json",
-  "pnpm-lock.yaml",
-  "package-lock.json",
-  "npm-shrinkwrap.json",
-  "yarn.lock",
-  "bun.lock",
-  "bun.lockb"
-];
 export async function initStartup(
   options: StartupInitOptions = {}
 ): Promise<StartupInitResult> {
@@ -2421,83 +2404,10 @@ function listItemsOrNone(items: string[]): string {
   return items.length === 0 ? "- none" : listItems(items);
 }
 
-async function changedProtectedPaths(cwd: string): Promise<string[]> {
-  const changedPaths = await changedGitPaths(cwd);
-
-  return changedPaths
-    .filter((path) =>
-      PROTECTED_PATH_PATTERNS.some((pattern) => matchesPolicyPathPattern(path, pattern))
-    )
-    .sort((left, right) => left.localeCompare(right));
-}
-
-async function changedGitPaths(cwd: string): Promise<string[]> {
-  try {
-    const result = await execFileAsync("git", ["status", "--porcelain"], {
-      cwd,
-      timeout: 30_000,
-      maxBuffer: 1024 * 1024,
-      windowsHide: true
-    });
-
-    return result.stdout
-      .split("\n")
-      .map((line) => line.trimEnd())
-      .filter((line) => line.length > 3)
-      .map((line) => normalizeStatusPath(line.slice(3)))
-      .filter((path) => path.length > 0);
-  } catch {
-    return [];
-  }
-}
-
-function normalizeStatusPath(value: string): string {
-  const renameSeparator = " -> ";
-  const renamedPath = value.includes(renameSeparator)
-    ? value.slice(value.lastIndexOf(renameSeparator) + renameSeparator.length)
-    : value;
-
-  return renamedPath.replace(/^"|"$/g, "");
-}
-
 function safeTimestamp(value: string): string {
   return value.replace(/[:.]/g, "-");
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-async function findTopLevelEnvFiles(cwd: string): Promise<string[]> {
-  try {
-    const entries = await readdir(cwd, { withFileTypes: true });
-
-    return entries
-      .filter((entry) => entry.isFile() && /^\.env($|\.)/.test(entry.name))
-      .map((entry) => entry.name)
-      .sort((left, right) => left.localeCompare(right));
-  } catch {
-    return [];
-  }
-}
-
-async function existingDependencyFiles(cwd: string): Promise<string[]> {
-  const files: string[] = [];
-
-  for (const filename of DEPENDENCY_FILES) {
-    if (await exists(join(cwd, filename))) {
-      files.push(filename);
-    }
-  }
-
-  return files;
-}
-
-async function exists(path: string): Promise<boolean> {
-  try {
-    await access(path, constants.F_OK);
-    return true;
-  } catch {
-    return false;
-  }
 }
