@@ -266,6 +266,8 @@ The current implementation wave closed the highest-confidence product gaps:
   `startup-ui-validation-assets`.
 - Launch readiness protected path git scanning moved out of
   `launch-readiness-report` into `launch-readiness-git`.
+- Launch readiness SQL row contracts and data loading moved out of
+  `launch-readiness-report` into `launch-readiness-data`.
 - `packages/cli/src/startup-command.ts` no longer owns startup scale
   starter/workflow/memory/integration/report/SOP/GTM command registration.
 - `packages/cli/src/startup-command.ts` no longer owns startup hypothesis
