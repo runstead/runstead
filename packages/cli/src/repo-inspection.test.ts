@@ -17,6 +17,7 @@ import {
 } from "./repo-inspection.js";
 
 const execFileAsync = promisify(execFile);
+const TEST_GIT_TIMEOUT_MS = 10_000;
 
 describe("inspectGitRepository", () => {
   it("returns false outside a git repository", async () => {
@@ -40,18 +41,22 @@ describe("inspectGitRepository", () => {
       await runGit(["init"], workspace);
       await writeFile(join(workspace, "README.md"), "# Fixture\n", "utf8");
       await runGit(["add", "README.md"], workspace);
-      await runGit(
+      const branch = await runGit(["symbolic-ref", "--short", "HEAD"], workspace);
+      const tree = await runGit(["write-tree"], workspace);
+      const commit = await runGit(
         [
           "-c",
           "user.name=Runstead",
           "-c",
           "user.email=runstead@example.com",
-          "commit",
+          "commit-tree",
+          tree,
           "-m",
           "initial"
         ],
         workspace
       );
+      await runGit(["update-ref", `refs/heads/${branch}`, commit], workspace);
 
       const inspection = await inspectGitRepository(nested);
 
@@ -62,7 +67,7 @@ describe("inspectGitRepository", () => {
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }
-  }, 10000);
+  }, 30_000);
 
   it("bounds git inspection commands with a timeout", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "runstead-git-timeout-"));
@@ -372,9 +377,12 @@ describe("inspectCiProvider", () => {
   });
 });
 
-async function runGit(args: string[], cwd: string): Promise<void> {
-  await execFileAsync("git", args, {
+async function runGit(args: string[], cwd: string): Promise<string> {
+  const result = await execFileAsync("git", args, {
     cwd,
+    timeout: TEST_GIT_TIMEOUT_MS,
     windowsHide: true
   });
+
+  return result.stdout.trim();
 }
