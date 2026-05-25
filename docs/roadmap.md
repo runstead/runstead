@@ -147,6 +147,8 @@ The current implementation wave closed the highest-confidence product gaps:
   command module directly.
 - Top-level `agent` command registration and local-agent CLI option helpers
   moved out of the CLI entrypoint into `commands/agent`.
+- Local-agent verifier option resolution moved out of the agent command adapter
+  into `local-agent-verifier-options`.
 - `packages/cli/src/index.ts` no longer owns dashboard or doctor command
   registration.
 - Dashboard snapshot and operator API contracts moved out of the dashboard

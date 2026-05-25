@@ -63,7 +63,7 @@ export { requireVerifierCommandOptions } from "./verifier-command-options.js";
 export {
   localAgentPresetRunsVerifiersFirst,
   resolvePresetVerifierCommandOptions
-} from "./commands/agent.js";
+} from "./local-agent-verifier-options.js";
 
 export async function runCli(argv = process.argv): Promise<void> {
   try {
