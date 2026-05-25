@@ -24,6 +24,7 @@ import { registerGoalCommand } from "./commands/goal.js";
 import { registerMemoryCommand } from "./commands/memory.js";
 import { registerMigrateCommand } from "./commands/migrate.js";
 import { registerOpsCommand } from "./commands/ops.js";
+import { registerPolicyCommand } from "./commands/policy.js";
 import { registerRbacCommand } from "./commands/rbac.js";
 import { registerRepoCommand } from "./commands/repo.js";
 import { registerReportCommand } from "./commands/report.js";
@@ -124,6 +125,7 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
   registerApprovalCommand(program);
   registerVerifierCommand(program);
   registerGitCommand(program);
+  registerPolicyCommand(program);
 
   registerStartupCommands(program);
 
@@ -477,24 +479,6 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
         console.log(`Created PR: ${result.url ?? result.stdout.trim()}`);
       }
     );
-
-  const policy = program.command("policy").description("Evaluate policies.");
-
-  policy
-    .command("test")
-    .description("Evaluate a policy YAML file against an action YAML file.")
-    .argument("<policy>", "Policy YAML path")
-    .requiredOption("--action <path>", "Action envelope YAML path")
-    .action(async (policyPath: string, options: { action: string }) => {
-      const { formatPolicyTestReport, testPolicyAction } =
-        await import("./policy-command.js");
-      const result = await testPolicyAction({
-        policyPath,
-        actionPath: options.action
-      });
-
-      console.log(formatPolicyTestReport(result));
-    });
 
   return program;
 }
