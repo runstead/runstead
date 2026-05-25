@@ -1,7 +1,7 @@
 # Startup Lifecycle
 
-Runstead should map the AI-native startup lifecycle to domain packs and stage
-gates. The product stance is not "help founders use more AI." It is governed,
+Runstead maps the AI-native startup lifecycle to domain packs and stage gates.
+The product stance is not "help founders use more AI." It is governed,
 evidence-backed execution for real startup work.
 
 ## Stage Map
@@ -24,13 +24,13 @@ Goal: make agent-built products understandable and verifiable.
 
 Core artifacts:
 
-- generated and maintained agent context such as `CLAUDE.md`, `AGENTS.md`, and
-  `CODEX.md`
+- generated and maintained agent context such as `CLAUDE.md`, `AGENTS.md`,
+  and `CODEX.md`
 - architecture principles and technical constraints
 - accepted technical debt records
 - discovered package scripts and verifier commands
-- measurement framework covering activation, retention, Day 7 or Day 30 metrics,
-  and false-positive metrics
+- measurement framework covering activation, retention, Day 7 or Day 30
+  metrics, and false-positive metrics
 - diff summaries, verifier evidence, and audit reports after agent edits
 
 This is the first startup pack to ship because it directly extends
@@ -43,15 +43,18 @@ Goal: decide whether an AI-coded MVP can safely launch.
 Report sections:
 
 - repo health
-- verifier status
+- verifier status (local command, CI, extension-contributed)
 - test coverage gaps
 - dependency and security risk
 - protected path changes
 - architectural debt
 - missing observability
-- release blockers
+- target-specific release blockers (rollback drill, monitoring alerts, error
+  budget, migration validation, traffic gate, post-launch watch)
 - acceptable debt
 - next sprint remediation plan
+- run-comparison timeline (latest completed vs latest blocked, resolved
+  blockers, still-blocked items)
 
 ### Scale Stage: Ops Handoff Pack
 
@@ -67,28 +70,31 @@ Core artifacts:
 - GTM artifact verification
 - integration depth map
 
-This stage should follow MVP and Launch readiness so the product does not drift
-into a generic operations tool too early. The `ai-native-startup` pack exposes
-this as the `scale-ops` template so the artifacts are defined without making ops
-the first product surface.
+This stage follows MVP and Launch readiness so the product does not drift
+into a generic operations tool too early. The `ai-native-startup` pack
+exposes this as the `scale-ops` template so the artifacts are defined
+without making ops the first product surface.
 
 ## Current CLI Shape
 
-The startup workflow is now exposed through `runstead startup` aliases. The
-short founder path is the readiness orchestrator:
+The short founder path is the readiness orchestrator:
 
 ```sh
-runstead startup ready --cwd /path/to/mvp --stage launch --worker codex_cli --target local
+runstead startup ready --cwd /path/to/mvp --stage launch --target local --worker codex_direct --governance governed
 runstead startup ready --cwd /path/to/mvp --stage launch --target production --plan
 runstead startup ready --cwd /path/to/mvp --resume <run-id>
+runstead startup ready --cwd /path/to/mvp --force-build           # override green-path skip
+runstead startup ready --cwd /path/to/mvp --app-template static-todo --app-type local-first-web   # empty repo
 ```
 
-`codex_cli` is the recommended default worker for the founder-facing path.
-`codex_direct` is the strict-governance path when each model tool call must go
-through Runstead-native policy and audit.
+`codex_direct` is the recommended worker when each model tool call must
+go through Runstead-native policy and audit. `codex_cli` and `claude_code`
+are the Level 1 wrapped-worker paths. `--governance auto` (default) keeps
+local and staging readiness on `codex_cli` but selects `codex_direct` for
+production targets.
 
-The artifact-first command surface remains available for precise evidence work
-before rerunning `startup ready`:
+The artifact-first command surface remains available for precise evidence
+work before rerunning `startup ready`:
 
 ```sh
 runstead startup hypothesis add --cwd /path/to/mvp --kind problem --statement "..."
@@ -100,10 +106,19 @@ runstead startup launch ui-validate --cwd /path/to/mvp --execute --url http://12
 runstead startup launch audit --cwd /path/to/mvp
 runstead startup launch security-baseline --cwd /path/to/mvp
 runstead startup launch git-summary --cwd /path/to/mvp
-runstead startup evidence add --cwd /path/to/mvp --type migration_plan --summary "..." --owner founder --remediation-task "..." --acceptance-criteria "..."
-runstead startup evidence add --cwd /path/to/mvp --type rollback_plan --summary "..." --owner founder --remediation-task "..." --acceptance-criteria "..."
-runstead startup evidence add --cwd /path/to/mvp --type observability --summary "..." --owner founder --remediation-task "..." --acceptance-criteria "..."
+runstead startup evidence add --cwd /path/to/mvp --type migration_plan --summary "..." --owner founder
+runstead startup evidence add --cwd /path/to/mvp --type rollback_plan --summary "..." --owner founder
+runstead startup evidence add --cwd /path/to/mvp --type rollback_drill --summary "..." --owner founder
+runstead startup evidence add --cwd /path/to/mvp --type observability --summary "..." --owner founder
+runstead startup evidence add --cwd /path/to/mvp --type monitoring_alerts --summary "..." --owner founder
+runstead startup evidence add --cwd /path/to/mvp --type error_budget --summary "..." --owner founder
+runstead startup evidence add --cwd /path/to/mvp --type migration_validation --summary "..." --owner founder
+runstead startup evidence add --cwd /path/to/mvp --type traffic_gate --summary "..." --owner founder
+runstead startup evidence add --cwd /path/to/mvp --type post_launch_watch --summary "..." --owner founder
+runstead startup evidence manual-change --cwd /path/to/mvp --operator founder --reason "..." --diff-summary "..." --file package.json --gate launch
+runstead startup source list
 runstead startup source record --cwd /path/to/mvp --connector vercel --target staging --source-uri https://vercel.com/acme/app/deployments/dpl_123 --summary "..." --status pass
+runstead startup source verify --cwd /path/to/mvp --connector sentry --target production --source-uri https://sentry.io/... --expect-status 200 --expect-text "no open release blockers"
 runstead startup gate check --cwd /path/to/mvp --stage launch
 ```
 
@@ -122,9 +137,23 @@ runstead startup scale report --cwd /path/to/mvp --period 2026-W21
 runstead startup gate check --cwd /path/to/mvp --stage scale
 ```
 
+Replay or test gate fixtures against the unified verdict engine:
+
+```sh
+runstead startup gate test path/to/gate-fixture.json
+```
+
+Local dashboard and operator console:
+
+```sh
+runstead dashboard build --cwd /path/to/mvp
+runstead dashboard serve --cwd /path/to/mvp
+runstead dashboard serve --cwd /path/to/mvp --enable-operator-api
+```
+
 See [ai-coded-mvp-readiness.md](ai-coded-mvp-readiness.md) for the complete
-runbook and [startup-ready-golden-path.md](startup-ready-golden-path.md) for the
-todo fixture dogfood path.
+runbook and [startup-ready-golden-path.md](startup-ready-golden-path.md) for
+the todo fixture dogfood path.
 
 ## Scope Discipline
 
@@ -137,4 +166,5 @@ Runstead should not become:
 - another agent framework
 
 It should keep returning to governed, evidence-backed execution: goals,
-policies, verifiers, evidence, checkpoints, audits, stage gates, and reports.
+policies, verifiers, evidence, checkpoints, audits, stage gates, reports,
+and resume paths.

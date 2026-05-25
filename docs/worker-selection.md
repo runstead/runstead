@@ -1,27 +1,24 @@
 # Worker Selection
 
 Runstead can run external coding agents as wrapped workers or run a native
-Codex loop through `codex_direct`. The right default depends on the user's risk
-profile.
+Codex loop through `codex_direct`. The right default depends on the risk
+profile of the task.
 
 ## Default Recommendation
 
-Use **Runstead + `codex_cli`** by default.
+Use **`codex_direct` with `--governance governed`** for governance-sensitive
+work, and **`codex_cli`** as a fast path when post-run evidence is enough.
 
-This is the best current fit for founder-facing AI-coded MVP work because it
-keeps the normal Codex CLI runtime and ecosystem while Runstead supplies the
-control plane around it:
+`runstead startup ready` exposes both with a single `--governance` flag:
 
-- task records
-- checkpoints
-- dependency policy
-- verifier evidence
-- launch and scale gates
-- readiness reports
-- audit and replay surfaces
-
-For most MVP work, this is the practical balance: agent velocity stays high and
-Runstead still prevents "agent finished" from becoming the readiness standard.
+- `--governance readiness` allows Level 1 wrapped workers (`codex_cli`,
+  `claude_code`) and gives a fast product-readiness loop with checkpoints,
+  verifier evidence, reports, gates, and audit around the external worker.
+- `--governance governed` requires `codex_direct` and fails closed for
+  wrapped workers.
+- `--governance auto` (default) keeps local and staging readiness on
+  `codex_cli` but selects `codex_direct` for production targets unless
+  `--worker` overrides.
 
 ## When To Use `codex_cli`
 
@@ -37,10 +34,10 @@ Choose `codex_cli` when:
 Typical command:
 
 ```bash
-runstead startup build-mvp \
+runstead startup ready \
   --cwd /path/to/mvp \
   --worker codex_cli \
-  --dependency-policy deny-new
+  --target local
 ```
 
 ## When To Use `codex_direct`
@@ -48,10 +45,13 @@ runstead startup build-mvp \
 Choose `codex_direct` when:
 
 - every exposed model tool call must be governed by Runstead policy
-- filesystem, shell, git, verifier, and evidence actions need hard-proxy audit
+- model-exposed filesystem, shell, git-read, verifier, and evidence-read
+  actions need hard-proxy audit
 - the repo has strict protected paths or approval boundaries
-- the team needs evidence that the model could not bypass Runstead's tool layer
-- the task is compliance-sensitive, security-sensitive, or production-adjacent
+- the team needs evidence that the model could not bypass Runstead's tool
+  layer
+- the task is compliance-sensitive, security-sensitive, or
+  production-adjacent
 
 Typical command:
 
@@ -70,19 +70,13 @@ runstead agent run \
   "Repair the failing contract with the smallest safe change."
 ```
 
+For scaffold-heavy work, prefer `runstead startup ready --worker codex_direct
+--governance governed --app-template static-todo --app-type local-first-web`.
+That path scopes scaffold patch approvals to the task's app-owned files and
+reuses one approval grant across many file writes, while still requiring
+explicit approval for dependency files and protected state.
+
 ## Governance Levels
-
-`runstead startup ready --plan` and completed readiness summaries print this
-boundary explicitly so launch reports do not overstate what a selected worker
-can prove.
-
-`runstead startup ready` also has an explicit governance profile:
-
-- `--governance readiness` uses the Level 1 wrapped-worker readiness path.
-- `--governance governed` requires `codex_direct` and fails closed for
-  `codex_cli` or `claude_code`.
-- `--governance auto` keeps local readiness on `codex_cli`, but production
-  readiness defaults to `codex_direct`.
 
 ### Level 1: Wrapped Worker
 
@@ -96,58 +90,56 @@ Runstead can:
 - run verifiers after the worker exits
 - record command output, reports, and audit state
 
-Runstead cannot hard-proxy every internal tool call made by the external worker.
+Runstead cannot hard-proxy every internal tool call made by the external
+worker. The worker's own sandbox or permission flags are the inner boundary.
 
 ### Level 2: Native Proxy
 
 Used by `codex_direct`.
 
-Runstead can govern exposed model tool calls before execution:
+Runstead governs every exposed model tool call before execution:
 
-- `filesystem.read`
-- `filesystem.write`
-- `filesystem.patch`
-- `shell.exec`
-- `git.status`, `git.diff`, `git.log`, `git.show`
-- `verifier.run`
-- `evidence.read`
-- `workspace.facts.read`
+- filesystem read, list, search, stat, write, patch
+- shell command execution
+- git status, diff, log, show, and diff-summary reads
+- verifier runs
+- evidence reads; verifier and command execution record evidence through
+  Runstead-owned runtime paths
+- workspace facts reads
 
-This is stronger but requires cleaner policy setup and more careful prompts.
+Model calls themselves are governed through `model.inference.request` with
+recorded `network_write_external` and `llm_data_egress` side effects.
+Per-request heartbeats, bounded transient-error retries with jitter, and
+timeout aborts protect long runs from hanging on provider issues.
 
-## Practical Caveats From Dogfood
+`runstead startup ready --plan` and completed readiness summaries print this
+boundary explicitly so launch reports do not overstate what a selected worker
+can prove.
 
-`codex_direct` is valuable but should not be the default path until its local
-editing UX is smoother.
+## Practical Operating Style
 
-Observed caveats:
+For `codex_direct`:
 
-- first-time workspace writes may require explicit approval
-- repeated `agent resume` calls can enter a new model turn and produce a new
-  write action
-- broad prompts can exhaust the direct-worker turn budget
-- narrow repair prompts work better than "build the whole app" prompts
-- local edit-heavy work needs an explicit policy that allows ordinary source
-  edits while keeping protected paths, dependencies, and external writes guarded
-
-Recommended `codex_direct` operating style:
-
-- use narrow prompts
+- use narrow prompts; broad "build the whole product" prompts exhaust the
+  turn budget
 - increase `--max-turns` and `--max-tool-calls` for repair work
 - deny `.git/**` and `.runstead/**`
-- keep `.env`, secrets, production infra, dependency changes, pushes, and PRs
-  approval-gated
+- keep `.env`, secrets, production infra, dependency changes, pushes, and
+  PRs approval-gated
 - require verifiers on every edit or repair task
+- prefer `approve-and-resume` over separate `approve` then `agent resume`
+
+For empty-repo scaffolds, declare `--app-template` so the scaffold profile
+classifies safe app-owned writes and the first approval covers the whole
+scaffold pass.
 
 ## Product Positioning
 
-Runstead should present:
-
-- `codex_cli` as the **recommended default founder workflow**
-- `codex_direct` as the **strict governed workflow**
+- `codex_cli` is the **fast Level 1 path** for local MVP work where post-run
+  evidence is enough.
+- `codex_direct` is the **strict Level 2 path** when every exposed tool call
+  must be audited.
 
 That gives users a fast path for MVP readiness and an upgrade path for
-high-assurance work.
-
-For the formal trust-boundary and non-goal statement, see
-[security-model.md](security-model.md).
+high-assurance work. See [security-model.md](security-model.md) for the
+formal trust boundary and non-goals.

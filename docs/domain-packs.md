@@ -1,9 +1,11 @@
 # Domain Packs
 
-Domain packs define what a class of long-running work means. They are templates
-and contracts, not runtime state.
+Domain packs define what a class of long-running work means. They are
+templates and contracts, not runtime state.
 
-The first built-in domain pack is `repo-maintenance`. It starts with:
+## Built-In Packs
+
+`repo-maintenance` is the original control-loop pack:
 
 - `keep-ci-green` goal template
 - `repo_inspect`, `run_local_verifiers`, and `ci_repair` task types
@@ -12,36 +14,37 @@ The first built-in domain pack is `repo-maintenance`. It starts with:
 - protected-path security defaults
 - a `js-test-failure` CI repair smoke fixture and benchmark
 
-The startup execution path adds the experimental built-in
-`ai-native-startup` pack. Its `validate-problem` template records hypotheses,
-validation evidence, disconfirming evidence, and the MVP build gate before build
-work starts. Its `build-mvp` template creates tasks for agent context
-generation, measurement framework definition, repository readiness inspection,
-and MVP verifier evidence. Its scale-stage `scale-ops` template adds founder
-bottleneck mapping, workflow automation registry, SOP generation, support
-triage, and GTM artifact verification. The pack deliberately keeps code edits,
-publishing, external writes, and worker starts behind approval while allowing
-read-only inspection, evidence records, reports, gates, and local verifier
-commands.
+`ai-native-startup` is the startup execution pack:
 
-`research-monitor` is now the second maturity-gated built-in pack. It models a
-discover -> scan -> reliability assessment -> digest -> conflict triage ->
-publish gate -> archive lifecycle for recurring cited research work, with
-source freshness, source reliability, contradiction review, citation quality,
-archive memory, and external publish approval contracts. Its fixtures cover
-source discovery, source reliability, a weekly digest smoke path, conflicting
-source regression, approval-gated publish review, and archive updates so the
-pack abstraction is validated outside the startup domain. See
-[`docs/research-monitor-golden-path.md`](research-monitor-golden-path.md) for
-the workflow.
+- `validate-problem` template records hypotheses, validation evidence,
+  disconfirming evidence, and the MVP build gate before build work starts
+- `build-mvp` template creates tasks for agent context generation,
+  measurement framework definition, repository readiness inspection, and
+  MVP verifier evidence
+- `scale-ops` template adds founder bottleneck mapping, workflow
+  automation registry, SOP generation, support triage, and GTM artifact
+  verification
+- the pack keeps code edits, publishing, external writes, and worker
+  starts behind approval while allowing read-only inspection, evidence
+  records, reports, gates, and local verifier commands
+
+`research-monitor` is a maturity-gated built-in pack that proves the pack
+model can support non-startup workflows. It models a discover → scan →
+reliability assessment → digest → conflict triage → publish gate → archive
+lifecycle for recurring cited research work, with source freshness, source
+reliability, contradiction review, citation quality, archive memory, and
+external publish approval contracts. Its fixtures cover source discovery,
+source reliability, a weekly digest smoke path, conflicting source
+regression, approval-gated publish review, and archive updates. See
+[`research-monitor-golden-path.md`](research-monitor-golden-path.md).
 
 Runtime task and goal state belongs in SQLite under `.runstead/state.db`.
 Domain YAML remains configuration and template material only.
 
-Use `@runstead/sdk` when a pack needs to publish typed extension contracts for
-custom readiness facets, evidence collectors, verifiers, or gates. Domain YAML
-owns installable pack templates; SDK manifests own stable integration contracts
-for code and third-party packages.
+Use `@runstead/sdk` when a pack needs to publish typed extension contracts
+for custom readiness facets, evidence collectors, verifiers, or gates.
+Domain YAML owns installable pack templates; SDK manifests own stable
+integration contracts for code and third-party packages.
 
 ## Create A Pack
 
@@ -53,20 +56,20 @@ runstead domain validate ./customer-ops
 ```
 
 The generated pack is intentionally conservative. It creates a single goal
-template, one manual-review task type, and a default policy that allows local
-evidence collection while requiring approval before external writes.
+template, one manual-review task type, and a default policy that allows
+local evidence collection while requiring approval before external writes.
 
-`manual_review` has a built-in runtime route. `runstead run --once` marks the
-task `blocked` with `manual_review_required` instead of treating the starter
-task as an unknown custom task.
+`manual_review` has a built-in runtime route. `runstead run --once` marks
+the task `blocked` with `manual_review_required` instead of treating the
+starter task as an unknown custom task.
 
 Installing, uninstalling, or upgrading a pack mutates the local
 `.runstead/domains` registry and requires the actor to have `domain.manage`.
 Read-only SDK commands such as `domain validate`, `domain manifest`, and
 `domain verify-manifest` operate on explicit directories and do not require
-registry access. `runstead doctor` verifies every installed pack against its
-stored manifest so local registry drift is surfaced before scheduled work uses
-the pack.
+registry access. `runstead doctor` verifies every installed pack against
+its stored manifest so local registry drift is surfaced before scheduled
+work uses the pack.
 
 ## Directory Layout
 
@@ -87,9 +90,9 @@ evals/
   benchmark.yaml
 ```
 
-File names for goal templates and task types must match the id referenced from
-`domain.yaml`. For example, `task_types: [manual_review]` must point at
-`task-types/manual_review.yaml`.
+File names for goal templates and task types must match the id referenced
+from `domain.yaml`. For example, `task_types: [manual_review]` must point
+at `task-types/manual_review.yaml`.
 
 ## domain.yaml
 
@@ -134,11 +137,12 @@ security:
     - ".env.*"
 ```
 
-Use lowercase kebab-case for pack ids. Use stable task and template ids because
-goal state stores those ids in SQLite.
+Use lowercase kebab-case for pack ids. Use stable task and template ids
+because goal state stores those ids in SQLite.
 
-`compatibility.runstead_min_version` is required. Bump it when a pack starts
-depending on newer Runstead policy, verifier, worker, or manifest behavior.
+`compatibility.runstead_min_version` is required. Bump it when a pack
+starts depending on newer Runstead policy, verifier, worker, or manifest
+behavior.
 
 ## Goal Templates
 
@@ -161,13 +165,13 @@ generated:
 ```
 
 Recurring task ids must exist under `task-types/`. Acceptance contracts are
-verifier-facing names; they should be specific enough that a reviewer can tell
-what evidence is required.
+verifier-facing names; they should be specific enough that a reviewer can
+tell what evidence is required.
 
 ## Task Types
 
-Task types describe execution constraints, verifier requirements, and worker
-routing:
+Task types describe execution constraints, verifier requirements, and
+worker routing:
 
 ```yaml
 id: draft_followup
@@ -186,9 +190,9 @@ worker_routing:
   preferred: shell
 ```
 
-Keep task types side-effect explicit. If a task can send mail, create PRs, push
-branches, or call external APIs, policy must require approval unless the action
-is deliberately safe for the domain.
+Keep task types side-effect explicit. If a task can send mail, create PRs,
+push branches, or call external APIs, policy must require approval unless
+the action is deliberately safe for the domain.
 
 ## Fixtures And Evals
 
@@ -239,41 +243,49 @@ The validator checks that:
   symlinks and do not escape the pack directory.
 - Goal templates and task types declare the same domain id as the pack.
 - Referenced template and task ids match file names.
-- Extra task type YAML files that are not registered in `domain.yaml` are warned.
-- Task type worker routing must point at workers declared in `supported_workers`.
+- Extra task type YAML files that are not registered in `domain.yaml` are
+  warned.
+- Task type worker routing must point at workers declared in
+  `supported_workers`.
 - The default policy file exists.
 - The default policy declares `default_decision` and `default_risk`.
-- Fixture manifests reference known task types, templates, and local fixture paths.
+- Fixture manifests reference known task types, templates, and local
+  fixture paths.
 - Eval benchmarks reference known fixture ids.
 
-For packaged or installed packs, verify the stored manifest before trusting it:
+For packaged or installed packs, verify the stored manifest before trusting
+it:
 
 ```sh
 runstead domain manifest ./customer-ops --output ./customer-ops/runstead-manifest.json
 runstead domain verify-manifest ./customer-ops
+runstead domain maturity ./customer-ops
 ```
 
-Manifest verification rebuilds the current manifest and compares domain metadata,
-file sizes, and sha256 hashes against `runstead-manifest.json`.
+Manifest verification rebuilds the current manifest and compares domain
+metadata, file sizes, and sha256 hashes against `runstead-manifest.json`.
+The `maturity` command reports a pack's maturity tier based on declared
+fixtures, evals, and contract coverage.
 
 ## Package And Share
 
-Build a deterministic JSON bundle when a pack needs to move between workspaces:
+Build a deterministic JSON bundle when a pack needs to move between
+workspaces:
 
 ```sh
 runstead domain pack ./customer-ops --output customer-ops.runstead-pack.json
 ```
 
-The bundle embeds the manifest plus base64 file contents. Unpack it into a new
-directory with:
+The bundle embeds the manifest plus base64 file contents. Unpack it into a
+new directory with:
 
 ```sh
 runstead domain unpack customer-ops.runstead-pack.json --output ./customer-ops
 ```
 
 Unpacking verifies every file against the embedded manifest hashes, rejects
-unsafe paths, and writes `runstead-manifest.json` next to the extracted pack
-files. Use `--force` only when replacing an existing extracted pack.
+unsafe paths, and writes `runstead-manifest.json` next to the extracted
+pack files. Use `--force` only when replacing an existing extracted pack.
 
 List discoverable packs with:
 
@@ -304,28 +316,40 @@ runstead domain upgrade ./customer-ops
 ```
 
 Runstead records `domain_pack.upgraded` with the previous and next manifest
-versions. Upgrades are refused while active goals or tasks reference the pack
-unless `--force` is used.
+versions. Upgrades are refused while active goals or tasks reference the
+pack unless `--force` is used.
 
 Install and upgrade both enforce `compatibility.runstead_min_version` and
-`compatibility.runstead_max_version` against the current Runstead CLI version.
+`compatibility.runstead_max_version` against the current Runstead CLI
+version.
 
-Remove a locally installed pack when it is no longer referenced by active work:
+Remove a locally installed pack when it is no longer referenced by active
+work:
 
 ```sh
 runstead domain uninstall customer-ops
 ```
 
-Runstead refuses to uninstall a pack while active goals or tasks still reference
-it. Use `--force` only after you have archived or otherwise accounted for that
-work; forced uninstalls are still recorded in the audit log.
+Runstead refuses to uninstall a pack while active goals or tasks still
+reference it. Use `--force` only after you have archived or otherwise
+accounted for that work; forced uninstalls are still recorded in the audit
+log.
 
 When a goal template declares `generated.recurring_tasks`, Runstead creates
-initial queued tasks from the referenced task type contracts. The background
-scheduler uses the same task type contracts for later recurrences; the
-`repo-maintenance` `run_local_verifiers` task keeps its special test/lint command
-detection path.
+initial queued tasks from the referenced task type contracts. The
+background scheduler uses the same task type contracts for later
+recurrences; the `repo-maintenance` `run_local_verifiers` task keeps its
+special test/lint command detection path.
 
-Do not put runtime state, generated reports, or task outputs inside the domain
-pack. Those belong under `.runstead/state.db`, `.runstead/evidence`, and
-`.runstead/reports`.
+Do not put runtime state, generated reports, or task outputs inside the
+domain pack. Those belong under `.runstead/state.db`, `.runstead/evidence`,
+and `.runstead/reports`.
+
+## Extension Manifests Versus Domain Packs
+
+Domain packs ship installable task and goal contracts. Extension manifests
+in `.runstead/extensions/` ship readiness facets, evidence collectors,
+verifiers, and gates declared through `@runstead/sdk`. The two layers can
+coexist: a published pack may also ship example extension manifests under
+its own docs or fixture tree, and an organization can drop additional
+extension manifests next to any installed pack.

@@ -1,7 +1,7 @@
 # Research Monitor Golden Path
 
-`research-monitor` is the second maturity-gated built-in domain pack. It proves
-that Runstead's pack model can support a non-startup workflow with evidence,
+`research-monitor` is a maturity-gated built-in domain pack. It proves that
+Runstead's pack model can support a non-startup workflow with evidence,
 policy, fixtures, and eval contracts.
 
 ## Workflow
@@ -16,9 +16,9 @@ The weekly digest path is:
 6. `prepare_digest_release`
 7. `archive_research_memory`
 
-The pack treats webpage content, PDF text, and snippets as untrusted input. It
-allows read-only source discovery and evidence records, but publishing or
-external sends remain approval-gated.
+The pack treats webpage content, PDF text, and snippets as untrusted input.
+It allows read-only source discovery and evidence records, but publishing
+or external sends remain approval-gated.
 
 ## Evidence Gates
 
@@ -30,7 +30,8 @@ Digest readiness requires:
 - citations for every material claim
 - contradiction review with uncertainty markers
 - publish approval evidence before external distribution
-- archive records for durable claim ids, source ids, and follow-up questions
+- archive records for durable claim ids, source ids, and follow-up
+  questions
 
 ## Local Validation
 
@@ -50,5 +51,17 @@ The built-in fixtures cover:
 - `publish-gate-review`
 - `archive-memory-update`
 
-The fixture data is intentionally local and credential-free. It is designed to
-test pack contracts, not to fetch live research sources.
+The fixture data is intentionally local and credential-free. It is
+designed to test pack contracts, not to fetch live research sources.
+
+## Why It Matters
+
+Two mature built-in packs are enough to demonstrate that:
+
+- the pack contract is general (it covers startup readiness **and** a
+  research workflow that has nothing to do with code)
+- the verifier, evidence, and policy primitives in `@runstead/runtime`,
+  `@runstead/verifiers`, `@runstead/evidence`, and `@runstead/governance`
+  are not specific to repo-maintenance work
+- fixtures and evals can prove pack stability without requiring real
+  external services

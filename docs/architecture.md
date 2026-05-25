@@ -1,59 +1,188 @@
 # Architecture
 
-Runstead Core is domain-agnostic. It owns durable goals, tasks, events, and the
-state-machine contracts that let work be resumed, verified, and audited.
+Runstead is a layered control plane. The bottom layers are contract packages
+that an external runtime, IDE plugin, or third-party extension can depend on
+without pulling in any CLI internals. The CLI is one concrete host on top of
+those contracts; team-mode hosts replace its storage and execution wiring
+through the same interfaces.
 
-The current implementation keeps the package graph intentionally small:
+## Package Graph
 
-- `@runstead/core`: shared schemas, IDs, and control-plane contracts
-- `@runstead/governance`: policy evaluation, action risk scoring, and reusable
-  governance primitives
-- `@runstead/runtime`: task execution semantics, worker lifecycle result mapping,
-  storage/lock/artifact backend contracts, and provider-neutral tool-call
-  adapter primitives shared by concrete runners
-- `@runstead/tools`: governed tool action contracts used by policy and audit
-- `@runstead/verifiers`: verifier command contracts shared by agents, repair
-  loops, and startup readiness
-- `@runstead/evidence`: evidence quality/source contracts for readiness gates
-  and external connectors
+Contract packages (stable, side-effect free, no Node-specific hosting):
+
+- `@runstead/core`: shared schemas, IDs, durable goal/task/event types
+- `@runstead/runtime`: task execution semantics, worker lifecycle result
+  mapping, readiness plan/verdict/release-decision engine,
+  storage/lock/artifact backend contracts, team-control-plane contracts,
+  readiness run snapshot helpers, provider-neutral tool-call adapter
+  primitives (Codex Responses, OpenAI-compatible chat completions), and
+  startup UI smoke failure classification
+- `@runstead/governance`: policy DSL parser, deterministic evaluator with
+  deny > approval > allow precedence, action risk scorer, reusable policy
+  factories (protected paths, dangerous shell, dependency change, verifier
+  command, external write, worker start, model inference)
+- `@runstead/tools`: governed tool action contract registry covering
+  filesystem read/list/search/stat/write/patch, model-exposed git reads
+  (status, diff, log, show) plus orchestration-owned git branch/commit/push
+  actions, shell.exec, verifier.run, evidence.read, workspace.facts.read,
+  package.install and package.update, github.run.read, github.run.log.read,
+  github.pr.create, repo.publish_repair, worker.external.start,
+  worker.native.start, model.inference.request, checkpoint.create, and
+  checkpoint.restore
+- `@runstead/verifiers`: command verifier input/result shapes and
+  pass/fail classification
+- `@runstead/evidence`: evidence quality tier ladder
+  (none → self_reported → local_artifact → machine_verified →
+  external_observed), source trust ladder, evidence source schema
 - `@runstead/workers`: worker capability and governance-level contracts
-- `@runstead/state-sqlite`: SQLite schema and state-store adapter
-- `@runstead/state-postgres`: Postgres control-plane backend adapter for shared
-  runtime experiments
-- `@runstead/domain-packs`: built-in `repo-maintenance` pack and validation
-- `@runstead/skills`: skill package contracts, candidate scaffolding, and tests
-- `@runstead/sdk`: public extension contracts for readiness facets, evidence
-  collectors, verifiers, and gates
-- `@runstead/cli`: local command surface
-- `@runstead/testkit`: fixture and temporary workspace helpers
+- `@runstead/sdk`: public extension manifest, `defineRunsteadExtension`,
+  `validateRunsteadExtension`, `compileRunsteadExtensionRuntime`,
+  `extensionReadinessEvidenceRequirements`
+- `@runstead/skills`: experimental skill package validation and lifecycle
 
-Tool execution, verifiers, evidence capture, and workers still have concrete
-M1/M2 implementations inside `@runstead/cli`, but their stable contracts now
-live outside the CLI. Policy and risk primitives have moved into
-`@runstead/governance`; task execution semantics and worker lifecycle result
-mapping have moved into `@runstead/runtime`, along with backend contracts for
-event append concurrency, lock managers, artifact stores, local `RUNSTEAD_HOME`
-layout, and standard tool-call adapter primitives for Codex Responses and
-OpenAI-compatible chat completion shapes. Verifier command inputs, result
-records, and pass/fail classification live in `@runstead/verifiers` so domain
-integrations and repair loops do not import CLI internals to reason about
-verifier evidence. Runtime also defines the team control-plane contracts that a
-future shared backend must satisfy: organization scope, registered runners,
-distributed leases with fencing tokens, append-only audit sinks, and non-local
-identity/RBAC/secret boundaries.
+Storage backends:
 
-The intentionally CLI-local boundary is now the concrete host implementation:
-local subprocess execution, SQLite-backed local projections, artifact file
-writing, startup-ready phase orchestration, UI smoke execution, dashboard
-rendering, and concrete Codex Direct tool routing. These can keep moving behind
-package contracts, but external domain integrations should import
-`@runstead/runtime`, `@runstead/verifiers`, `@runstead/governance`, or
-`@runstead/sdk` instead of `@runstead/cli`.
+- `@runstead/state-sqlite`: default local SQLite state store, schema
+  migrations, owner-only file permissions, manager lock, execution leases
+- `@runstead/state-postgres`: Postgres `RuntimeControlPlaneBackend` adapter
+  with `expectedRevision` optimistic concurrency, idempotency keys, advisory
+  lock fencing tokens, JSONB projections, hash-addressed artifacts, and
+  schema migrations with checksum verification
 
-The default shipped product path remains local/CI-oriented: SQLite state, local
-artifacts, and a manager lock under `.runstead`. `@runstead/state-postgres` now
-implements the runtime backend contract for shared transactional state, but a
-team or organization deployment still needs profile wiring, registered runners,
-identity/RBAC, central secret handling, and shared artifact storage. Use the
-runtime team-control-plane assessment as the integration contract; do not treat
-the local SQLite backend as a multi-user service.
+Domain content and runtime host:
+
+- `@runstead/domain-packs`: built-in `repo-maintenance`, `ai-native-startup`,
+  and `research-monitor` packs
+- `@runstead/cli`: local command surface; hosts the startup-ready
+  orchestrator, the codex-direct worker, wrapped-worker integration, CI repair
+  orchestrator, dashboard server, daemon, and webhook intake
+- `@runstead/testkit`: control-plane conformance suite
+  (`runRuntimeControlPlaneBackendConformance`), fixture and temp-workspace
+  helpers
+
+## Where Runtime Boundaries Live
+
+Policy and risk primitives live in `@runstead/governance`. Task execution
+semantics, worker lifecycle result mapping (`implementation × verification ×
+agentCompletion`), and readiness verdict compilation live in `@runstead/runtime`,
+along with:
+
+- backend contracts: `RuntimeEventStore`, `RuntimeLockManager`,
+  `RuntimeArtifactStore`, `RuntimeControlPlaneBackend`
+- team contracts: `RuntimeTeamControlPlaneProfile`,
+  `assessTeamControlPlaneReadiness`
+- readiness contracts: `compileReadinessPlan`,
+  `evaluateCompiledReadinessPlan`, `compileReadinessReleaseDecision`,
+  `ReadinessEvidenceRequirement`
+- tool-call adapters: `codexResponsesToolCallAdapter`,
+  `openAiChatCompletionsToolCallAdapter`
+- UI smoke semantics: `classifyRuntimeStartupUiValidationFailure`
+  (product_gap, selector_unstable, browser_runtime, network, unknown)
+- readiness run snapshot: `RuntimeReadinessRunSnapshot`,
+  `createReadinessRunSnapshotEvent`
+
+Verifier command inputs, result records, and pass/fail classification live in
+`@runstead/verifiers` so domain integrations and repair loops do not import
+CLI internals to reason about verifier evidence. Tool action contracts live
+in `@runstead/tools` so any runtime that needs to evaluate policy or audit a
+side effect uses the same registry. Evidence quality and trust live in
+`@runstead/evidence` for the same reason.
+
+The intentionally CLI-local boundary is the concrete host implementation: local
+subprocess execution, SQLite-backed local projections, artifact file writing,
+the startup-ready phase orchestrator, UI smoke execution, the dashboard HTTP
+server, and concrete Codex Direct tool routing. External domain integrations
+should import `@runstead/runtime`, `@runstead/verifiers`,
+`@runstead/governance`, or `@runstead/sdk` instead of `@runstead/cli`.
+
+## CLI Internal Decomposition
+
+The two large CLI internals are decomposed into directories. Both old entry
+files (`startup-ready.ts`, `codex-direct-worker.ts`) are stable re-exports.
+
+`packages/cli/src/startup-ready/` (orchestrator and 18 supporting modules):
+
+- `index.ts`: main run/plan entrypoints, phase wiring, persistence
+- `plan.ts`: `planStartupReady`, extension discovery, phase plan
+- `build-mvp-phase.ts`: green-path preflight and worker invocation
+- `verifier-phase.ts`: verifier orchestration with fingerprint reuse
+- `ui-smoke-phase.ts`: UI smoke execution and bounded auto-repair
+- `report-phase.ts`: launch audit, security baseline, launch/complete reports
+- `decision.ts`: target-aware readiness decision rendering
+- `format.ts`: operator-facing run summary rendering
+- `operator-actions.ts`: persisted operator command catalogue
+- `local-evidence.ts`: conservative local baseline ingest
+- `evidence.ts`, `finalize.ts`, `progress.ts`, `run-state.ts`,
+  `shared.ts`, `types.ts`, `options.ts`, `context-phase.ts`,
+  `constants.ts`
+
+`packages/cli/src/codex-direct/` (native worker and tool router):
+
+- `worker.ts`: top-level worker loop, model turn budgeting, resume
+- `tool-router.ts`, `tool-definitions.ts`, `tool-arguments.ts`,
+  `tool-types.ts`: governed dispatch surface and JSON schemas
+- `governed-tools.ts`: shared `runGovernedToolAction` invocation paths
+- `model-request.ts`: heartbeat, timeout abort, bounded retry with jitter
+  for transient model errors
+- `patch-actions.ts`: scaffold-aware `apply_patch` classification
+- `git-actions.ts`, `evidence-actions.ts`, `policy-actions.ts`,
+  `result.ts`, `constants.ts`, `prompts.ts`
+
+## Storage And Team Mode
+
+The default shipped product is local workstations and CI: SQLite state, local
+artifacts, a manager lock under `.runstead`, and execution leases for
+stale-run recovery.
+
+`@runstead/state-postgres` implements `RuntimeControlPlaneBackend` for shared
+state. `runRuntimeControlPlaneBackendConformance` exercises the same five
+checks on both backends:
+
+- atomic event append + projection write
+- idempotency-keyed retry
+- `expectedRevision` optimistic concurrency conflict
+- lock acquire/renew/release lifecycle
+- artifact write/read with content hash
+
+`createPostgresTeamControlPlaneProfile` returns a
+`RuntimeTeamControlPlaneProfile` that satisfies
+`assessTeamControlPlaneReadiness`. A real organization deployment must still
+wire: runner identity and heartbeat, IdP/RBAC, central secret store, and
+shared artifact storage (S3 or equivalent). Local SQLite must not be
+presented as a multi-tenant security boundary.
+
+## Extension Loading Pipeline
+
+```
+.runstead/extensions/*.{yaml,yml,json}      ← author surface
+    │
+    ▼
+parseExtensionManifest (yaml/json)          ← in @runstead/cli
+    │
+    ▼
+compileRunsteadExtensionRuntime             ← in @runstead/sdk
+    │  resolves gate→facet references
+    │  flattens evidenceRequirements
+    │  computes safeForWrappedWorkers
+    │  raises RunsteadExtensionCompileError on bad references
+    ▼
+extensionReadinessEvidenceRequirements      ← in @runstead/sdk
+    │
+    ▼
+compileReadinessPlan + evaluate…            ← in @runstead/runtime
+    │  contributes blockers when required tiers/types are missing
+    ▼
+startupReadinessExtensionPolicyBlockers     ← in @runstead/cli
+    │  rejects unsafe collectors on Level 1 wrapped workers
+    │  rejects quality below target minimum
+    │  rejects missing freshness for staging/production
+    ▼
+executeStartupReadinessExtensions           ← in @runstead/cli
+       runs each collector command through runGovernedToolAction,
+       parses JSON evidence, records it as startup evidence
+```
+
+## ADRs
+
+- [adr/0001-node-typescript-monorepo.md](adr/0001-node-typescript-monorepo.md):
+  pnpm workspace, Node 24, Turbo, Vitest baseline

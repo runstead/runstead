@@ -6,57 +6,93 @@ verifier output, UI smoke, reports, and a target-aware launch verdict.
 
 ## Golden Command
 
-Use this as the default founder-facing path:
+The default founder-facing path:
 
 ```bash
 runstead startup ready \
   --cwd /path/to/mvp \
   --stage launch \
-  --worker codex_cli \
-  --target local
+  --target local \
+  --worker codex_direct \
+  --governance governed
 ```
 
-The command output names the selected worker governance boundary. `codex_cli`
-is a Level 1 wrapped worker: Runstead governs launch, checkpoint, dependency
-policy, diff scope, verifier evidence, and reports, but it does not hard-proxy
-every internal Codex CLI tool call. Use `codex_direct` when the product promise
-requires Runstead to govern exposed model tool calls through its native proxy.
+For an empty repo, add the built-in scaffold profile:
+
+```bash
+runstead startup ready \
+  --cwd /path/to/empty-repo \
+  --stage launch \
+  --target local \
+  --worker codex_direct \
+  --governance governed \
+  --app-template static-todo \
+  --app-type local-first-web
+```
+
+The command output names the selected worker governance boundary:
+
+- `codex_cli` and `claude_code` are Level 1 wrapped workers: Runstead governs
+  launch, checkpoint, dependency policy, diff scope, verifier evidence, and
+  reports, but cannot hard-proxy every internal tool call.
+- `codex_direct` is the Level 2 native proxy: every exposed model tool call is
+  evaluated by Runstead before it runs.
+
+`--governance auto` (default) keeps local and staging targets on `codex_cli`
+and routes production to `codex_direct` unless `--worker` overrides.
+`--governance readiness` keeps Level 1; `--governance governed` requires
+`codex_direct`.
 
 By default the onboarding path is non-interactive and uses conservative
 generated context and measurement defaults. Add `--interactive` to collect
 founder-supplied architecture principles, constraints, accepted debt, and core
-metrics before Runstead writes context/measurement artifacts and evidence.
+metrics. Add `--guided` to print persisted next-step commands for every
+blocker.
 
 For the `local` target, `startup ready` also records a conservative local
 baseline when evidence is missing: problem/user/solution hypotheses,
 disconfirming-signal review, metric snapshot, migration plan, rollback plan,
-observability baseline, release plan, and founder bottleneck ownership. These
-records are marked as local/manual or local-command evidence; they make a local
-launch review smoother but do not replace staging deployment, production
-analytics, support, or customer evidence.
+rollback drill, observability baseline, monitoring alerts, error budget,
+migration validation, traffic gate, post-launch watch placeholder, release
+plan, and founder bottleneck ownership. These records are marked as
+local/manual or local-command evidence; they make a local launch review
+smoother but do not replace staging deployment, production analytics,
+support, or customer evidence.
 
-The run performs these phases:
+## Phases
+
+Each readiness run performs these phases:
 
 1. onboard repository and initialize Runstead state
-2. generate agent context
-3. generate the measurement framework
-4. run bounded MVP build/repair with the selected worker
-5. discover and run `test`, `lint`, `typecheck`, and `build`
+2. generate or ingest agent context (`AGENTS.md`, `CLAUDE.md`, `CODEX.md`)
+3. generate or ingest the measurement framework
+4. run bounded MVP build/repair with the selected worker, or **skip the
+   worker on the green path** when the current app surface already has
+   discoverable test/lint/typecheck/build commands and matching verifier
+   evidence
+5. discover and run verifiers (test, lint, typecheck, build, plus any
+   verifiers contributed by `.runstead/extensions`)
 6. read or create `.runstead/startup/ui-smoke.yaml` and execute UI smoke
-7. generate repo readiness and security audit evidence
-8. generate launch readiness and decision reports
-9. run the complete-product check
+7. on UI smoke failure classified as `product_gap` or `selector_unstable`,
+   write a structured repair-request artifact and run one bounded MVP repair
+   attempt; abort cleanly on `browser_runtime` or `network` failure
+8. run required extension collectors declared under `.runstead/extensions`
+9. generate repo readiness and security audit evidence
+10. generate launch readiness and decision reports
+11. run the complete-product check
 
-Use `--plan` before a costly run:
+If the agent worker reports failure but the current code fingerprint matches
+and verifiers pass, Runstead records the run as `completed_with_warnings`
+under verifier-only recovery instead of `failed`.
+
+## Common Flags
 
 ```bash
 runstead startup ready --cwd /path/to/mvp --stage launch --target production --plan
-```
-
-Use `--resume` after interruption:
-
-```bash
 runstead startup ready --cwd /path/to/mvp --resume <run-id>
+runstead startup ready --cwd /path/to/mvp --force-build         # force agent, skip green path
+runstead startup ready --cwd /path/to/mvp --refresh-context     # regenerate context docs
+runstead startup ready --cwd /path/to/mvp --max-attempts 3      # bounded MVP repair attempts
 ```
 
 ## Outputs
@@ -71,15 +107,20 @@ It also writes reports under `.runstead/reports/`, including:
 
 - `startup-readiness-run-<run-id>.md`
 - `startup-readiness-run-<run-id>.json`
-- `launch-readiness-ai-native-startup.md`
+- `launch-readiness-ai-native-startup.md` (target-specific status)
 - `startup-complete-product-check.md`
 - CI summary files when `--ci` is used
+- `startup-artifact-hygiene.md` and `.json` when `runstead startup artifact hygiene` is run
+
+Persisted run state includes guided steps and operator commands so the
+dashboard and `runstead startup ready --resume` can pick up exactly where
+the previous run left off.
 
 The CI summary separates Runstead's local release gate from remote GitHub
-Actions state. When a GitHub `origin` and `HEAD` are available, Runstead queries
-the GitHub Actions API for the current commit. If the repo is private,
-unauthenticated, or no run exists yet, the remote state is recorded as `unknown`
-or `not_configured` instead of being treated as passed.
+Actions state. Remote state is one of `passed`, `failed`, `pending`,
+`unknown`, `not_configured`, or
+`remote_ci_not_applicable_until_initial_commit`. Only `failed` and `pending`
+block a release; `unknown` and `not_configured` are warnings.
 
 The final surface answers:
 
@@ -87,20 +128,50 @@ The final surface answers:
 - Can this private beta or staging target launch?
 - Can this public launch ship?
 - What evidence or phase is blocking the requested target?
-- Which evidence ids, source artifacts, timestamps, git SHA, and command output
-  support the verdict?
+- Which evidence ids, source artifacts, timestamps, git SHA, fingerprints,
+  and command output support the verdict?
 
-Serve the same state as a local dashboard:
+## Local Dashboard And Operator Console
+
+Build the dashboard once:
+
+```bash
+runstead dashboard build --cwd /path/to/mvp
+```
+
+Or serve it as a local HTTP UI:
 
 ```bash
 runstead dashboard serve --cwd /path/to/mvp
 ```
 
-The dashboard now includes an operator console with the latest readiness run,
-pending approvals, blocker count, stale evidence count, resume command, and
-recommended next command. It merges startup next actions, readiness run
-commands, guided-flow commands, and daemon approval resume commands. The same
-action queue is available at `/operator-actions.json` for local tooling.
+The dashboard shows the latest readiness run, a run-comparison timeline
+(latest completed vs latest blocked, resolved blockers, still-blocked
+items), pending approvals, stale evidence count, blockers, resume command,
+and recommended next command. It merges startup next actions, persisted
+readiness run commands, guided-flow commands, and daemon approval-and-resume
+commands. The same queue is exposed as JSON at `/operator-actions.json`.
+
+By default the dashboard is read-only. Enable the protected Operator API to
+approve, deny, resume, run verifiers, or record manual evidence over HTTP:
+
+```bash
+runstead dashboard serve --cwd /path/to/mvp --enable-operator-api
+```
+
+Runstead prints a session token and a CSRF token. Both must be sent on every
+mutating request via `x-runstead-session-token` (or `Authorization: Bearer`)
+and `x-runstead-csrf-token`. The server only binds local addresses and
+rejects cross-origin requests. Mutating endpoints:
+
+- `POST /operator-actions/<id>/run`
+- `POST /approvals/<id>/(approve|deny)`
+- `POST /runs/<id>/resume`
+- `POST /verifiers/run`
+- `POST /evidence/manual`
+
+Every mutation still goes through Runstead policy, RBAC, and audit; the API
+is a transport, not a bypass.
 
 ## UI Smoke
 
@@ -145,60 +216,89 @@ checks:
 ```
 
 If the file is missing but a `dev`, `start`, or `preview` script exists,
-Runstead creates a default config. If no server command can be found, the UI
-phase becomes a blocker rather than a silent skip.
+Runstead creates a default config. For todo/task apps the generated config
+includes an add → toggle → search → reload-persistence golden path. If no
+server command can be found, the UI phase becomes a blocker rather than a
+silent skip.
 
-For compatibility with older agent-generated configs, Runstead also accepts the
-legacy `startup.run` / `startup.readyWhen.url` shape and
-`checks[].expect.bodyContains`. New configs should use `server`, `expectText`,
-and optional `steps`.
+Failures are classified through `@runstead/runtime`'s
+`classifyRuntimeStartupUiValidationFailure`:
+
+- `product_gap` and `selector_unstable` trigger one bounded auto-repair
+  attempt via `startupBuildMvp`
+- `browser_runtime` and `network` are recorded as blockers without invoking
+  the agent (do not modify product code to chase tooling problems)
+
+Failed runs save DOM, screenshot, console log, and managed server log
+artifacts when available.
 
 Supported UI smoke steps are `fill`, `select`, `click`, `expectText`,
-`expectCount`, `reload`, and `expectPersisted`. For todo/task apps, generated
-configs include a golden path that adds a synthetic todo, toggles it, exercises
-search/filter controls when present, and reloads to prove persistence. Flow
-execution stores DOM, screenshot, console log, and managed server log artifacts
-when available so a failed launch gate has inspectable evidence.
+`expectCount`, `reload`, and `expectPersisted`. Legacy
+`startup.run`/`startup.readyWhen.url`/`checks[].expect.bodyContains` shapes
+are still accepted for backward compatibility.
 
 ## Artifact Hygiene
 
-Long dogfood runs can leave many evidence, report, startup, log, and checkpoint
-files under `.runstead`. Generate a compact latest view and retention report:
+Long dogfood runs leave evidence, report, startup, log, and checkpoint files
+under `.runstead`. Generate a compact latest view and retention report:
 
 ```bash
 runstead startup artifact hygiene --cwd /path/to/mvp --retention-days 30
 ```
 
-The command writes:
+Outputs:
 
 - `.runstead/startup/latest-artifacts.json`
 - `.runstead/reports/startup-artifact-hygiene.md`
 - `.runstead/reports/startup-artifact-hygiene.json`
 
 Files are classified as `current`, `referenced`, `superseded`, or
-`unreferenced`. By default the command is report-only. Add `--prune` to delete
-unreferenced files older than the retention window.
+`unreferenced`. By default the command is report-only. Add `--prune` to
+delete unreferenced files older than the retention window.
 
 ## Evidence Tiers
 
 Runstead separates local evidence from launch-grade evidence:
 
-- `synthetic_smoke`
-- `local_manual`
-- `local_command`
-- `ci_verified`
-- `staging_deployment`
-- `production_deployment`
-- `real_user_analytics`
-- `support_ticket`
-- `security_scan`
+| Tier                    | Source examples                                    |
+| ----------------------- | -------------------------------------------------- |
+| `synthetic_smoke`       | local UI smoke flow, local fixture commands        |
+| `local_manual`          | founder-recorded plan/observation                  |
+| `local_command`         | local test/lint/typecheck/build verifier output    |
+| `ci_verified`           | GitHub Actions or other CI verifier evidence       |
+| `staging_deployment`    | staging deploy URL with a verified health check    |
+| `production_deployment` | production deploy URL with a verified health check |
+| `real_user_analytics`   | PostHog / Amplitude / etc. evidence of real users  |
+| `support_ticket`        | support, feedback, or incident triage record       |
+| `security_scan`         | scanner reports or dependency audit                |
 
-`--target local` can return `local_launch_ready` from local command and UI
-evidence. `--target staging` additionally requires CI, staging deployment,
-rollback drill, monitoring alert, and migration validation evidence. `--target
-production` requires production deployment, rollback drill, monitoring alerts,
-error budget, migration validation, traffic gate, real analytics, support or
-feedback triage, security evidence, and a post-launch watch record.
+Target requirements:
+
+- `--target local`: synthetic UI smoke and local command evidence are enough
+- `--target staging`: additionally requires CI-verified, staging deployment,
+  rollback drill, monitoring alerts, and migration validation
+- `--target production`: additionally requires production deployment,
+  real-user analytics, support or feedback triage, security scan, rollback
+  plan, rollback drill, observability, monitoring alerts, error budget,
+  migration validation, traffic gate, and post-launch watch
+
+These rules are encoded in `@runstead/runtime`'s readiness verdict engine and
+applied directly by `startup ready` and CI summaries. `startup status`,
+`startup complete-check`, and the launch readiness report consume the latest
+readiness verdict or target status so their surfaces stay aligned with that
+engine.
+
+## Readiness Extensions
+
+Drop extension manifests into `.runstead/extensions/` to declare additional
+facets, evidence collectors, verifiers, and gates. `startup ready` discovers
+each manifest, compiles it with `@runstead/sdk`, applies collector policy
+(safe-for-wrapped-worker, quality tier, freshness), and runs collector
+commands through governed local execution.
+
+See [docs/sdk.md](sdk.md) for the contract and
+[docs/examples/extensions](examples/extensions) for copyable PostHog,
+Vercel, Sentry, and GitHub Actions manifests.
 
 ## CI Integration
 
@@ -220,12 +320,13 @@ CI mode writes:
 - JSON artifact
 - GitHub Check summary payload
 - PR comment body
+- release decision (`allow_release` or `block_release`) computed by the
+  unified `compileReadinessReleaseDecision` engine in `@runstead/runtime`
 
 ## Manual Evidence Escape Hatches
 
-The one-command run is the product path. The lower-level commands are still
-available when a team needs to attach stronger evidence before rerunning
-readiness:
+The one-command run is the product path. Lower-level commands are available
+when a team needs to attach stronger evidence before rerunning readiness:
 
 ```bash
 runstead startup hypothesis add --cwd /path/to/mvp --kind problem --statement "..."
@@ -240,7 +341,15 @@ runstead startup evidence add --cwd /path/to/mvp --type error_budget --summary "
 runstead startup evidence add --cwd /path/to/mvp --type migration_validation --summary "..." --source docs/migration-validation.md --gate launch
 runstead startup evidence add --cwd /path/to/mvp --type traffic_gate --summary "..." --source docs/traffic-gate.md --gate launch
 runstead startup evidence add --cwd /path/to/mvp --type post_launch_watch --summary "..." --source docs/post-launch-watch.md --gate launch
-runstead startup evidence manual-change --cwd /path/to/mvp --operator founder --reason "agent omitted package scripts" --diff-summary "added test/lint/typecheck/build scripts" --file package.json --command "pnpm test" --evidence ev_after_fix --gate launch
+runstead startup evidence manual-change \
+  --cwd /path/to/mvp \
+  --operator founder \
+  --reason "agent omitted package scripts" \
+  --diff-summary "added test/lint/typecheck/build scripts" \
+  --file package.json \
+  --command "pnpm test" \
+  --evidence ev_after_fix \
+  --gate launch
 runstead startup source list
 runstead startup source record --cwd /path/to/mvp --connector vercel --target staging --source-uri https://vercel.com/acme/todo/deployments/dpl_123 --summary "Staging deployment smoke passed" --status pass
 runstead startup source verify --cwd /path/to/mvp --connector render --target production --source-uri https://todo.onrender.com/health --expect-status 200 --expect-text "ok"
@@ -253,13 +362,11 @@ outside an agent loop. Launch reports show these records under Change
 Authorship, separate from agent and verifier evidence.
 
 `startup source verify` is the preferred escape hatch for staging and
-production integrations because it performs a live HTTP check before recording
-the evidence artifact. Named deployment connectors (`vercel`, `fly`, `render`)
-and production connectors such as `sentry` and `posthog` accept `--target`, so
-their artifacts carry readiness tiers like `staging_deployment`,
-`production_deployment`, or `real_user_analytics`. Use them for deployment
-health URLs, observability status pages, analytics exports, billing health
-endpoints, support queues, or scanner reports that can expose a stable URL.
+production integrations because it performs a live HTTP check before
+recording the evidence artifact. Named deployment connectors (`vercel`,
+`fly`, `render`) and production connectors such as `sentry` and `posthog`
+accept `--target`, so their artifacts carry readiness tiers like
+`staging_deployment`, `production_deployment`, or `real_user_analytics`.
 
 After stronger evidence is recorded, rerun the same gate:
 

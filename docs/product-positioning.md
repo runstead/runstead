@@ -1,41 +1,43 @@
 # Product Positioning
 
-Runstead is the control plane for governed AI-native execution, starting with
-repo maintenance and launch-ready software delivery.
+Runstead is the control plane for governed AI-native execution, starting
+with repo maintenance and launch-ready software delivery.
 
 The founder-facing version is:
 
 > Runstead helps AI-native founders turn goals into governed, evidence-backed
 > work across product, code, and operations.
 
-The product should not be positioned as a founder coach, a project management
-tool, a Claude or Codex wrapper, or a generic agent framework. Its durable value
-is the execution layer that makes AI work bounded, evidenced, verifiable,
-auditable, and resumable.
+The product should not be positioned as a founder coach, a project
+management tool, a Claude or Codex wrapper, or a generic agent framework.
+Its durable value is the execution layer that makes AI work bounded,
+evidenced, verifiable, auditable, resumable, and team-shareable.
 
 ## Wedge
 
 The first commercial wedge is AI-coded MVP readiness:
 
-> Runstead for AI-coded MVPs: keep agent-built products verifiable, auditable,
-> and launch-ready.
+> Runstead for AI-coded MVPs: keep agent-built products verifiable,
+> auditable, and launch-ready.
 
-This keeps the scope narrow enough to ship and valuable enough to pay for. MVP
-and launch teams already have real repositories, tests, CI, releases, incidents,
-support workflows, technical debt, and deployment risk. Runstead can reuse the
-repo-maintenance control loop here instead of becoming a chat-first idea
-validation product.
+This keeps the scope narrow enough to ship and valuable enough to pay for.
+MVP and launch teams already have real repositories, tests, CI, releases,
+incidents, support workflows, technical debt, and deployment risk. Runstead
+reuses the repo-maintenance control loop here instead of becoming a
+chat-first idea validation product.
 
 ## Product Boundaries
 
 Runstead owns:
 
 - durable goals and task records
-- scoped autonomy policies
+- scoped autonomy policies and reusable approval grants
 - verifier discovery and execution evidence
-- checkpoints, audit logs, and resume paths
-- readiness reports and stage gates
-- decision and evidence artifacts
+- checkpoints, execution leases, audit logs, and resume paths
+- readiness reports, stage gates, and a unified release-decision engine
+- third-party extension contracts via `@runstead/sdk`
+- a local dashboard with a protected, opt-in operator console
+- a team-control-plane contract that `@runstead/state-postgres` satisfies
 
 Worker agents own:
 
@@ -45,9 +47,10 @@ Worker agents own:
 - local repair attempts
 - summarization from gathered evidence
 
-Runstead should keep the final state in structured artifacts, repository files,
-SQLite state, evidence records, reports, and decision records. Chat can be the
-interaction surface, but it should not be the source of truth.
+Runstead keeps the final state in structured artifacts, repository files,
+SQLite or Postgres state, evidence records, reports, and decision records.
+Chat can be an interaction surface, but it should not be the source of
+truth.
 
 ## Product Principles
 
@@ -58,8 +61,8 @@ interaction surface, but it should not be the source of truth.
 
 2. Agents are workers, Runstead is the control plane
 
-   Claude, Codex, and other workers execute. Runstead governs goals, boundaries,
-   evidence, acceptance, audit, and recovery.
+   Claude, Codex, and other workers execute. Runstead governs goals,
+   boundaries, evidence, acceptance, audit, recovery, and team handoff.
 
 3. Artifacts beat chat
 
@@ -68,25 +71,47 @@ interaction surface, but it should not be the source of truth.
 
 4. Autonomy must be scoped
 
-   AI workers can act with useful autonomy only inside explicit path, tool,
-   policy, budget, verifier, and approval limits.
+   AI workers can act with useful autonomy only inside explicit path,
+   tool, policy, budget, verifier, and approval limits. Approval grants
+   may be reused under canonical signature or scoped reusable rules; they
+   must not be bypassed.
 
 5. Stage gates matter
 
-   Idea, MVP, Launch, and Scale each need exit criteria backed by evidence.
+   Idea, MVP, Launch, Scale, and Complete each need exit criteria backed
+   by evidence. Local launch evidence does not substitute for production
+   evidence.
 
-## 90 Day Target
+6. Failure modes deserve as much design as success modes
 
-Within 90 days, Runstead should become the default readiness and control plane
-for AI-coded MVPs before launch.
+   Crashed runs, stale tasks, transient model errors, failed UI smoke,
+   exhausted retry budgets, and revoked approvals all have explicit
+   recovery paths in the product.
 
-Acceptance criteria:
+## What Runstead Is Not
 
-- a founder can initialize an existing MVP repository with a startup domain pack
-- Runstead can generate agent context and a measurement framework task trail
-- Runstead can use Codex or Claude Code for repo audit work
-- Runstead can produce a launch readiness report
-- each risk item has evidence, a source, and a recommended next task
-- remediation work can close the loop through Runstead agent and verifier runs
-- the final report answers whether the AI-coded MVP can launch, and what blocks
-  it if it cannot
+Runstead should not become:
+
+- an AI startup mentor
+- a Claude or Codex wrapper
+- a project management clone
+- a Zapier-style automation surface
+- another agent framework
+- a multi-tenant SaaS without an explicit operator deployment
+
+It should keep returning to governed, evidence-backed execution: goals,
+policies, verifiers, evidence, checkpoints, audits, stage gates, reports,
+resume paths, and team-shareable artifacts.
+
+## Roadmap Shape
+
+The current near-term focus:
+
+- close residual gaps in the founder readiness loop (recover paths,
+  resilience, scaffolded approval reuse)
+- mature the extension ecosystem (more example collectors, adapter
+  contracts, freshness enforcement)
+- harden the team-control-plane path (Postgres conformance, runner
+  identity, shared artifact store)
+- keep the documentation honest about what a chosen worker mode can and
+  cannot prove
