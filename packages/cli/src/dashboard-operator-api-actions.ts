@@ -3,11 +3,11 @@ import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sql
 
 import { decideApproval } from "./approvals.js";
 import { DashboardOperatorApiHttpError } from "./dashboard-operator-api-http.js";
-import type {
-  BuildDashboardResult,
-  DashboardOperatorAction,
-  DashboardSnapshot
-} from "./dashboard-types.js";
+import type { BuildDashboardResult } from "./dashboard-types.js";
+import {
+  approvalIdFromOperatorAction,
+  shellOptionValue
+} from "./dashboard-operator-action-command.js";
 import {
   optionalStartupGateStage,
   requiredStringBodyField,
@@ -399,45 +399,6 @@ async function runDashboardOperatorAction(input: {
     "unsupported_operator_action",
     `Operator action ${action.id} is not executable by the local API.`
   );
-}
-
-function approvalIdFromOperatorAction(
-  action: DashboardOperatorAction,
-  snapshot: DashboardSnapshot
-): string | undefined {
-  if (action.id.startsWith("approval-")) {
-    return action.id.slice("approval-".length);
-  }
-
-  if (action.id === "daemon-approval-resume") {
-    return snapshot.daemon.approvalId ?? approvalIdFromCommand(action.command);
-  }
-
-  return approvalIdFromCommand(action.command);
-}
-
-function approvalIdFromCommand(command: string): string | undefined {
-  const match = /\bapproval\s+approve-and-resume\s+("[^"]+"|'[^']+'|\S+)/.exec(command);
-
-  return match?.[1] === undefined ? undefined : unquoteShellToken(match[1]);
-}
-
-function shellOptionValue(command: string, option: string): string | undefined {
-  const escaped = option.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const match = new RegExp(`${escaped}\\s+("[^"]+"|'[^']+'|\\S+)`).exec(command);
-
-  return match?.[1] === undefined ? undefined : unquoteShellToken(match[1]);
-}
-
-function unquoteShellToken(value: string): string {
-  if (
-    (value.startsWith("'") && value.endsWith("'")) ||
-    (value.startsWith('"') && value.endsWith('"'))
-  ) {
-    return value.slice(1, -1);
-  }
-
-  return value;
 }
 
 async function requireDashboardOperatorPermission(input: {
