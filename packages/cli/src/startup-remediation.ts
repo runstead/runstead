@@ -3,25 +3,14 @@ import { resolve } from "node:path";
 import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sqlite";
 
 import { generateLaunchReadinessReport } from "./launch-readiness-report.js";
-import {
-  createLocalAgentTask,
-  runLocalAgentTask,
-  type LocalAgentWorkerKind,
-  type RunLocalAgentTaskOptions
-} from "./local-agent.js";
 import { requireRunsteadStateDb } from "./runstead-root.js";
 import {
   prioritizedBlockers,
   remediationNextCommands,
   uniqueBlockers
 } from "./startup-remediation-guidance.js";
-import { checkStartupGate, type StartupGateStage } from "./startup-evidence.js";
-import {
-  recordRemediationExecution,
-  recordRemediationFailureEvidence,
-  remediationExecutionOutcome,
-  remediationWorkerPrompt
-} from "./startup-remediation-execution.js";
+import { checkStartupGate } from "./startup-evidence.js";
+import { remediationExecutionOutcome } from "./startup-remediation-execution.js";
 import {
   remediationPlanGraph,
   remediationTaskSummary,
@@ -43,8 +32,8 @@ import type {
   StartupRemediationExecutionSummary,
   StartupRemediationTaskSummary
 } from "./startup-remediation-types.js";
+import { executeRemediationTask } from "./startup-remediation-runner.js";
 import { listTasks } from "./tasks.js";
-import type { WorkerProcessRunner } from "./wrapped-worker.js";
 
 const STARTUP_DOMAIN = "ai-native-startup";
 
@@ -218,82 +207,4 @@ export async function executeStartupRemediationPlan(
       ? {}
       : { finalReportPath: finalReport.reportPath })
   };
-}
-
-async function executeRemediationTask(input: {
-  cwd: string;
-  domain: string;
-  stage: StartupGateStage;
-  worker: LocalAgentWorkerKind;
-  item: StartupRemediationTaskSummary;
-  model?: string;
-  workerRunner?: WorkerProcessRunner;
-  onWorkerProgress?: RunLocalAgentTaskOptions["onWorkerProgress"];
-  workerProgressIntervalMs?: number;
-  now?: Date;
-}): Promise<StartupRemediationExecutionSummary> {
-  const created = await createLocalAgentTask({
-    cwd: input.cwd,
-    title: `Remediate startup blocker: ${input.item.blocker}`,
-    prompt: remediationWorkerPrompt(input.item),
-    worker: input.worker,
-    mode: "repair",
-    checkpoint: true,
-    ...(input.model === undefined ? {} : { model: input.model }),
-    ...(input.now === undefined ? {} : { now: input.now })
-  });
-  const run = await runLocalAgentTask({
-    cwd: input.cwd,
-    taskId: created.task.id,
-    ...(input.workerRunner === undefined ? {} : { workerRunner: input.workerRunner }),
-    ...(input.workerProgressIntervalMs === undefined
-      ? {}
-      : { workerProgressIntervalMs: input.workerProgressIntervalMs }),
-    ...(input.onWorkerProgress === undefined
-      ? {}
-      : { onWorkerProgress: input.onWorkerProgress }),
-    ...(input.now === undefined ? {} : { now: input.now })
-  });
-  const gate = await checkStartupGate({
-    cwd: input.cwd,
-    domain: input.domain,
-    stage: input.stage,
-    ...(input.now === undefined ? {} : { now: input.now })
-  });
-  const resolved = !gate.blockers.includes(input.item.blocker);
-  const failureEvidence =
-    resolved && run.status === "completed"
-      ? undefined
-      : await recordRemediationFailureEvidence({
-          cwd: input.cwd,
-          stage: input.stage,
-          blocker: input.item.blocker,
-          localAgentTaskId: created.task.id,
-          status: run.status,
-          summary: run.summary,
-          remainingBlockers: gate.blockers,
-          ...(input.now === undefined ? {} : { now: input.now })
-        });
-  const execution: StartupRemediationExecutionSummary = {
-    remediationTaskId: input.item.task.id,
-    localAgentTaskId: created.task.id,
-    blocker: input.item.blocker,
-    status: run.status,
-    summary: run.summary,
-    resolved,
-    remainingBlockers: gate.blockers,
-    gateEventId: gate.event.eventId,
-    ...(failureEvidence === undefined
-      ? {}
-      : { failureEvidenceId: failureEvidence.evidence.id })
-  };
-
-  await recordRemediationExecution({
-    cwd: input.cwd,
-    task: input.item.task,
-    execution,
-    ...(input.now === undefined ? {} : { now: input.now })
-  });
-
-  return execution;
 }
