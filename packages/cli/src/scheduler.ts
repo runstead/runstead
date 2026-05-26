@@ -1,17 +1,20 @@
 import { join, resolve } from "node:path";
 
-import {
-  type Goal,
-  type JsonObject,
-  type RunsteadEvent,
-  type Task
-} from "@runstead/core";
+import { type Goal, type RunsteadEvent, type Task } from "@runstead/core";
 import { loadDomainPackBundleFromDir, type TaskType } from "@runstead/domain-packs";
 import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sqlite";
 
 import { listGoals } from "./goals.js";
 import { withRunsteadManagerLock } from "./manager-lock.js";
 import { requireRunsteadStateDbSync } from "./runstead-root.js";
+import {
+  assertPositiveInterval,
+  compareTasksNewestFirst,
+  dueAtForTask,
+  recurringTaskIntervalMs,
+  recurringTaskTypes,
+  repositoryPathForGoal
+} from "./scheduler-recurrence.js";
 import { buildDomainTask, buildRunLocalVerifiersTask, listTasks } from "./tasks.js";
 
 export const DEFAULT_SCHEDULER_INTERVAL_MS = 24 * 60 * 60 * 1000;
@@ -419,106 +422,6 @@ function scheduleDomainTask(input: {
     dueAt: input.dueAt,
     intervalMs: input.intervalMs
   };
-}
-
-function recurringTaskTypes(goal: Goal): string[] {
-  const recurringTasks = goal.scope.recurringTasks;
-
-  if (!Array.isArray(recurringTasks)) {
-    return [];
-  }
-
-  return recurringTasks.filter(
-    (item): item is string => typeof item === "string" && item.trim().length > 0
-  );
-}
-
-function recurringTaskIntervalMs(
-  goal: Goal,
-  taskType: string,
-  defaultIntervalMs: number
-): number {
-  const intervalMs =
-    readPositiveNumber(goal.scope, ["scheduler", "tasks", taskType, "intervalMs"]) ??
-    readPositiveNumber(goal.scope, ["scheduler", "intervalMs"]) ??
-    readPositiveNumber(goal.scope, ["schedule", "intervalMs"]) ??
-    readPositiveNumber(goal.scope, ["scheduleIntervalMs"]) ??
-    readPositiveMinutes(goal.scope, [
-      "scheduler",
-      "tasks",
-      taskType,
-      "intervalMinutes"
-    ]) ??
-    readPositiveMinutes(goal.scope, ["scheduler", "intervalMinutes"]) ??
-    readPositiveMinutes(goal.scope, ["schedule", "intervalMinutes"]) ??
-    readPositiveMinutes(goal.scope, ["scheduleIntervalMinutes"]) ??
-    defaultIntervalMs;
-
-  assertPositiveInterval(intervalMs);
-
-  return intervalMs;
-}
-
-function readPositiveMinutes(
-  source: JsonObject,
-  path: readonly string[]
-): number | undefined {
-  const minutes = readPositiveNumber(source, path);
-
-  return minutes === undefined ? undefined : minutes * 60_000;
-}
-
-function readPositiveNumber(
-  source: JsonObject,
-  path: readonly string[]
-): number | undefined {
-  let current: unknown = source;
-
-  for (const segment of path) {
-    if (!isJsonObject(current)) {
-      return undefined;
-    }
-
-    current = current[segment];
-  }
-
-  return typeof current === "number" && current > 0 && Number.isFinite(current)
-    ? current
-    : undefined;
-}
-
-function dueAtForTask(task: Task | undefined, intervalMs: number, now: Date): string {
-  if (task === undefined) {
-    return now.toISOString();
-  }
-
-  const createdAtMs = Date.parse(task.createdAt);
-
-  if (!Number.isFinite(createdAtMs)) {
-    return now.toISOString();
-  }
-
-  return new Date(createdAtMs + intervalMs).toISOString();
-}
-
-function compareTasksNewestFirst(left: Task, right: Task): number {
-  return Date.parse(right.createdAt) - Date.parse(left.createdAt);
-}
-
-function repositoryPathForGoal(goal: Goal, cwd: string): string {
-  const repositoryPath = goal.scope.repositoryPath;
-
-  return typeof repositoryPath === "string" ? repositoryPath : cwd;
-}
-
-function assertPositiveInterval(intervalMs: number): void {
-  if (!Number.isFinite(intervalMs) || intervalMs <= 0) {
-    throw new Error("Scheduler interval must be a positive number");
-  }
-}
-
-function isJsonObject(value: unknown): value is JsonObject {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function errorMessage(error: unknown): string {
