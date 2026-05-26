@@ -408,6 +408,8 @@ The current implementation wave closed the highest-confidence product gaps:
 - Startup scale workflow registry, delegation policy, institutional memory, and
   integration-map evidence writers moved out of `startup-scale-automation` into
   `startup-scale-workflow`.
+- Startup scale ops report, report schedule, SOP, and GTM evidence writers moved
+  out of `startup-scale-automation` into `startup-scale-ops`.
 - CI repair stage/context persistence helpers moved out of
   `ci-repair-orchestrator` into `ci-repair-orchestrator-stage-persistence`.
 - `packages/cli/src/startup-command.ts` no longer owns startup scale
