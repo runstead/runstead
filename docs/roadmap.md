@@ -176,6 +176,8 @@ The current implementation wave closed the highest-confidence product gaps:
   command module directly.
 - CI repair workflow failure classification moved out of `ci-repair` into
   `ci-repair-classification`.
+- CI repair workflow-run repairability and webhook-id detection moved out of
+  `ci-repair` into `ci-repair-workflow-run`.
 - CI repair GitHub workflow log redaction moved out of `ci-repair` into
   `ci-repair-log-redaction`.
 - CI repair GitHub governed action builders moved out of `ci-repair` into

@@ -36,6 +36,10 @@ import { requireRunsteadStateDbSync } from "./runstead-root.js";
 import { finishWorkerRun, startWorkerRun } from "./runtime-audit.js";
 import { listTasks } from "./tasks.js";
 import type { CommandVerifierInput } from "./verifier-evidence.js";
+import {
+  assertRepairableWorkflowRun,
+  NonRepairableWorkflowRunError
+} from "./ci-repair-workflow-run.js";
 
 export interface CreateCiRepairTaskOptions {
   cwd?: string;
@@ -77,12 +81,6 @@ export type CreateCiRepairTaskFromWorkflowRunResult =
   | CreateCiRepairTaskResult
   | IgnoredCiRepairTaskResult;
 
-const REPAIRABLE_CONCLUSIONS = new Set([
-  "failure",
-  "timed_out",
-  "cancelled",
-  "action_required"
-]);
 const CI_LOG_EVIDENCE_METADATA = {
   trust: "untrusted_external",
   source: "github_actions_log",
@@ -91,6 +89,7 @@ const CI_LOG_EVIDENCE_METADATA = {
 };
 
 export { formatCiRepairTaskReport } from "./ci-repair-report.js";
+export { repairableWorkflowRunIdFromWebhook } from "./ci-repair-workflow-run.js";
 
 export async function createCiRepairTaskFromWorkflowRun(
   options: CreateCiRepairTaskOptions
@@ -583,59 +582,6 @@ function evidencePathFromUri(uri: string): string | undefined {
     return undefined;
   }
 }
-
-export function repairableWorkflowRunIdFromWebhook(
-  event: string,
-  payload: unknown
-): string | undefined {
-  if (event !== "workflow_run" || !isRecord(payload)) {
-    return undefined;
-  }
-
-  const action = payload.action;
-  const workflowRun = payload.workflow_run;
-
-  if (action !== "completed" || !isRecord(workflowRun)) {
-    return undefined;
-  }
-
-  const status = workflowRun.status;
-  const conclusion = workflowRun.conclusion;
-  const id = workflowRun.id;
-
-  if (
-    status !== "completed" ||
-    typeof conclusion !== "string" ||
-    !REPAIRABLE_CONCLUSIONS.has(conclusion)
-  ) {
-    return undefined;
-  }
-
-  if (typeof id === "number" || typeof id === "string") {
-    return String(id);
-  }
-
-  return undefined;
-}
-
-function assertRepairableWorkflowRun(status: GitHubWorkflowRunStatus): void {
-  if (status.status !== "completed") {
-    throw new NonRepairableWorkflowRunError(
-      `Workflow run ${status.runId} is ${status.status}, expected completed`
-    );
-  }
-
-  if (
-    status.conclusion === undefined ||
-    !REPAIRABLE_CONCLUSIONS.has(status.conclusion)
-  ) {
-    throw new NonRepairableWorkflowRunError(
-      `Workflow run ${status.runId} conclusion is ${status.conclusion ?? "none"}, expected repairable failure`
-    );
-  }
-}
-
-class NonRepairableWorkflowRunError extends Error {}
 
 function workflowRunSummary(
   status: GitHubWorkflowRunStatus,
