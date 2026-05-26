@@ -1,4 +1,4 @@
-import type { Task, WorkerRun } from "@runstead/core";
+import type { WorkerRun } from "@runstead/core";
 import {
   runtimeExecutionSemantics,
   type RuntimeExecutionSemantics,
@@ -9,7 +9,6 @@ import {
 import type { CodexResponsesInputItem } from "../codex-responses-transport.js";
 import { finishWorkerRun, type FinishWorkerRunOptions } from "../runtime-audit.js";
 import { CODEX_DIRECT_WORKER_KIND } from "./constants.js";
-import { declaredVerifierCommands } from "./evidence-actions.js";
 import { buildCodexDirectInstructions } from "./tool-definitions.js";
 import {
   CodexDirectModelRetryExhaustedError,
@@ -18,14 +17,19 @@ import {
   modelTimeoutInterruption,
   runGovernedModelInference
 } from "./model-request.js";
-import type { CodexDirectToolCall } from "./tool-types.js";
 import type {
   CodexDirectBudgetReason,
   CodexDirectBudgetSummary,
   CodexDirectWorkerOptions,
   CodexDirectWorkerResult
 } from "./worker.js";
-import { isRecord } from "./tool-arguments.js";
+
+export {
+  codexDirectVerificationStatus,
+  codexDirectWarningOptions,
+  recordCodexDirectVerifierResult,
+  safeJsonObject
+} from "./verifier-result.js";
 
 export async function finalizeBudgetExceededWorkerResult(input: {
   options: CodexDirectWorkerOptions;
@@ -232,67 +236,6 @@ export function codexDirectExecutionSemantics(input: {
   return verifier === undefined
     ? runtimeExecutionSemantics({ worker })
     : runtimeExecutionSemantics({ worker, verifier });
-}
-
-export function codexDirectVerificationStatus(
-  task: Task,
-  verifierResults: Map<string, RuntimeVerificationStatus>
-): RuntimeVerificationStatus {
-  const declaredNames = declaredVerifierCommands(task).map((command) => command.name);
-
-  if (declaredNames.length === 0 || verifierResults.size === 0) {
-    return "skipped";
-  }
-
-  if (declaredNames.some((name) => verifierResults.get(name) === "failed")) {
-    return "failed";
-  }
-
-  return declaredNames.every((name) => verifierResults.get(name) === "passed")
-    ? "passed"
-    : "skipped";
-}
-
-export function recordCodexDirectVerifierResult(input: {
-  toolCall: CodexDirectToolCall;
-  toolResult: { output: string; failed: boolean };
-  verifierResults: Map<string, RuntimeVerificationStatus>;
-}): void {
-  if (input.toolCall.name !== "run_verifier" || input.toolResult.failed) {
-    return;
-  }
-
-  const parsed = safeJsonObject(input.toolResult.output);
-  if (parsed === undefined) {
-    return;
-  }
-
-  const verifier = typeof parsed.verifier === "string" ? parsed.verifier : undefined;
-
-  if (verifier === undefined) {
-    return;
-  }
-
-  input.verifierResults.set(
-    verifier,
-    parsed.exitCode === 0 && parsed.timedOut === false ? "passed" : "failed"
-  );
-}
-
-export function safeJsonObject(value: string): Record<string, unknown> | undefined {
-  try {
-    const parsed = JSON.parse(value) as unknown;
-
-    return isRecord(parsed) ? parsed : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-export function codexDirectWarningOptions(
-  warnings: string[] | undefined
-): { warnings: string[] } | object {
-  return warnings === undefined ? {} : { warnings };
 }
 
 export function workerRunStatus(

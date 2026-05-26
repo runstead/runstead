@@ -362,6 +362,8 @@ The current implementation wave closed the highest-confidence product gaps:
   `startup-extension-collector-runner`.
 - Startup CI remote-action release decision mapping moved out of
   `startup-ci-integration` into `startup-ci-release-decision`.
+- Codex Direct verifier status parsing and warning option helpers moved out of
+  `codex-direct/result` into `codex-direct/verifier-result`.
 - `packages/cli/src/startup-command.ts` no longer owns startup source command
   registration.
 - `packages/cli/src/startup-command.ts` no longer owns startup artifact
