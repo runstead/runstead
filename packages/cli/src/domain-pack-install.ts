@@ -7,72 +7,28 @@ import {
   buildDomainPackManifest,
   checkDomainPackCompatibility,
   resolveDomainPackRef,
-  type DomainPackManifest,
-  type DomainPackRegistryEntry
+  type DomainPackManifest
 } from "@runstead/domain-packs";
 import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sqlite";
 
 import { requireRunsteadStateDb } from "./runstead-root.js";
+import type {
+  InstallDomainPackOptions,
+  InstallDomainPackResult,
+  UninstallDomainPackOptions,
+  UninstallDomainPackResult,
+  UpgradeDomainPackOptions,
+  UpgradeDomainPackResult
+} from "./domain-pack-install-types.js";
 
-export interface InstallDomainPackOptions {
-  cwd?: string;
-  ref: string;
-  roots?: string[];
-  includeBuiltIns?: boolean;
-  force?: boolean;
-  now?: Date;
-}
-
-export interface InstallDomainPackResult {
-  id: string;
-  source: DomainPackRegistryEntry;
-  destination: string;
-  manifest: DomainPackManifest;
-  manifestPath: string;
-  installedFiles: string[];
-  overwritten: boolean;
-  event: RunsteadEvent;
-}
-
-export interface UninstallDomainPackOptions {
-  cwd?: string;
-  id: string;
-  force?: boolean;
-  now?: Date;
-}
-
-export interface UpgradeDomainPackOptions {
-  cwd?: string;
-  ref: string;
-  roots?: string[];
-  includeBuiltIns?: boolean;
-  force?: boolean;
-  now?: Date;
-}
-
-export interface UninstallDomainPackResult {
-  id: string;
-  destination: string;
-  manifestPath: string;
-  activeGoals: number;
-  activeTasks: number;
-  removed: boolean;
-  manifest?: DomainPackManifest;
-}
-
-export interface UpgradeDomainPackResult {
-  id: string;
-  source: DomainPackRegistryEntry;
-  destination: string;
-  manifest: DomainPackManifest;
-  manifestPath: string;
-  installedFiles: string[];
-  previousManifest?: DomainPackManifest;
-  migrationSteps: string[];
-  activeGoals: number;
-  activeTasks: number;
-  forced: boolean;
-}
+export type {
+  InstallDomainPackOptions,
+  InstallDomainPackResult,
+  UninstallDomainPackOptions,
+  UninstallDomainPackResult,
+  UpgradeDomainPackOptions,
+  UpgradeDomainPackResult
+} from "./domain-pack-install-types.js";
 
 const DOMAIN_PACK_ID_PATTERN = /^[a-z][a-z0-9-]*$/;
 const RUNSTEAD_CLI_VERSION = "0.0.0";
