@@ -236,6 +236,8 @@ The current implementation wave closed the highest-confidence product gaps:
   server/rendering module into `dashboard-operator-console`.
 - Dashboard startup readiness-run snapshot parsing moved out of the dashboard
   server/rendering module into `dashboard-startup-runs`.
+- Memory provenance, quarantine confidence, and event-payload helper logic moved
+  out of `memory` into `memory-record-builders`.
 - Dashboard SQLite row-to-view-model mappers moved out of the dashboard
   server/rendering module into `dashboard-row-mappers`.
 - Dashboard daemon status and heartbeat health parsing moved out of the

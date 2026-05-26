@@ -4,7 +4,6 @@ import {
   createRunsteadId,
   MemoryRecordSchema,
   MemoryTypeSchema,
-  type JsonObject,
   type MemoryRecord,
   type RunsteadEvent
 } from "@runstead/core";
@@ -23,9 +22,12 @@ import {
   validateProjectFactConflictRefs,
   validateProjectFactSources
 } from "./memory-validation.js";
+import {
+  memoryEventPayload,
+  memoryProvenance,
+  quarantinedMemoryConfidence
+} from "./memory-record-builders.js";
 import { requireRunsteadStateDbSync } from "./runstead-root.js";
-
-const MAX_QUARANTINED_MEMORY_CONFIDENCE = 0.8;
 
 export interface QuarantineMemoryCandidateOptions {
   cwd?: string;
@@ -113,7 +115,7 @@ export function quarantineMemoryCandidate(
     confidence: quarantinedMemoryConfidence(options.confidence),
     content: options.content,
     sourceRefs: options.sourceRefs ?? [],
-    provenance: provenance({
+    provenance: memoryProvenance({
       ...(options.createdBy === undefined ? {} : { createdBy: options.createdBy }),
       ...(options.taskId === undefined ? {} : { taskId: options.taskId })
     }),
@@ -182,7 +184,7 @@ export function recordProjectFact(
       confidence: options.confidence ?? 0.95,
       content: options.content,
       sourceRefs: options.sourceRefs,
-      provenance: provenance({
+      provenance: memoryProvenance({
         ...(options.createdBy === undefined ? {} : { createdBy: options.createdBy }),
         ...(options.taskId === undefined ? {} : { taskId: options.taskId })
       }),
@@ -299,35 +301,4 @@ export function retrieveProjectFacts(
   } finally {
     database.close();
   }
-}
-
-function provenance(input: { createdBy?: string; taskId?: string }): JsonObject {
-  return {
-    createdBy: input.createdBy ?? "runstead",
-    ...(input.taskId === undefined ? {} : { createdFromTask: input.taskId })
-  };
-}
-
-function quarantinedMemoryConfidence(confidence: number | undefined): number {
-  const value = confidence ?? 0.5;
-
-  if (value < 0 || value > 1) {
-    throw new Error("Memory confidence must be between 0 and 1");
-  }
-
-  return Math.min(value, MAX_QUARANTINED_MEMORY_CONFIDENCE);
-}
-
-function memoryEventPayload(memory: MemoryRecord): JsonObject {
-  return {
-    memoryId: memory.id,
-    scope: memory.scope,
-    type: memory.type,
-    status: memory.status,
-    confidence: memory.confidence,
-    sourceRefs: memory.sourceRefs,
-    provenance: memory.provenance,
-    ...(memory.expiresAt === undefined ? {} : { expiresAt: memory.expiresAt }),
-    conflictsWith: memory.conflictsWith
-  };
 }
