@@ -140,6 +140,8 @@ The current implementation wave closed the highest-confidence product gaps:
   out of `codex-auth` into `codex-auth-store`.
 - Codex JWT expiry and ChatGPT account header helpers moved out of
   `codex-auth` into `codex-auth-token`.
+- Codex auth status and model-list rendering moved out of `codex-auth` into
+  `codex-auth-format`.
 - Doctor state database schema and runtime backend checks moved out of `doctor`
   into `doctor-runtime-checks`.
 - Doctor workspace health checks for files, directories, domain manifests,
