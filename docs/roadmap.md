@@ -93,6 +93,8 @@ The current implementation wave closed the highest-confidence product gaps:
   `commands/checkpoint`.
 - Checkpoint git runner defaults, git execution, and git error-output parsing
   moved out of `checkpoints` into `checkpoint-git`.
+- Daemon audit event, heartbeat status, and status-file persistence helpers
+  moved out of `daemon` into `daemon-state`.
 - Top-level `migrate` command registration moved out of the CLI entrypoint into
   `commands/migrate`.
 - Top-level `run --once` command registration moved out of the CLI entrypoint
