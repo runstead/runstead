@@ -2,6 +2,10 @@ import { createHash } from "node:crypto";
 import { pathToFileURL } from "node:url";
 
 import type { JsonObject, RunsteadEvent } from "@runstead/core";
+import {
+  runtimeCompleteProductScore,
+  runtimeCompleteProductStatus
+} from "@runstead/runtime";
 
 import {
   STARTUP_STRUCTURED_ARTIFACT_SCHEMA,
@@ -177,25 +181,13 @@ export function startupCompleteProductEvent(input: {
 export function completeProductStatus(
   criteria: StartupCompleteProductCriterion[]
 ): StartupCompleteProductStatus {
-  return criteria.every((criterion) => criterion.status === "passed")
-    ? "complete"
-    : "incomplete";
+  return runtimeCompleteProductStatus(criteria);
 }
 
 export function completeProductScore(
   criteria: StartupCompleteProductCriterion[]
 ): number {
-  if (criteria.length === 0) {
-    return 0;
-  }
-
-  return (
-    Math.round(
-      (criteria.filter((criterion) => criterion.status === "passed").length /
-        criteria.length) *
-        100
-    ) / 100
-  );
+  return runtimeCompleteProductScore(criteria);
 }
 
 function listOrNone<T>(items: T[], formatter: (item: T) => string): string {

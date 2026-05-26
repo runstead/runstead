@@ -1,4 +1,5 @@
 export * from "./backend-config.js";
+export * from "./complete-product.js";
 export * from "./control-plane.js";
 export * from "./execution-semantics.js";
 export * from "./readiness-evidence.js";

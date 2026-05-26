@@ -1,6 +1,11 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
+import {
+  defineRuntimeCompleteProductCriterion,
+  runtimeCompleteProductArtifactCriterion
+} from "@runstead/runtime";
+
 import type { BuildDashboardResult } from "./dashboard.js";
 import type { RepoInspectionSnapshot } from "./inspection-evidence.js";
 import type {
@@ -261,25 +266,7 @@ export function startupCompleteProductBaseCriteria(input: {
 export function startupCompleteProductArtifactCriterion(
   surfaces: StartupCompleteProductSurfaces
 ): StartupCompleteProductCriterion {
-  return criterion({
-    id: "artifact_truth",
-    title: "Artifact State Evidence Event Truth",
-    status:
-      surfaces.evidenceId.trim().length > 0 &&
-      surfaces.eventId.trim().length > 0 &&
-      surfaces.completeCheckMarkdown.trim().length > 0 &&
-      surfaces.completeCheckJson.trim().length > 0,
-    severity: "critical",
-    evidence: [
-      surfaces.completeCheckMarkdown,
-      surfaces.completeCheckJson,
-      surfaces.evidenceId,
-      surfaces.eventId
-    ],
-    missing: [],
-    nextAction:
-      "use the generated markdown, JSON, evidence, and event as the review source of truth"
-  });
+  return runtimeCompleteProductArtifactCriterion(surfaces);
 }
 
 export function startupCompleteProductBlockers(input: {
@@ -322,15 +309,15 @@ function criterion(input: {
   missing: string[];
   nextAction: string;
 }): StartupCompleteProductCriterion {
-  return {
+  return defineRuntimeCompleteProductCriterion({
     id: input.id,
     title: input.title,
-    status: input.status ? "passed" : "blocked",
+    passed: input.status,
     severity: input.severity,
-    evidence: uniqueNonEmpty(input.evidence),
-    missing: uniqueNonEmpty(input.missing),
+    evidence: input.evidence,
+    missing: input.missing,
     nextAction: input.nextAction
-  };
+  });
 }
 
 function evidenceMatchesBlocker(

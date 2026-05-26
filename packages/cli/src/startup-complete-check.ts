@@ -2,6 +2,11 @@ import { stat, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
 import { createRunsteadId, type RunsteadEvent } from "@runstead/core";
+import type {
+  RuntimeCompleteProductCriterion,
+  RuntimeCompleteProductCriterionStatus,
+  RuntimeCompleteProductStatus
+} from "@runstead/runtime";
 import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sqlite";
 
 import { buildDashboard } from "./dashboard.js";
@@ -64,18 +69,10 @@ export interface StartupCompleteProductCheckResult {
   surfaces: StartupCompleteProductSurfaces;
 }
 
-export type StartupCompleteProductStatus = "complete" | "incomplete";
-export type StartupCompleteProductCriterionStatus = "passed" | "blocked";
-
-export interface StartupCompleteProductCriterion {
-  id: string;
-  title: string;
-  status: StartupCompleteProductCriterionStatus;
-  severity: "critical" | "major";
-  evidence: string[];
-  missing: string[];
-  nextAction: string;
-}
+export type StartupCompleteProductStatus = RuntimeCompleteProductStatus;
+export type StartupCompleteProductCriterionStatus =
+  RuntimeCompleteProductCriterionStatus;
+export type StartupCompleteProductCriterion = RuntimeCompleteProductCriterion;
 
 export interface StartupCompleteProductBlockerAudit {
   blocker: string;
