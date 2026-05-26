@@ -15,8 +15,7 @@ import {
   createLocalAgentTask,
   runLocalAgentTask,
   type LocalAgentWorkerKind,
-  type RunLocalAgentTaskOptions,
-  type RunLocalAgentTaskResult
+  type RunLocalAgentTaskOptions
 } from "./local-agent.js";
 import { requireRunsteadStateDb } from "./runstead-root.js";
 import {
@@ -26,123 +25,27 @@ import {
   remediationNextCommands,
   uniqueBlockers
 } from "./startup-remediation-guidance.js";
-import {
-  checkStartupGate,
-  type StartupGateFindingSeverity,
-  type StartupGateStage
-} from "./startup-evidence.js";
+import { checkStartupGate, type StartupGateStage } from "./startup-evidence.js";
 import {
   recordRemediationExecution,
   recordRemediationFailureEvidence,
   remediationExecutionOutcome,
   remediationWorkerPrompt
 } from "./startup-remediation-execution.js";
+import type {
+  ExecuteStartupRemediationPlanOptions,
+  ExecuteStartupRemediationPlanResult,
+  GenerateStartupRemediationPlanOptions,
+  GenerateStartupRemediationPlanResult,
+  StartupRemediationBudget,
+  StartupRemediationExecutionSummary,
+  StartupRemediationPlanGraph,
+  StartupRemediationTaskSummary,
+  SupersedeStartupRemediationTasksOptions,
+  SupersedeStartupRemediationTasksResult
+} from "./startup-remediation-types.js";
 import { listTasks } from "./tasks.js";
 import type { WorkerProcessRunner } from "./wrapped-worker.js";
-
-export interface GenerateStartupRemediationPlanOptions {
-  cwd?: string;
-  domain?: string;
-  stage?: StartupGateStage;
-  now?: Date;
-}
-
-export interface StartupRemediationTaskSummary {
-  task: Task;
-  blocker: string;
-  reused: boolean;
-  severity: StartupGateFindingSeverity;
-  acceptanceCriteria: string[];
-  dependsOn: string[];
-}
-
-export interface GenerateStartupRemediationPlanResult {
-  root: string;
-  stateDb: string;
-  domain: string;
-  stage: StartupGateStage;
-  status: "clear" | "blocked";
-  blockers: string[];
-  reportPath?: string;
-  tasks: StartupRemediationTaskSummary[];
-  plan: StartupRemediationPlanGraph;
-  nextCommands: string[];
-}
-
-export interface ExecuteStartupRemediationPlanOptions extends GenerateStartupRemediationPlanOptions {
-  worker?: LocalAgentWorkerKind;
-  model?: string;
-  workerRunner?: WorkerProcessRunner;
-  onWorkerProgress?: RunLocalAgentTaskOptions["onWorkerProgress"];
-  workerProgressIntervalMs?: number;
-  maxTasks?: number;
-}
-
-export interface StartupRemediationExecutionSummary {
-  remediationTaskId: string;
-  localAgentTaskId: string;
-  blocker: string;
-  status: RunLocalAgentTaskResult["status"];
-  summary: string;
-  resolved: boolean;
-  remainingBlockers: string[];
-  gateEventId: string;
-  failureEvidenceId?: string;
-}
-
-export interface StartupRemediationPlanGraph {
-  nodes: StartupRemediationPlanNode[];
-  edges: StartupRemediationPlanEdge[];
-  budget: StartupRemediationBudget;
-}
-
-export interface StartupRemediationPlanNode {
-  taskId: string;
-  blocker: string;
-  severity: StartupGateFindingSeverity;
-  acceptanceCriteria: string[];
-}
-
-export interface StartupRemediationPlanEdge {
-  fromTaskId: string;
-  toTaskId: string;
-  reason: string;
-}
-
-export interface StartupRemediationBudget {
-  maxTasks?: number;
-  selectedTasks: number;
-  skippedTasks: number;
-}
-
-export interface ExecuteStartupRemediationPlanResult extends GenerateStartupRemediationPlanResult {
-  worker: LocalAgentWorkerKind;
-  executed: StartupRemediationExecutionSummary[];
-  finalGate: {
-    passed: boolean;
-    blockers: string[];
-    warnings: string[];
-    eventId: string;
-  };
-  executionOutcome: "clear" | "partial" | "blocked";
-  budget: StartupRemediationBudget;
-  finalReportPath?: string;
-}
-
-export interface SupersedeStartupRemediationTasksOptions {
-  cwd?: string;
-  domain?: string;
-  stage?: StartupGateStage;
-  activeBlockers?: string[];
-  runId: string;
-  now?: Date;
-}
-
-export interface SupersedeStartupRemediationTasksResult {
-  root: string;
-  stateDb: string;
-  supersededTasks: Task[];
-}
 
 const STARTUP_DOMAIN = "ai-native-startup";
 const REMEDIATION_TASK_TYPE = "startup_remediation";
@@ -151,6 +54,7 @@ export {
   formatStartupRemediationExecution,
   formatStartupRemediationPlan
 } from "./startup-remediation-format.js";
+export type * from "./startup-remediation-types.js";
 
 export async function generateStartupRemediationPlan(
   options: GenerateStartupRemediationPlanOptions = {}
