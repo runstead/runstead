@@ -22,13 +22,11 @@ import {
 } from "./checkpoints.js";
 import {
   CODEX_DIRECT_WORKER_KIND,
-  readApprovedCodexDirectPendingPatch,
   runCodexDirectPendingPatchResume,
   runCodexDirectWorker,
   type CodexDirectTransport,
   type CodexDirectPendingPatchResume
 } from "./codex-direct-worker.js";
-import { showApproval } from "./approvals.js";
 import { runGovernedToolAction } from "./governed-action.js";
 import { showGoal } from "./goals.js";
 import {
@@ -67,6 +65,7 @@ import {
   type LocalAgentWorkerResult
 } from "./local-agent-result.js";
 import { summarizeLocalAgentAudit } from "./local-agent-report.js";
+import { readLocalAgentApprovedPendingPatch } from "./local-agent-resume.js";
 import {
   buildLocalAgentPrompt,
   formatVerifierEvidencePrompt,
@@ -81,7 +80,6 @@ import {
   LOCAL_AGENT_TASK_TYPE,
   type CreateLocalAgentTaskOptions,
   type CreateLocalAgentTaskResult,
-  type ResolveLocalAgentResumeTargetResult,
   type RunLocalAgentTaskOptions,
   type RunLocalAgentTaskResult,
   type UndoLocalAgentTaskOptions,
@@ -132,6 +130,10 @@ export {
   formatLocalAgentUndoReport,
   localAgentRunExitCode
 } from "./local-agent-run-report.js";
+export {
+  readLocalAgentApprovedPendingPatch,
+  resolveLocalAgentResumeTarget
+} from "./local-agent-resume.js";
 export type {
   LocalAgentAuditCount,
   LocalAgentPolicyDecisionCount,
@@ -411,46 +413,6 @@ export async function runLocalAgentTask(
   } finally {
     database.close();
   }
-}
-
-export function resolveLocalAgentResumeTarget(input: {
-  cwd?: string;
-  targetId: string;
-}): ResolveLocalAgentResumeTargetResult {
-  if (!input.targetId.startsWith("appr_")) {
-    return {
-      taskId: input.targetId
-    };
-  }
-
-  const shown = showApproval({
-    ...(input.cwd === undefined ? {} : { cwd: input.cwd }),
-    id: input.targetId
-  });
-
-  if (shown.task === undefined) {
-    throw new Error(
-      `Approval ${input.targetId} is not associated with a local agent task`
-    );
-  }
-
-  if (shown.approval.status === "pending") {
-    throw new Error(
-      `Approval ${input.targetId} is pending; run: runstead approval approve-and-resume ${input.targetId}`
-    );
-  }
-
-  if (shown.approval.status !== "approved") {
-    throw new Error(
-      `Approval ${input.targetId} is ${shown.approval.status}; only approved approvals can be resumed`
-    );
-  }
-
-  return {
-    taskId: shown.task.id,
-    approvalId: input.targetId,
-    note: `Resolved approval ${input.targetId} to local agent task ${shown.task.id}.`
-  };
 }
 
 async function runLocalAgentTaskWithDatabase(options: {
@@ -851,33 +813,6 @@ function finalizeLocalAgentTask(input: {
   });
 
   return task;
-}
-
-function readLocalAgentApprovedPendingPatch(
-  stateDb: string,
-  task: Task
-): CodexDirectPendingPatchResume | undefined {
-  const approval = task.output?.approval;
-
-  if (
-    !isRecord(approval) ||
-    approval.status !== "approved" ||
-    typeof approval.id !== "string"
-  ) {
-    return undefined;
-  }
-
-  const database = openRunsteadDatabase(stateDb);
-
-  try {
-    return readApprovedCodexDirectPendingPatch(database, approval.id);
-  } finally {
-    database.close();
-  }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
 }
 
 function localAgentTitle(prompt: string): string {
