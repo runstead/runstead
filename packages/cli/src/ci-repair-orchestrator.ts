@@ -24,8 +24,6 @@ import type {
 import { workerStartAction } from "./ci-repair-orchestrator-actions.js";
 import {
   durableWorkerResult,
-  isCodexDirectWorkerResult,
-  workerFailureText,
   workerOutput
 } from "./ci-repair-orchestrator-worker-output.js";
 import {
@@ -41,10 +39,8 @@ import {
   markTaskTerminal
 } from "./ci-repair-orchestrator-task-state.js";
 import { writeCiRepairStage } from "./ci-repair-orchestrator-stage-persistence.js";
-import {
-  rollbackWorkerChanges,
-  startCiRepairWorker
-} from "./ci-repair-orchestrator-worker-run.js";
+import { startCiRepairWorker } from "./ci-repair-orchestrator-worker-run.js";
+import { handleCiRepairWorkerTerminalOutcome } from "./ci-repair-orchestrator-worker-terminal.js";
 import { prepareCiRepairWorkspace } from "./ci-repair-orchestrator-workspace.js";
 import { publishCiRepairPullRequest } from "./ci-repair-orchestrator-publish-flow.js";
 import { verifyCiRepairWorkerChanges } from "./ci-repair-orchestrator-verification.js";
@@ -260,141 +256,24 @@ export async function runCiRepairOrchestratorUnlocked(
         throw new Error("CI repair worker result context is missing");
       }
 
-      if (
-        isCodexDirectWorkerResult(workerResult) &&
-        workerResult.status === "waiting_approval"
-      ) {
-        const waitingContext = {
-          ...stageContext,
-          counters: incrementCiRepairCounter(stageContext, "approvalRound")
-        };
-        const waitingTask = markTaskTerminal({
-          database,
-          task: orchestratorTask,
-          status: "waiting_approval",
-          output: {
-            ...(orchestratorTask.output ?? {}),
-            summary: "Codex Direct worker requires approval",
-            ciRepairOrchestrator: {
-              ...waitingContext,
-              approvalId: workerResult.approval?.id
-            },
-            ...(workerResult.approval === undefined
-              ? {}
-              : {
-                  approval: {
-                    id: workerResult.approval.id,
-                    status: "pending",
-                    actionId: workerResult.approval.actionId,
-                    policyDecisionId: workerResult.approval.policyDecisionId,
-                    reason: workerResult.approval.reason
-                  }
-                })
-          },
-          ...(options.now === undefined ? {} : { now: options.now })
-        });
-        finishWorkerRun({
-          database,
-          workerRun,
-          status: "waiting_approval",
-          output: workerOutput(workerResult),
-          ...(options.now === undefined ? {} : { now: options.now })
-        });
+      const terminalWorkerOutcome = await handleCiRepairWorkerTerminalOutcome({
+        cwd,
+        root,
+        stateDb,
+        database,
+        policy,
+        task: orchestratorTask,
+        workerRun,
+        workerResult,
+        stageContext,
+        ciRepair,
+        branchName,
+        ...(options.gitRunner === undefined ? {} : { gitRunner: options.gitRunner }),
+        ...(options.now === undefined ? {} : { now: options.now })
+      });
 
-        return {
-          status: "waiting_approval",
-          ciRepair: {
-            ...ciRepair,
-            task: waitingTask
-          },
-          branchName,
-          workerResult,
-          ...(workerResult.approval === undefined
-            ? {}
-            : { approval: workerResult.approval })
-        };
-      }
-
-      if (
-        isCodexDirectWorkerResult(workerResult) &&
-        workerResult.status === "blocked"
-      ) {
-        await rollbackWorkerChanges({
-          cwd,
-          root,
-          stateDb,
-          database,
-          policy,
-          task: orchestratorTask,
-          workerRun,
-          workerResult,
-          ...(options.gitRunner === undefined ? {} : { gitRunner: options.gitRunner }),
-          ...(options.now === undefined ? {} : { now: options.now })
-        });
-        markTaskTerminal({
-          database,
-          task: orchestratorTask,
-          status: "blocked",
-          output: {
-            ...(orchestratorTask.output ?? {}),
-            summary: workerResult.summary,
-            ciRepairOrchestrator: {
-              ...stageContext,
-              stage: "blocked"
-            }
-          },
-          ...(options.now === undefined ? {} : { now: options.now })
-        });
-        finishWorkerRun({
-          database,
-          workerRun,
-          status: "blocked",
-          output: workerOutput(workerResult),
-          ...(options.now === undefined ? {} : { now: options.now })
-        });
-        throw new Error(workerResult.summary);
-      }
-
-      if (workerResult.exitCode !== 0) {
-        await rollbackWorkerChanges({
-          cwd,
-          root,
-          stateDb,
-          database,
-          policy,
-          task: orchestratorTask,
-          workerRun,
-          workerResult,
-          ...(options.gitRunner === undefined ? {} : { gitRunner: options.gitRunner }),
-          ...(options.now === undefined ? {} : { now: options.now })
-        });
-        markTaskTerminal({
-          database,
-          task: orchestratorTask,
-          status: "failed",
-          output: {
-            ...(orchestratorTask.output ?? {}),
-            summary: "CI repair worker failed",
-            ciRepairOrchestrator: {
-              ...stageContext,
-              stage: "failed"
-            },
-            exitCode: workerResult.exitCode,
-            stderrBytes: Buffer.byteLength(workerFailureText(workerResult), "utf8"),
-            stderrOmitted: workerFailureText(workerResult).length > 0
-          },
-          ...(options.now === undefined ? {} : { now: options.now })
-        });
-        finishWorkerRun({
-          database,
-          workerRun,
-          status: "failed",
-          output: workerOutput(workerResult),
-          ...(options.now === undefined ? {} : { now: options.now })
-        });
-        throw new Error(
-          `CI repair worker exited ${workerResult.exitCode}: ${workerFailureText(workerResult)}`
-        );
+      if (terminalWorkerOutcome !== undefined) {
+        return terminalWorkerOutcome;
       }
 
       const verifiedChanges = await verifyCiRepairWorkerChanges({
