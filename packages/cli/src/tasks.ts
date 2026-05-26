@@ -11,6 +11,10 @@ import {
   buildRunLocalVerifiersTask,
   type BuildRunLocalVerifiersTaskOptions
 } from "./task-builders.js";
+import {
+  executionLeaseExpiresAt,
+  executionLeaseOwnerId
+} from "./task-execution-lease.js";
 import { rowToTask, type TaskRow } from "./task-rows.js";
 
 export {
@@ -22,8 +26,6 @@ export type {
   BuildDomainTaskOptions,
   BuildRunLocalVerifiersTaskOptions
 } from "./task-builders.js";
-
-const EXECUTION_LEASE_MS = 30 * 60 * 1000;
 
 export interface ListTasksOptions {
   cwd?: string;
@@ -309,17 +311,6 @@ export function blockTask(options: BlockTaskOptions): UpdateTaskResult {
     event,
     stateDb
   };
-}
-
-function executionLeaseOwnerId(): string {
-  return `pid:${process.pid}`;
-}
-
-function executionLeaseExpiresAt(heartbeatAt: string): string {
-  const parsed = Date.parse(heartbeatAt);
-  const heartbeatMs = Number.isNaN(parsed) ? Date.now() : parsed;
-
-  return new Date(heartbeatMs + EXECUTION_LEASE_MS).toISOString();
 }
 
 function resolveStateDb(cwd = process.cwd()): string {
