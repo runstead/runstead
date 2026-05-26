@@ -161,6 +161,8 @@ The current implementation wave closed the highest-confidence product gaps:
   `commands/github`.
 - Shared required verifier command validation moved out of the CLI entrypoint
   into `verifier-command-options`.
+- Approval action metadata parsing moved out of `approvals` into
+  `approval-action-metadata`.
 - Top-level `repair-ci` command registration moved out of the CLI entrypoint
   into `commands/ci-repair`, and GitHub repair orchestration now reuses that
   command module directly.
