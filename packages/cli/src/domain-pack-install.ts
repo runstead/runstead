@@ -1,6 +1,5 @@
-import { constants } from "node:fs";
-import { access, copyFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
+import { mkdir, rm, writeFile } from "node:fs/promises";
+import { join, resolve } from "node:path";
 
 import {
   buildDomainPackManifest,
@@ -17,6 +16,11 @@ import {
   domainPackUninstalledEvent,
   domainPackUpgradedEvent
 } from "./domain-pack-install-events.js";
+import {
+  copyDomainPackFiles,
+  pathExists,
+  readInstalledDomainPackManifest
+} from "./domain-pack-install-files.js";
 import type {
   InstallDomainPackOptions,
   InstallDomainPackResult,
@@ -56,7 +60,7 @@ export async function installDomainPack(
   const destination = join(resolvedRoot.root, "domains", entry.id);
   const sourceRoot = resolve(entry.root);
   const destinationRoot = resolve(destination);
-  const existing = await exists(destinationRoot);
+  const existing = await pathExists(destinationRoot);
 
   if (sourceRoot === destinationRoot) {
     throw new Error(`Domain pack is already installed at ${destinationRoot}`);
@@ -121,11 +125,11 @@ export async function uninstallDomainPack(
   const destination = resolve(resolved.root, "domains", options.id);
   const manifestPath = join(destination, "runstead-manifest.json");
 
-  if (!(await exists(destination))) {
+  if (!(await pathExists(destination))) {
     throw new Error(`Domain pack is not installed: ${options.id}`);
   }
 
-  const manifest = await readInstalledManifest(manifestPath);
+  const manifest = await readInstalledDomainPackManifest(manifestPath);
   const database = openRunsteadDatabase(resolved.stateDb);
 
   try {
@@ -189,11 +193,11 @@ export async function upgradeDomainPack(
     throw new Error(`Domain pack source is already the installed pack: ${entry.id}`);
   }
 
-  if (!(await exists(destinationRoot))) {
+  if (!(await pathExists(destinationRoot))) {
     throw new Error(`Domain pack is not installed: ${entry.id}`);
   }
 
-  const previousManifest = await readInstalledManifest(manifestPath);
+  const previousManifest = await readInstalledDomainPackManifest(manifestPath);
   const migrationSteps = domainPackMigrationSteps({
     ...(previousManifest === undefined ? {} : { previousManifest }),
     manifest
@@ -250,44 +254,6 @@ export async function upgradeDomainPack(
     };
   } finally {
     database.close();
-  }
-}
-
-async function exists(path: string): Promise<boolean> {
-  try {
-    await access(path, constants.F_OK);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-async function copyDomainPackFiles(input: {
-  sourceRoot: string;
-  destinationRoot: string;
-  manifest: DomainPackManifest;
-}): Promise<string[]> {
-  const installedFiles: string[] = [];
-
-  for (const file of input.manifest.files) {
-    const source = join(input.sourceRoot, file.path);
-    const destinationPath = join(input.destinationRoot, file.path);
-
-    await mkdir(dirname(destinationPath), { recursive: true });
-    await copyFile(source, destinationPath);
-    installedFiles.push(file.path);
-  }
-
-  return installedFiles;
-}
-
-async function readInstalledManifest(
-  manifestPath: string
-): Promise<DomainPackManifest | undefined> {
-  try {
-    return JSON.parse(await readFile(manifestPath, "utf8")) as DomainPackManifest;
-  } catch {
-    return undefined;
   }
 }
 
