@@ -5,6 +5,7 @@ import {
   denyDashboardApproval
 } from "./dashboard-operator-api-approvals.js";
 import { DashboardOperatorApiHttpError } from "./dashboard-operator-api-http.js";
+import { requireDashboardOperatorPermission } from "./dashboard-operator-api-permissions.js";
 import type { BuildDashboardResult } from "./dashboard-types.js";
 import {
   approvalIdFromOperatorAction,
@@ -17,7 +18,6 @@ import {
   stringBodyField
 } from "./dashboard-operator-api-body.js";
 import type { DashboardOperatorApiAction } from "./dashboard-operator-api-routes.js";
-import { checkPermission } from "./rbac.js";
 import { resumeInterruptedTasks } from "./resume.js";
 import { addStartupEvidence } from "./startup-evidence.js";
 import { runStartupReady } from "./startup-ready.js";
@@ -262,25 +262,4 @@ async function runDashboardOperatorAction(input: {
     "unsupported_operator_action",
     `Operator action ${action.id} is not executable by the local API.`
   );
-}
-
-async function requireDashboardOperatorPermission(input: {
-  cwd: string;
-  actor: string;
-  permission: string;
-  action: string;
-}): Promise<void> {
-  const permission = await checkPermission({
-    cwd: input.cwd,
-    subject: input.actor,
-    permission: input.permission
-  });
-
-  if (permission.decision !== "allow") {
-    throw new DashboardOperatorApiHttpError(
-      403,
-      "rbac_denied",
-      `Subject ${input.actor} cannot ${input.action}: ${permission.reason}`
-    );
-  }
 }
