@@ -2,7 +2,6 @@ import { join, resolve } from "node:path";
 
 import { openRunsteadDatabase } from "@runstead/state-sqlite";
 
-import { runGovernedToolAction } from "./governed-action.js";
 import { showGoal } from "./goals.js";
 import { loadPolicyProfileFromFile } from "./policy-loader.js";
 import { requireRunsteadRootSync } from "./runstead-root.js";
@@ -13,21 +12,14 @@ import type {
   RunCiRepairOrchestratorOptions,
   RunCiRepairOrchestratorResult
 } from "./ci-repair-orchestrator-types.js";
-import { workerStartAction } from "./ci-repair-orchestrator-actions.js";
-import {
-  durableWorkerResult,
-  workerOutput
-} from "./ci-repair-orchestrator-worker-output.js";
 import {
   buildPullRequestResumeContext,
-  incrementCiRepairCounter,
-  stageAtLeast,
   type CiRepairOrchestratorResumeContext
 } from "./ci-repair-orchestrator-context.js";
 import { claimCiRepairOrchestratorTask } from "./ci-repair-orchestrator-claim.js";
 import { prepareCiRepairOrchestratorIntake } from "./ci-repair-orchestrator-intake.js";
 import { writeCiRepairStage } from "./ci-repair-orchestrator-stage-persistence.js";
-import { startCiRepairWorker } from "./ci-repair-orchestrator-worker-run.js";
+import { executeCiRepairWorkerStage } from "./ci-repair-orchestrator-worker-stage.js";
 import { handleCiRepairWorkerTerminalOutcome } from "./ci-repair-orchestrator-worker-terminal.js";
 import { prepareCiRepairWorkspace } from "./ci-repair-orchestrator-workspace.js";
 import { publishCiRepairPullRequest } from "./ci-repair-orchestrator-publish-flow.js";
@@ -164,86 +156,24 @@ export async function runCiRepairOrchestratorUnlocked(
       stageContext = preparedWorkspace.context;
       const { checkpointBefore } = preparedWorkspace;
 
-      let workerResult = stageContext.workerResult;
-
-      if (
-        !stageAtLeast(stageContext.stage, "worker_completed") ||
-        workerResult === undefined
-      ) {
-        workerResult = await runGovernedToolAction({
-          cwd,
-          stateDb,
-          database,
-          policy,
-          task: orchestratorTask,
-          workerRun,
-          action: workerStartAction({
-            task: orchestratorTask,
-            cwd,
-            worker: options.worker
-          }),
-          requestedBy: "runstead:ci-repair",
-          ...(options.now === undefined ? {} : { now: options.now }),
-          run: async () => {
-            const value = await startCiRepairWorker({
-              cwd,
-              root,
-              stateDb,
-              database,
-              policy,
-              goal,
-              task: orchestratorTask,
-              worker: options.worker,
-              ...(options.provider === undefined ? {} : { provider: options.provider }),
-              ...(options.model === undefined ? {} : { model: options.model }),
-              ...(options.baseUrl === undefined ? {} : { baseUrl: options.baseUrl }),
-              checkpointBefore,
-              workflowRunId: ciRepair.workflowRun.runId,
-              evidenceId: ciRepair.evidence.id,
-              verifierCommands: options.verifierCommands,
-              allowedPaths: options.allowedPaths ?? [],
-              deniedPaths: options.deniedPaths ?? [],
-              ...(options.workerRunner === undefined
-                ? {}
-                : { workerRunner: options.workerRunner }),
-              ...(options.codexDirectTransport === undefined
-                ? {}
-                : { codexDirectTransport: options.codexDirectTransport }),
-              ...(options.now === undefined ? {} : { now: options.now })
-            });
-
-            return {
-              value,
-              output: workerOutput(value)
-            };
-          }
-        }).then((result) => result.value);
-        stageContext = {
-          ...stageContext,
-          counters: incrementCiRepairCounter(stageContext, "workerAttempt")
-        };
-        if (workerResult === undefined) {
-          throw new Error("CI repair worker result context is missing");
-        }
-        ({ task: orchestratorTask, context: stageContext } = writeCiRepairStage({
-          database,
-          task: orchestratorTask,
-          context: stageContext,
-          stage: "worker_completed",
-          patch: {
-            workerResult: durableWorkerResult(workerResult)
-          },
-          ...(options.onStagePersisted === undefined
-            ? {}
-            : { onStagePersisted: options.onStagePersisted }),
-          ...(options.now === undefined ? {} : { now: options.now })
-        }));
-      }
+      const workerStage = await executeCiRepairWorkerStage({
+        cwd,
+        root,
+        stateDb,
+        database,
+        policy,
+        goal,
+        task: orchestratorTask,
+        workerRun,
+        context: stageContext,
+        ciRepair,
+        checkpointBefore,
+        options
+      });
+      orchestratorTask = workerStage.task;
+      stageContext = workerStage.context;
+      const workerResult = workerStage.workerResult;
       completedWorkerResult = workerResult;
-
-      if (workerResult === undefined) {
-        throw new Error("CI repair worker result context is missing");
-      }
 
       const terminalWorkerOutcome = await handleCiRepairWorkerTerminalOutcome({
         cwd,
