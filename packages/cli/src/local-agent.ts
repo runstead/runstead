@@ -1,6 +1,6 @@
 import { join, resolve } from "node:path";
 
-import { type Goal, type JsonObject, type Task } from "@runstead/core";
+import { type Goal, type Task } from "@runstead/core";
 import {
   appendEventAndProject,
   openRunsteadDatabase,
@@ -30,6 +30,7 @@ import {
   localAgentTaskWorker,
   type LocalAgentWorkerKind
 } from "./local-agent-task-input.js";
+import { finalizeLocalAgentTask, isLocalAgentTask } from "./local-agent-task-state.js";
 import {
   isCodexDirectLocalAgentWorkerResult,
   localAgentExecutionSemantics,
@@ -47,7 +48,6 @@ import { readLocalAgentApprovedPendingPatch } from "./local-agent-resume.js";
 import { runLocalAgentVerifiersIfNeeded } from "./local-agent-verifier-run.js";
 import { runLocalAgentWorker } from "./local-agent-worker-run.js";
 import {
-  LOCAL_AGENT_TASK_TYPE,
   type RunLocalAgentTaskOptions,
   type RunLocalAgentTaskResult,
   type UndoLocalAgentTaskOptions,
@@ -103,10 +103,7 @@ export type {
   LocalAgentReportToolCall,
   LocalAgentToolFailureKind
 } from "./local-agent-report.js";
-
-export function isLocalAgentTask(task: Task): boolean {
-  return task.domain === "repo-maintenance" && task.type === LOCAL_AGENT_TASK_TYPE;
-}
+export { isLocalAgentTask } from "./local-agent-task-state.js";
 
 export async function runLocalAgentTask(
   options: RunLocalAgentTaskOptions
@@ -413,33 +410,4 @@ export async function undoLocalAgentTask(
     checkpointId,
     restore
   };
-}
-
-function finalizeLocalAgentTask(input: {
-  database: RunsteadDatabase;
-  task: Task;
-  status: Task["status"];
-  output: JsonObject;
-  now?: Date;
-}): Task {
-  const updatedAt = (input.now ?? new Date()).toISOString();
-  const task: Task = {
-    ...input.task,
-    status: input.status,
-    output: input.output,
-    updatedAt
-  };
-
-  appendEventAndProject(input.database, {
-    event: localAgentEvent(`task.${input.status}`, "task", task.id, updatedAt, {
-      previousStatus: input.task.status,
-      ...input.output
-    }),
-    projection: {
-      type: "task",
-      value: task
-    }
-  });
-
-  return task;
 }
