@@ -8,6 +8,11 @@ import {
   diagnoseLocalAgentTask,
   formatLocalAgentDiagnostics
 } from "./local-agent-diagnostics.js";
+import {
+  localAgentReportSections,
+  type LocalAgentReportSections,
+  type LocalAgentVerifierReportRow
+} from "./local-agent-report-sections.js";
 import { localAgentTaskMode, localAgentTaskWorker } from "./local-agent-task-input.js";
 import { requireRunsteadStateDb } from "./runstead-root.js";
 import { showTask } from "./tasks.js";
@@ -175,76 +180,6 @@ export function formatLocalAgentTaskReportMarkdown(
   ].join("\n");
 }
 
-function localAgentReportSections(report: LocalAgentTaskReport) {
-  return {
-    task: {
-      id: report.task.id,
-      status: report.task.status,
-      goalId: report.goal.id,
-      worker: localAgentTaskWorker(report.task),
-      mode: localAgentTaskMode(report.task)
-    },
-    model: {
-      provider: stringOutput(report.task.output ?? {}, "modelProvider") || undefined,
-      model: stringOutput(report.task.output ?? {}, "model") || undefined,
-      modelSource: stringOutput(report.task.output ?? {}, "modelSource") || undefined,
-      status: stringOutput(report.task.output ?? {}, "status") || undefined,
-      summary: stringOutput(report.task.output ?? {}, "summary") || undefined,
-      toolCalls: numberOutput(report.task.output ?? {}, "toolCalls"),
-      failedToolCalls: numberOutput(report.task.output ?? {}, "failedToolCalls")
-    },
-    workerRuntime: {
-      command: stringOutput(report.task.output ?? {}, "command") || undefined,
-      governance: recordOutput(report.task.output ?? {}, "governance"),
-      outputValidation: recordOutput(report.task.output ?? {}, "outputValidation"),
-      stdoutBytes: numberOutput(report.task.output ?? {}, "stdoutBytes"),
-      stderrBytes: numberOutput(report.task.output ?? {}, "stderrBytes")
-    },
-    fileActivity: report.toolCalls.filter((call) =>
-      [
-        "worker.native.start",
-        "worker.external.start",
-        "filesystem.read",
-        "filesystem.write",
-        "filesystem.patch",
-        "git.status",
-        "git.diff",
-        "git.log",
-        "git.show",
-        "git.diff.summary",
-        "shell.exec",
-        "verifier.run",
-        "evidence.read",
-        "workspace.facts.read"
-      ].includes(call.actionType)
-    ),
-    verifiers: verifierReportRows(report.task.output ?? {}),
-    failedToolCalls: report.toolCalls.filter((call) => call.status !== "completed"),
-    policy: report.audit.policyDecisions,
-    approvals: report.audit.approvals,
-    checkpoint: stringOutput(report.task.output ?? {}, "checkpointId") || undefined,
-    audit: report.audit
-  };
-}
-
-function verifierReportRows(output: JsonObject): {
-  verifier: string;
-  exitCode?: number | string | null;
-  timedOut?: boolean;
-  evidenceId?: string;
-}[] {
-  const verifiers = output.verifiers;
-
-  return Array.isArray(verifiers)
-    ? verifiers.filter(isVerifierReportRow).map((row) => ({
-        verifier: row.verifier,
-        ...(row.exitCode === undefined ? {} : { exitCode: row.exitCode }),
-        ...(row.timedOut === undefined ? {} : { timedOut: row.timedOut }),
-        ...(row.evidenceId === undefined ? {} : { evidenceId: row.evidenceId })
-      }))
-    : [];
-}
-
 function formatReportToolCalls(calls: LocalAgentReportToolCall[]): string[] {
   return calls.length === 0
     ? ["  none"]
@@ -264,9 +199,7 @@ function formatToolCallInlineSummary(call: LocalAgentReportToolCall): string {
   return `${summary}${failure}`;
 }
 
-function formatReportVerifiers(
-  verifiers: ReturnType<typeof verifierReportRows>
-): string[] {
+function formatReportVerifiers(verifiers: LocalAgentVerifierReportRow[]): string[] {
   return verifiers.length === 0
     ? ["  none"]
     : verifiers.map(
@@ -276,7 +209,7 @@ function formatReportVerifiers(
 }
 
 function formatWrappedWorkerTaskReportLines(
-  sections: ReturnType<typeof localAgentReportSections>
+  sections: LocalAgentReportSections
 ): string[] {
   const governance = sections.workerRuntime.governance;
 
@@ -327,7 +260,7 @@ function markdownToolCalls(calls: LocalAgentReportToolCall[]): string[] {
       );
 }
 
-function markdownVerifiers(verifiers: ReturnType<typeof verifierReportRows>): string[] {
+function markdownVerifiers(verifiers: LocalAgentVerifierReportRow[]): string[] {
   return verifiers.length === 0
     ? ["None recorded."]
     : verifiers.map(
@@ -506,24 +439,6 @@ export function formatLocalAgentWarnings(warnings: string[] | undefined): string
     : ["Warnings:", ...warnings.map((warning) => `  ${warning}`)];
 }
 
-function stringOutput(output: JsonObject, key: string): string {
-  const value = output[key];
-
-  return typeof value === "string" ? value : "";
-}
-
-function numberOutput(output: JsonObject, key: string): number | undefined {
-  const value = output[key];
-
-  return typeof value === "number" ? value : undefined;
-}
-
-function recordOutput(output: JsonObject, key: string): JsonObject | undefined {
-  const value = output[key];
-
-  return isRecord(value) ? value : undefined;
-}
-
 function stringRecordValue(
   record: JsonObject | undefined,
   key: string
@@ -670,15 +585,6 @@ function toolCallFailureMessage(output: JsonObject): string {
   }
 
   return "";
-}
-
-function isVerifierReportRow(value: unknown): value is {
-  verifier: string;
-  exitCode?: number | string | null;
-  timedOut?: boolean;
-  evidenceId?: string;
-} {
-  return isRecord(value) && typeof value.verifier === "string";
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
