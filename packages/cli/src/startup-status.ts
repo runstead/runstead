@@ -1,8 +1,4 @@
-import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { fileURLToPath } from "node:url";
-
-import { openRunsteadDatabase } from "@runstead/state-sqlite";
 
 import { findInterruptedTasks, recoverStaleRunningTasks } from "./resume.js";
 import { requireRunsteadStateDb } from "./runstead-root.js";
@@ -11,6 +7,7 @@ import {
   type StartupGateCheckResult,
   type StartupGateStage
 } from "./startup-evidence.js";
+import { readStartupStatusEvidence } from "./startup-status-evidence.js";
 import { readLatestStartupReadinessSnapshot } from "./startup-readiness-snapshot.js";
 import { startupVerdictReady } from "./startup-verdict.js";
 import type {
@@ -20,8 +17,7 @@ import type {
   StartupStatusNextAction,
   StartupStatusOptions,
   StartupStatusReadinessVerdict,
-  StartupStatusResult,
-  StartupStatusStaleSource
+  StartupStatusResult
 } from "./startup-status-types.js";
 
 export type {
@@ -37,25 +33,6 @@ export type {
   StartupStatusResult,
   StartupStatusStaleSource
 } from "./startup-status-types.js";
-
-interface EvidenceRow {
-  id: string;
-  type: string;
-  uri: string;
-  summary: string | null;
-  created_at: string;
-}
-
-interface StartupEvidenceArtifact {
-  sources?: unknown;
-}
-
-interface StartupEvidenceSource {
-  kind?: unknown;
-  uri?: unknown;
-  capturedAt?: unknown;
-  freshnessDays?: unknown;
-}
 
 const STARTUP_DOMAIN = "ai-native-startup";
 const STARTUP_STAGES: StartupGateStage[] = ["mvp", "launch", "scale"];
@@ -178,114 +155,6 @@ function startupStatusExecutionSummary(
   };
 }
 
-function readStartupStatusEvidence(input: {
-  stateDb: string;
-  generatedAt: string;
-}): StartupStatusEvidenceSummary {
-  const database = openRunsteadDatabase(input.stateDb);
-
-  try {
-    const rows = database
-      .prepare(
-        `
-        SELECT id, type, uri, summary, created_at
-        FROM evidence
-        WHERE type = 'command_output' OR type LIKE 'startup_%'
-        ORDER BY created_at DESC, id DESC
-      `
-      )
-      .all() as unknown as EvidenceRow[];
-    const sourceKinds = new Set<string>();
-    const staleSources: StartupStatusStaleSource[] = [];
-
-    for (const row of rows) {
-      const artifact = readEvidenceArtifact(row.uri);
-
-      for (const source of artifactSources(artifact)) {
-        if (typeof source.kind === "string" && source.kind.trim().length > 0) {
-          sourceKinds.add(source.kind);
-        }
-
-        const stale = staleSource(row, source, input.generatedAt);
-
-        if (stale !== undefined) {
-          staleSources.push(stale);
-        }
-      }
-    }
-
-    const latest = rows[0];
-
-    return {
-      total: rows.length,
-      ...(latest === undefined
-        ? {}
-        : {
-            latest: {
-              id: latest.id,
-              type: latest.type,
-              ...(latest.summary === null ? {} : { summary: latest.summary }),
-              createdAt: latest.created_at
-            }
-          }),
-      staleSources,
-      sourceKinds: [...sourceKinds].sort()
-    };
-  } finally {
-    database.close();
-  }
-}
-
-function readEvidenceArtifact(uri: string): StartupEvidenceArtifact | undefined {
-  try {
-    const parsed = JSON.parse(readFileSync(fileURLToPath(uri), "utf8")) as unknown;
-
-    return isRecord(parsed) ? parsed : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-function artifactSources(
-  artifact: StartupEvidenceArtifact | undefined
-): StartupEvidenceSource[] {
-  return Array.isArray(artifact?.sources) ? artifact.sources.filter(isRecord) : [];
-}
-
-function staleSource(
-  row: EvidenceRow,
-  source: StartupEvidenceSource,
-  generatedAt: string
-): StartupStatusStaleSource | undefined {
-  if (
-    typeof source.uri !== "string" ||
-    typeof source.capturedAt !== "string" ||
-    typeof source.freshnessDays !== "number"
-  ) {
-    return undefined;
-  }
-
-  const capturedAt = Date.parse(source.capturedAt);
-  const checkedAt = Date.parse(generatedAt);
-
-  if (Number.isNaN(capturedAt) || Number.isNaN(checkedAt)) {
-    return undefined;
-  }
-
-  const ageDays = Math.floor((checkedAt - capturedAt) / 86_400_000);
-
-  return ageDays > source.freshnessDays
-    ? {
-        evidenceId: row.id,
-        type: row.type,
-        uri: source.uri,
-        capturedAt: source.capturedAt,
-        freshnessDays: source.freshnessDays,
-        ageDays
-      }
-    : undefined;
-}
-
 function currentStartupStage(
   gates: StartupStatusGate[],
   readiness: StartupStatusReadinessVerdict | undefined
@@ -384,8 +253,4 @@ function readinessVerdictReady(
 
 function listOrNone<T>(items: T[], formatter: (item: T) => string): string {
   return items.length === 0 ? "- none" : items.map(formatter).join("\n");
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
