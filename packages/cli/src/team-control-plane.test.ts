@@ -191,6 +191,70 @@ describe("team control plane checks", () => {
     }
   });
 
+  it("uses live Postgres runner heartbeats when checking team readiness", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-team-cp-live-check-"));
+    const client = new FakeTeamPostgresClient();
+
+    try {
+      await initRunstead({ cwd: workspace });
+      client.runners.set("runner_1", {
+        runner_id: "runner_1",
+        organization_id: "org_123",
+        workspace_id: "workspace_123",
+        labels_json: ["runstead", "codex_direct"],
+        status: "active",
+        last_seen_at: "2026-05-24T00:00:00.000Z"
+      });
+
+      const result = await checkTeamControlPlane({
+        cwd: workspace,
+        live: true,
+        liveMigrate: true,
+        now: new Date("2026-05-24T00:00:15.000Z"),
+        env: {
+          RUNSTEAD_RUNTIME_BACKEND: "postgres",
+          RUNSTEAD_POSTGRES_URL: "postgres://runstead/state",
+          RUNSTEAD_ARTIFACT_BASE_URI: "s3://runstead/evidence",
+          RUNSTEAD_TEAM_ORG_ID: "org_123",
+          RUNSTEAD_TEAM_WORKSPACE_ID: "workspace_123",
+          RUNSTEAD_AUDIT_SINK_URI: "s3://runstead/audit",
+          RUNSTEAD_TEAM_IDENTITY_PROVIDER: "oidc",
+          RUNSTEAD_TEAM_TENANT_ISOLATION: "organization",
+          RUNSTEAD_TEAM_SECRETS_BOUNDARY: "central_secret_store",
+          RUNSTEAD_TEAM_RBAC: "true"
+        },
+        postgresClientFactory: () => Promise.resolve(client)
+      });
+
+      expect(result.passed).toBe(true);
+      expect(result.liveBackend).toMatchObject({
+        enabled: true,
+        connected: true,
+        migrated: true,
+        runnerCount: 1,
+        freshRunnerHeartbeats: 1
+      });
+      expect(result.setupBlockers).toEqual([]);
+      expect(result.assertions).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            id: "runner-heartbeat",
+            status: "pass"
+          }),
+          expect.objectContaining({
+            id: "postgres-live-backend",
+            status: "pass"
+          })
+        ])
+      );
+      expect(formatTeamControlPlaneCheck(result)).toContain(
+        "Live backend: connected schema=runstead migrated=yes runners=1 fresh=1"
+      );
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
   it("writes a reusable team control-plane env template", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "runstead-team-cp-bootstrap-"));
 

@@ -367,6 +367,23 @@ RUNSTEAD_AUDIT_SINK_URI=s3://runstead/audit \
 runstead team control-plane check --cwd /path/to/repo
 ```
 
+For real team deployments, run the live check against Postgres instead of
+trusting only environment-supplied runner timestamps:
+
+```bash
+RUNSTEAD_RUNTIME_BACKEND=postgres \
+RUNSTEAD_POSTGRES_URL=postgres://runstead/state \
+RUNSTEAD_ARTIFACT_BASE_URI=s3://runstead/evidence \
+RUNSTEAD_TEAM_ORG_ID=org_123 \
+RUNSTEAD_TEAM_WORKSPACE_ID=workspace_123 \
+RUNSTEAD_AUDIT_SINK_URI=s3://runstead/audit \
+runstead team control-plane check --cwd /path/to/repo --live --migrate
+```
+
+`--live` connects to the shared backend, reads runner heartbeat records from
+Postgres, and uses those records for the runner identity and freshness
+assertions. `--migrate` applies the checked Postgres schema first.
+
 Print the Postgres schema migration SQL for deployment tooling:
 
 ```bash

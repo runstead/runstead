@@ -59,6 +59,54 @@ export interface TeamControlPlaneRunnerListResult {
   runners: RuntimeRunnerRegistration[];
 }
 
+export interface TeamControlPlaneLiveCheckOptions extends TeamControlPlaneRunnerOptions {
+  migrate?: boolean;
+}
+
+export interface TeamControlPlaneLiveCheckResult {
+  backend: "postgres";
+  storageUri: string;
+  schema: string;
+  migrated: boolean;
+  runners: RuntimeRunnerRegistration[];
+}
+
+export async function checkTeamControlPlaneLiveBackend(
+  options: TeamControlPlaneLiveCheckOptions = {}
+): Promise<TeamControlPlaneLiveCheckResult> {
+  await requireRunsteadRoot(options.cwd);
+
+  const connection = resolveTeamPostgresConnection(options);
+  const client = await connectTeamPostgresClient(connection);
+
+  try {
+    if (options.migrate === true) {
+      await migratePostgresControlPlane(client, { schema: connection.schema });
+    }
+
+    const backend = createPostgresControlPlaneBackend({
+      client,
+      schema: connection.schema,
+      stateUri: connection.stateUri
+    });
+    const runners = await backend.runners?.list();
+
+    if (runners === undefined) {
+      throw new Error("selected Postgres backend does not expose a runner registry");
+    }
+
+    return {
+      backend: "postgres",
+      storageUri: connection.stateUri,
+      schema: connection.schema,
+      migrated: options.migrate === true,
+      runners
+    };
+  } finally {
+    await client.end?.();
+  }
+}
+
 export async function recordTeamControlPlaneRunnerHeartbeat(
   options: TeamControlPlaneRunnerHeartbeatOptions = {}
 ): Promise<TeamControlPlaneRunnerHeartbeatResult> {

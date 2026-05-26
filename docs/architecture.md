@@ -173,6 +173,17 @@ The SQL includes schema creation, versioned migration tracking, runtime event,
 projection, idempotency, lock, artifact tables, query indexes, and a checksum
 record for the applied migration.
 
+Operators can also make `runstead team control-plane check` perform a live
+backend probe:
+
+```bash
+runstead team control-plane check --cwd /path/to/repo --live --migrate
+```
+
+In live mode the CLI connects to Postgres, optionally applies migrations, reads
+`runtime_runners`, and feeds backend-recorded runner ids and heartbeat
+timestamps into the team-readiness assessment.
+
 Node-based runners should prefer `NodePostgresControlPlaneClient` with a
 `pg.Client` or `pg.Pool`-compatible object so parameterized SQL stays in the
 driver path. `PsqlPostgresControlPlaneClient` remains available for smoke tests,

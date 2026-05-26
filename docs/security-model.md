@@ -203,6 +203,7 @@ also run:
 ```bash
 runstead team control-plane bootstrap --cwd /path/to/repo
 runstead team control-plane check --cwd /path/to/repo
+runstead team control-plane check --cwd /path/to/repo --live --migrate
 runstead team control-plane migration-sql --schema runstead
 runstead team control-plane runner heartbeat --cwd /path/to/repo --runner-id runner_1 --migrate
 runstead team control-plane runner list --cwd /path/to/repo
@@ -212,7 +213,9 @@ The dedicated check reports the concrete assertions required for team mode:
 Postgres backend selection, connection string, shared artifact URI, runner
 identity, fresh runner heartbeat, distributed lease fencing, hash-chain or
 append-only audit export, OIDC/RBAC/tenant isolation, and central secret-store
-boundaries.
+boundaries. With `--live`, the check connects to Postgres and reads the runner
+registry directly, so runner identity and heartbeat freshness are proven from
+backend state instead of only from environment-provided timestamps.
 
 The migration SQL command is a deployment aid only. It prints the shared
 backend schema and migration tracking statements; it does not grant auth,

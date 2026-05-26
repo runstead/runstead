@@ -12,23 +12,40 @@ export function registerTeamControlPlaneCommand(program: Command): Command {
     .command("check")
     .description("Check whether the selected runtime backend is team-ready.")
     .option("--cwd <path>", "Workspace directory")
+    .option(
+      "--live",
+      "Connect to the Postgres backend and read live runner heartbeat records"
+    )
+    .option("--migrate", "Apply Postgres control-plane migrations before live check")
+    .option("--schema <name>", "Postgres schema name for live checks", "runstead")
     .option("--json", "Print the check result as JSON")
-    .action(async (options: { cwd?: string; json?: boolean }) => {
-      const { checkTeamControlPlane, formatTeamControlPlaneCheck } =
-        await import("../team-control-plane.js");
-      const result = await checkTeamControlPlane({
-        ...(options.cwd === undefined ? {} : { cwd: options.cwd })
-      });
+    .action(
+      async (options: {
+        cwd?: string;
+        live?: boolean;
+        migrate?: boolean;
+        schema: string;
+        json?: boolean;
+      }) => {
+        const { checkTeamControlPlane, formatTeamControlPlaneCheck } =
+          await import("../team-control-plane.js");
+        const result = await checkTeamControlPlane({
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          live: options.live === true,
+          liveMigrate: options.migrate === true,
+          schema: options.schema
+        });
 
-      console.log(
-        options.json === true
-          ? `${JSON.stringify(result, null, 2)}`
-          : formatTeamControlPlaneCheck(result)
-      );
-      if (!result.passed) {
-        process.exitCode = 1;
+        console.log(
+          options.json === true
+            ? `${JSON.stringify(result, null, 2)}`
+            : formatTeamControlPlaneCheck(result)
+        );
+        if (!result.passed) {
+          process.exitCode = 1;
+        }
       }
-    });
+    );
 
   controlPlane
     .command("bootstrap")
