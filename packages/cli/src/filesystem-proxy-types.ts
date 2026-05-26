@@ -1,9 +1,4 @@
-import type {
-  PolicyDecisionRecord,
-  Task,
-  ToolCall,
-  WorkerRun
-} from "@runstead/core";
+import type { PolicyDecisionRecord, Task, ToolCall, WorkerRun } from "@runstead/core";
 import type { RunsteadDatabase } from "@runstead/state-sqlite";
 
 import type { PolicyProfile } from "./policy.js";
@@ -19,13 +14,11 @@ export interface GovernedFilesystemOptions {
   now?: Date;
 }
 
-export interface ReadGovernedWorkspaceFileOptions
-  extends GovernedFilesystemOptions {
+export interface ReadGovernedWorkspaceFileOptions extends GovernedFilesystemOptions {
   path: string;
 }
 
-export interface WriteGovernedWorkspaceFileOptions
-  extends GovernedFilesystemOptions {
+export interface WriteGovernedWorkspaceFileOptions extends GovernedFilesystemOptions {
   path: string;
   content: string;
   createDirs?: boolean;
