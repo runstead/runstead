@@ -99,6 +99,8 @@ The current implementation wave closed the highest-confidence product gaps:
   moved out of `daemon` into `daemon-state`.
 - Top-level `migrate` command registration moved out of the CLI entrypoint into
   `commands/migrate`.
+- Migrated Runstead root validation checks moved out of `migrate` into
+  `migrate-validation`.
 - Top-level `run --once` command registration moved out of the CLI entrypoint
   into `commands/run`.
 - Top-level `daemon` command registration moved out of the CLI entrypoint into
