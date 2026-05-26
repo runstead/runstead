@@ -1,21 +1,25 @@
-import {
-  createRunsteadId,
-  type JsonObject,
-  type RunsteadEvent,
-  type Task
-} from "@runstead/core";
+import { createRunsteadId, type RunsteadEvent, type Task } from "@runstead/core";
 import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sqlite";
 
 import { requireRunsteadStateDbSync } from "./runstead-root.js";
-import {
-  buildRunLocalVerifiersTask,
-  type BuildRunLocalVerifiersTaskOptions
-} from "./task-builders.js";
+import { buildRunLocalVerifiersTask } from "./task-builders.js";
 import {
   executionLeaseExpiresAt,
   executionLeaseOwnerId
 } from "./task-execution-lease.js";
 import { rowToTask, type TaskRow } from "./task-rows.js";
+import type {
+  BlockTaskOptions,
+  ClaimTaskOptions,
+  ClaimTaskResult,
+  CreateRunLocalVerifiersTaskOptions,
+  CreateTaskResult,
+  ListTasksOptions,
+  ListTasksResult,
+  ShowTaskOptions,
+  ShowTaskResult,
+  UpdateTaskResult
+} from "./tasks-types.js";
 
 export {
   buildCommandVerifierDomainTask,
@@ -26,62 +30,18 @@ export type {
   BuildDomainTaskOptions,
   BuildRunLocalVerifiersTaskOptions
 } from "./task-builders.js";
-
-export interface ListTasksOptions {
-  cwd?: string;
-  goalId?: string;
-}
-
-export interface ListTasksResult {
-  tasks: Task[];
-  stateDb: string;
-}
-
-export interface ShowTaskOptions {
-  cwd?: string;
-  id: string;
-}
-
-export interface ShowTaskResult {
-  task: Task;
-  stateDb: string;
-}
-
-export interface ClaimTaskOptions {
-  cwd?: string;
-  id: string;
-  now?: Date;
-}
-
-export interface BlockTaskOptions {
-  cwd?: string;
-  task: Task;
-  reason: string;
-  output?: JsonObject;
-  now?: Date;
-}
-
-export interface ClaimTaskResult {
-  task: Task;
-  event: RunsteadEvent;
-  stateDb: string;
-}
-
-export interface CreateRunLocalVerifiersTaskOptions extends BuildRunLocalVerifiersTaskOptions {
-  stateDb?: string;
-}
-
-export interface CreateTaskResult {
-  task: Task;
-  event: RunsteadEvent;
-  stateDb: string;
-}
-
-export interface UpdateTaskResult {
-  task: Task;
-  event: RunsteadEvent;
-  stateDb: string;
-}
+export type {
+  BlockTaskOptions,
+  ClaimTaskOptions,
+  ClaimTaskResult,
+  CreateRunLocalVerifiersTaskOptions,
+  CreateTaskResult,
+  ListTasksOptions,
+  ListTasksResult,
+  ShowTaskOptions,
+  ShowTaskResult,
+  UpdateTaskResult
+} from "./tasks-types.js";
 
 export async function createRunLocalVerifiersTask(
   options: CreateRunLocalVerifiersTaskOptions
