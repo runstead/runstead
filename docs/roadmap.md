@@ -456,6 +456,9 @@ The current implementation wave closed the highest-confidence product gaps:
   `wrapped-worker-governance`.
 - Wrapped worker command construction and isolated Codex CLI profile environment
   setup moved out of `wrapped-worker` into `wrapped-worker-command`.
+- Wrapped worker subprocess execution, output capture, timeout/truncation
+  notices, and progress formatting moved out of `wrapped-worker` into
+  `wrapped-worker-process`.
 - Wrapped-worker stuck progress coverage is stabilized against short timing
   windows in full-suite runs.
 - `startup source collect` records structured provider evidence through
