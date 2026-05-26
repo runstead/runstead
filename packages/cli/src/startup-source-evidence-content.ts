@@ -1,5 +1,11 @@
 import type { JsonObject } from "@runstead/core";
 import type { EvidenceQualityTier, EvidenceSourceTrust } from "@runstead/evidence";
+import {
+  readinessSourceEvidenceTiersForConnector,
+  readinessSourceEvidenceTiersForStatus,
+  readinessSourceStatusCountsForReadiness,
+  type ReadinessEvidenceTier
+} from "@runstead/runtime";
 
 import type {
   StartupSourceConnector,
@@ -11,56 +17,26 @@ export function startupSourceTargetEvidenceTiers(input: {
   connector: StartupSourceConnector;
   definition: StartupSourceConnectorDefinition;
   target: StartupSourceTarget | undefined;
-}): string[] {
-  if (input.target === undefined || input.target === "local") {
-    return [];
-  }
-
-  const tiers = [];
-
-  if (input.connector === "github_actions") {
-    tiers.push("ci_verified");
-  }
-
-  if (startupSourceConnectorIsDeployment(input.connector, input.definition)) {
-    tiers.push(
-      input.target === "staging" ? "staging_deployment" : "production_deployment"
-    );
-  }
-
-  if (
-    input.target === "production" &&
-    (input.connector === "analytics" ||
-      input.connector === "posthog" ||
-      input.connector === "billing")
-  ) {
-    tiers.push("real_user_analytics");
-  }
-
-  if (input.target === "production" && input.connector === "support") {
-    tiers.push("support_ticket");
-  }
-
-  if (input.target === "production" && input.connector === "dependency") {
-    tiers.push("security_scan");
-  }
-
-  return [...new Set(tiers)];
+}): ReadinessEvidenceTier[] {
+  return readinessSourceEvidenceTiersForConnector({
+    connector: input.connector,
+    sourceKind: input.definition.sourceKind,
+    ...(input.target === undefined ? {} : { target: input.target })
+  });
 }
 
 export function startupSourceReadinessTiersForStatus(input: {
   status: string;
-  readinessTiers: string[];
-}): string[] {
-  return startupSourceStatusCountsForReadiness(input.status)
-    ? [...input.readinessTiers]
-    : [];
+  readinessTiers: ReadinessEvidenceTier[];
+}): ReadinessEvidenceTier[] {
+  return readinessSourceEvidenceTiersForStatus({
+    status: input.status,
+    readinessTiers: input.readinessTiers
+  });
 }
 
 export function startupSourceStatusCountsForReadiness(status: string): boolean {
-  const normalized = status.trim().toLowerCase();
-
-  return normalized === "passed" || normalized === "recorded";
+  return readinessSourceStatusCountsForReadiness(status);
 }
 
 export function startupSourceEvidenceContent(input: {
@@ -156,19 +132,6 @@ export function connectorPayloadWarnings(
   return definition.recommendedPayloadFields
     .filter((field) => payload[field] === undefined)
     .map((field) => `payload missing recommended field: ${field}`);
-}
-
-function startupSourceConnectorIsDeployment(
-  connector: StartupSourceConnector,
-  definition: StartupSourceConnectorDefinition
-): boolean {
-  return (
-    connector === "deployment" ||
-    connector === "vercel" ||
-    connector === "fly" ||
-    connector === "render" ||
-    definition.sourceKind.endsWith("_deployment")
-  );
 }
 
 function stringPayloadValue(
