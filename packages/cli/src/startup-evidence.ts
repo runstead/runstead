@@ -24,6 +24,11 @@ import {
   type StartupEvidenceSource,
   type StartupEvidenceSourceInput
 } from "./startup-evidence-sources.js";
+import {
+  startupEvidenceEventPayload,
+  startupEvidenceRemediation,
+  startupEvidenceSubject
+} from "./startup-evidence-artifact.js";
 
 export type {
   StartupEvidenceSource,
@@ -194,7 +199,7 @@ export async function addStartupEvidence(
       subject: "startup_evidence"
     }
   });
-  const subject = evidenceSubject(artifact);
+  const subject = startupEvidenceSubject(artifact);
   const evidence: Evidence = {
     id: evidenceId,
     type: `startup_${evidenceType}`,
@@ -210,7 +215,7 @@ export async function addStartupEvidence(
     type: "evidence.recorded",
     aggregateType: "evidence",
     aggregateId: evidence.id,
-    payload: evidenceEventPayload(evidence, artifact),
+    payload: startupEvidenceEventPayload(evidence, artifact),
     createdAt
   };
   const database = openRunsteadDatabase(resolvedState.stateDb);
@@ -344,84 +349,4 @@ export async function recordStartupGateDecision(
     ),
     ...(options.now === undefined ? {} : { now: options.now })
   });
-}
-
-function evidenceSubject(artifact: StartupEvidenceArtifact): {
-  subjectType: string;
-  subjectId: string;
-} {
-  if (artifact.associations.goalId !== undefined) {
-    return {
-      subjectType: "goal",
-      subjectId: artifact.associations.goalId
-    };
-  }
-
-  if (artifact.associations.hypothesisId !== undefined) {
-    return {
-      subjectType: "hypothesis",
-      subjectId: artifact.associations.hypothesisId
-    };
-  }
-
-  if (artifact.associations.decisionId !== undefined) {
-    return {
-      subjectType: "decision",
-      subjectId: artifact.associations.decisionId
-    };
-  }
-
-  return {
-    subjectType: "startup",
-    subjectId: STARTUP_DOMAIN
-  };
-}
-
-function evidenceEventPayload(
-  evidence: Evidence,
-  artifact: StartupEvidenceArtifact
-): JsonObject {
-  return {
-    evidenceId: evidence.id,
-    evidenceType: evidence.type,
-    subjectType: evidence.subjectType,
-    subjectId: evidence.subjectId,
-    uri: evidence.uri,
-    hash: evidence.hash,
-    summary: evidence.summary,
-    startupEvidenceType: artifact.evidenceType,
-    sourceRefs: artifact.sourceRefs,
-    sources: artifact.sources,
-    provenance: artifact.provenance,
-    associations: artifact.associations
-  };
-}
-
-function startupEvidenceRemediation(
-  options: Pick<
-    AddStartupEvidenceOptions,
-    "owner" | "remediationTask" | "acceptanceCriteria"
-  >
-): StartupEvidenceArtifact["remediation"] | undefined {
-  const values = [options.owner, options.remediationTask, options.acceptanceCriteria];
-
-  if (values.every((value) => value === undefined)) {
-    return undefined;
-  }
-
-  if (
-    options.owner === undefined ||
-    options.remediationTask === undefined ||
-    options.acceptanceCriteria === undefined
-  ) {
-    throw new Error(
-      "startup evidence remediation requires --owner, --remediation-task, and --acceptance-criteria"
-    );
-  }
-
-  return {
-    owner: options.owner,
-    task: options.remediationTask,
-    acceptanceCriteria: options.acceptanceCriteria
-  };
 }
