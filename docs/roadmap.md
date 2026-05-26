@@ -353,6 +353,8 @@ The current implementation wave closed the highest-confidence product gaps:
   `startup-scale-automation`.
 - Startup command parser helpers moved into `startup-command-parsers` with
   focused unit coverage.
+- Startup repo GitHub Actions workflow generation moved out of
+  `startup-repo-onboarding` into `startup-repo-ci`.
 - `packages/cli/src/startup-command.ts` no longer owns startup source command
   registration.
 - `packages/cli/src/startup-command.ts` no longer owns startup artifact
