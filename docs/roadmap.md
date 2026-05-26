@@ -126,6 +126,8 @@ The current implementation wave closed the highest-confidence product gaps:
   `commands/task`.
 - `approval` command registration and approval-display helpers moved out of
   the CLI entrypoint into `commands/approval`.
+- Approval grant action-id, canonical-signature, and scoped-grant matching
+  moved out of `approvals` into `approval-grant-match`.
 - `verifier` command registration moved out of the CLI entrypoint into
   `commands/verifier`.
 - `git` command registration moved out of the CLI entrypoint into
