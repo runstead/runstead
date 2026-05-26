@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { access } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
@@ -23,9 +22,10 @@ import {
 import { withRunsteadManagerLock } from "./manager-lock.js";
 import { showGoal } from "./goals.js";
 import { loadPolicyProfileFromFile } from "./policy-loader.js";
-import { type ActionEnvelope, type PolicyProfile } from "./policy.js";
+import { type PolicyProfile } from "./policy.js";
 import { requireRunsteadStateDbSync } from "./runstead-root.js";
 import { finishWorkerRun, startWorkerRun } from "./runtime-audit.js";
+import { shellVerifierAction } from "./verifier-runner-action.js";
 import {
   configuredVerifierCommandsFromTask,
   loadVerifierTask,
@@ -414,37 +414,6 @@ function finalizeTask(input: {
   }
 
   return finalTask;
-}
-
-function shellVerifierAction(input: {
-  task: Task;
-  command: CommandVerifierInput;
-  index: number;
-  cwd: string;
-}): ActionEnvelope {
-  return {
-    actionId: verifierActionId(input),
-    actionType: "shell.exec",
-    resource: {
-      type: "repository",
-      path: input.cwd
-    },
-    context: {
-      cwd: input.cwd,
-      command: input.command.command
-    }
-  };
-}
-
-function verifierActionId(input: {
-  task: Task;
-  command: CommandVerifierInput;
-  index: number;
-}): string {
-  const hash = createHash("sha256").update(input.command.command).digest("hex");
-  const verifier = input.command.name.replace(/[^a-zA-Z0-9_]+/g, "_");
-
-  return `act_${input.task.id}_${input.index}_${verifier}_${hash.slice(0, 12)}`;
 }
 
 async function loadVerifierPolicy(input: {
