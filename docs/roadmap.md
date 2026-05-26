@@ -254,6 +254,8 @@ The current implementation wave closed the highest-confidence product gaps:
   moved out of the orchestrator into `local-agent-report`.
 - Local agent report section construction moved out of `local-agent-report`
   into `local-agent-report-sections`.
+- Local agent text, Markdown, JSON, warnings, and audit-summary formatting
+  moved out of `local-agent-report` into `local-agent-report-format`.
 - Local agent prompt, scope, approval, and verifier-evidence input helpers moved
   out of the orchestrator into `local-agent-prompt`.
 - Local agent resume-target resolution and approved pending-patch lookup moved
