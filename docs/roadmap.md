@@ -355,6 +355,8 @@ The current implementation wave closed the highest-confidence product gaps:
   focused unit coverage.
 - Startup repo GitHub Actions workflow generation moved out of
   `startup-repo-onboarding` into `startup-repo-ci`.
+- Startup metric assessment, stale-source evaluation, and instrumentation-task
+  creation moved out of `startup-metrics` into `startup-metrics-assess`.
 - `packages/cli/src/startup-command.ts` no longer owns startup source command
   registration.
 - `packages/cli/src/startup-command.ts` no longer owns startup artifact
