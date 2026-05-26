@@ -16,50 +16,21 @@ import { doctorRunstead, type DoctorCheck } from "./doctor.js";
 import { readDaemonStatus, type DaemonHeartbeatStatus } from "./daemon.js";
 import { requireRunsteadStateDb } from "./runstead-root.js";
 import { REQUIRED_STATE_TABLES } from "./state-schema.js";
+import type {
+  ArtifactDirectorySnapshot,
+  GenerateOpsDiagnosticsOptions,
+  ManagerLockSnapshot,
+  OpsDiagnosticsBundleResult,
+  OpsDiagnosticsSummary
+} from "./ops-diagnostics-types.js";
 
-export interface GenerateOpsDiagnosticsOptions {
-  cwd?: string;
-  includeStateBackup?: boolean;
-  retentionDays?: number;
-  now?: Date;
-}
-
-export interface OpsDiagnosticsBundleResult {
-  root: string;
-  stateDb: string;
-  markdownPath: string;
-  jsonPath: string;
-  stateBackupPath?: string;
-  summary: OpsDiagnosticsSummary;
-}
-
-export interface OpsDiagnosticsSummary {
-  generatedAt: string;
-  doctorOk: boolean;
-  failedChecks: string[];
-  daemon?: DaemonHeartbeatStatus;
-  managerLock: ManagerLockSnapshot;
-  stateTables: Record<string, number>;
-  artifacts: Record<string, ArtifactDirectorySnapshot>;
-  retention: {
-    retentionDays: number;
-    cleanupCandidates: string[];
-  };
-  timeoutProfiles: Record<string, string>;
-}
-
-export interface ManagerLockSnapshot {
-  path: string;
-  status: "missing" | "present" | "unreadable";
-  ownerId?: string;
-  heartbeatAt?: string;
-}
-
-export interface ArtifactDirectorySnapshot {
-  path: string;
-  files: number;
-  bytes: number;
-}
+export type {
+  ArtifactDirectorySnapshot,
+  GenerateOpsDiagnosticsOptions,
+  ManagerLockSnapshot,
+  OpsDiagnosticsBundleResult,
+  OpsDiagnosticsSummary
+} from "./ops-diagnostics-types.js";
 
 const ARTIFACT_DIRECTORIES = ["evidence", "reports", "startup", "logs", "checkpoints"];
 const TIMEOUT_PROFILES = {
