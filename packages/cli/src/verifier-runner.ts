@@ -1,11 +1,6 @@
 import { resolve } from "node:path";
 
-import {
-  createRunsteadId,
-  type JsonObject,
-  type RunsteadEvent,
-  type Task
-} from "@runstead/core";
+import type { Task } from "@runstead/core";
 import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sqlite";
 import {
   commandVerifierResultsPassed,
@@ -27,6 +22,10 @@ import {
   loadVerifierTask,
   verifierCommandsFromTask
 } from "./verifier-runner-task-input.js";
+import {
+  finalizeVerifierTask,
+  verifierTaskEvent
+} from "./verifier-runner-task-state.js";
 import {
   storeCommandVerifierEvidence,
   storeCommandVerifierPolicyEvidence
@@ -104,7 +103,7 @@ export async function runTaskVerifiersUnlocked(
   try {
     if (projectTaskState) {
       appendEventAndProject(database, {
-        event: taskEvent(
+        event: verifierTaskEvent(
           "task.started",
           runningTask,
           { attempt: runningTask.attempt },
@@ -131,7 +130,7 @@ export async function runTaskVerifiersUnlocked(
       };
       if (projectTaskState) {
         appendEventAndProject(database, {
-          event: taskEvent(
+          event: verifierTaskEvent(
             "task.execution_started",
             currentTask,
             {
@@ -244,7 +243,7 @@ export async function runTaskVerifiersUnlocked(
             ...(options.now === undefined ? {} : { now: options.now })
           });
 
-          const finalTask = finalizeTask({
+          const finalTask = finalizeVerifierTask({
             runningTask: currentTask,
             status: "blocked",
             output: verifierOutput(commandResults, false),
@@ -289,7 +288,7 @@ export async function runTaskVerifiersUnlocked(
             ...(options.now === undefined ? {} : { now: options.now })
           });
 
-          const finalTask = finalizeTask({
+          const finalTask = finalizeVerifierTask({
             runningTask: currentTask,
             status: "waiting_approval",
             output: verifierOutput(commandResults, false),
@@ -319,7 +318,7 @@ export async function runTaskVerifiersUnlocked(
 
     if (projectTaskState) {
       appendEventAndProject(database, {
-        event: taskEvent(
+        event: verifierTaskEvent(
           passed ? "task.completed" : "task.failed",
           finalTask,
           finalTask.output ?? {},
@@ -346,53 +345,4 @@ export async function runTaskVerifiersUnlocked(
   } finally {
     database.close();
   }
-}
-
-function finalizeTask(input: {
-  runningTask: Task;
-  status: Task["status"];
-  output: JsonObject;
-  updatedAt: string;
-  database: ReturnType<typeof openRunsteadDatabase>;
-  projectTaskState: boolean;
-}): Task {
-  const finalTask: Task = {
-    ...input.runningTask,
-    status: input.status,
-    output: input.output,
-    updatedAt: input.updatedAt
-  };
-
-  if (input.projectTaskState) {
-    appendEventAndProject(input.database, {
-      event: taskEvent(
-        `task.${input.status}`,
-        finalTask,
-        finalTask.output ?? {},
-        input.updatedAt
-      ),
-      projection: {
-        type: "task",
-        value: finalTask
-      }
-    });
-  }
-
-  return finalTask;
-}
-
-function taskEvent(
-  type: string,
-  task: Task,
-  payload: JsonObject,
-  createdAt: string
-): RunsteadEvent {
-  return {
-    eventId: createRunsteadId("evt"),
-    type,
-    aggregateType: "task",
-    aggregateId: task.id,
-    payload,
-    createdAt
-  };
 }
