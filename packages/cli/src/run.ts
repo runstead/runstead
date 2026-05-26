@@ -1,24 +1,11 @@
 import { resolve } from "node:path";
 
-import type { Task } from "@runstead/core";
-
 import {
   ciRepairPullRequestResumeRunId,
   isCiRepairPullRequestResumeTask,
-  runCiRepairOrchestratorUnlocked,
-  type CiRepairWorkerKind,
-  type CiRepairGitRunner,
-  type RunCiRepairOrchestratorOptions,
-  type RunCiRepairOrchestratorResult
+  runCiRepairOrchestratorUnlocked
 } from "./ci-repair-orchestrator.js";
-import type { CodexAuthStatus } from "./codex-auth.js";
-import type { CodexDirectTransport } from "./codex-direct-worker.js";
-import type { GitHubCliRunner } from "./github-actions.js";
-import {
-  isLocalAgentTask,
-  runLocalAgentTask,
-  type RunLocalAgentTaskResult
-} from "./local-agent.js";
+import { isLocalAgentTask, runLocalAgentTask } from "./local-agent.js";
 import { withRunsteadManagerLock } from "./manager-lock.js";
 import {
   defaultCiRepairWorker,
@@ -38,58 +25,17 @@ import {
   RUN_ONCE_SUPPORTED_TASK_TYPES
 } from "./run-task-picker.js";
 import { blockTask } from "./tasks.js";
-import {
-  runTaskVerifiersUnlocked,
-  type RunTaskVerifierCommandResult
-} from "./verifier-runner.js";
-import type { WorkerProcessRunner } from "./wrapped-worker.js";
+import { runTaskVerifiersUnlocked } from "./verifier-runner.js";
+import type { RunOnceOptions, RunOnceResult } from "./run-types.js";
 
 export { formatRunOnceReport, runOnceExitCode } from "./run-report.js";
 export { pickNextQueuedTask } from "./run-task-picker.js";
-
-export interface RunOnceOptions {
-  cwd?: string;
-  authToken?: string;
-  base?: string;
-  draft?: boolean;
-  worker?: CiRepairWorkerKind;
-  provider?: string;
-  model?: string;
-  baseUrl?: string;
-  allowedPaths?: string[];
-  deniedPaths?: string[];
-  githubRunner?: GitHubCliRunner;
-  gitRunner?: CiRepairGitRunner;
-  workerRunner?: WorkerProcessRunner;
-  codexDirectTransport?: CodexDirectTransport;
-  codexAuthStatus?: () => Promise<
-    Pick<CodexAuthStatus, "loggedIn" | "accessTokenExpired">
-  >;
-  verifierRunner?: (
-    options: Parameters<typeof runTaskVerifiersUnlocked>[0]
-  ) => ReturnType<typeof runTaskVerifiersUnlocked>;
-  ciRepairOrchestrator?: (
-    options: RunCiRepairOrchestratorOptions
-  ) => Promise<RunCiRepairOrchestratorResult>;
-  now?: Date;
-}
-
-export type RunOnceResult = RunOnceNoTaskResult | RunOnceExecutedTaskResult;
-
-export interface RunOnceNoTaskResult {
-  cwd: string;
-  ranTask: false;
-  reason: "no_queued_task";
-}
-
-export interface RunOnceExecutedTaskResult {
-  cwd: string;
-  ranTask: true;
-  task: Task;
-  commandResults?: RunTaskVerifierCommandResult[];
-  ciRepairResult?: RunCiRepairOrchestratorResult;
-  localAgentResult?: RunLocalAgentTaskResult;
-}
+export type {
+  RunOnceExecutedTaskResult,
+  RunOnceNoTaskResult,
+  RunOnceOptions,
+  RunOnceResult
+} from "./run-types.js";
 
 export async function runOnce(options: RunOnceOptions = {}): Promise<RunOnceResult> {
   const cwd = resolve(options.cwd ?? process.cwd());
