@@ -1,7 +1,6 @@
 import { constants } from "node:fs";
 import { access, readFile, writeFile } from "node:fs/promises";
 import { isAbsolute, join, resolve } from "node:path";
-import { sign } from "node:crypto";
 
 import { createRunsteadId, type RunsteadEvent } from "@runstead/core";
 import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sqlite";
@@ -13,6 +12,14 @@ import {
   requireRunsteadRootSync,
   requireRunsteadStateDbSync
 } from "./runstead-root.js";
+import { createGitHubAppJwt } from "./github-app-jwt.js";
+import type { GitHubAppJwtResult } from "./github-app-jwt.js";
+
+export { createGitHubAppJwt } from "./github-app-jwt.js";
+export type {
+  CreateGitHubAppJwtOptions,
+  GitHubAppJwtResult
+} from "./github-app-jwt.js";
 
 export interface GitHubAppConfig {
   appId: string;
@@ -39,21 +46,9 @@ export interface InitGitHubAppModeResult {
   overwritten: boolean;
 }
 
-export interface CreateGitHubAppJwtOptions {
-  appId: string;
-  privateKeyPem: string;
-  now?: Date;
-}
-
 export interface CreateGitHubAppJwtFromConfigOptions {
   cwd?: string;
   now?: Date;
-}
-
-export interface GitHubAppJwtResult {
-  token: string;
-  issuedAt: string;
-  expiresAt: string;
 }
 
 export interface CreateGitHubAppInstallationTokenOptions {
@@ -206,35 +201,6 @@ export async function createGitHubAppJwtFromConfig(
   });
 }
 
-export function createGitHubAppJwt(
-  options: CreateGitHubAppJwtOptions
-): GitHubAppJwtResult {
-  const nowSeconds = Math.floor((options.now ?? new Date()).getTime() / 1000);
-  const issuedAtSeconds = nowSeconds - 60;
-  const expiresAtSeconds = nowSeconds + 540;
-  const header = base64UrlJson({
-    alg: "RS256",
-    typ: "JWT"
-  });
-  const payload = base64UrlJson({
-    iat: issuedAtSeconds,
-    exp: expiresAtSeconds,
-    iss: options.appId
-  });
-  const signingInput = `${header}.${payload}`;
-  const signature = sign(
-    "RSA-SHA256",
-    Buffer.from(signingInput),
-    options.privateKeyPem
-  ).toString("base64url");
-
-  return {
-    token: `${signingInput}.${signature}`,
-    issuedAt: new Date(issuedAtSeconds * 1000).toISOString(),
-    expiresAt: new Date(expiresAtSeconds * 1000).toISOString()
-  };
-}
-
 export async function createGitHubAppInstallationTokenFromConfig(
   options: CreateGitHubAppInstallationTokenOptions = {}
 ): Promise<GitHubAppInstallationTokenResult> {
@@ -333,10 +299,6 @@ function formatGitHubAppConfigYaml(config: GitHubAppConfig): string {
     private_key_path: config.privateKeyPath,
     api_base_url: config.apiBaseUrl
   });
-}
-
-function base64UrlJson(value: unknown): string {
-  return Buffer.from(JSON.stringify(value), "utf8").toString("base64url");
 }
 
 function trimTrailingSlashes(value: string): string {
