@@ -405,6 +405,9 @@ The current implementation wave closed the highest-confidence product gaps:
   `startup-gate-evaluation` into `startup-gate-launch`.
 - Startup scale founder handoff and support-triage evidence writers moved out
   of `startup-scale-automation` into `startup-scale-founder`.
+- Startup scale workflow registry, delegation policy, institutional memory, and
+  integration-map evidence writers moved out of `startup-scale-automation` into
+  `startup-scale-workflow`.
 - CI repair stage/context persistence helpers moved out of
   `ci-repair-orchestrator` into `ci-repair-orchestrator-stage-persistence`.
 - `packages/cli/src/startup-command.ts` no longer owns startup scale
