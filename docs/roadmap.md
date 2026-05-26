@@ -465,6 +465,8 @@ The current implementation wave closed the highest-confidence product gaps:
   `startup-gate-artifact-store`.
 - Startup gate blocker, warning, waiver, finding, and diff evaluation moved out
   of `startup-evidence` into `startup-gate-evaluation`.
+- Startup gate fixture schema loading and fixture-path discovery moved out of
+  `startup-gate-test` into `startup-gate-test-fixtures`.
 - Startup gate UI validation target grouping and failure blocker evaluation moved
   out of `startup-gate-evaluation` into `startup-gate-ui`.
 - Startup scale gate handoff, delegation, integration-depth, and GTM blocker
