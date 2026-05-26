@@ -27,11 +27,11 @@ import {
 } from "./github-actions.js";
 import { classifyCiFailure } from "./ci-repair-classification.js";
 import { redactGitHubWorkflowRunLog } from "./ci-repair-log-redaction.js";
+import { githubRunLogReadAction, githubRunReadAction } from "./ci-repair-actions.js";
 import { runGovernedToolAction } from "./governed-action.js";
 import { listGoals } from "./goals.js";
 import { withRunsteadManagerLock } from "./manager-lock.js";
 import { loadPolicyProfileFromFile } from "./policy-loader.js";
-import type { ActionEnvelope } from "./policy.js";
 import { requireRunsteadStateDbSync } from "./runstead-root.js";
 import { finishWorkerRun, startWorkerRun } from "./runtime-audit.js";
 import { listTasks } from "./tasks.js";
@@ -718,53 +718,6 @@ function markCiRepairTaskTerminal(input: {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
-}
-
-function githubRunReadAction(input: {
-  task: Task;
-  cwd: string;
-  runId: string;
-}): ActionEnvelope {
-  return {
-    actionId: stableActionId("github_run_read", [input.task.id, input.runId]),
-    actionType: "github.run.read",
-    resource: {
-      type: "workflow_run",
-      id: input.runId
-    },
-    context: {
-      cwd: input.cwd,
-      networkDomains: ["github.com"]
-    }
-  };
-}
-
-function githubRunLogReadAction(input: {
-  task: Task;
-  cwd: string;
-  runId: string;
-}): ActionEnvelope {
-  return {
-    actionId: stableActionId("github_run_log_read", [input.task.id, input.runId]),
-    actionType: "github.run.log.read",
-    resource: {
-      type: "workflow_run",
-      id: input.runId
-    },
-    context: {
-      cwd: input.cwd,
-      networkDomains: ["github.com"]
-    }
-  };
-}
-
-function stableActionId(prefix: string, parts: unknown[]): string {
-  const hash = createHash("sha256")
-    .update(JSON.stringify(parts))
-    .digest("hex")
-    .slice(0, 12);
-
-  return `act_${prefix}_${hash}`;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
