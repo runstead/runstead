@@ -385,6 +385,8 @@ The current implementation wave closed the highest-confidence product gaps:
 - `runstead doctor` reports backend setup blockers and team readiness.
 - Wrapped workers expose progress summary, last output age, and
   `possibly_stuck` diagnostics.
+- Wrapped worker structured output schema and validation moved out of
+  `wrapped-worker` into `wrapped-worker-structured-output`.
 - Wrapped-worker stuck progress coverage is stabilized against short timing
   windows in full-suite runs.
 - `startup source collect` records structured provider evidence through
