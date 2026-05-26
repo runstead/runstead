@@ -1,65 +1,32 @@
-import { join, resolve } from "node:path";
-
-import { createRunsteadId, type RunsteadEvent } from "@runstead/core";
-import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sqlite";
+import type { RunsteadEvent } from "@runstead/core";
 
 import type { CommandVerifierInput } from "./verifier-evidence.js";
 import {
   createCiRepairTaskFromWorkflowRun,
-  repairableWorkflowRunIdFromWebhook,
-  type CreateCiRepairTaskFromWorkflowRunResult
+  repairableWorkflowRunIdFromWebhook
 } from "./ci-repair.js";
 import {
   runCiRepairOrchestrator,
-  type CiRepairWorkerKind,
-  type RunCiRepairOrchestratorResult
+  type CiRepairWorkerKind
 } from "./ci-repair-orchestrator.js";
 import {
-  requireRunsteadRootSync,
-  requireRunsteadStateDbSync
-} from "./runstead-root.js";
+  findRecordedGitHubWebhookDelivery,
+  recordGitHubWebhookDeliveryReceivedEvent,
+  type HandleGitHubWorkflowRunWebhookResult,
+  type RecordGitHubWorkflowRunWebhookEventOptions
+} from "./webhook-workflow-run-audit.js";
+
+export {
+  recordGitHubWebhookDeliveryReceivedEvent,
+  recordGitHubWorkflowRunWebhookEvent
+} from "./webhook-workflow-run-audit.js";
+export type {
+  HandleGitHubWorkflowRunWebhookResult,
+  RecordGitHubWebhookDeliveryReceivedEventOptions,
+  RecordGitHubWorkflowRunWebhookEventOptions
+} from "./webhook-workflow-run-audit.js";
 
 export type GitHubWorkflowRunWebhookMode = "intake" | "orchestrate";
-
-export type HandleGitHubWorkflowRunWebhookResult =
-  | {
-      handled: false;
-      reason: "not_repairable_workflow_run";
-    }
-  | {
-      handled: false;
-      reason: "duplicate_delivery";
-      delivery: string;
-      originalEventId: string;
-      originalEventType: string;
-    }
-  | {
-      handled: true;
-      mode: "intake";
-      runId: string;
-      ciRepair: CreateCiRepairTaskFromWorkflowRunResult;
-    }
-  | {
-      handled: true;
-      mode: "orchestrate";
-      runId: string;
-      orchestration: RunCiRepairOrchestratorResult;
-    };
-
-export interface RecordGitHubWorkflowRunWebhookEventOptions {
-  cwd?: string;
-  event: string;
-  delivery?: string;
-  result: HandleGitHubWorkflowRunWebhookResult;
-  now?: Date;
-}
-
-export interface RecordGitHubWebhookDeliveryReceivedEventOptions {
-  cwd?: string;
-  event: string;
-  delivery: string;
-  now?: Date;
-}
 
 export interface HandleGitHubWorkflowRunWebhookOptions {
   event: string;
@@ -84,12 +51,6 @@ export interface HandleGitHubWorkflowRunWebhookOptions {
     options: RecordGitHubWorkflowRunWebhookEventOptions
   ) => Promise<RunsteadEvent | undefined>;
   now?: Date;
-}
-
-interface WebhookDeliveryEventRow {
-  event_id: string;
-  type: string;
-  payload_json: string;
 }
 
 export async function handleGitHubWorkflowRunWebhook(
@@ -193,57 +154,6 @@ export async function handleGitHubWorkflowRunWebhook(
   return result;
 }
 
-export function recordGitHubWorkflowRunWebhookEvent(
-  options: RecordGitHubWorkflowRunWebhookEventOptions
-): Promise<RunsteadEvent> {
-  const root = requireRunsteadRootSync(resolve(options.cwd ?? process.cwd())).root;
-  const stateDb = join(root, "state.db");
-  const event: RunsteadEvent = {
-    eventId: createRunsteadId("evt"),
-    type: webhookAuditEventType(options.result),
-    aggregateType: webhookAuditAggregateType(options.result),
-    aggregateId: webhookAuditAggregateId(options.event, options.result),
-    payload: webhookAuditPayload(options.event, options.delivery, options.result),
-    createdAt: (options.now ?? new Date()).toISOString()
-  };
-  const database = openRunsteadDatabase(stateDb);
-
-  try {
-    appendEventAndProject(database, { event });
-  } finally {
-    database.close();
-  }
-
-  return Promise.resolve(event);
-}
-
-export function recordGitHubWebhookDeliveryReceivedEvent(
-  options: RecordGitHubWebhookDeliveryReceivedEventOptions
-): RunsteadEvent {
-  const root = requireRunsteadRootSync(resolve(options.cwd ?? process.cwd())).root;
-  const stateDb = join(root, "state.db");
-  const event: RunsteadEvent = {
-    eventId: createRunsteadId("evt"),
-    type: "webhook.delivery_received",
-    aggregateType: "github_webhook_delivery",
-    aggregateId: options.delivery,
-    payload: {
-      sourceEvent: options.event,
-      delivery: options.delivery
-    },
-    createdAt: (options.now ?? new Date()).toISOString()
-  };
-  const database = openRunsteadDatabase(stateDb);
-
-  try {
-    appendEventAndProject(database, { event });
-  } finally {
-    database.close();
-  }
-
-  return event;
-}
-
 async function auditWebhookResult(
   options: HandleGitHubWorkflowRunWebhookOptions,
   result: HandleGitHubWorkflowRunWebhookResult
@@ -259,146 +169,4 @@ async function auditWebhookResult(
     result,
     ...(options.now === undefined ? {} : { now: options.now })
   });
-}
-
-function findRecordedGitHubWebhookDelivery(options: {
-  cwd?: string;
-  delivery: string;
-}): { eventId: string; type: string } | undefined {
-  const state = requireRunsteadStateDbSync(resolve(options.cwd ?? process.cwd()));
-  const database = openRunsteadDatabase(state.stateDb);
-
-  try {
-    const rows = database
-      .prepare(
-        `
-        SELECT event_id, type, payload_json
-        FROM events
-        WHERE type IN (
-          'webhook.delivery_received',
-          'webhook.workflow_run_handled',
-          'webhook.workflow_run_ignored',
-          'webhook.delivery_duplicate'
-        )
-        ORDER BY id DESC
-      `
-      )
-      .all() as unknown as WebhookDeliveryEventRow[];
-
-    for (const row of rows) {
-      const payload = JSON.parse(row.payload_json) as Record<string, unknown>;
-
-      if (payload.delivery === options.delivery) {
-        return {
-          eventId: row.event_id,
-          type: row.type
-        };
-      }
-    }
-
-    return undefined;
-  } finally {
-    database.close();
-  }
-}
-
-function webhookAuditEventType(result: HandleGitHubWorkflowRunWebhookResult): string {
-  if (result.handled) {
-    return "webhook.workflow_run_handled";
-  }
-
-  return result.reason === "duplicate_delivery"
-    ? "webhook.delivery_duplicate"
-    : "webhook.workflow_run_ignored";
-}
-
-function webhookAuditAggregateType(
-  result: HandleGitHubWorkflowRunWebhookResult
-): string {
-  if (result.handled) {
-    return "github_workflow_run";
-  }
-
-  return result.reason === "duplicate_delivery"
-    ? "github_webhook_delivery"
-    : "github_webhook";
-}
-
-function webhookAuditAggregateId(
-  event: string,
-  result: HandleGitHubWorkflowRunWebhookResult
-): string {
-  if (result.handled) {
-    return result.runId;
-  }
-
-  return result.reason === "duplicate_delivery" ? result.delivery : event;
-}
-
-function webhookAuditPayload(
-  event: string,
-  delivery: string | undefined,
-  result: HandleGitHubWorkflowRunWebhookResult
-): Record<string, unknown> {
-  const base = {
-    sourceEvent: event,
-    ...(delivery === undefined ? {} : { delivery })
-  };
-
-  if (!result.handled) {
-    return result.reason === "duplicate_delivery"
-      ? {
-          ...base,
-          handled: false,
-          reason: result.reason,
-          originalEventId: result.originalEventId,
-          originalEventType: result.originalEventType
-        }
-      : {
-          ...base,
-          handled: false,
-          reason: result.reason
-        };
-  }
-
-  if (result.mode === "intake") {
-    return {
-      ...base,
-      mode: result.mode,
-      runId: result.runId,
-      taskId: result.ciRepair.task.id,
-      status: result.ciRepair.status,
-      taskStatus: result.ciRepair.task.status,
-      ...(result.ciRepair.status === "ignored"
-        ? { reason: result.ciRepair.reason }
-        : {}),
-      created: result.ciRepair.created
-    };
-  }
-
-  if (
-    result.orchestration.status === "ignored" &&
-    result.orchestration.ciRepair.status === "ignored"
-  ) {
-    return {
-      ...base,
-      mode: result.mode,
-      runId: result.runId,
-      taskId: result.orchestration.ciRepair.task.id,
-      status: result.orchestration.status,
-      reason: result.orchestration.ciRepair.reason,
-      taskStatus: result.orchestration.ciRepair.taskStatus
-    };
-  }
-
-  return {
-    ...base,
-    mode: result.mode,
-    runId: result.runId,
-    taskId: result.orchestration.ciRepair.task.id,
-    status: result.orchestration.status,
-    ...(result.orchestration.approval === undefined
-      ? {}
-      : { approvalId: result.orchestration.approval.id })
-  };
 }
