@@ -6,7 +6,9 @@ import { runRuntimeControlPlaneBackendConformance } from "@runstead/testkit";
 import {
   createPostgresControlPlaneBackend,
   createPostgresTeamControlPlaneProfile,
+  formatPostgresControlPlaneMigrationSql,
   migratePostgresControlPlane,
+  postgresControlPlaneMigrationPlan,
   PostgresLockUnavailableError,
   PostgresRevisionConflictError,
   type PostgresControlPlaneClient,
@@ -30,6 +32,27 @@ describe("@runstead/state-postgres", () => {
     expect(sql).toContain("idx_pg_events_aggregate_id");
     expect(client.queries[0]).toBe("BEGIN");
     expect(client.queries.at(-1)).toBe("COMMIT");
+  });
+
+  it("exports a deployable migration SQL plan for external runners", () => {
+    const plan = postgresControlPlaneMigrationPlan({ schema: "runstead_team" });
+    const sql = formatPostgresControlPlaneMigrationSql({
+      schema: "runstead_team"
+    });
+
+    expect(plan).toMatchObject({
+      schema: "runstead_team",
+      targetVersion: 1
+    });
+    expect(plan.statements[0]).toBe('CREATE SCHEMA IF NOT EXISTS "runstead_team"');
+    expect(plan.statements.join("\n")).toContain(
+      'INSERT INTO "runstead_team"."schema_migrations"'
+    );
+    expect(plan.statements.join("\n")).toContain("team_control_plane_backend");
+    expect(sql).toContain("BEGIN;");
+    expect(sql).toContain("COMMIT;");
+    expect(sql).toContain('CREATE TABLE IF NOT EXISTS "runstead_team"."events"');
+    expect(sql).toContain("ON CONFLICT (version) DO NOTHING");
   });
 
   it("passes the reusable runtime control-plane backend conformance suite", async () => {

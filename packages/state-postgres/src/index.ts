@@ -49,6 +49,12 @@ export interface PostgresTeamControlPlaneProfileOptions {
   workspaceId?: string;
 }
 
+export interface PostgresControlPlaneMigrationPlan {
+  schema: string;
+  targetVersion: number;
+  statements: string[];
+}
+
 interface PostgresMigration {
   version: number;
   name: string;
@@ -146,6 +152,55 @@ export async function migratePostgresControlPlane(
       );
     }
   });
+}
+
+export function postgresControlPlaneMigrationPlan(
+  options: { schema?: string } = {}
+): PostgresControlPlaneMigrationPlan {
+  const schema = postgresSchemaNames(options.schema);
+  const statements = [
+    `CREATE SCHEMA IF NOT EXISTS ${schema.schemaIdentifier}`,
+    `
+      CREATE TABLE IF NOT EXISTS ${schema.migrations} (
+        version integer PRIMARY KEY,
+        name text NOT NULL,
+        checksum text NOT NULL,
+        applied_at timestamptz NOT NULL
+      )
+    `,
+    ...postgresControlPlaneMigrations(schema).flatMap((migration) => [
+      ...migration.sql,
+      `
+        INSERT INTO ${schema.migrations} (version, name, checksum, applied_at)
+        VALUES (${migration.version}, ${sqlString(migration.name)}, ${sqlString(
+          migrationChecksum(migration.sql.join("\n"))
+        )}, now())
+        ON CONFLICT (version) DO NOTHING
+      `
+    ])
+  ];
+
+  return {
+    schema: schema.schema,
+    targetVersion: POSTGRES_CONTROL_PLANE_SCHEMA_VERSION,
+    statements: statements.map((statement) => statement.trim())
+  };
+}
+
+export function formatPostgresControlPlaneMigrationSql(
+  options: { schema?: string } = {}
+): string {
+  const plan = postgresControlPlaneMigrationPlan(options);
+
+  return [
+    "-- Runstead Postgres control-plane schema",
+    `-- schema: ${plan.schema}`,
+    `-- target version: ${plan.targetVersion}`,
+    "BEGIN;",
+    ...plan.statements.map((statement) => `${statement.replace(/;+\s*$/u, "")};`),
+    "COMMIT;",
+    ""
+  ].join("\n\n");
 }
 
 export function createPostgresTeamControlPlaneProfile(
@@ -865,6 +920,10 @@ function quoteIdentifier(value: string): string {
   }
 
   return `"${value}"`;
+}
+
+function sqlString(value: string): string {
+  return `'${value.replaceAll("'", "''")}'`;
 }
 
 function migrationChecksum(sql: string): string {
