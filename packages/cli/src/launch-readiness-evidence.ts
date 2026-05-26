@@ -1,14 +1,23 @@
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-
-import type { JsonObject } from "@runstead/core";
-
 import type {
-  EvidenceProvenanceArtifact,
   EvidenceReportRow,
   LaunchReadinessReportData
 } from "./launch-readiness-data.js";
+import {
+  artifactSources,
+  formatArtifactSource,
+  isEvidenceRecord as isRecord,
+  parsedEvidenceContent,
+  readEvidenceProvenanceArtifact,
+  stringValue
+} from "./launch-readiness-evidence-artifacts.js";
 import type { CommandVerifierCodeState } from "./verifier-evidence.js";
+
+export {
+  artifactSources,
+  formatArtifactSource,
+  parsedEvidenceContent,
+  readEvidenceProvenanceArtifact
+} from "./launch-readiness-evidence-artifacts.js";
 
 export type StaleEvidenceReasonGroup =
   | "freshness_expired"
@@ -353,20 +362,6 @@ export function commandEvidenceCodeState(
     : `code_state=stale current=${data.currentCodeState.fingerprint}`;
 }
 
-export function parsedEvidenceContent(uri: string): unknown {
-  const artifact = readEvidenceProvenanceArtifact(uri);
-
-  if (!isRecord(artifact) || typeof artifact.content !== "string") {
-    return undefined;
-  }
-
-  try {
-    return JSON.parse(artifact.content) as unknown;
-  } catch {
-    return undefined;
-  }
-}
-
 export function evidenceSourceSummary(item: EvidenceReportRow): string {
   const artifact = readEvidenceProvenanceArtifact(item.uri);
   const sources = artifactSources(artifact);
@@ -376,47 +371,4 @@ export function evidenceSourceSummary(item: EvidenceReportRow): string {
   }
 
   return `${item.type} ${sources.map(formatArtifactSource).join("; ")}`;
-}
-
-export function readEvidenceProvenanceArtifact(
-  uri: string
-): EvidenceProvenanceArtifact | undefined {
-  try {
-    const parsed = JSON.parse(readFileSync(fileURLToPath(uri), "utf8")) as unknown;
-
-    return isRecord(parsed) ? parsed : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-export function artifactSources(
-  artifact: EvidenceProvenanceArtifact | undefined
-): JsonObject[] {
-  if (artifact === undefined || !Array.isArray(artifact.sources)) {
-    return [];
-  }
-
-  return artifact.sources.filter((source): source is JsonObject => isRecord(source));
-}
-
-export function formatArtifactSource(source: JsonObject): string {
-  const kind = stringValue(source.kind) ?? "unknown";
-  const uri = stringValue(source.uri) ?? "missing";
-  const capturedAt = stringValue(source.capturedAt) ?? "unknown";
-  const freshness =
-    typeof source.freshnessDays === "number"
-      ? ` freshness=${source.freshnessDays}d`
-      : "";
-  const hash = stringValue(source.hash);
-
-  return `source=${kind} uri=${uri} captured=${capturedAt}${freshness}${hash === undefined ? "" : ` hash=${hash}`}`;
-}
-
-function isRecord(value: unknown): value is JsonObject {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function stringValue(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim().length > 0 ? value : undefined;
 }
