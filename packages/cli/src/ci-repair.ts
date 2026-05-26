@@ -4,12 +4,9 @@ import { createRunsteadId, type Task } from "@runstead/core";
 import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sqlite";
 
 import {
-  fetchGitHubWorkflowRunLog,
-  getGitHubWorkflowRunStatus,
   type GitHubWorkflowRunLog,
   type GitHubWorkflowRunStatus
 } from "./github-actions.js";
-import { classifyCiFailure } from "./ci-repair-classification.js";
 import {
   canRetryPartialCiRepairTask,
   findExistingCiRepairTaskForWorkflowRun,
@@ -19,11 +16,9 @@ import {
   CI_LOG_EVIDENCE_METADATA,
   writeCiRepairWorkflowRunEvidence
 } from "./ci-repair-evidence.js";
-import { redactGitHubWorkflowRunLog } from "./ci-repair-log-redaction.js";
+import { fetchCiRepairWorkflowRunIntake } from "./ci-repair-intake-fetch.js";
 import { createQueuedCiRepairTask } from "./ci-repair-task-create.js";
 import { errorMessage, markCiRepairTaskTerminal } from "./ci-repair-task-state.js";
-import { githubRunLogReadAction, githubRunReadAction } from "./ci-repair-actions.js";
-import { runGovernedToolAction } from "./governed-action.js";
 import { listGoals } from "./goals.js";
 import { withRunsteadManagerLock } from "./manager-lock.js";
 import { loadPolicyProfileFromFile } from "./policy-loader.js";
@@ -127,73 +122,20 @@ export async function createCiRepairTaskFromWorkflowRunUnlocked(
     });
 
     try {
-      const [workflowRunResult, logResult] = await Promise.all([
-        runGovernedToolAction({
-          cwd,
-          stateDb: resolvedState.stateDb,
-          database,
-          policy,
-          task,
-          workerRun,
-          action: githubRunReadAction({ task, cwd, runId: options.runId }),
-          requestedBy: "runstead:ci-repair",
-          ...(options.now === undefined ? {} : { now: options.now }),
-          run: async () => {
-            const value = await getGitHubWorkflowRunStatus({
-              cwd,
-              runId: options.runId,
-              ...(options.authToken === undefined
-                ? {}
-                : { authToken: options.authToken }),
-              ...(options.runner === undefined ? {} : { runner: options.runner })
-            });
-
-            return {
-              value,
-              output: {
-                runId: value.runId,
-                status: value.status,
-                ...(value.conclusion === undefined
-                  ? {}
-                  : { conclusion: value.conclusion })
-              }
-            };
-          }
-        }),
-        runGovernedToolAction({
-          cwd,
-          stateDb: resolvedState.stateDb,
-          database,
-          policy,
-          task,
-          workerRun,
-          action: githubRunLogReadAction({ task, cwd, runId: options.runId }),
-          requestedBy: "runstead:ci-repair",
-          ...(options.now === undefined ? {} : { now: options.now }),
-          run: async () => {
-            const value = await fetchGitHubWorkflowRunLog({
-              cwd,
-              runId: options.runId,
-              ...(options.authToken === undefined
-                ? {}
-                : { authToken: options.authToken }),
-              ...(options.runner === undefined ? {} : { runner: options.runner })
-            });
-
-            return {
-              value,
-              output: {
-                runId: value.runId,
-                byteLength: value.byteLength,
-                trust: CI_LOG_EVIDENCE_METADATA.trust
-              }
-            };
-          }
-        })
-      ]);
-      const workflowRun = workflowRunResult.value;
-      const evidenceLog = redactGitHubWorkflowRunLog(logResult.value);
-      const failureClassification = classifyCiFailure(workflowRun, evidenceLog);
+      const intake = await fetchCiRepairWorkflowRunIntake({
+        cwd,
+        stateDb: resolvedState.stateDb,
+        database,
+        policy,
+        task,
+        workerRun,
+        runId: options.runId,
+        ...(options.authToken === undefined ? {} : { authToken: options.authToken }),
+        ...(options.runner === undefined ? {} : { runner: options.runner }),
+        ...(options.now === undefined ? {} : { now: options.now })
+      });
+      const { workflowRun, failureClassification } = intake;
+      const evidenceLog = intake.log;
 
       fetchedWorkflowRun = workflowRun;
       fetchedLog = evidenceLog;

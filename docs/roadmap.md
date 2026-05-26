@@ -190,6 +190,8 @@ The current implementation wave closed the highest-confidence product gaps:
   `ci-repair-log-redaction`.
 - CI repair GitHub governed action builders moved out of `ci-repair` into
   `ci-repair-actions`.
+- CI repair governed workflow-run intake fetching, log redaction, and failure
+  classification moved out of `ci-repair` into `ci-repair-intake-fetch`.
 - CI repair task report formatting moved out of `ci-repair` into
   `ci-repair-report`.
 - Startup CI summary, PR comment, check-run, and remote-Actions rendering moved
