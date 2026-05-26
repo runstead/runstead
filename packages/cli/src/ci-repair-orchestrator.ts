@@ -2,19 +2,11 @@ import { join, resolve } from "node:path";
 
 import { openRunsteadDatabase } from "@runstead/state-sqlite";
 
-import {
-  runGovernedToolAction,
-  ToolActionApprovalRequiredError,
-  ToolActionDeniedError
-} from "./governed-action.js";
-import {
-  ciRepairApprovalRecord,
-  ciRepairApprovalSummary
-} from "./ci-repair-orchestrator-approval.js";
+import { runGovernedToolAction } from "./governed-action.js";
 import { showGoal } from "./goals.js";
 import { loadPolicyProfileFromFile } from "./policy-loader.js";
 import { requireRunsteadRootSync } from "./runstead-root.js";
-import { finishWorkerRun, startWorkerRun } from "./runtime-audit.js";
+import { startWorkerRun } from "./runtime-audit.js";
 import { withRunsteadManagerLock } from "./manager-lock.js";
 import type {
   CiRepairWorkerResult,
@@ -34,10 +26,6 @@ import {
 } from "./ci-repair-orchestrator-context.js";
 import { claimCiRepairOrchestratorTask } from "./ci-repair-orchestrator-claim.js";
 import { prepareCiRepairOrchestratorIntake } from "./ci-repair-orchestrator-intake.js";
-import {
-  isStagePersistenceInterruption,
-  markTaskTerminal
-} from "./ci-repair-orchestrator-task-state.js";
 import { writeCiRepairStage } from "./ci-repair-orchestrator-stage-persistence.js";
 import { startCiRepairWorker } from "./ci-repair-orchestrator-worker-run.js";
 import { handleCiRepairWorkerTerminalOutcome } from "./ci-repair-orchestrator-worker-terminal.js";
@@ -49,6 +37,7 @@ import {
   findPullRequestResumeTask,
   resumeCiRepairPullRequest
 } from "./ci-repair-orchestrator-resume.js";
+import { handleCiRepairOrchestratorError } from "./ci-repair-orchestrator-error-handling.js";
 
 export {
   ciRepairPullRequestResumeRunId,
@@ -391,81 +380,20 @@ export async function runCiRepairOrchestratorUnlocked(
         pullRequest: publishResult.pullRequest
       };
     } catch (error) {
-      if (isStagePersistenceInterruption(error)) {
-        throw error;
-      }
+      const handled = handleCiRepairOrchestratorError({
+        error,
+        database,
+        task: orchestratorTask,
+        workerRun,
+        context: stageContext,
+        ciRepair,
+        branchName,
+        ...(completedWorkerResult === undefined ? {} : { completedWorkerResult }),
+        ...(options.now === undefined ? {} : { now: options.now })
+      });
 
-      if (error instanceof ToolActionApprovalRequiredError) {
-        const waitingContext = {
-          ...stageContext,
-          counters: incrementCiRepairCounter(stageContext, "approvalRound")
-        };
-        const waitingTask = markTaskTerminal({
-          database,
-          task: orchestratorTask,
-          status: "waiting_approval",
-          output: {
-            ...(orchestratorTask.output ?? {}),
-            summary: `${error.toolCall.actionType} requires approval`,
-            ciRepairOrchestrator: {
-              ...waitingContext,
-              approvalId: error.approval.id
-            },
-            approval: ciRepairApprovalRecord(error)
-          },
-          ...(options.now === undefined ? {} : { now: options.now })
-        });
-        finishWorkerRun({
-          database,
-          workerRun,
-          status: "waiting_approval",
-          output: {
-            approvalId: error.approval.id,
-            actionType: error.toolCall.actionType
-          },
-          ...(options.now === undefined ? {} : { now: options.now })
-        });
-
-        return {
-          status: "waiting_approval",
-          ciRepair: {
-            ...ciRepair,
-            task: waitingTask
-          },
-          branchName,
-          ...(completedWorkerResult === undefined
-            ? {}
-            : { workerResult: completedWorkerResult }),
-          approval: ciRepairApprovalSummary(error)
-        };
-      }
-
-      if (error instanceof ToolActionDeniedError) {
-        markTaskTerminal({
-          database,
-          task: orchestratorTask,
-          status: "blocked",
-          output: {
-            ...(orchestratorTask.output ?? {}),
-            summary: error.message,
-            ciRepairOrchestrator: {
-              ...stageContext,
-              stage: "blocked"
-            },
-            policyDecisionId: error.policyDecision.id
-          },
-          ...(options.now === undefined ? {} : { now: options.now })
-        });
-        finishWorkerRun({
-          database,
-          workerRun,
-          status: "blocked",
-          output: {
-            error: error.message,
-            policyDecisionId: error.policyDecision.id
-          },
-          ...(options.now === undefined ? {} : { now: options.now })
-        });
+      if (handled !== undefined) {
+        return handled;
       }
 
       throw error;
