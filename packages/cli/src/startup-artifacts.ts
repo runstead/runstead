@@ -1,12 +1,10 @@
-import { readFileSync } from "node:fs";
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 
 import { z } from "zod";
-import { openRunsteadDatabase } from "@runstead/state-sqlite";
 
 import { requireRunsteadStateDb } from "./runstead-root.js";
+import { startupEvidenceSourceRefIndex } from "./startup-artifact-source-refs.js";
 
 export const STARTUP_STRUCTURED_ARTIFACT_SCHEMA = "runstead.startupArtifact";
 export const STARTUP_STRUCTURED_ARTIFACT_SCHEMA_VERSION = 1;
@@ -58,15 +56,6 @@ export interface WriteStartupStructuredArtifactOptions {
   markdownPath: string;
   structuredPath?: string;
   data: Record<string, unknown>;
-}
-
-interface EvidenceSourceRefRow {
-  id: string;
-  uri: string;
-}
-
-interface StartupEvidenceArtifactFile {
-  sourceRefs?: unknown;
 }
 
 export async function listStartupArtifacts(
@@ -294,51 +283,6 @@ export function migrateStartupArtifact(value: unknown): unknown {
   }
 
   return value;
-}
-
-function startupEvidenceSourceRefIndex(stateDb: string): Map<string, string[]> {
-  const database = openRunsteadDatabase(stateDb);
-
-  try {
-    const rows = database
-      .prepare(
-        `
-        SELECT id, uri
-        FROM evidence
-        WHERE type LIKE 'startup_%'
-        ORDER BY created_at DESC, id ASC
-      `
-      )
-      .all() as unknown as EvidenceSourceRefRow[];
-    const index = new Map<string, string[]>();
-
-    for (const row of rows) {
-      for (const sourceRef of startupEvidenceSourceRefs(row.uri)) {
-        const current = index.get(sourceRef) ?? [];
-
-        current.push(row.id);
-        index.set(sourceRef, current);
-      }
-    }
-
-    return index;
-  } finally {
-    database.close();
-  }
-}
-
-function startupEvidenceSourceRefs(uri: string): string[] {
-  try {
-    const parsed = JSON.parse(
-      readFileSync(fileURLToPath(uri), "utf8")
-    ) as StartupEvidenceArtifactFile;
-
-    return Array.isArray(parsed.sourceRefs)
-      ? parsed.sourceRefs.filter((item): item is string => typeof item === "string")
-      : [];
-  } catch {
-    return [];
-  }
 }
 
 function artifactMatchesRef(item: StartupArtifactListItem, ref: string): boolean {
