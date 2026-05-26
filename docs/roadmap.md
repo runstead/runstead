@@ -467,6 +467,8 @@ The current implementation wave closed the highest-confidence product gaps:
 - Wrapped worker subprocess execution, output capture, timeout/truncation
   notices, and progress formatting moved out of `wrapped-worker` into
   `wrapped-worker-process`.
+- Startup ready UI smoke expected-text inference moved out of the UI smoke
+  executor into `startup-ready-ui-smoke-expect-text`.
 - Wrapped-worker stuck progress coverage is stabilized against short timing
   windows in full-suite runs.
 - `startup source collect` records structured provider evidence through
