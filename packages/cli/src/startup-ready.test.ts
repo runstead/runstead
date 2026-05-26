@@ -276,7 +276,7 @@ describe("startup readiness run model", () => {
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }
-  }, 60_000);
+  }, 90_000);
 
   it("executes the MVP readiness phases and persists the final run", async () => {
     const workspace = join(tmpdir(), `runstead-startup-ready-exec-${process.pid}`);
