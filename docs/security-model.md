@@ -204,6 +204,8 @@ also run:
 runstead team control-plane bootstrap --cwd /path/to/repo
 runstead team control-plane check --cwd /path/to/repo
 runstead team control-plane migration-sql --schema runstead
+runstead team control-plane runner heartbeat --cwd /path/to/repo --runner-id runner_1 --migrate
+runstead team control-plane runner list --cwd /path/to/repo
 ```
 
 The dedicated check reports the concrete assertions required for team mode:
@@ -216,6 +218,12 @@ The migration SQL command is a deployment aid only. It prints the shared
 backend schema and migration tracking statements; it does not grant auth,
 create tenants, configure runner identity, provision object storage, or turn
 the local CLI into a multi-tenant security boundary.
+
+The runner heartbeat command is the live liveness path for a configured
+Postgres backend. It records `runner_id`, optional organization/workspace ids,
+labels, status, and `last_seen_at` in the shared runtime backend. It does not
+replace IdP/RBAC, runner credential provisioning, secret management, network
+isolation, or external audit export.
 
 ## Dashboard Operator API
 

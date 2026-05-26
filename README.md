@@ -373,12 +373,35 @@ Print the Postgres schema migration SQL for deployment tooling:
 runstead team control-plane migration-sql --schema runstead
 ```
 
+Record live runner liveness in the shared backend, then inspect the registered
+runners:
+
+```bash
+RUNSTEAD_RUNTIME_BACKEND=postgres \
+RUNSTEAD_POSTGRES_URL=postgres://runstead/state \
+RUNSTEAD_TEAM_ORG_ID=org_123 \
+RUNSTEAD_TEAM_WORKSPACE_ID=workspace_123 \
+runstead team control-plane runner heartbeat \
+  --cwd /path/to/repo \
+  --runner-id runner_1 \
+  --labels runstead,codex_direct \
+  --migrate
+
+RUNSTEAD_RUNTIME_BACKEND=postgres \
+RUNSTEAD_POSTGRES_URL=postgres://runstead/state \
+RUNSTEAD_TEAM_ORG_ID=org_123 \
+RUNSTEAD_TEAM_WORKSPACE_ID=workspace_123 \
+runstead team control-plane runner list --cwd /path/to/repo
+```
+
 The command reports backend selection, Postgres connection string presence,
 shared artifact URI, runner identity, fresh runner heartbeat, database lease
 fencing, hash-chain audit, OIDC/RBAC, and central secret-store boundaries.
 `RUNSTEAD_RUNNER_LAST_SEEN_AT` may be one ISO timestamp applied to all runners
-or comma-separated `runner_id=timestamp` entries. `runstead doctor` includes
-the same backend assessment as part of the broader local health check.
+or comma-separated `runner_id=timestamp` entries for static diagnostics. The
+runner heartbeat command writes the same liveness signal into Postgres for
+team deployments. `runstead doctor` includes the same backend assessment as
+part of the broader local health check.
 
 ## Setup For This Monorepo
 

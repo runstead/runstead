@@ -69,12 +69,33 @@ describe("cli entrypoint", () => {
     const bootstrap = controlPlane?.commands.find(
       (command) => command.name() === "bootstrap"
     );
+    const runner = controlPlane?.commands.find(
+      (command) => command.name() === "runner"
+    );
+    const runnerHeartbeat = runner?.commands.find(
+      (command) => command.name() === "heartbeat"
+    );
+    const runnerList = runner?.commands.find((command) => command.name() === "list");
 
     expect(check?.options.map((option) => option.long)).toEqual(
       expect.arrayContaining(["--cwd", "--json"])
     );
     expect(bootstrap?.options.map((option) => option.long)).toEqual(
       expect.arrayContaining(["--actor", "--cwd", "--force", "--output"])
+    );
+    expect(runnerHeartbeat?.options.map((option) => option.long)).toEqual(
+      expect.arrayContaining([
+        "--cwd",
+        "--json",
+        "--labels",
+        "--migrate",
+        "--runner-id",
+        "--schema",
+        "--status"
+      ])
+    );
+    expect(runnerList?.options.map((option) => option.long)).toEqual(
+      expect.arrayContaining(["--cwd", "--json", "--schema", "--status"])
     );
   });
 
