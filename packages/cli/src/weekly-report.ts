@@ -8,10 +8,7 @@ import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sql
 
 import { requireRunsteadStateDb } from "./runstead-root.js";
 import { readWeeklyReportData } from "./weekly-report-data.js";
-import {
-  formatWeeklyReport,
-  summarizeWeeklyReport
-} from "./weekly-report-format.js";
+import { formatWeeklyReport, summarizeWeeklyReport } from "./weekly-report-format.js";
 import type {
   GenerateWeeklyReportOptions,
   WeeklyReportData,
