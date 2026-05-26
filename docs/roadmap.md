@@ -585,6 +585,8 @@ The current implementation wave closed the highest-confidence product gaps:
   `team-control-plane-runner` into `team-control-plane-runner-format`.
 - Team control-plane Postgres connection validation and client creation moved
   out of `team-control-plane-runner` into `team-control-plane-runner-connection`.
+- Codex Direct approved pending-patch resume execution and lookup moved out of
+  `codex-direct/worker` into `codex-direct/pending-patch-resume`.
 - CI runs `@runstead/state-postgres` against a real Postgres service via
   `RUNSTEAD_PG_TEST_URL`; local runs skip this integration path unless the env
   var is set.
