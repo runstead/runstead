@@ -161,6 +161,8 @@ The current implementation wave closed the highest-confidence product gaps:
   out of `launch-readiness-report` into `launch-readiness-report-format`.
 - Launch readiness blocker source and risk-register rendering moved out of
   `launch-readiness-report-format` into `launch-readiness-risk-format`.
+- Launch readiness report section rendering moved out of the top-level report
+  formatter into `launch-readiness-report-sections`.
 - Shared secret-print acknowledgement moved out of the CLI entrypoint into
   `cli-secrets`.
 - `github` command registration moved out of the CLI entrypoint into
