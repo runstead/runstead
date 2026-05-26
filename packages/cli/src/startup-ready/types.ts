@@ -11,6 +11,7 @@ import type {
   StartupBuildMvpOptions,
   StartupWorkerGovernanceProfile
 } from "../startup-founder-flow.js";
+import type { TeamControlPlanePostgresClientFactory } from "../team-control-plane.js";
 import type {
   StartupAppType,
   StartupScaffoldProfile,
@@ -88,6 +89,10 @@ export interface StartupReadyOptions {
   maxAttempts?: number;
   forceBuild?: boolean;
   runtimeBackendEnv?: RuntimeBackendConfigEnv;
+  runtimeBackendLive?: boolean;
+  runtimeBackendMigrate?: boolean;
+  runtimeBackendSchema?: string;
+  runtimeBackendPostgresClientFactory?: TeamControlPlanePostgresClientFactory;
   sourceConnectorEnv?: Record<string, string | undefined>;
   workerRunner?: StartupBuildMvpOptions["workerRunner"];
   onProgress?: (event: StartupReadyProgressEvent) => void;
@@ -145,6 +150,17 @@ export interface StartupReadyPlanRuntimeBackend {
   setupBlockers: string[];
   warnings: string[];
   teamReady?: boolean;
+  live?: StartupReadyPlanRuntimeBackendLiveCheck;
+}
+
+export interface StartupReadyPlanRuntimeBackendLiveCheck {
+  enabled: boolean;
+  connected: boolean;
+  migrated: boolean;
+  schema?: string;
+  runnerCount: number;
+  freshRunnerHeartbeats: number;
+  blockers: string[];
 }
 
 export interface StartupReadyPlanExtensions {

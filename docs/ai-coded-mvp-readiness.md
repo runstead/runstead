@@ -95,7 +95,15 @@ runstead startup ready --cwd /path/to/mvp --resume <run-id>
 runstead startup ready --cwd /path/to/mvp --force-build         # force agent, skip green path
 runstead startup ready --cwd /path/to/mvp --refresh-context     # regenerate context docs
 runstead startup ready --cwd /path/to/mvp --max-attempts 3      # bounded MVP repair attempts
+runstead startup ready --cwd /path/to/mvp --live-runtime-backend # prove Postgres runner state before worker execution
 ```
+
+For team-mode runs, combine `--live-runtime-backend` with
+`RUNSTEAD_RUNTIME_BACKEND=postgres`. Runstead will connect to the shared
+backend during the runtime-backend phase, read `runtime_runners`, and block
+before worker execution when the live backend cannot be reached or no fresh
+runner heartbeat is present. Add `--migrate-runtime-backend` to apply the
+checked Postgres schema before the live probe.
 
 ## Outputs
 

@@ -109,9 +109,20 @@ export async function planStartupReady(
   const sourceConnectorBlockers = startupSourceConnectorRequirementBlockers(
     sourceConnectorRequirements
   );
-  const runtimeBackend = inspectStartupReadyRuntimeBackend({
+  const runtimeBackend = await inspectStartupReadyRuntimeBackend({
+    cwd,
     rootPath: root.root,
     env: options.runtimeBackendEnv ?? process.env,
+    live: options.runtimeBackendLive === true,
+    liveMigrate: options.runtimeBackendMigrate === true,
+    ...(options.runtimeBackendSchema === undefined
+      ? {}
+      : { schema: options.runtimeBackendSchema }),
+    ...(options.runtimeBackendPostgresClientFactory === undefined
+      ? {}
+      : {
+          postgresClientFactory: options.runtimeBackendPostgresClientFactory
+        }),
     now
   });
 

@@ -94,10 +94,14 @@ function formatStartupReadyPlanRuntimeBackend(plan: StartupReadyPlan): string {
     backend.teamReady === undefined
       ? ""
       : `, team=${backend.teamReady ? "ready" : "blocked"}`;
+  const live =
+    backend.live === undefined
+      ? ""
+      : `, live=${backend.live.connected ? "connected" : "blocked"} runners=${backend.live.runnerCount} fresh=${backend.live.freshRunnerHeartbeats}`;
   const warnings =
     backend.warnings.length === 0 ? "" : `, warnings=${backend.warnings.length}`;
 
-  return `${backend.backend} ${status} (${backend.storageUri}${team}${warnings})`;
+  return `${backend.backend} ${status} (${backend.storageUri}${team}${live}${warnings})`;
 }
 
 function formatStartupReadinessRunRuntimeBackend(run: StartupReadinessRun): string {
@@ -108,8 +112,12 @@ function formatStartupReadinessRunRuntimeBackend(run: StartupReadinessRun): stri
   }
 
   const status = backend.setupBlockers.length === 0 ? "ready" : "blocked";
+  const live =
+    backend.live === undefined
+      ? ""
+      : `, live=${backend.live.connected ? "connected" : "blocked"} runners=${backend.live.runnerCount} fresh=${backend.live.freshRunnerHeartbeats}`;
 
-  return `${backend.backend} ${status} (${backend.storageUri})`;
+  return `${backend.backend} ${status} (${backend.storageUri}${live})`;
 }
 
 export function formatStartupReadinessRun(run: StartupReadinessRun): string {

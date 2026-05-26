@@ -12,6 +12,11 @@ import {
   type RunsteadEvent,
   type Task
 } from "@runstead/core";
+import type {
+  PostgresControlPlaneClient,
+  PostgresQueryResult,
+  PostgresRow
+} from "@runstead/state-postgres";
 import { describe, expect, it } from "vitest";
 import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sqlite";
 
@@ -941,6 +946,116 @@ describe("startup readiness run model", () => {
       expect(build?.status).toBe("pending");
       expect(result.run.verdictBlockers).toEqual(
         expect.arrayContaining(["Runtime backend is blocked"])
+      );
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("uses live Postgres runner heartbeats in startup readiness planning", async () => {
+    const workspace = join(
+      tmpdir(),
+      `runstead-startup-ready-live-backend-plan-${process.pid}`
+    );
+    const client = new StartupReadyFakePostgresClient([
+      {
+        runner_id: "runner_1",
+        organization_id: "org_123",
+        workspace_id: "workspace_123",
+        labels_json: ["runstead", "codex_direct"],
+        status: "active",
+        last_seen_at: "2026-05-22T01:21:00.000Z"
+      }
+    ]);
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await mkdir(workspace, { recursive: true });
+      await initRunstead({ cwd: workspace, profile: "trusted-local" });
+
+      const plan = await planStartupReady({
+        cwd: workspace,
+        stage: "launch",
+        target: "local",
+        runtimeBackendLive: true,
+        runtimeBackendEnv: {
+          RUNSTEAD_RUNTIME_BACKEND: "postgres",
+          RUNSTEAD_POSTGRES_URL: "postgres://runstead/state",
+          RUNSTEAD_ARTIFACT_BASE_URI: "s3://runstead/evidence",
+          RUNSTEAD_TEAM_ORG_ID: "org_123",
+          RUNSTEAD_TEAM_WORKSPACE_ID: "workspace_123",
+          RUNSTEAD_AUDIT_SINK_URI: "s3://runstead/audit"
+        },
+        runtimeBackendPostgresClientFactory: () => Promise.resolve(client),
+        now: new Date("2026-05-22T01:21:15.000Z")
+      });
+      const backend = plan.phases.find((phase) => phase.id === "runtime_backend");
+      const formatted = formatStartupReadyPlan(plan);
+
+      expect(plan.runtimeBackend).toMatchObject({
+        backend: "postgres",
+        teamReady: true,
+        live: {
+          enabled: true,
+          connected: true,
+          runnerCount: 1,
+          freshRunnerHeartbeats: 1
+        }
+      });
+      expect(backend?.status).toBe("pending");
+      expect(formatted).toContain("Runtime backend: postgres ready");
+      expect(formatted).toContain("live=connected runners=1 fresh=1");
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("blocks startup ready before worker execution when live backend check fails", async () => {
+    const workspace = join(
+      tmpdir(),
+      `runstead-startup-ready-live-backend-block-${process.pid}`
+    );
+    let workerCalled = false;
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await mkdir(workspace, { recursive: true });
+
+      const result = await runStartupReady({
+        cwd: workspace,
+        stage: "mvp",
+        target: "local",
+        runtimeBackendLive: true,
+        runtimeBackendEnv: {
+          RUNSTEAD_RUNTIME_BACKEND: "postgres",
+          RUNSTEAD_POSTGRES_URL: "postgres://runstead/state",
+          RUNSTEAD_ARTIFACT_BASE_URI: "s3://runstead/evidence",
+          RUNSTEAD_TEAM_ORG_ID: "org_123",
+          RUNSTEAD_RUNNER_ID: "runner_1",
+          RUNSTEAD_RUNNER_LAST_SEEN_AT: "2026-05-22T01:21:00.000Z",
+          RUNSTEAD_AUDIT_SINK_URI: "s3://runstead/audit"
+        },
+        runtimeBackendPostgresClientFactory: () =>
+          Promise.reject(new Error("database unavailable")),
+        workerRunner: () => {
+          workerCalled = true;
+          return Promise.reject(new Error("worker should not run"));
+        },
+        now: new Date("2026-05-22T01:21:20.000Z")
+      });
+      const backend = result.run.phases.find((phase) => phase.id === "runtime_backend");
+
+      expect(workerCalled).toBe(false);
+      expect(result.run.status).toBe("blocked");
+      expect(result.run.runtimeBackend?.live).toMatchObject({
+        enabled: true,
+        connected: false
+      });
+      expect(backend?.status).toBe("blocked");
+      expect(backend?.blockers).toEqual(
+        expect.arrayContaining([
+          "live Postgres backend check failed: database unavailable"
+        ])
       );
     } finally {
       await rm(workspace, { force: true, recursive: true });
@@ -2811,4 +2926,37 @@ function startupReadyVerifierTask(): Task {
     createdAt: "2026-05-22T01:08:00.000Z",
     updatedAt: "2026-05-22T01:08:00.000Z"
   };
+}
+
+interface StartupReadyFakeRunnerRow extends PostgresRow {
+  runner_id: string;
+  organization_id?: string | null;
+  workspace_id?: string | null;
+  labels_json: unknown;
+  status: string;
+  last_seen_at: string;
+}
+
+class StartupReadyFakePostgresClient implements PostgresControlPlaneClient {
+  constructor(private readonly runners: StartupReadyFakeRunnerRow[]) {}
+
+  async query<Row extends PostgresRow = PostgresRow>(
+    sql: string
+  ): Promise<PostgresQueryResult<Row>> {
+    await Promise.resolve();
+
+    const normalized = sql.replace(/\s+/gu, " ").trim();
+
+    if (normalized.includes("FROM") && normalized.includes('"runtime_runners"')) {
+      return {
+        rows: this.runners as unknown as Row[],
+        rowCount: this.runners.length
+      };
+    }
+
+    return {
+      rows: [],
+      rowCount: 0
+    };
+  }
 }

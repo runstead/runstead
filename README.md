@@ -93,7 +93,10 @@ one approval grant across many writes — while dependency, secret, `.git`, and
 Add `--interactive` to supplement context and measurement evidence before the
 run; add `--guided` to print and persist next-step commands for every blocker.
 Add `--force-build` (alias `--repair`) to override the green-path skip and call
-the worker anyway.
+the worker anyway. In team-mode runs, add `--live-runtime-backend` so the
+runtime-backend phase connects to Postgres and reads backend-recorded runner
+heartbeats before any worker executes; add `--migrate-runtime-backend` when the
+runner should apply the checked backend schema first.
 
 Preview the same run without executing the worker:
 

@@ -61,6 +61,7 @@ export interface TeamControlPlaneRunnerListResult {
 
 export interface TeamControlPlaneLiveCheckOptions extends TeamControlPlaneRunnerOptions {
   migrate?: boolean;
+  requireInitialized?: boolean;
 }
 
 export interface TeamControlPlaneLiveCheckResult {
@@ -74,7 +75,9 @@ export interface TeamControlPlaneLiveCheckResult {
 export async function checkTeamControlPlaneLiveBackend(
   options: TeamControlPlaneLiveCheckOptions = {}
 ): Promise<TeamControlPlaneLiveCheckResult> {
-  await requireRunsteadRoot(options.cwd);
+  if (options.requireInitialized !== false) {
+    await requireRunsteadRoot(options.cwd);
+  }
 
   const connection = resolveTeamPostgresConnection(options);
   const client = await connectTeamPostgresClient(connection);

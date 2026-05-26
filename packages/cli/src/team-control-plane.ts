@@ -51,6 +51,7 @@ export interface TeamControlPlaneCheckOptions {
   env?: RuntimeBackendConfigEnv;
   live?: boolean;
   liveMigrate?: boolean;
+  liveRequireInitialized?: boolean;
   schema?: string;
   postgresClientFactory?: TeamControlPlanePostgresClientFactory;
   now?: Date;
@@ -127,6 +128,7 @@ export async function checkTeamControlPlane(
           cwd,
           env,
           migrate: options.liveMigrate === true,
+          requireInitialized: options.liveRequireInitialized !== false,
           ...(options.schema === undefined ? {} : { schema: options.schema }),
           ...(options.postgresClientFactory === undefined
             ? {}
@@ -299,6 +301,7 @@ async function inspectLiveTeamControlPlaneBackend(input: {
   cwd: string;
   env: RuntimeBackendConfigEnv;
   migrate: boolean;
+  requireInitialized: boolean;
   schema?: string;
   postgresClientFactory?: TeamControlPlanePostgresClientFactory;
 }): Promise<InspectedLiveTeamControlPlaneBackend> {
@@ -310,6 +313,7 @@ async function inspectLiveTeamControlPlaneBackend(input: {
       cwd: input.cwd,
       env: input.env,
       migrate: input.migrate,
+      requireInitialized: input.requireInitialized,
       ...(input.schema === undefined ? {} : { schema: input.schema }),
       ...(input.postgresClientFactory === undefined
         ? {}

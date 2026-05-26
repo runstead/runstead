@@ -56,6 +56,19 @@ export function registerStartupReadyCommand(startup: Command): Command {
     )
     .option("--repair", "Alias for --force-build")
     .option(
+      "--live-runtime-backend",
+      "Connect to the configured Postgres backend before executing readiness"
+    )
+    .option(
+      "--migrate-runtime-backend",
+      "Apply Postgres runtime backend migrations before a live backend check"
+    )
+    .option(
+      "--runtime-backend-schema <name>",
+      "Postgres schema name for live runtime backend checks",
+      "runstead"
+    )
+    .option(
       "--app-template <template>",
       "Built-in scaffold template for empty repos, currently static-todo"
     )
@@ -78,6 +91,9 @@ export function registerStartupReadyCommand(startup: Command): Command {
         guided?: boolean;
         forceBuild?: boolean;
         repair?: boolean;
+        liveRuntimeBackend?: boolean;
+        migrateRuntimeBackend?: boolean;
+        runtimeBackendSchema: string;
         appTemplate?: string;
         appType?: string;
         maxAttempts: string;
@@ -111,6 +127,11 @@ export function registerStartupReadyCommand(startup: Command): Command {
           interactive: options.interactive === true,
           guided: options.guided === true,
           forceBuild: options.forceBuild === true || options.repair === true,
+          runtimeBackendLive:
+            options.liveRuntimeBackend === true ||
+            options.migrateRuntimeBackend === true,
+          runtimeBackendMigrate: options.migrateRuntimeBackend === true,
+          runtimeBackendSchema: options.runtimeBackendSchema,
           ...(options.appTemplate === undefined
             ? {}
             : { appTemplate: parseStartupScaffoldTemplate(options.appTemplate) }),

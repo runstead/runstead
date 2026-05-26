@@ -216,6 +216,9 @@ append-only audit export, OIDC/RBAC/tenant isolation, and central secret-store
 boundaries. With `--live`, the check connects to Postgres and reads the runner
 registry directly, so runner identity and heartbeat freshness are proven from
 backend state instead of only from environment-provided timestamps.
+`runstead startup ready --live-runtime-backend` applies the same live probe in
+the readiness runtime-backend phase and blocks before worker execution if the
+selected backend cannot prove fresh runner state.
 
 The migration SQL command is a deployment aid only. It prints the shared
 backend schema and migration tracking statements; it does not grant auth,
