@@ -8,7 +8,8 @@ import { initRunstead } from "./init.js";
 import {
   bootstrapTeamControlPlane,
   checkTeamControlPlane,
-  formatTeamControlPlaneCheck
+  formatTeamControlPlaneCheck,
+  teamControlPlaneMigrationSql
 } from "./team-control-plane.js";
 
 describe("team control plane checks", () => {
@@ -99,5 +100,15 @@ describe("team control plane checks", () => {
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }
+  });
+
+  it("prints Postgres migration SQL for team backend bootstrap", () => {
+    const sql = teamControlPlaneMigrationSql({ schema: "runstead_team" });
+
+    expect(sql).toContain("-- Runstead Postgres control-plane schema");
+    expect(sql).toContain('CREATE SCHEMA IF NOT EXISTS "runstead_team"');
+    expect(sql).toContain('CREATE TABLE IF NOT EXISTS "runstead_team"."events"');
+    expect(sql).toContain('INSERT INTO "runstead_team"."schema_migrations"');
+    expect(sql).toContain("COMMIT;");
   });
 });

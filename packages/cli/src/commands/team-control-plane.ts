@@ -75,5 +75,15 @@ export function registerTeamControlPlaneCommand(program: Command): Command {
       }
     );
 
+  controlPlane
+    .command("migration-sql")
+    .description("Print SQL for the Postgres team control-plane schema.")
+    .option("--schema <name>", "Postgres schema name", "runstead")
+    .action(async (options: { schema: string }) => {
+      const { teamControlPlaneMigrationSql } = await import("../team-control-plane.js");
+
+      console.log(teamControlPlaneMigrationSql({ schema: options.schema }));
+    });
+
   return team;
 }

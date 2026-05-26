@@ -98,6 +98,9 @@ importers:
       '@runstead/skills':
         specifier: workspace:*
         version: link:../skills
+      '@runstead/state-postgres':
+        specifier: workspace:*
+        version: link:../state-postgres
       '@runstead/state-sqlite':
         specifier: workspace:*
         version: link:../state-sqlite

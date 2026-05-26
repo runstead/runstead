@@ -6,6 +6,7 @@ import {
   type RuntimeBackendConfigEnv,
   type RuntimeBackendSelection
 } from "@runstead/runtime";
+import { formatPostgresControlPlaneMigrationSql } from "@runstead/state-postgres";
 
 import { requireRunsteadRoot, resolveRunsteadRoot } from "./runstead-root.js";
 
@@ -48,6 +49,10 @@ export interface BootstrapTeamControlPlaneResult {
   path: string;
   overwritten: boolean;
   checkCommand: string;
+}
+
+export interface TeamControlPlaneMigrationSqlOptions {
+  schema?: string;
 }
 
 const TEAM_CONTROL_PLANE_ENV_TEMPLATE = `# Runstead team control-plane backend.
@@ -143,6 +148,14 @@ export async function bootstrapTeamControlPlane(
     overwritten: exists,
     checkCommand: `runstead team control-plane check --cwd ${shellQuote(root.cwd)}`
   };
+}
+
+export function teamControlPlaneMigrationSql(
+  options: TeamControlPlaneMigrationSqlOptions = {}
+): string {
+  return formatPostgresControlPlaneMigrationSql({
+    ...(options.schema === undefined ? {} : { schema: options.schema })
+  });
 }
 
 export function formatTeamControlPlaneCheck(

@@ -37,6 +37,7 @@
     "@runstead/runtime": "workspace:*",
     "@runstead/sdk": "workspace:*",
     "@runstead/skills": "workspace:*",
+    "@runstead/state-postgres": "workspace:*",
     "@runstead/state-sqlite": "workspace:*",
     "@runstead/tools": "workspace:*",
     "@runstead/verifiers": "workspace:*",
