@@ -45,7 +45,8 @@ describePostgres("@runstead/state-postgres integration", () => {
           "idempotency_key",
           "expected_revision_conflict",
           "lock_renew_release",
-          "artifact_hash_read"
+          "artifact_hash_read",
+          "runner_heartbeat_registry"
         ]
       });
     } finally {

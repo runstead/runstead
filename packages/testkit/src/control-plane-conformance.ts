@@ -46,6 +46,11 @@ export async function runRuntimeControlPlaneBackendConformance(
     await checkArtifacts(context);
     checks.push("artifact_hash_read");
 
+    if (context.backend.runners !== undefined) {
+      await checkRunnerRegistry(context);
+      checks.push("runner_heartbeat_registry");
+    }
+
     return {
       name: options.name,
       checks
@@ -252,6 +257,38 @@ async function checkArtifacts(
 
   if (Buffer.from(contents).toString("utf8") !== "runstead control plane") {
     throw new Error("backend artifact read did not return original contents");
+  }
+}
+
+async function checkRunnerRegistry(
+  context: RuntimeControlPlaneConformanceContext
+): Promise<void> {
+  const registry = context.backend.runners;
+
+  if (registry === undefined) {
+    return;
+  }
+
+  const runner = await registry.heartbeat({
+    runnerId: `runner_${randomUUID()}`,
+    organizationId: "org_conformance",
+    workspaceId: "workspace_conformance",
+    labels: ["runstead", "conformance"],
+    now: new Date("2026-05-24T00:00:00.000Z")
+  });
+
+  if (runner.status !== "active" || runner.lastSeenAt === undefined) {
+    throw new Error("runner registry did not record an active heartbeat");
+  }
+
+  const runners = await registry.list({
+    organizationId: "org_conformance",
+    workspaceId: "workspace_conformance",
+    status: "active"
+  });
+
+  if (!runners.some((item) => item.runnerId === runner.runnerId)) {
+    throw new Error("runner registry did not return the recorded heartbeat");
   }
 }
 
