@@ -7,6 +7,17 @@ import { createRunsteadId, type JsonObject, type RunsteadEvent } from "@runstead
 import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sqlite";
 
 import { requireRunsteadStateDb } from "./runstead-root.js";
+import type {
+  ApprovalReportRow,
+  EvidenceReportRow,
+  EventReportRow,
+  GenerateWeeklyReportOptions,
+  GoalReportRow,
+  PolicyDecisionReportRow,
+  TaskReportRow,
+  WeeklyReportData,
+  WeeklyReportResult
+} from "./weekly-report-types.js";
 import {
   WEEKLY_REPORT_DAY_MS,
   formatIsoWeek,
@@ -15,94 +26,18 @@ import {
   parseIsoWeekLabel
 } from "./weekly-report-week.js";
 
+export type {
+  ApprovalReportRow,
+  EvidenceReportRow,
+  EventReportRow,
+  GenerateWeeklyReportOptions,
+  GoalReportRow,
+  PolicyDecisionReportRow,
+  TaskReportRow,
+  WeeklyReportData,
+  WeeklyReportResult
+} from "./weekly-report-types.js";
 export { isoWeekLabel } from "./weekly-report-week.js";
-
-export interface GenerateWeeklyReportOptions {
-  cwd?: string;
-  week?: string;
-  now?: Date;
-}
-
-export interface WeeklyReportResult {
-  root: string;
-  stateDb: string;
-  week: string;
-  periodStart: string;
-  periodEnd: string;
-  reportPath: string;
-  markdown: string;
-  event: RunsteadEvent;
-}
-
-interface WeeklyReportData {
-  goals: GoalReportRow[];
-  tasks: TaskReportRow[];
-  evidence: EvidenceReportRow[];
-  policyDecisions: PolicyDecisionReportRow[];
-  approvals: ApprovalReportRow[];
-  events: EventReportRow[];
-}
-
-interface GoalReportRow {
-  id: string;
-  domain: string;
-  title: string;
-  status: string;
-  priority: string;
-  created_at: string;
-  updated_at: string;
-}
-
-interface TaskReportRow {
-  id: string;
-  goal_id: string;
-  domain: string;
-  type: string;
-  status: string;
-  priority: string;
-  attempt: number;
-  max_attempts: number;
-  updated_at: string;
-}
-
-interface EvidenceReportRow {
-  id: string;
-  type: string;
-  subject_type: string;
-  subject_id: string;
-  uri: string;
-  summary: string | null;
-  created_at: string;
-}
-
-interface PolicyDecisionReportRow {
-  id: string;
-  action_id: string;
-  policy_id: string;
-  decision: string;
-  risk: string;
-  rule_id: string | null;
-  reason: string;
-  created_at: string;
-}
-
-interface ApprovalReportRow {
-  id: string;
-  action_id: string;
-  status: string;
-  risk: string;
-  reason: string;
-  created_at: string;
-  updated_at: string;
-}
-
-interface EventReportRow {
-  event_id: string;
-  type: string;
-  aggregate_type: string;
-  aggregate_id: string;
-  created_at: string;
-}
 
 export async function generateWeeklyReport(
   options: GenerateWeeklyReportOptions = {}
