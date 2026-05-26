@@ -75,6 +75,8 @@ The current implementation wave closed the highest-confidence product gaps:
   `cli-errors`.
 - Shared unmanaged-helper acknowledgement moved out of the CLI entrypoint into
   `cli-unmanaged`.
+- Init repo-maintenance policy YAML and rule fragment generation moved out of
+  `init-policy` into `init-policy-yaml`.
 - Shared CLI positive integer parser moved out of the CLI entrypoint into
   `cli-parsers`.
 - Shared optional/required integer parsers moved out of the CLI entrypoint into
