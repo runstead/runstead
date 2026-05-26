@@ -21,6 +21,7 @@ import {
   pathExists,
   readInstalledDomainPackManifest
 } from "./domain-pack-install-files.js";
+import { readDomainPackUsage } from "./domain-pack-install-usage.js";
 import type {
   InstallDomainPackOptions,
   InstallDomainPackResult,
@@ -133,7 +134,7 @@ export async function uninstallDomainPack(
   const database = openRunsteadDatabase(resolved.stateDb);
 
   try {
-    const usage = readDomainUsage(database, options.id);
+    const usage = readDomainPackUsage(database, options.id);
 
     if (options.force !== true && (usage.activeGoals > 0 || usage.activeTasks > 0)) {
       throw new Error(
@@ -205,7 +206,7 @@ export async function upgradeDomainPack(
   const database = openRunsteadDatabase(resolved.stateDb);
 
   try {
-    const usage = readDomainUsage(database, entry.id);
+    const usage = readDomainPackUsage(database, entry.id);
 
     if (options.force !== true && (usage.activeGoals > 0 || usage.activeTasks > 0)) {
       throw new Error(
@@ -255,37 +256,6 @@ export async function upgradeDomainPack(
   } finally {
     database.close();
   }
-}
-
-function readDomainUsage(
-  database: ReturnType<typeof openRunsteadDatabase>,
-  domainId: string
-): { activeGoals: number; activeTasks: number } {
-  const activeGoals = database
-    .prepare(
-      `
-      SELECT COUNT(*) AS count
-      FROM goals
-      WHERE domain = ?
-        AND status IN ('active', 'paused')
-    `
-    )
-    .get(domainId) as { count: number };
-  const activeTasks = database
-    .prepare(
-      `
-      SELECT COUNT(*) AS count
-      FROM tasks
-      WHERE domain = ?
-        AND status IN ('queued', 'claimed', 'running', 'waiting_approval', 'blocked')
-    `
-    )
-    .get(domainId) as { count: number };
-
-  return {
-    activeGoals: activeGoals.count,
-    activeTasks: activeTasks.count
-  };
 }
 
 function assertCompatibleDomainPack(manifest: DomainPackManifest): void {
