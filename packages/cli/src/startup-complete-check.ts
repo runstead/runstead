@@ -1,4 +1,4 @@
-import { stat, writeFile } from "node:fs/promises";
+import { writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
 import { createRunsteadId, type RunsteadEvent } from "@runstead/core";
@@ -21,9 +21,13 @@ import { generateStartupCiSummary } from "./startup-ci-integration.js";
 import {
   startupCompleteProductArtifactCriterion,
   startupCompleteProductBaseCriteria,
-  startupCompleteProductBlockers,
-  type StartupCompleteProductEvidenceRow
+  startupCompleteProductBlockers
 } from "./startup-complete-check-criteria.js";
+import {
+  existingStartupCompleteProductPathState,
+  readStartupCompleteProductEventCount,
+  readStartupCompleteProductEvidenceRows
+} from "./startup-complete-check-data.js";
 import {
   completeProductScore,
   completeProductStatus,
@@ -97,10 +101,6 @@ export interface StartupCompleteProductSurfaces {
   eventId: string;
 }
 
-interface EventCountRow {
-  count: number;
-}
-
 const STARTUP_DOMAIN = "ai-native-startup";
 
 export async function generateStartupCompleteProductCheck(
@@ -147,9 +147,9 @@ export async function generateStartupCompleteProductCheck(
     now,
     recordEvent: false
   });
-  const evidenceRows = readStartupEvidenceRows(state.stateDb);
-  const eventCount = readEventCount(state.stateDb);
-  const pathState = await existingPathState([
+  const evidenceRows = readStartupCompleteProductEvidenceRows(state.stateDb);
+  const eventCount = readStartupCompleteProductEventCount(state.stateDb);
+  const pathState = await existingStartupCompleteProductPathState([
     launchReport.reportPath,
     launchReport.jsonPath,
     ci.markdownPath,
@@ -281,55 +281,4 @@ export async function generateStartupCompleteProductCheck(
     ...result,
     markdown
   };
-}
-
-function readStartupEvidenceRows(stateDb: string): StartupCompleteProductEvidenceRow[] {
-  const database = openRunsteadDatabase(stateDb);
-
-  try {
-    return database
-      .prepare(
-        `
-        SELECT id, type, uri, summary, created_at
-        FROM evidence
-        WHERE type = 'command_output' OR type LIKE 'startup_%'
-        ORDER BY created_at DESC, id ASC
-      `
-      )
-      .all() as unknown as StartupCompleteProductEvidenceRow[];
-  } finally {
-    database.close();
-  }
-}
-
-function readEventCount(stateDb: string): number {
-  const database = openRunsteadDatabase(stateDb);
-
-  try {
-    const row = database
-      .prepare("SELECT COUNT(*) AS count FROM events")
-      .get() as unknown as EventCountRow;
-
-    return row.count;
-  } finally {
-    database.close();
-  }
-}
-
-async function existingPathState(paths: string[]): Promise<Map<string, boolean>> {
-  const results = await Promise.all(
-    paths.map(async (path) => [path, await pathExists(path)] as const)
-  );
-
-  return new Map(results);
-}
-
-async function pathExists(path: string): Promise<boolean> {
-  try {
-    const result = await stat(path);
-
-    return result.isFile();
-  } catch {
-    return false;
-  }
 }
