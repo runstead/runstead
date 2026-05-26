@@ -16,9 +16,8 @@ import { inspectGitRepository } from "./repo-inspection.js";
 import {
   findRepositoryByAlias,
   findRepositoryByLocalPath,
-  resolveRepositoryFromDatabase,
-  rowToRepository,
-  type RepositoryRow
+  listRepositoriesFromDatabase,
+  resolveRepositoryFromDatabase
 } from "./repositories-store.js";
 import { requireRunsteadStateDb, requireRunsteadStateDbSync } from "./runstead-root.js";
 
@@ -167,32 +166,8 @@ export function listRepositories(
   const database = openRunsteadDatabase(stateDb);
 
   try {
-    const rows =
-      options.status === undefined
-        ? (database
-            .prepare(
-              `
-              SELECT id, alias, local_path, remote_url, default_branch, status,
-                     tags_json, created_at, updated_at
-              FROM repositories
-              ORDER BY alias ASC, id ASC
-            `
-            )
-            .all() as unknown as RepositoryRow[])
-        : (database
-            .prepare(
-              `
-              SELECT id, alias, local_path, remote_url, default_branch, status,
-                     tags_json, created_at, updated_at
-              FROM repositories
-              WHERE status = ?
-              ORDER BY alias ASC, id ASC
-            `
-            )
-            .all(options.status) as unknown as RepositoryRow[]);
-
     return {
-      repositories: rows.map(rowToRepository),
+      repositories: listRepositoriesFromDatabase(database, options.status),
       stateDb
     };
   } finally {

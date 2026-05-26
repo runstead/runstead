@@ -125,6 +125,8 @@ The current implementation wave closed the highest-confidence product gaps:
   `commands/skill`.
 - `repo` command registration moved out of the CLI entrypoint into
   `commands/repo`.
+- Repository list SQL and row mapping for list operations moved out of
+  `repositories` into `repositories-store`.
 - `domain` command registration moved out of the CLI entrypoint into
   `commands/domain`.
 - `goal` command registration moved out of the CLI entrypoint into

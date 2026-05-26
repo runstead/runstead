@@ -1,6 +1,10 @@
 import { resolve } from "node:path";
 
-import { type RepositoryRecord, RepositoryRecordSchema } from "@runstead/core";
+import {
+  type RepositoryRecord,
+  RepositoryRecordSchema,
+  type RepositoryStatus
+} from "@runstead/core";
 import { type openRunsteadDatabase } from "@runstead/state-sqlite";
 
 export interface RepositoryRow {
@@ -76,6 +80,37 @@ export function resolveRepositoryFromDatabase(
   }
 
   return undefined;
+}
+
+export function listRepositoriesFromDatabase(
+  database: ReturnType<typeof openRunsteadDatabase>,
+  status?: RepositoryStatus
+): RepositoryRecord[] {
+  const rows =
+    status === undefined
+      ? (database
+          .prepare(
+            `
+            SELECT id, alias, local_path, remote_url, default_branch, status,
+                   tags_json, created_at, updated_at
+            FROM repositories
+            ORDER BY alias ASC, id ASC
+          `
+          )
+          .all() as unknown as RepositoryRow[])
+      : (database
+          .prepare(
+            `
+            SELECT id, alias, local_path, remote_url, default_branch, status,
+                   tags_json, created_at, updated_at
+            FROM repositories
+            WHERE status = ?
+            ORDER BY alias ASC, id ASC
+          `
+          )
+          .all(status) as unknown as RepositoryRow[]);
+
+  return rows.map(rowToRepository);
 }
 
 export function rowToRepository(row: RepositoryRow): RepositoryRecord {
