@@ -163,6 +163,8 @@ The current implementation wave closed the highest-confidence product gaps:
   `launch-readiness-report-format` into `launch-readiness-risk-format`.
 - Launch readiness report section rendering moved out of the top-level report
   formatter into `launch-readiness-report-sections`.
+- Startup source connector action handling and output formatting moved out of
+  `commands/startup-source` into `commands/startup-source-actions`.
 - Shared secret-print acknowledgement moved out of the CLI entrypoint into
   `cli-secrets`.
 - `github` command registration moved out of the CLI entrypoint into

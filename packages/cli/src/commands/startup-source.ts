@@ -1,6 +1,15 @@
 import type { Command } from "commander";
 
-import { checkPermission } from "../rbac.js";
+import { collectValues } from "../startup-command-parsers.js";
+import {
+  collectStartupSourceCommand,
+  listStartupSourceConnectorContracts,
+  recordStartupSourceCommand,
+  verifyStartupSourceCommand,
+  type StartupSourceCollectCommandOptions,
+  type StartupSourceRecordCommandOptions,
+  type StartupSourceVerifyCommandOptions
+} from "./startup-source-actions.js";
 
 export function registerStartupSourceCommand(startup: Command): Command {
   const startupSource = startup
@@ -10,27 +19,7 @@ export function registerStartupSourceCommand(startup: Command): Command {
   startupSource
     .command("list")
     .description("List startup source connector contracts.")
-    .action(async () => {
-      const { getStartupSourceProviderAdapter, listStartupSourceConnectorDefinitions } =
-        await import("../startup-source-connectors.js");
-
-      for (const definition of listStartupSourceConnectorDefinitions()) {
-        const adapter = getStartupSourceProviderAdapter(definition.connector);
-
-        console.log(
-          [
-            definition.connector,
-            `evidence=${definition.evidenceType}`,
-            `source=${definition.sourceKind}`,
-            `quality=${definition.qualityTier}`,
-            `trust=${definition.defaultTrustLevel}`,
-            `freshness=${definition.defaultFreshnessDays}d`,
-            `adapter=${adapter?.provider ?? "none"}`,
-            `payload=${definition.recommendedPayloadFields.join(",") || "none"}`
-          ].join(" ")
-        );
-      }
-    });
+    .action(listStartupSourceConnectorContracts);
 
   addRecordCommand(startupSource);
   addVerifyCommand(startupSource);
@@ -68,62 +57,8 @@ function addRecordCommand(startupSource: Command): void {
     .option("--payload <json>", "Connector-specific JSON object payload")
     .option("--goal <id>", "Associated goal id")
     .option("--actor <id>", "RBAC subject for source evidence writes", "local-admin")
-    .action(
-      async (options: {
-        cwd?: string;
-        connector: string;
-        sourceUri: string;
-        summary: string;
-        status?: string;
-        target?: string;
-        capturedAt?: string;
-        freshnessDays?: string;
-        sourceHash?: string;
-        trust: string;
-        payload?: string;
-        goal?: string;
-        actor: string;
-      }) => {
-        await requireRbacPermission({
-          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-          actor: options.actor,
-          permission: "evidence.write",
-          action: "record startup source evidence"
-        });
-
-        const { recordStartupSourceEvidence } =
-          await import("../startup-source-connectors.js");
-        const result = await recordStartupSourceEvidence({
-          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-          connector: options.connector,
-          uri: options.sourceUri,
-          summary: options.summary,
-          ...(options.status === undefined ? {} : { status: options.status }),
-          ...(options.target === undefined ? {} : { target: options.target }),
-          ...(options.capturedAt === undefined
-            ? {}
-            : { capturedAt: options.capturedAt }),
-          ...(options.freshnessDays === undefined
-            ? {}
-            : {
-                freshnessDays: parsePositiveInteger(
-                  options.freshnessDays,
-                  "--freshness-days"
-                )
-              }),
-          ...(options.sourceHash === undefined
-            ? {}
-            : { sourceHash: options.sourceHash }),
-          trustLevel: options.trust,
-          ...(options.payload === undefined ? {} : { payload: options.payload }),
-          ...(options.goal === undefined ? {} : { goalId: options.goal })
-        });
-
-        console.log(`Recorded source evidence: ${result.evidence.id}`);
-        console.log(`Connector: ${result.connector}`);
-        console.log(`Evidence type: startup_${result.evidenceType}`);
-        console.log(`Artifact: ${result.artifactPath}`);
-      }
+    .action(async (options: StartupSourceRecordCommandOptions) =>
+      recordStartupSourceCommand(options)
     );
 }
 
@@ -158,67 +93,8 @@ function addVerifyCommand(startupSource: Command): void {
     .option("--trust <level>", "Source trust level: low, medium, high, authoritative")
     .option("--goal <id>", "Associated goal id")
     .option("--actor <id>", "RBAC subject for source evidence writes", "local-admin")
-    .action(
-      async (options: {
-        cwd?: string;
-        connector: string;
-        sourceUri: string;
-        summary?: string;
-        method: string;
-        expectStatus: string;
-        expectText: string[];
-        target?: string;
-        capturedAt?: string;
-        freshnessDays?: string;
-        sourceHash?: string;
-        trust?: string;
-        goal?: string;
-        actor: string;
-      }) => {
-        await requireRbacPermission({
-          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-          actor: options.actor,
-          permission: "evidence.write",
-          action: "verify startup source evidence"
-        });
-
-        const { verifyStartupSourceEvidence } =
-          await import("../startup-source-connectors.js");
-        const result = await verifyStartupSourceEvidence({
-          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-          connector: options.connector,
-          uri: options.sourceUri,
-          ...(options.summary === undefined ? {} : { summary: options.summary }),
-          method: options.method,
-          expectStatus: parsePositiveInteger(options.expectStatus, "--expect-status"),
-          expectText: options.expectText,
-          ...(options.target === undefined ? {} : { target: options.target }),
-          ...(options.capturedAt === undefined
-            ? {}
-            : { capturedAt: options.capturedAt }),
-          ...(options.freshnessDays === undefined
-            ? {}
-            : {
-                freshnessDays: parsePositiveInteger(
-                  options.freshnessDays,
-                  "--freshness-days"
-                )
-              }),
-          ...(options.sourceHash === undefined
-            ? {}
-            : { sourceHash: options.sourceHash }),
-          ...(options.trust === undefined ? {} : { trustLevel: options.trust }),
-          ...(options.goal === undefined ? {} : { goalId: options.goal })
-        });
-
-        console.log(`Verified source evidence: ${result.evidence.id}`);
-        console.log(`Connector: ${result.connector}`);
-        console.log(
-          `Verification: ${result.verification.status} http=${result.verification.statusCode} expected=${result.verification.expectedStatus}`
-        );
-        console.log(`Evidence type: startup_${result.evidenceType}`);
-        console.log(`Artifact: ${result.artifactPath}`);
-      }
+    .action(async (options: StartupSourceVerifyCommandOptions) =>
+      verifyStartupSourceCommand(options)
     );
 }
 
@@ -245,92 +121,7 @@ function addCollectCommand(startupSource: Command): void {
     .option("--trust <level>", "Source trust level: low, medium, high, authoritative")
     .option("--goal <id>", "Associated goal id")
     .option("--actor <id>", "RBAC subject for source evidence writes", "local-admin")
-    .action(
-      async (options: {
-        cwd?: string;
-        connector: string;
-        sourceUri: string;
-        target?: string;
-        token?: string;
-        capturedAt?: string;
-        freshnessDays?: string;
-        sourceHash?: string;
-        trust?: string;
-        goal?: string;
-        actor: string;
-      }) => {
-        await requireRbacPermission({
-          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-          actor: options.actor,
-          permission: "evidence.write",
-          action: "collect startup source evidence"
-        });
-
-        const { collectStartupSourceEvidence } =
-          await import("../startup-source-connectors.js");
-        const result = await collectStartupSourceEvidence({
-          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-          connector: options.connector,
-          uri: options.sourceUri,
-          ...(options.target === undefined ? {} : { target: options.target }),
-          ...(options.token === undefined ? {} : { token: options.token }),
-          ...(options.capturedAt === undefined
-            ? {}
-            : { capturedAt: options.capturedAt }),
-          ...(options.freshnessDays === undefined
-            ? {}
-            : {
-                freshnessDays: parsePositiveInteger(
-                  options.freshnessDays,
-                  "--freshness-days"
-                )
-              }),
-          ...(options.sourceHash === undefined
-            ? {}
-            : { sourceHash: options.sourceHash }),
-          ...(options.trust === undefined ? {} : { trustLevel: options.trust }),
-          ...(options.goal === undefined ? {} : { goalId: options.goal })
-        });
-
-        console.log(`Collected source evidence: ${result.evidence.id}`);
-        console.log(`Connector: ${result.connector}`);
-        console.log(`Adapter: ${result.adapter.provider}`);
-        console.log(`Collection: ${result.collection.status}`);
-        console.log(`Evidence type: startup_${result.evidenceType}`);
-        console.log(`Artifact: ${result.artifactPath}`);
-      }
+    .action(async (options: StartupSourceCollectCommandOptions) =>
+      collectStartupSourceCommand(options)
     );
-}
-
-function collectValues(value: string, previous: string[]): string[] {
-  return [...previous, value];
-}
-
-function parsePositiveInteger(value: string, optionName: string): number {
-  const parsed = Number(value);
-
-  if (!Number.isInteger(parsed) || parsed <= 0) {
-    throw new Error(`${optionName} must be a positive integer`);
-  }
-
-  return parsed;
-}
-
-async function requireRbacPermission(options: {
-  cwd?: string;
-  actor: string;
-  permission: string;
-  action: string;
-}): Promise<void> {
-  const result = await checkPermission({
-    ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-    subject: options.actor,
-    permission: options.permission
-  });
-
-  if (result.decision !== "allow") {
-    throw new Error(
-      `Subject ${options.actor} cannot ${options.action}: ${result.reason}`
-    );
-  }
 }
