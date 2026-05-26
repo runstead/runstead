@@ -2,20 +2,21 @@ import { createHash } from "node:crypto";
 import { lstat, mkdir, readFile, realpath, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 
-import type {
-  JsonObject,
-  PolicyDecisionRecord,
-  Task,
-  ToolCall,
-  WorkerRun
-} from "@runstead/core";
-import type { RunsteadDatabase } from "@runstead/state-sqlite";
+import type { JsonObject } from "@runstead/core";
 
 import {
   runGovernedToolAction,
   type RunGovernedToolActionResult
 } from "./governed-action.js";
-import type { ActionContext, ActionEnvelope, PolicyProfile } from "./policy.js";
+import type {
+  GovernedFilesystemOptions,
+  GovernedFilesystemResult,
+  GovernedWorkspaceFileRead,
+  GovernedWorkspaceFileWrite,
+  ReadGovernedWorkspaceFileOptions,
+  WriteGovernedWorkspaceFileOptions
+} from "./filesystem-proxy-types.js";
+import type { ActionContext, ActionEnvelope } from "./policy.js";
 
 const SCAFFOLD_WRITE_GRANT_VERSION = "safe_cwd_scaffold_write_v1";
 const DEPENDENCY_FILE_NAMES = new Set([
@@ -42,43 +43,14 @@ const UNSAFE_SCAFFOLD_PREFIXES = [
   "build/"
 ];
 
-export interface GovernedFilesystemOptions {
-  cwd: string;
-  stateDb: string;
-  database: RunsteadDatabase;
-  policy: PolicyProfile;
-  task: Task;
-  workerRun: WorkerRun;
-  requestedBy: string;
-  now?: Date;
-}
-
-export interface ReadGovernedWorkspaceFileOptions extends GovernedFilesystemOptions {
-  path: string;
-}
-
-export interface WriteGovernedWorkspaceFileOptions extends GovernedFilesystemOptions {
-  path: string;
-  content: string;
-  createDirs?: boolean;
-}
-
-export interface GovernedWorkspaceFileRead {
-  path: string;
-  content: string;
-  bytes: number;
-}
-
-export interface GovernedWorkspaceFileWrite {
-  path: string;
-  bytes: number;
-}
-
-export interface GovernedFilesystemResult<T> {
-  value: T;
-  toolCall: ToolCall;
-  policyDecision: PolicyDecisionRecord;
-}
+export type {
+  GovernedFilesystemOptions,
+  GovernedFilesystemResult,
+  GovernedWorkspaceFileRead,
+  GovernedWorkspaceFileWrite,
+  ReadGovernedWorkspaceFileOptions,
+  WriteGovernedWorkspaceFileOptions
+} from "./filesystem-proxy-types.js";
 
 export async function readGovernedWorkspaceFile(
   options: ReadGovernedWorkspaceFileOptions
