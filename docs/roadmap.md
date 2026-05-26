@@ -451,6 +451,9 @@ The current implementation wave closed the highest-confidence product gaps:
   `possibly_stuck` diagnostics.
 - Wrapped worker structured output schema and validation moved out of
   `wrapped-worker` into `wrapped-worker-structured-output`.
+- Wrapped worker governance manifest, launch guardrails, hard-proxy status, and
+  prompt construction moved out of `wrapped-worker` into
+  `wrapped-worker-governance`.
 - Wrapped-worker stuck progress coverage is stabilized against short timing
   windows in full-suite runs.
 - `startup source collect` records structured provider evidence through
