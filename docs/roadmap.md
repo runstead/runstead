@@ -158,6 +158,8 @@ The current implementation wave closed the highest-confidence product gaps:
 - Top-level `repair-ci` command registration moved out of the CLI entrypoint
   into `commands/ci-repair`, and GitHub repair orchestration now reuses that
   command module directly.
+- CI repair workflow failure classification moved out of `ci-repair` into
+  `ci-repair-classification`.
 - Top-level `agent` command registration and local-agent CLI option helpers
   moved out of the CLI entrypoint into `commands/agent`.
 - Agent provider listing moved out of the agent command adapter into
