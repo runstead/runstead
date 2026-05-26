@@ -146,6 +146,8 @@ The current implementation wave closed the highest-confidence product gaps:
   `codex-auth-format`.
 - Codex auth provider constants and payload parsing/normalization helpers moved
   out of `codex-auth` into `codex-auth-constants` and `codex-auth-parsers`.
+- Codex OAuth device-code polling, authorization-code exchange, and token
+  refresh calls moved out of `codex-auth` into `codex-auth-oauth`.
 - Doctor state database schema and runtime backend checks moved out of `doctor`
   into `doctor-runtime-checks`.
 - Doctor workspace health checks for files, directories, domain manifests,
