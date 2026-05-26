@@ -1,17 +1,16 @@
 import { constants } from "node:fs";
-import { access, chmod, mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { access, readFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { join, resolve } from "node:path";
 
 import {
   codexAuthStorePath,
-  codexModelCachePath,
-  isNodeErrorCode,
   readCodexAuthStore,
   withCodexAuthLock,
   writeCodexAuthStore,
   type CodexAuthStoreOptions
 } from "./codex-auth-store.js";
+import { readCodexModelCache, writeCodexModelCache } from "./codex-auth-model-cache.js";
 import {
   CODEX_AUTH_REFRESH_SKEW_SECONDS,
   CODEX_OAUTH_TOKEN_URL,
@@ -26,7 +25,6 @@ import {
 import {
   codexAuthStateToJson,
   codexModelsFromEnvironment,
-  isRecord,
   normalizeCodexAuthState,
   parseCodexAuthState,
   parseCodexCliTokens,
@@ -45,7 +43,6 @@ import type {
   CodexDeviceCode,
   CodexDeviceLoginOptions,
   CodexModel,
-  CodexModelCacheFile,
   CodexRuntimeCredentials,
   ImportCodexCliTokensOptions,
   ListCodexModelsOptions,
@@ -69,6 +66,7 @@ export {
   resolveRunsteadHome,
   type CodexAuthStoreOptions
 } from "./codex-auth-store.js";
+export { readCodexModelCache } from "./codex-auth-model-cache.js";
 export {
   codexAccessTokenExpiresAt,
   codexBackendHeaders,
@@ -354,48 +352,6 @@ export async function listCodexModels(
 
     throw error;
   }
-}
-
-export async function readCodexModelCache(
-  options: CodexAuthStoreOptions = {}
-): Promise<CodexModel[]> {
-  try {
-    const raw = JSON.parse(
-      await readFile(codexModelCachePath(options), "utf8")
-    ) as unknown;
-
-    if (!isRecord(raw) || !Array.isArray(raw.models)) {
-      return [];
-    }
-
-    return parseCodexModelsPayload({ models: raw.models });
-  } catch (error) {
-    if (isNodeErrorCode(error, "ENOENT")) {
-      return [];
-    }
-
-    throw error;
-  }
-}
-
-async function writeCodexModelCache(
-  models: CodexModel[],
-  options: CodexAuthStoreOptions
-): Promise<void> {
-  const cachePath = codexModelCachePath(options);
-  const payload: CodexModelCacheFile = {
-    version: 1,
-    provider: CODEX_PROVIDER_ID,
-    fetchedAt: (options.now ?? new Date()).toISOString(),
-    models
-  };
-  const tmpPath = `${cachePath}.${process.pid}.${Date.now()}.tmp`;
-
-  await mkdir(dirname(cachePath), { recursive: true, mode: 0o700 });
-  await writeFile(tmpPath, `${JSON.stringify(payload, null, 2)}\n`, { mode: 0o600 });
-  await chmod(tmpPath, 0o600).catch(() => undefined);
-  await rename(tmpPath, cachePath);
-  await chmod(cachePath, 0o600).catch(() => undefined);
 }
 
 function resolveCodexCliHome(options: ImportCodexCliTokensOptions): string {
