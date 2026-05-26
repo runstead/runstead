@@ -501,6 +501,8 @@ The current implementation wave closed the highest-confidence product gaps:
 - Doctor worker policy action builders, CLI auth hints, Claude probe parsing,
   and model-provider helper predicates moved out of `doctor` into
   `doctor-worker-helpers`.
+- Startup complete-check criteria and blocker-accountability rules moved out of
+  `startup-complete-check` into `startup-complete-check-criteria`.
 - Startup complete-check markdown, JSON, event, score, and status output helpers
   moved out of `startup-complete-check` into `startup-complete-check-output`.
 - `email-followup` now has a mature draft-only lifecycle, fixtures, evals,

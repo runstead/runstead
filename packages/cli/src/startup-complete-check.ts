@@ -1,30 +1,24 @@
-import { readFileSync } from "node:fs";
 import { stat, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 
 import { createRunsteadId, type RunsteadEvent } from "@runstead/core";
 import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sqlite";
 
-import { buildDashboard, type BuildDashboardResult } from "./dashboard.js";
-import {
-  collectRepoInspection,
-  type RepoInspectionSnapshot
-} from "./inspection-evidence.js";
+import { buildDashboard } from "./dashboard.js";
+import { collectRepoInspection } from "./inspection-evidence.js";
 import {
   generateLaunchReadinessReport,
-  type LaunchReadinessTarget,
-  type LaunchReadinessReportResult
+  type LaunchReadinessTarget
 } from "./launch-readiness-report.js";
-import {
-  generateOpsDiagnosticsBundle,
-  type OpsDiagnosticsBundleResult
-} from "./ops-diagnostics.js";
+import { generateOpsDiagnosticsBundle } from "./ops-diagnostics.js";
 import { requireRunsteadStateDb } from "./runstead-root.js";
+import { generateStartupCiSummary } from "./startup-ci-integration.js";
 import {
-  generateStartupCiSummary,
-  type GenerateStartupCiSummaryResult
-} from "./startup-ci-integration.js";
+  startupCompleteProductArtifactCriterion,
+  startupCompleteProductBaseCriteria,
+  startupCompleteProductBlockers,
+  type StartupCompleteProductEvidenceRow
+} from "./startup-complete-check-criteria.js";
 import {
   completeProductScore,
   completeProductStatus,
@@ -35,14 +29,10 @@ import {
 import {
   addStartupEvidence,
   checkStartupGate,
-  type StartupGateCheckResult,
   type StartupGateFindingSeverity
 } from "./startup-evidence.js";
-import {
-  generateStartupRemediationPlan,
-  type GenerateStartupRemediationPlanResult
-} from "./startup-remediation.js";
-import { getStartupStatus, type StartupStatusResult } from "./startup-status.js";
+import { generateStartupRemediationPlan } from "./startup-remediation.js";
+import { getStartupStatus } from "./startup-status.js";
 
 export { formatStartupCompleteProductCheck } from "./startup-complete-check-output.js";
 
@@ -110,35 +100,11 @@ export interface StartupCompleteProductSurfaces {
   eventId: string;
 }
 
-interface EvidenceRow {
-  id: string;
-  type: string;
-  uri: string;
-  summary: string | null;
-  created_at: string;
-}
-
 interface EventCountRow {
   count: number;
 }
 
-interface StartupEvidenceArtifact {
-  associations?: unknown;
-  remediation?: unknown;
-}
-
 const STARTUP_DOMAIN = "ai-native-startup";
-const REQUIRED_STARTUP_EVIDENCE = [
-  "startup_agent_context",
-  "startup_measurement_framework",
-  "startup_metric_snapshot",
-  "startup_repo_readiness",
-  "startup_security_baseline",
-  "startup_migration_plan",
-  "startup_rollback_plan",
-  "startup_observability",
-  "startup_founder_bottleneck"
-];
 
 export async function generateStartupCompleteProductCheck(
   options: GenerateStartupCompleteProductCheckOptions = {}
@@ -320,326 +286,7 @@ export async function generateStartupCompleteProductCheck(
   };
 }
 
-function startupCompleteProductBaseCriteria(input: {
-  repo: RepoInspectionSnapshot;
-  status: StartupStatusResult;
-  launchReport: LaunchReadinessReportResult;
-  remediation: GenerateStartupRemediationPlanResult;
-  ci: GenerateStartupCiSummaryResult;
-  dashboard: BuildDashboardResult;
-  diagnostics: OpsDiagnosticsBundleResult;
-  evidenceRows: EvidenceRow[];
-  blockers: StartupCompleteProductBlockerAudit[];
-  eventCount: number;
-  pathState: Map<string, boolean>;
-  target: LaunchReadinessTarget;
-}): StartupCompleteProductCriterion[] {
-  const evidenceTypes = new Set(input.evidenceRows.map((item) => item.type));
-  const sourceKinds = new Set(input.status.evidence.sourceKinds);
-  const missingStartupEvidence = REQUIRED_STARTUP_EVIDENCE.filter(
-    (type) => !evidenceTypes.has(type)
-  );
-  const repoRiskEvidence = input.evidenceRows.filter((item) =>
-    [
-      "startup_repo_readiness",
-      "startup_security_baseline",
-      "startup_release_plan"
-    ].includes(item.type)
-  );
-  const deploymentVerified = sourceKinds.has("deployment");
-  const repoDiscoveryMissing = [
-    ...(input.repo.packageManager.detected ? [] : ["package manager"]),
-    ...(input.repo.commands.test.detected ? [] : ["test command"]),
-    ...(input.repo.commands.lint.detected ? [] : ["lint command"]),
-    ...(input.repo.commands.typecheck.detected ? [] : ["typecheck command"]),
-    ...(input.repo.commands.build.detected ? [] : ["build command"]),
-    ...(input.target === "local" || input.repo.ci.detected ? [] : ["CI config"]),
-    ...(evidenceTypes.has("startup_repo_readiness") ? [] : ["repo readiness evidence"]),
-    ...(evidenceTypes.has("startup_security_baseline")
-      ? []
-      : ["security baseline evidence"]),
-    ...(evidenceTypes.has("startup_release_plan") ? [] : ["release-plan evidence"]),
-    ...(deploymentVerified ? [] : ["deployment verification evidence"])
-  ];
-  const reviewSurfaceMissing = missingPaths(input.pathState, [
-    input.launchReport.reportPath,
-    input.launchReport.jsonPath,
-    input.ci.markdownPath,
-    input.ci.jsonPath,
-    input.dashboard.htmlPath,
-    input.dashboard.dataPath,
-    input.diagnostics.markdownPath,
-    input.diagnostics.jsonPath
-  ]);
-  const diagnosticsMissing = [
-    ...(input.diagnostics.stateBackupPath === undefined
-      ? ["state backup"]
-      : missingPaths(input.pathState, [input.diagnostics.stateBackupPath])),
-    ...(input.eventCount > 0 ? [] : ["audit events"])
-  ];
-  const criteria = [
-    criterion({
-      id: "founder_golden_path",
-      title: "Founder Golden Path",
-      status:
-        missingStartupEvidence.filter((type) =>
-          ["startup_agent_context", "startup_measurement_framework"].includes(type)
-        ).length === 0 && input.status.nextAction.command.trim().length > 0,
-      severity: "critical",
-      evidence: [
-        input.status.nextAction.command,
-        ...input.evidenceRows
-          .filter((item) =>
-            ["startup_agent_context", "startup_measurement_framework"].includes(
-              item.type
-            )
-          )
-          .map((item) => item.id)
-      ],
-      missing: missingStartupEvidence.filter((type) =>
-        ["startup_agent_context", "startup_measurement_framework"].includes(type)
-      ),
-      nextAction: input.status.nextAction.command
-    }),
-    criterion({
-      id: "repo_discovery_and_risk",
-      title: "Repo Discovery And Risk",
-      status: repoDiscoveryMissing.length === 0,
-      severity: "critical",
-      evidence: [
-        `packageManager=${input.repo.packageManager.detected ? input.repo.packageManager.packageManager : "missing"}`,
-        `ci=${input.repo.ci.detected ? input.repo.ci.providers.map((provider) => provider.provider).join(",") : "missing"}`,
-        `deployment=${deploymentVerified ? "verified" : "missing"}`,
-        ...repoRiskEvidence.map((item) => item.id)
-      ],
-      missing: repoDiscoveryMissing,
-      nextAction:
-        "record startup release-plan and deployment source evidence before public traffic"
-    }),
-    criterion({
-      id: "launch_readiness_report",
-      title: "Launch Readiness Report",
-      status:
-        ["launch_ready", "blocked"].includes(input.launchReport.status) &&
-        input.pathState.get(input.launchReport.reportPath) === true &&
-        input.pathState.get(input.launchReport.jsonPath) === true,
-      severity: "critical",
-      evidence: [
-        input.launchReport.reportPath,
-        input.launchReport.jsonPath,
-        `status=${input.launchReport.status}`,
-        `trust=${Math.round(input.launchReport.trustSummary.qualityScore * 100)}%`
-      ],
-      missing: missingPaths(input.pathState, [
-        input.launchReport.reportPath,
-        input.launchReport.jsonPath
-      ]),
-      nextAction: "runstead startup launch report --print"
-    }),
-    criterion({
-      id: "blocker_accountability",
-      title: "Blocker Accountability",
-      status: input.blockers.every(
-        (blocker) =>
-          blocker.owner.length > 0 &&
-          blocker.remediationTask.length > 0 &&
-          blocker.evidenceSources.length > 0
-      ),
-      severity: "critical",
-      evidence: input.blockers.flatMap((blocker) => blocker.evidenceSources),
-      missing: input.blockers
-        .filter(
-          (blocker) =>
-            blocker.owner.length === 0 ||
-            blocker.remediationTask.length === 0 ||
-            blocker.evidenceSources.length === 0
-        )
-        .map((blocker) => blocker.blocker),
-      nextAction: "runstead startup gate check --stage launch"
-    }),
-    criterion({
-      id: "remediation_loop",
-      title: "Remediation Loop",
-      status:
-        input.remediation.status === "clear" ||
-        input.remediation.tasks.every((item) => item.acceptanceCriteria.length > 0),
-      severity: "critical",
-      evidence: [
-        `status=${input.remediation.status}`,
-        ...input.remediation.tasks.map((item) => item.task.id)
-      ],
-      missing:
-        input.remediation.status === "clear"
-          ? []
-          : input.remediation.tasks
-              .filter((item) => item.acceptanceCriteria.length === 0)
-              .map((item) => item.blocker),
-      nextAction:
-        "runstead startup remediate --stage launch --execute --worker codex_cli"
-    }),
-    criterion({
-      id: "review_surfaces",
-      title: "Dashboard Markdown JSON Review",
-      status: reviewSurfaceMissing.length === 0,
-      severity: "major",
-      evidence: [
-        input.dashboard.htmlPath,
-        input.dashboard.dataPath,
-        input.launchReport.reportPath,
-        input.launchReport.jsonPath
-      ],
-      missing: reviewSurfaceMissing,
-      nextAction: "runstead dashboard build && runstead startup launch report"
-    }),
-    criterion({
-      id: "ci_pr_gate",
-      title: "CI PR Gate",
-      status:
-        ["success", "failure"].includes(input.ci.checkRun.conclusion) &&
-        input.ci.releaseDecision.status === "allow_release" &&
-        input.pathState.get(input.ci.jsonPath) === true,
-      severity: "critical",
-      evidence: [
-        input.ci.jsonPath,
-        input.ci.markdownPath,
-        `check=${input.ci.checkRun.conclusion}`,
-        `release=${input.ci.releaseDecision.status}`,
-        `readiness=${input.ci.releaseDecision.readinessVerdict ?? "not_evaluated"}`,
-        `gateEvent=${input.ci.gate.event.eventId}`
-      ],
-      missing: [
-        ...missingPaths(input.pathState, [input.ci.jsonPath, input.ci.markdownPath]),
-        ...(input.ci.releaseDecision.status === "allow_release"
-          ? []
-          : input.ci.releaseDecision.blockers)
-      ],
-      nextAction: "runstead startup ci summary --stage launch"
-    }),
-    criterion({
-      id: "operations_resume_audit",
-      title: "Operations Resume Audit",
-      status: diagnosticsMissing.length === 0,
-      severity: "major",
-      evidence: [
-        input.diagnostics.markdownPath,
-        input.diagnostics.jsonPath,
-        ...(input.diagnostics.stateBackupPath === undefined
-          ? []
-          : [input.diagnostics.stateBackupPath]),
-        `events=${input.eventCount}`
-      ],
-      missing: diagnosticsMissing,
-      nextAction: "runstead ops diagnostics && runstead resume"
-    })
-  ];
-
-  return criteria;
-}
-
-function startupCompleteProductArtifactCriterion(
-  surfaces: StartupCompleteProductSurfaces
-): StartupCompleteProductCriterion {
-  return criterion({
-    id: "artifact_truth",
-    title: "Artifact State Evidence Event Truth",
-    status:
-      surfaces.evidenceId.trim().length > 0 &&
-      surfaces.eventId.trim().length > 0 &&
-      surfaces.completeCheckMarkdown.trim().length > 0 &&
-      surfaces.completeCheckJson.trim().length > 0,
-    severity: "critical",
-    evidence: [
-      surfaces.completeCheckMarkdown,
-      surfaces.completeCheckJson,
-      surfaces.evidenceId,
-      surfaces.eventId
-    ],
-    missing: [],
-    nextAction:
-      "use the generated markdown, JSON, evidence, and event as the review source of truth"
-  });
-}
-
-function criterion(input: {
-  id: string;
-  title: string;
-  status: boolean;
-  severity: StartupCompleteProductCriterion["severity"];
-  evidence: string[];
-  missing: string[];
-  nextAction: string;
-}): StartupCompleteProductCriterion {
-  return {
-    id: input.id,
-    title: input.title,
-    status: input.status ? "passed" : "blocked",
-    severity: input.severity,
-    evidence: uniqueNonEmpty(input.evidence),
-    missing: uniqueNonEmpty(input.missing),
-    nextAction: input.nextAction
-  };
-}
-
-function startupCompleteProductBlockers(input: {
-  gate: StartupGateCheckResult;
-  launchReport: LaunchReadinessReportResult;
-  evidenceRows: EvidenceRow[];
-}): StartupCompleteProductBlockerAudit[] {
-  return input.launchReport.blockers.map((blocker) => {
-    const finding = input.gate.findings.find((item) => item.message === blocker);
-    const matchingEvidence = input.evidenceRows.filter((row) =>
-      evidenceMatchesBlocker(row, blocker)
-    );
-    const owner =
-      matchingEvidence
-        .map((row) => artifactRemediationOwner(readEvidenceArtifact(row.uri)))
-        .find((value): value is string => value !== undefined) ?? "founder";
-
-    return {
-      blocker,
-      severity: finding?.severity ?? "major",
-      owner,
-      remediationTask:
-        finding?.remediationTask ?? "startup gate no longer reports this blocker",
-      evidenceSources: uniqueNonEmpty([
-        input.gate.event.eventId,
-        input.launchReport.reportPath,
-        input.launchReport.jsonPath,
-        ...matchingEvidence.map((row) => row.id)
-      ])
-    };
-  });
-}
-
-function evidenceMatchesBlocker(row: EvidenceRow, blocker: string): boolean {
-  const artifact = readEvidenceArtifact(row.uri);
-  const summary = row.summary ?? "";
-
-  if (summary.includes(blocker)) {
-    return true;
-  }
-
-  if (isRecord(artifact?.associations) && artifact.associations.blocker === blocker) {
-    return true;
-  }
-
-  return false;
-}
-
-function artifactRemediationOwner(
-  artifact: StartupEvidenceArtifact | undefined
-): string | undefined {
-  if (!isRecord(artifact?.remediation)) {
-    return undefined;
-  }
-
-  return typeof artifact.remediation.owner === "string" &&
-    artifact.remediation.owner.trim().length > 0
-    ? artifact.remediation.owner
-    : undefined;
-}
-
-function readStartupEvidenceRows(stateDb: string): EvidenceRow[] {
+function readStartupEvidenceRows(stateDb: string): StartupCompleteProductEvidenceRow[] {
   const database = openRunsteadDatabase(stateDb);
 
   try {
@@ -652,7 +299,7 @@ function readStartupEvidenceRows(stateDb: string): EvidenceRow[] {
         ORDER BY created_at DESC, id ASC
       `
       )
-      .all() as unknown as EvidenceRow[];
+      .all() as unknown as StartupCompleteProductEvidenceRow[];
   } finally {
     database.close();
   }
@@ -688,26 +335,4 @@ async function pathExists(path: string): Promise<boolean> {
   } catch {
     return false;
   }
-}
-
-function missingPaths(pathState: Map<string, boolean>, paths: string[]): string[] {
-  return paths.filter((path) => pathState.get(path) !== true);
-}
-
-function readEvidenceArtifact(uri: string): StartupEvidenceArtifact | undefined {
-  try {
-    const parsed = JSON.parse(readFileSync(fileURLToPath(uri), "utf8")) as unknown;
-
-    return isRecord(parsed) ? parsed : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-function uniqueNonEmpty(values: string[]): string[] {
-  return [...new Set(values.filter((value) => value.trim().length > 0))];
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
