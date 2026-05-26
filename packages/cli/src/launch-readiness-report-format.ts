@@ -1,10 +1,7 @@
-import type { JsonObject } from "@runstead/core";
-
 import type { RepoInspectionSnapshot } from "./inspection-evidence.js";
 import type {
   EvidenceReportRow,
-  LaunchReadinessReportData,
-  TaskReportRow
+  LaunchReadinessReportData
 } from "./launch-readiness-data.js";
 import {
   commandEvidenceCodeState,
@@ -27,6 +24,16 @@ import {
   type LaunchReadinessStatus,
   type LaunchReadinessTrustSummary
 } from "./launch-readiness-trust.js";
+import {
+  formatTaskCounts,
+  hasCompletedTask,
+  hasEvidenceType,
+  indentList,
+  isRecord,
+  listOrNone,
+  stringArrayValue,
+  stringValue
+} from "./launch-readiness-report-helpers.js";
 import { blockerSource, riskRegister } from "./launch-readiness-risk-format.js";
 import type {
   LaunchReadinessTarget,
@@ -253,10 +260,6 @@ function metricEvidenceConfidence(data: LaunchReadinessReportData): string {
       `real_user_data=${realUserData}`
     ].join(" ");
   });
-}
-
-function indentList(items: string[]): string {
-  return items.map((item) => `  - ${item}`).join("\n");
 }
 
 function verifierStatus(data: LaunchReadinessReportData): string {
@@ -527,51 +530,4 @@ function nextSprintPlan(blockers: string[]): string {
     .slice(0, 5)
     .map((blocker) => `- remediate: ${blocker}`)
     .join("\n");
-}
-
-function formatTaskCounts(tasks: TaskReportRow[]): string {
-  if (tasks.length === 0) {
-    return "none";
-  }
-
-  const counts = new Map<string, number>();
-
-  for (const task of tasks) {
-    counts.set(task.status, (counts.get(task.status) ?? 0) + 1);
-  }
-
-  return [...counts]
-    .sort(([left], [right]) => left.localeCompare(right))
-    .map(([status, count]) => `${status}:${count}`)
-    .join(", ");
-}
-
-function hasCompletedTask(tasks: TaskReportRow[], type: string): boolean {
-  return tasks.some((task) => task.type === type && task.status === "completed");
-}
-
-function hasEvidenceType(evidence: EvidenceReportRow[], type: string): boolean {
-  return evidence.some((item) => item.type === type);
-}
-
-function listOrNone<T>(items: T[], formatter: (item: T) => string): string {
-  if (items.length === 0) {
-    return "- none";
-  }
-
-  return items.map(formatter).join("\n");
-}
-
-function isRecord(value: unknown): value is JsonObject {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function stringValue(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim().length > 0 ? value : undefined;
-}
-
-function stringArrayValue(value: unknown): string[] {
-  return Array.isArray(value)
-    ? value.filter((item): item is string => typeof item === "string")
-    : [];
 }
