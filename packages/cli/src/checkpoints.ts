@@ -5,73 +5,31 @@ import { promisify } from "node:util";
 
 import { createRunsteadId, type RunsteadEvent } from "@runstead/core";
 import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sqlite";
+import type {
+  CreateWorkspaceCheckpointOptions,
+  ReadWorkspaceCheckpointOptions,
+  RecordWorkspaceCheckpointCreatedEventOptions,
+  RecordWorkspaceCheckpointRestoreEventOptions,
+  RestoreWorkspaceCheckpointOptions,
+  RestoreWorkspaceCheckpointResult,
+  WorkspaceCheckpoint
+} from "./checkpoints-types.js";
 
 const execFileAsync = promisify(execFile);
 
 export const DEFAULT_CHECKPOINT_GIT_TIMEOUT_MS = 60_000;
 export const DEFAULT_CHECKPOINT_GIT_MAX_OUTPUT_BYTES = 1024 * 1024 * 20;
 
-export interface WorkspaceCheckpoint {
-  id: string;
-  workspace: string;
-  checkpointDir: string;
-  metadataPath: string;
-  statusPath: string;
-  patchPath: string;
-  untrackedDir: string;
-  untrackedFiles: string[];
-  head?: string;
-  createdAt: string;
-}
-
-export interface CreateWorkspaceCheckpointOptions {
-  workspace: string;
-  checkpointDir: string;
-  now?: Date;
-  runner?: GitCheckpointRunner;
-  gitTimeoutMs?: number;
-  gitMaxOutputBytes?: number;
-}
-
-export type GitCheckpointRunner = (
-  args: string[],
-  options: { cwd: string; maxOutputBytes: number; timeoutMs: number }
-) => Promise<{ stdout: string; stderr: string; exitCode: number }>;
-
-export interface ReadWorkspaceCheckpointOptions {
-  workspace: string;
-  checkpointDir: string;
-  checkpointId: string;
-}
-
-export interface RestoreWorkspaceCheckpointOptions extends ReadWorkspaceCheckpointOptions {
-  runner?: GitCheckpointRunner;
-  allowHeadMismatch?: boolean;
-  gitTimeoutMs?: number;
-  gitMaxOutputBytes?: number;
-}
-
-export interface RestoreWorkspaceCheckpointResult {
-  checkpoint: WorkspaceCheckpoint;
-  currentHead?: string;
-  restoredTrackedPatch: boolean;
-  restoredUntrackedFiles: string[];
-  removedUntrackedFiles: string[];
-}
-
-export interface RecordWorkspaceCheckpointRestoreEventOptions {
-  stateDb: string;
-  result: RestoreWorkspaceCheckpointResult;
-  actor?: string;
-  now?: Date;
-}
-
-export interface RecordWorkspaceCheckpointCreatedEventOptions {
-  stateDb: string;
-  checkpoint: WorkspaceCheckpoint;
-  actor?: string;
-  now?: Date;
-}
+export type {
+  CreateWorkspaceCheckpointOptions,
+  GitCheckpointRunner,
+  ReadWorkspaceCheckpointOptions,
+  RecordWorkspaceCheckpointCreatedEventOptions,
+  RecordWorkspaceCheckpointRestoreEventOptions,
+  RestoreWorkspaceCheckpointOptions,
+  RestoreWorkspaceCheckpointResult,
+  WorkspaceCheckpoint
+} from "./checkpoints-types.js";
 
 export async function createWorkspaceCheckpoint(
   options: CreateWorkspaceCheckpointOptions
