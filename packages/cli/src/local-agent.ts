@@ -25,11 +25,9 @@ import {
   localAgentShouldIncrementAttempt,
   localAgentTaskBaseUrl,
   localAgentTaskCheckpointId,
-  localAgentTaskMode,
   localAgentTaskModel,
   localAgentTaskProvider,
   localAgentTaskWorker,
-  verifierCommandsFromLocalAgentTask,
   type LocalAgentWorkerKind
 } from "./local-agent-task-input.js";
 import {
@@ -46,11 +44,7 @@ import {
 } from "./local-agent-result.js";
 import { summarizeLocalAgentAudit } from "./local-agent-report.js";
 import { readLocalAgentApprovedPendingPatch } from "./local-agent-resume.js";
-import {
-  formatVerifierEvidencePrompt,
-  requiredTaskString,
-  verifierEvidenceInput
-} from "./local-agent-prompt.js";
+import { runLocalAgentVerifiersIfNeeded } from "./local-agent-verifier-run.js";
 import { runLocalAgentWorker } from "./local-agent-worker-run.js";
 import {
   LOCAL_AGENT_TASK_TYPE,
@@ -65,10 +59,6 @@ import { requireRunsteadRoot, requireRunsteadStateDb } from "./runstead-root.js"
 import { finishWorkerRun, startWorkerRun } from "./runtime-audit.js";
 import { claimTask, showTask } from "./tasks.js";
 import {
-  runTaskVerifiersUnlocked,
-  type RunTaskVerifiersResult
-} from "./verifier-runner.js";
-import {
   createModelProviderRuntime,
   resolveModelProviderModel
 } from "./model-provider-runtime.js";
@@ -76,6 +66,7 @@ import type { WorkerProcessProgress, WorkerProcessRunner } from "./wrapped-worke
 
 export { LOCAL_AGENT_TASK_TYPE } from "./local-agent-types.js";
 export { createLocalAgentTask } from "./local-agent-task-create.js";
+export { attachLocalAgentVerifierEvidence } from "./local-agent-verifier-run.js";
 export type { LocalAgentMode, LocalAgentWorkerKind } from "./local-agent-task-input.js";
 export type {
   LocalAgentWorkerGovernanceProfile,
@@ -112,64 +103,6 @@ export type {
   LocalAgentReportToolCall,
   LocalAgentToolFailureKind
 } from "./local-agent-report.js";
-
-export async function attachLocalAgentVerifierEvidence(options: {
-  cwd?: string;
-  taskId: string;
-  now?: Date;
-}): Promise<RunTaskVerifiersResult> {
-  const cwd = resolve(options.cwd ?? process.cwd());
-  const state = await requireRunsteadStateDb(cwd);
-  const verifierResult = await runTaskVerifiersUnlocked({
-    cwd,
-    taskId: options.taskId,
-    claim: true,
-    mode: "evidence_only",
-    ...(options.now === undefined ? {} : { now: options.now })
-  });
-  const currentTask = showTask({ cwd, id: options.taskId }).task;
-
-  if (!isLocalAgentTask(currentTask)) {
-    throw new Error(`Task ${options.taskId} is not a local agent task`);
-  }
-
-  const prompt = requiredTaskString(currentTask, "prompt");
-  const updatedAt = (options.now ?? new Date()).toISOString();
-  const task: Task = {
-    ...currentTask,
-    status: "queued",
-    input: {
-      ...currentTask.input,
-      prompt: `${prompt}\n\n${formatVerifierEvidencePrompt(verifierResult.commandResults)}`,
-      verifierEvidence: verifierResult.commandResults.map(verifierEvidenceInput)
-    },
-    updatedAt
-  };
-  const database = openRunsteadDatabase(state.stateDb);
-
-  try {
-    appendEventAndProject(database, {
-      event: localAgentEvent(
-        "task.verifier_evidence_attached",
-        "task",
-        task.id,
-        updatedAt,
-        {
-          previousStatus: currentTask.status,
-          verifierEvidence: task.input.verifierEvidence
-        }
-      ),
-      projection: {
-        type: "task",
-        value: task
-      }
-    });
-  } finally {
-    database.close();
-  }
-
-  return verifierResult;
-}
 
 export function isLocalAgentTask(task: Task): boolean {
   return task.domain === "repo-maintenance" && task.type === LOCAL_AGENT_TASK_TYPE;
@@ -480,27 +413,6 @@ export async function undoLocalAgentTask(
     checkpointId,
     restore
   };
-}
-
-async function runLocalAgentVerifiersIfNeeded(options: {
-  cwd: string;
-  task: Task;
-  now?: Date;
-}): Promise<RunTaskVerifiersResult | undefined> {
-  if (
-    localAgentTaskMode(options.task) === "read-only" ||
-    verifierCommandsFromLocalAgentTask(options.task).length === 0
-  ) {
-    return undefined;
-  }
-
-  return runTaskVerifiersUnlocked({
-    cwd: options.cwd,
-    taskId: options.task.id,
-    claim: false,
-    mode: "evidence_only",
-    ...(options.now === undefined ? {} : { now: options.now })
-  });
 }
 
 function finalizeLocalAgentTask(input: {
