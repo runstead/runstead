@@ -1,6 +1,7 @@
 export * from "./backend-config.js";
 export * from "./control-plane.js";
 export * from "./execution-semantics.js";
+export * from "./readiness-evidence.js";
 export * from "./readiness-plan.js";
 export * from "./readiness-run.js";
 export * from "./readiness-source-evidence.js";
