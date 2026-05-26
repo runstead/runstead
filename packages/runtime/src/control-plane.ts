@@ -1,6 +1,7 @@
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
+import type { RuntimeRunnerRegistry } from "./team-control-plane.js";
 import type {
   ApprovalRequest,
   Evidence,
@@ -132,6 +133,7 @@ export interface RuntimeControlPlaneBackend {
   events: RuntimeEventStore;
   locks: RuntimeLockManager;
   artifacts: RuntimeArtifactStore;
+  runners?: RuntimeRunnerRegistry;
 }
 
 export function createLocalRuntimeHomeLayout(rootPath: string): RuntimeHomeLayout {

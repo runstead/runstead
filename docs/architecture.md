@@ -148,6 +148,11 @@ checks on both backends:
 - lock acquire/renew/release lifecycle
 - artifact write/read with content hash
 
+The Postgres adapter also owns the first team-runner persistence path:
+`runtime_runners` stores runner identity, labels, status, and `last_seen_at`
+heartbeats so team readiness can consume backend-written liveness records
+instead of only environment-supplied profile assertions.
+
 `createPostgresTeamControlPlaneProfile` returns a
 `RuntimeTeamControlPlaneProfile` that satisfies
 `assessTeamControlPlaneReadiness`. A real organization deployment must still

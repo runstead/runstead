@@ -20,6 +20,26 @@ export interface RuntimeRunnerRegistration {
   lastSeenAt?: string;
 }
 
+export interface RuntimeRunnerHeartbeatInput {
+  runnerId: string;
+  organizationId?: string;
+  workspaceId?: string;
+  labels?: string[];
+  status?: RuntimeRunnerRegistration["status"];
+  now?: Date;
+}
+
+export interface RuntimeRunnerListQuery {
+  organizationId?: string;
+  workspaceId?: string;
+  status?: RuntimeRunnerRegistration["status"];
+}
+
+export interface RuntimeRunnerRegistry {
+  heartbeat(input: RuntimeRunnerHeartbeatInput): Promise<RuntimeRunnerRegistration>;
+  list(query?: RuntimeRunnerListQuery): Promise<RuntimeRunnerRegistration[]>;
+}
+
 export interface RuntimeRunnerLeasePolicy {
   backend: "local_file" | "database" | "distributed_lock" | "custom";
   fencingTokens: boolean;

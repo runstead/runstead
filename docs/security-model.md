@@ -173,7 +173,7 @@ CI jobs. A team-level deployment needs the shared-backend contract plus
 operational controls:
 
 - shared transactional storage instead of local SQLite
-- registered runners with heartbeat and lease ownership
+- registered runners with backend-persisted heartbeat and lease ownership
 - distributed leases with fencing tokens
 - append-only or hash-chain audit export
 - organization identity, RBAC, tenant isolation, and central secret

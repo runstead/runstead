@@ -29,7 +29,9 @@ describe("@runstead/state-postgres", () => {
     expect(sql).toContain('"runstead_team"."runtime_projections"');
     expect(sql).toContain('"runstead_team"."runtime_locks"');
     expect(sql).toContain('"runstead_team"."runtime_artifacts"');
+    expect(sql).toContain('"runstead_team"."runtime_runners"');
     expect(sql).toContain("idx_pg_events_aggregate_id");
+    expect(sql).toContain("idx_pg_runners_org_status_seen");
     expect(client.queries[0]).toBe("BEGIN");
     expect(client.queries.at(-1)).toBe("COMMIT");
   });
@@ -42,16 +44,20 @@ describe("@runstead/state-postgres", () => {
 
     expect(plan).toMatchObject({
       schema: "runstead_team",
-      targetVersion: 1
+      targetVersion: 2
     });
     expect(plan.statements[0]).toBe('CREATE SCHEMA IF NOT EXISTS "runstead_team"');
     expect(plan.statements.join("\n")).toContain(
       'INSERT INTO "runstead_team"."schema_migrations"'
     );
     expect(plan.statements.join("\n")).toContain("team_control_plane_backend");
+    expect(plan.statements.join("\n")).toContain("team_runner_registry");
     expect(sql).toContain("BEGIN;");
     expect(sql).toContain("COMMIT;");
     expect(sql).toContain('CREATE TABLE IF NOT EXISTS "runstead_team"."events"');
+    expect(sql).toContain(
+      'CREATE TABLE IF NOT EXISTS "runstead_team"."runtime_runners"'
+    );
     expect(sql).toContain("ON CONFLICT (version) DO NOTHING");
   });
 
@@ -97,6 +103,35 @@ describe("@runstead/state-postgres", () => {
         "artifact_hash_read"
       ]
     });
+  });
+
+  it("records runner heartbeats through the Postgres runner registry", async () => {
+    const client = new FakePostgresClient();
+    const backend = createPostgresControlPlaneBackend({
+      client,
+      stateUri: "postgres://runstead/state"
+    });
+    const runner = await backend.runners?.heartbeat({
+      runnerId: "runner_1",
+      organizationId: "org_123",
+      workspaceId: "workspace_todo",
+      labels: ["runstead", "codex_direct"],
+      now: new Date("2026-05-24T00:00:00.000Z")
+    });
+    const runners = await backend.runners?.list({
+      organizationId: "org_123",
+      status: "active"
+    });
+
+    expect(runner).toEqual({
+      runnerId: "runner_1",
+      organizationId: "org_123",
+      workspaceId: "workspace_todo",
+      labels: ["runstead", "codex_direct"],
+      status: "active",
+      lastSeenAt: "2026-05-24T00:00:00.000Z"
+    });
+    expect(runners).toEqual([runner]);
   });
 
   it("appends events and projections transactionally with idempotency", async () => {
@@ -277,6 +312,16 @@ interface FakeLock {
   expires_at: string;
 }
 
+interface FakeRunner {
+  [key: string]: unknown;
+  runner_id: string;
+  organization_id?: string | null;
+  workspace_id?: string | null;
+  labels_json: unknown;
+  status: string;
+  last_seen_at: string;
+}
+
 class FakePostgresClient implements PostgresControlPlaneClient {
   readonly queries: string[] = [];
   readonly events: FakeEventRow[] = [];
@@ -284,6 +329,7 @@ class FakePostgresClient implements PostgresControlPlaneClient {
   readonly idempotency = new Map<string, unknown>();
   readonly locks = new Map<string, FakeLock>();
   readonly artifacts = new Map<string, Uint8Array>();
+  readonly runners = new Map<string, FakeRunner>();
 
   async query<Row extends PostgresRow = PostgresRow>(
     sql: string,
@@ -433,6 +479,45 @@ class FakePostgresClient implements PostgresControlPlaneClient {
       return rows<Row>(contents === undefined ? [] : [{ contents }]);
     }
 
+    if (
+      normalized.includes("INSERT INTO") &&
+      normalized.includes('"runtime_runners"')
+    ) {
+      const runner: FakeRunner = {
+        runner_id: String(params[0]),
+        organization_id: optionalString(params[1]),
+        workspace_id: optionalString(params[2]),
+        labels_json: JSON.parse(String(params[3])) as unknown,
+        status: String(params[4]),
+        last_seen_at: String(params[5])
+      };
+
+      this.runners.set(runner.runner_id, runner);
+
+      return rows<Row>([runner]);
+    }
+
+    if (normalized.includes("FROM") && normalized.includes('"runtime_runners"')) {
+      const organizationId = sqlParameter(normalized, params, "organization_id");
+      const workspaceId = sqlParameter(normalized, params, "workspace_id");
+      const status = sqlParameter(normalized, params, "status");
+      const found = [...this.runners.values()]
+        .filter(
+          (runner) =>
+            (organizationId === undefined ||
+              runner.organization_id === organizationId) &&
+            (workspaceId === undefined || runner.workspace_id === workspaceId) &&
+            (status === undefined || runner.status === status)
+        )
+        .sort((left, right) =>
+          left.last_seen_at === right.last_seen_at
+            ? left.runner_id.localeCompare(right.runner_id)
+            : right.last_seen_at.localeCompare(left.last_seen_at)
+        );
+
+      return rows<Row>(found);
+    }
+
     return rows<Row>();
   }
 }
@@ -468,4 +553,8 @@ function sqlParameter(
   const value = index === undefined ? undefined : params[index];
 
   return typeof value === "string" ? value : undefined;
+}
+
+function optionalString(value: unknown): string | null {
+  return typeof value === "string" && value.length > 0 ? value : null;
 }

@@ -331,6 +331,7 @@ contract over Postgres:
 
 - atomic event append with `expectedRevision` optimistic concurrency
 - idempotency-keyed appends
+- database-backed runner registry and heartbeat records
 - database-fenced runner leases
 - JSONB projections and hash-addressed artifacts
 - schema migrations with checksum verification

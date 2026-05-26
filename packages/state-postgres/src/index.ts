@@ -14,10 +14,14 @@ import type {
   RuntimeLockManager,
   RuntimeLockRequest,
   RuntimeProjectionMutation,
+  RuntimeRunnerHeartbeatInput,
+  RuntimeRunnerListQuery,
+  RuntimeRunnerRegistration,
+  RuntimeRunnerRegistry,
   RuntimeTeamControlPlaneProfile
 } from "@runstead/runtime";
 
-export const POSTGRES_CONTROL_PLANE_SCHEMA_VERSION = 1;
+export const POSTGRES_CONTROL_PLANE_SCHEMA_VERSION = 2;
 
 export type PostgresRow = Record<string, unknown>;
 
@@ -70,6 +74,7 @@ interface PostgresSchemaNames {
   idempotency: string;
   locks: string;
   artifacts: string;
+  runners: string;
 }
 
 export function createPostgresControlPlaneBackend(
@@ -87,7 +92,8 @@ export function createPostgresControlPlaneBackend(
     },
     events: new PostgresEventStore(options.client, schema),
     locks: new PostgresLockManager(options.client, schema),
-    artifacts: new PostgresArtifactStore(options.client, schema, artifactBaseUri)
+    artifacts: new PostgresArtifactStore(options.client, schema, artifactBaseUri),
+    runners: new PostgresRunnerRegistry(options.client, schema)
   };
 }
 
@@ -644,6 +650,93 @@ class PostgresArtifactStore implements RuntimeArtifactStore {
   }
 }
 
+class PostgresRunnerRegistry implements RuntimeRunnerRegistry {
+  constructor(
+    private readonly client: PostgresControlPlaneClient,
+    private readonly schema: PostgresSchemaNames
+  ) {}
+
+  async heartbeat(
+    input: RuntimeRunnerHeartbeatInput
+  ): Promise<RuntimeRunnerRegistration> {
+    const now = input.now ?? new Date();
+    const status = input.status ?? "active";
+    const labels = input.labels ?? [];
+    const result = await this.client.query<PostgresRunnerRow>(
+      `
+      INSERT INTO ${this.schema.runners} (
+        runner_id,
+        organization_id,
+        workspace_id,
+        labels_json,
+        status,
+        last_seen_at,
+        updated_at
+      ) VALUES ($1, $2, $3, $4::jsonb, $5, $6, $6)
+      ON CONFLICT (runner_id) DO UPDATE SET
+        organization_id = excluded.organization_id,
+        workspace_id = excluded.workspace_id,
+        labels_json = excluded.labels_json,
+        status = excluded.status,
+        last_seen_at = excluded.last_seen_at,
+        updated_at = excluded.updated_at
+      RETURNING runner_id, organization_id, workspace_id, labels_json, status, last_seen_at
+    `,
+      [
+        input.runnerId,
+        input.organizationId ?? null,
+        input.workspaceId ?? null,
+        JSON.stringify(labels),
+        status,
+        now.toISOString()
+      ]
+    );
+
+    return rowToRunnerRegistration(result.rows[0], {
+      runnerId: input.runnerId,
+      ...(input.organizationId === undefined
+        ? {}
+        : { organizationId: input.organizationId }),
+      ...(input.workspaceId === undefined ? {} : { workspaceId: input.workspaceId }),
+      labels,
+      status,
+      lastSeenAt: now.toISOString()
+    });
+  }
+
+  async list(query: RuntimeRunnerListQuery = {}): Promise<RuntimeRunnerRegistration[]> {
+    const clauses: string[] = [];
+    const params: unknown[] = [];
+
+    if (query.organizationId !== undefined) {
+      params.push(query.organizationId);
+      clauses.push(`organization_id = $${params.length}`);
+    }
+
+    if (query.workspaceId !== undefined) {
+      params.push(query.workspaceId);
+      clauses.push(`workspace_id = $${params.length}`);
+    }
+
+    if (query.status !== undefined) {
+      params.push(query.status);
+      clauses.push(`status = $${params.length}`);
+    }
+
+    const result = await this.client.query<PostgresRunnerRow>(
+      `
+      SELECT runner_id, organization_id, workspace_id, labels_json, status, last_seen_at
+      FROM ${this.schema.runners}
+      ${clauses.length === 0 ? "" : `WHERE ${clauses.join(" AND ")}`}
+      ORDER BY last_seen_at DESC, runner_id ASC
+    `,
+      params
+    );
+
+    return result.rows.map((row) => rowToRunnerRegistration(row));
+  }
+}
+
 export class PostgresRevisionConflictError extends Error {
   constructor(
     aggregateType: string,
@@ -681,6 +774,15 @@ interface PostgresLockRow extends PostgresRow {
   token: string;
   fencing_token: number | string;
   expires_at: string | Date;
+}
+
+interface PostgresRunnerRow extends PostgresRow {
+  runner_id: string;
+  organization_id?: string | null;
+  workspace_id?: string | null;
+  labels_json: unknown;
+  status: RuntimeRunnerRegistration["status"];
+  last_seen_at: string | Date;
 }
 
 function postgresControlPlaneMigrations(
@@ -745,6 +847,25 @@ function postgresControlPlaneMigrations(
         `CREATE INDEX IF NOT EXISTS ${quoteIdentifier("idx_pg_projections_type_updated")} ON ${schema.projections} (projection_type, updated_at DESC)`,
         `CREATE INDEX IF NOT EXISTS ${quoteIdentifier("idx_pg_locks_expires_at")} ON ${schema.locks} (expires_at ASC)`
       ]
+    },
+    {
+      version: 2,
+      name: "team_runner_registry",
+      sql: [
+        `
+        CREATE TABLE IF NOT EXISTS ${schema.runners} (
+          runner_id text PRIMARY KEY,
+          organization_id text,
+          workspace_id text,
+          labels_json jsonb NOT NULL,
+          status text NOT NULL,
+          last_seen_at timestamptz NOT NULL,
+          updated_at timestamptz NOT NULL
+        )
+      `,
+        `CREATE INDEX IF NOT EXISTS ${quoteIdentifier("idx_pg_runners_org_status_seen")} ON ${schema.runners} (organization_id, status, last_seen_at DESC)`,
+        `CREATE INDEX IF NOT EXISTS ${quoteIdentifier("idx_pg_runners_workspace_status_seen")} ON ${schema.runners} (workspace_id, status, last_seen_at DESC)`
+      ]
     }
   ];
 }
@@ -778,7 +899,8 @@ function postgresSchemaNames(schema = "runstead"): PostgresSchemaNames {
     projections: table("runtime_projections"),
     idempotency: table("runtime_event_idempotency"),
     locks: table("runtime_locks"),
-    artifacts: table("runtime_artifacts")
+    artifacts: table("runtime_artifacts"),
+    runners: table("runtime_runners")
   };
 }
 
@@ -854,6 +976,52 @@ function runtimeEventAppendResult(value: unknown): RuntimeEventAppendResult {
     aggregateId,
     ...(typeof revision === "number" ? { revision } : {})
   };
+}
+
+function rowToRunnerRegistration(
+  row: PostgresRunnerRow | undefined,
+  fallback?: RuntimeRunnerRegistration
+): RuntimeRunnerRegistration {
+  if (row === undefined) {
+    if (fallback !== undefined) {
+      return fallback;
+    }
+
+    throw new Error("Postgres runner heartbeat did not return a runner row");
+  }
+
+  return {
+    runnerId: row.runner_id,
+    ...(row.organization_id === undefined || row.organization_id === null
+      ? {}
+      : { organizationId: row.organization_id }),
+    ...(row.workspace_id === undefined || row.workspace_id === null
+      ? {}
+      : { workspaceId: row.workspace_id }),
+    labels: stringArray(row.labels_json),
+    status: parseRunnerStatus(row.status),
+    lastSeenAt: dateText(row.last_seen_at)
+  };
+}
+
+function parseRunnerStatus(value: string): RuntimeRunnerRegistration["status"] {
+  if (value === "active" || value === "draining" || value === "offline") {
+    return value;
+  }
+
+  return "offline";
+}
+
+function stringArray(value: unknown): string[] {
+  if (typeof value === "string") {
+    return stringArray(JSON.parse(value) as unknown);
+  }
+
+  if (Array.isArray(value)) {
+    return value.filter((item): item is string => typeof item === "string");
+  }
+
+  return [];
 }
 
 function jsonObject(value: unknown): JsonObject {
