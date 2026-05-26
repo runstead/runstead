@@ -503,6 +503,9 @@ The current implementation wave closed the highest-confidence product gaps:
 - Provider adapters classify success, failure, pending, malformed, and
   provider-error payloads while redacting token-like response fields before
   evidence is persisted.
+- Source connector readiness tiers are status-aware: failed or unknown
+  collected provider evidence stays audit-visible but cannot satisfy
+  staging/production tier gates.
 - `startup ready --plan` and final readiness evaluation now consume
   staging/production source connector setup requirements.
 - Dashboard operator controls can run actions and approve/deny pending

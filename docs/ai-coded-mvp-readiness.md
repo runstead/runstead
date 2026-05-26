@@ -373,8 +373,10 @@ before recording the evidence artifact. Named deployment connectors
 Provider adapters are deliberately defensive: malformed JSON, provider HTTP
 errors, pending deployment or workflow states, and incomplete monitoring
 payloads are recorded as explicit failed or unknown evidence instead of
-crashing the run. Token-like response fields and the credential used for the
-request are redacted before evidence is persisted.
+crashing the run. Failed or unknown collected evidence does not grant target
+readiness tiers such as `staging_deployment` or `real_user_analytics`.
+Token-like response fields and the credential used for the request are
+redacted before evidence is persisted.
 
 | Connector        | Credential Env      | Expected Provider Shape                                                                              |
 | ---------------- | ------------------- | ---------------------------------------------------------------------------------------------------- |

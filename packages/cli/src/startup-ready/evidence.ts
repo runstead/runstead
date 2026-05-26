@@ -3,7 +3,11 @@ import { fileURLToPath } from "node:url";
 import { openRunsteadDatabase } from "@runstead/state-sqlite";
 
 import { requireRunsteadStateDb } from "../runstead-root.js";
-import type { StartupReadinessEvidenceTier } from "./types.js";
+import { startupSourceStatusCountsForReadiness } from "../startup-source-evidence-content.js";
+import {
+  STARTUP_READINESS_EVIDENCE_TIERS,
+  type StartupReadinessEvidenceTier
+} from "./types.js";
 import { isRecord, stringValue, unique, uniqueEvidenceTiers } from "./shared.js";
 
 export async function collectRecordedStartupReadinessEvidence(
@@ -87,6 +91,12 @@ export function inferRecordedEvidenceTiers(
   row: StartupReadinessEvidenceRow,
   artifact: unknown
 ): StartupReadinessEvidenceTier[] {
+  const structuredSourceTiers = structuredStartupSourceEvidenceTiers(artifact);
+
+  if (structuredSourceTiers !== undefined) {
+    return structuredSourceTiers;
+  }
+
   const text = evidenceSearchText(row, artifact);
   const tiers: StartupReadinessEvidenceTier[] = [];
 
@@ -141,6 +151,38 @@ export function inferRecordedEvidenceTiers(
   }
 
   return uniqueEvidenceTiers(tiers);
+}
+
+function structuredStartupSourceEvidenceTiers(
+  artifact: unknown
+): StartupReadinessEvidenceTier[] | undefined {
+  const content = parsedStartupReadinessArtifactContent(artifact);
+
+  if (
+    !isRecord(content) ||
+    typeof content.connector !== "string" ||
+    typeof content.status !== "string" ||
+    !Array.isArray(content.readinessTiers)
+  ) {
+    return undefined;
+  }
+
+  if (!startupSourceStatusCountsForReadiness(content.status)) {
+    return [];
+  }
+
+  return uniqueEvidenceTiers(
+    content.readinessTiers.filter(isStartupReadinessEvidenceTier)
+  );
+}
+
+function isStartupReadinessEvidenceTier(
+  value: unknown
+): value is StartupReadinessEvidenceTier {
+  return (
+    typeof value === "string" &&
+    (STARTUP_READINESS_EVIDENCE_TIERS as readonly string[]).includes(value)
+  );
 }
 
 export async function readStartupReadinessEvidenceArtifact(

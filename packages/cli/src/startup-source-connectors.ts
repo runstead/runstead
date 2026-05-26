@@ -27,6 +27,7 @@ import {
   connectorPayloadWarnings,
   parseEvidenceSourceTrust,
   startupSourceEvidenceContent,
+  startupSourceReadinessTiersForStatus,
   startupSourceTargetEvidenceTiers
 } from "./startup-source-evidence-content.js";
 
@@ -158,15 +159,20 @@ export async function recordStartupSourceEvidence(
   const target = parseOptionalStartupSourceTarget(options.target);
   const payload = connectorPayload(options.payload);
   const payloadWarnings = connectorPayloadWarnings(definition, payload);
-  const readinessTiers = startupSourceTargetEvidenceTiers({
+  const status = options.status ?? "recorded";
+  const targetReadinessTiers = startupSourceTargetEvidenceTiers({
     connector,
     definition,
     target
   });
+  const readinessTiers = startupSourceReadinessTiersForStatus({
+    status,
+    readinessTiers: targetReadinessTiers
+  });
   const content = startupSourceEvidenceContent({
     connector,
     definition,
-    status: options.status ?? "recorded",
+    status,
     target,
     sourceUri: options.uri,
     sourceKind: definition.sourceKind,

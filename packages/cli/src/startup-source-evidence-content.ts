@@ -48,6 +48,21 @@ export function startupSourceTargetEvidenceTiers(input: {
   return [...new Set(tiers)];
 }
 
+export function startupSourceReadinessTiersForStatus(input: {
+  status: string;
+  readinessTiers: string[];
+}): string[] {
+  return startupSourceStatusCountsForReadiness(input.status)
+    ? [...input.readinessTiers]
+    : [];
+}
+
+export function startupSourceStatusCountsForReadiness(status: string): boolean {
+  const normalized = status.trim().toLowerCase();
+
+  return normalized === "passed" || normalized === "recorded";
+}
+
 export function startupSourceEvidenceContent(input: {
   connector: StartupSourceConnector;
   definition: StartupSourceConnectorDefinition;

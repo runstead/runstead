@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { startupOnboard } from "./startup-founder-flow.js";
+import { collectRecordedStartupReadinessEvidence } from "./startup-ready/evidence.js";
 import {
   collectStartupSourceEvidence,
   getStartupSourceProviderAdapter,
@@ -351,6 +352,7 @@ describe("startup source connectors", () => {
         cwd: workspace,
         connector: "render",
         uri: "https://api.render.com/v1/services/srv/deploys/dep",
+        target: "staging",
         fetch: () =>
           Promise.resolve({
             ok: true,
@@ -386,6 +388,7 @@ describe("startup source connectors", () => {
         cwd: workspace,
         connector: "posthog",
         uri: "https://app.posthog.com/api/projects/1/insights/activation",
+        target: "production",
         fetch: () =>
           Promise.resolve({
             ok: true,
@@ -437,6 +440,7 @@ describe("startup source connectors", () => {
       });
       const httpFailureArtifact = await readFile(httpFailure.artifactPath, "utf8");
       const malformedArtifact = await readFile(malformed.artifactPath, "utf8");
+      const recordedEvidence = await collectRecordedStartupReadinessEvidence(workspace);
 
       expect(pendingGithub.collection).toMatchObject({
         status: "unknown",
@@ -446,6 +450,7 @@ describe("startup source connectors", () => {
         status: "failed",
         summary: "Render Deployment deployment failed"
       });
+      expect(failedRender.readinessTiers).toEqual([]);
       expect(unknownSentry.collection).toMatchObject({
         status: "unknown",
         summary: "Sentry release blockers: unknown"
@@ -459,6 +464,7 @@ describe("startup source connectors", () => {
           realUserData: false
         }
       });
+      expect(syntheticPosthog.readinessTiers).toEqual([]);
       expect(httpFailure.collection).toMatchObject({
         status: "failed",
         payload: {
@@ -478,6 +484,8 @@ describe("startup source connectors", () => {
           responseExcerpt: "not-json [redacted]"
         }
       });
+      expect(recordedEvidence.evidenceTiers).not.toContain("staging_deployment");
+      expect(recordedEvidence.evidenceTiers).not.toContain("real_user_analytics");
       expect(httpFailureArtifact).not.toContain("vc_secret_token");
       expect(malformedArtifact).not.toContain("vc_secret_token");
     } finally {
