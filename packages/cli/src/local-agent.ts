@@ -12,10 +12,9 @@ import {
   restoreWorkspaceCheckpoint,
   type WorkspaceCheckpoint
 } from "./checkpoints.js";
-import {
-  CODEX_DIRECT_WORKER_KIND,
-  type CodexDirectPendingPatchResume,
-  type CodexDirectTransport
+import type {
+  CodexDirectPendingPatchResume,
+  CodexDirectTransport
 } from "./codex-direct-worker.js";
 import { runGovernedToolAction } from "./governed-action.js";
 import { showGoal } from "./goals.js";
@@ -23,13 +22,10 @@ import { createLocalAgentCheckpointIfNeeded } from "./local-agent-checkpoint.js"
 import { localAgentEvent, localAgentWorkerStartAction } from "./local-agent-actions.js";
 import {
   localAgentShouldIncrementAttempt,
-  localAgentTaskBaseUrl,
   localAgentTaskCheckpointId,
-  localAgentTaskModel,
-  localAgentTaskProvider,
-  localAgentTaskWorker,
   type LocalAgentWorkerKind
 } from "./local-agent-task-input.js";
+import { resolveLocalAgentRuntime } from "./local-agent-runtime.js";
 import { finalizeLocalAgentTask, isLocalAgentTask } from "./local-agent-task-state.js";
 import {
   isCodexDirectLocalAgentWorkerResult,
@@ -44,7 +40,6 @@ import {
   localAgentWorkerRunStatus
 } from "./local-agent-result.js";
 import { summarizeLocalAgentAudit } from "./local-agent-report.js";
-import { readLocalAgentApprovedPendingPatch } from "./local-agent-resume.js";
 import { runLocalAgentVerifiersIfNeeded } from "./local-agent-verifier-run.js";
 import { runLocalAgentWorker } from "./local-agent-worker-run.js";
 import {
@@ -58,10 +53,6 @@ import type { PolicyProfile } from "./policy.js";
 import { requireRunsteadRoot, requireRunsteadStateDb } from "./runstead-root.js";
 import { finishWorkerRun, startWorkerRun } from "./runtime-audit.js";
 import { claimTask, showTask } from "./tasks.js";
-import {
-  createModelProviderRuntime,
-  resolveModelProviderModel
-} from "./model-provider-runtime.js";
 import type { WorkerProcessProgress, WorkerProcessRunner } from "./wrapped-worker.js";
 
 export { LOCAL_AGENT_TASK_TYPE } from "./local-agent-types.js";
@@ -121,42 +112,13 @@ export async function runLocalAgentTask(
     throw new Error(`Task ${options.taskId} is not a local agent task`);
   }
 
-  const worker = localAgentTaskWorker(claimedTask);
-
-  if (
-    worker !== CODEX_DIRECT_WORKER_KIND &&
-    worker !== "codex_cli" &&
-    worker !== "claude_code"
-  ) {
-    throw new Error(
-      "Local agent task execution currently supports codex_direct, codex_cli, or claude_code"
-    );
-  }
-
-  const explicitProvider = localAgentTaskProvider(claimedTask);
-  const explicitModel = localAgentTaskModel(claimedTask);
-  const explicitBaseUrl = localAgentTaskBaseUrl(claimedTask);
-  const pendingPatchResume =
-    worker === CODEX_DIRECT_WORKER_KIND
-      ? readLocalAgentApprovedPendingPatch(state.stateDb, claimedTask)
-      : undefined;
-  const runtime =
-    worker === CODEX_DIRECT_WORKER_KIND
-      ? options.transport === undefined
-        ? await createModelProviderRuntime({
-            cwd,
-            ...(explicitProvider === undefined ? {} : { explicitProvider }),
-            ...(explicitModel === undefined ? {} : { explicitModel }),
-            ...(explicitBaseUrl === undefined ? {} : { explicitBaseUrl }),
-            ...(options.now === undefined ? {} : { now: options.now })
-          })
-        : await resolveModelProviderModel({
-            cwd,
-            ...(explicitProvider === undefined ? {} : { explicitProvider }),
-            ...(explicitModel === undefined ? {} : { explicitModel }),
-            ...(explicitBaseUrl === undefined ? {} : { explicitBaseUrl })
-          })
-      : undefined;
+  const runtime = await resolveLocalAgentRuntime({
+    cwd,
+    stateDb: state.stateDb,
+    task: claimedTask,
+    ...(options.transport === undefined ? {} : { transport: options.transport }),
+    ...(options.now === undefined ? {} : { now: options.now })
+  });
 
   const startedAt = (options.now ?? new Date()).toISOString();
   const runningTask: Task = {
@@ -170,11 +132,6 @@ export async function runLocalAgentTask(
   const policy = await loadPolicyProfileFromFile(
     join(root.root, "policies", "repo-maintenance.yaml")
   );
-  const transport =
-    worker === CODEX_DIRECT_WORKER_KIND
-      ? (options.transport ??
-        (runtime as Awaited<ReturnType<typeof createModelProviderRuntime>>).transport)
-      : undefined;
   const database = openRunsteadDatabase(state.stateDb);
 
   try {
@@ -197,19 +154,18 @@ export async function runLocalAgentTask(
       policy,
       goal,
       task: runningTask,
-      worker,
-      ...(pendingPatchResume === undefined ? {} : { pendingPatchResume }),
-      ...(runtime === undefined
+      worker: runtime.worker,
+      ...(runtime.pendingPatchResume === undefined
         ? {}
-        : {
-            model: runtime.model,
-            modelProviderResourceId: runtime.modelProviderResourceId,
-            modelProviderNetworkDomains: runtime.networkDomains
-          }),
-      ...(transport === undefined ? {} : { transport }),
-      ...(worker !== CODEX_DIRECT_WORKER_KIND && explicitModel !== undefined
-        ? { model: explicitModel }
-        : {}),
+        : { pendingPatchResume: runtime.pendingPatchResume }),
+      ...(runtime.model === undefined ? {} : { model: runtime.model }),
+      ...(runtime.modelProviderResourceId === undefined
+        ? {}
+        : { modelProviderResourceId: runtime.modelProviderResourceId }),
+      ...(runtime.modelProviderNetworkDomains === undefined
+        ? {}
+        : { modelProviderNetworkDomains: runtime.modelProviderNetworkDomains }),
+      ...(runtime.transport === undefined ? {} : { transport: runtime.transport }),
       ...(options.workerRunner === undefined
         ? {}
         : { workerRunner: options.workerRunner }),
