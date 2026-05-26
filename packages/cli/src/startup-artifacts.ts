@@ -1,28 +1,28 @@
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve } from "node:path";
 
-import { z } from "zod";
-
 import { requireRunsteadStateDb } from "./runstead-root.js";
+import {
+  STARTUP_STRUCTURED_ARTIFACT_SCHEMA,
+  STARTUP_STRUCTURED_ARTIFACT_SCHEMA_VERSION,
+  StartupStructuredArtifactSchema,
+  migrateStartupArtifact,
+  type StartupStructuredArtifact,
+  type WriteStartupStructuredArtifactOptions
+} from "./startup-artifact-schema.js";
 export {
   formatStartupArtifactList,
   formatStartupArtifactShow
 } from "./startup-artifact-format.js";
+export {
+  STARTUP_STRUCTURED_ARTIFACT_SCHEMA,
+  STARTUP_STRUCTURED_ARTIFACT_SCHEMA_VERSION,
+  StartupStructuredArtifactSchema,
+  migrateStartupArtifact,
+  type StartupStructuredArtifact,
+  type WriteStartupStructuredArtifactOptions
+} from "./startup-artifact-schema.js";
 import { startupEvidenceSourceRefIndex } from "./startup-artifact-source-refs.js";
-
-export const STARTUP_STRUCTURED_ARTIFACT_SCHEMA = "runstead.startupArtifact";
-export const STARTUP_STRUCTURED_ARTIFACT_SCHEMA_VERSION = 1;
-
-export const StartupStructuredArtifactSchema = z.object({
-  schemaVersion: z.literal(1),
-  schema: z.literal(STARTUP_STRUCTURED_ARTIFACT_SCHEMA),
-  kind: z.string().min(1),
-  generatedAt: z.string().min(1),
-  markdownPath: z.string().min(1),
-  data: z.record(z.string(), z.unknown())
-});
-
-export type StartupStructuredArtifact = z.infer<typeof StartupStructuredArtifactSchema>;
 
 export interface StartupArtifactListOptions {
   cwd?: string;
@@ -52,14 +52,6 @@ export interface StartupArtifactShowResult {
   root: string;
   stateDb: string;
   artifact: StartupArtifactListItem;
-}
-
-export interface WriteStartupStructuredArtifactOptions {
-  kind: string;
-  generatedAt: string;
-  markdownPath: string;
-  structuredPath?: string;
-  data: Record<string, unknown>;
 }
 
 export async function listStartupArtifacts(
@@ -240,28 +232,6 @@ export function structuredArtifactFileName(markdownFileName: string): string {
     : `${markdownFileName}.json`;
 }
 
-export function migrateStartupArtifact(value: unknown): unknown {
-  if (!isRecord(value)) {
-    return value;
-  }
-
-  if (
-    value.schema === undefined &&
-    value.schemaVersion === STARTUP_STRUCTURED_ARTIFACT_SCHEMA_VERSION &&
-    typeof value.kind === "string" &&
-    typeof value.generatedAt === "string" &&
-    typeof value.markdownPath === "string" &&
-    isRecord(value.data)
-  ) {
-    return {
-      ...value,
-      schema: STARTUP_STRUCTURED_ARTIFACT_SCHEMA
-    };
-  }
-
-  return value;
-}
-
 function artifactMatchesRef(item: StartupArtifactListItem, ref: string): boolean {
   const resolvedRef = resolve(ref);
 
@@ -272,8 +242,4 @@ function artifactMatchesRef(item: StartupArtifactListItem, ref: string): boolean
     item.path === resolvedRef ||
     basename(item.path) === ref
   );
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
