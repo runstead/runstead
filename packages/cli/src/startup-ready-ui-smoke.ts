@@ -19,9 +19,9 @@ import {
   classifyStartupUiValidationFailure,
   executeStartupUiValidation,
   summarizeStartupUiValidationFailure,
-  startupUiValidationRepairHint,
-  type StartupUiValidationExecutionEvidence
+  startupUiValidationRepairHint
 } from "./startup-ui-validation.js";
+import type { StartupUiValidationExecutionEvidence } from "./startup-ui-validation-types.js";
 
 export type {
   StartupReadyUiSmokeCheckConfig,

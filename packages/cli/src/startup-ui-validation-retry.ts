@@ -3,7 +3,7 @@ import type {
   StartupUiBrowserRunnerInput,
   StartupUiBrowserRunnerResult,
   StartupUiValidationFailureCategory
-} from "./startup-ui-validation.js";
+} from "./startup-ui-validation-types.js";
 
 export async function runStartupUiBrowserRunnerWithRetry(
   runner: StartupUiBrowserRunner,

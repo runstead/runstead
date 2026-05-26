@@ -1,7 +1,7 @@
 import type {
   StartupUiBrowserRunnerInput,
   StartupUiBrowserRunnerResult
-} from "./startup-ui-validation.js";
+} from "./startup-ui-validation-types.js";
 import { runChromeDevtoolsBrowserFlow } from "./startup-ui-cdp-browser-runner.js";
 import {
   isMissingPlaywrightError,

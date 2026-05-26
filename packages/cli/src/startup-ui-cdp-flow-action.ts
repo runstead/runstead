@@ -1,4 +1,4 @@
-import type { StartupUiFlowAction } from "./startup-ui-validation.js";
+import type { StartupUiFlowAction } from "./startup-ui-validation-types.js";
 
 export function cdpFlowActionExpression(action: StartupUiFlowAction): string {
   return `

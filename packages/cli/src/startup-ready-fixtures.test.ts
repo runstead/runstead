@@ -23,7 +23,7 @@ import {
   runStartupReady
 } from "./startup-ready.js";
 import { recordStartupSourceEvidence } from "./startup-source-connectors.js";
-import type { StartupUiFlowAction } from "./startup-ui-validation.js";
+import type { StartupUiFlowAction } from "./startup-ui-validation-types.js";
 import { listTasks } from "./tasks.js";
 import type { WorkerProcessRunner } from "./wrapped-worker.js";
 

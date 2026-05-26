@@ -4,7 +4,7 @@ import type {
   StartupUiValidationServerEvidence,
   StartupUiValidationStatus,
   StartupUiValidationTextCheck
-} from "./startup-ui-validation.js";
+} from "./startup-ui-validation-types.js";
 
 export function summarizeStartupUiValidationFailure(
   execution: StartupUiValidationExecutionEvidence

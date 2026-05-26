@@ -2,7 +2,7 @@ import { join } from "node:path";
 
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 
-import type { StartupUiFlowAction } from "./startup-ui-validation.js";
+import type { StartupUiFlowAction } from "./startup-ui-validation-types.js";
 
 export interface StartupReadyUiSmokeConfig {
   schemaVersion: 1;

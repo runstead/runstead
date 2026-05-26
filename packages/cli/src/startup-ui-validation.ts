@@ -3,10 +3,7 @@ import { resolve } from "node:path";
 import {
   classifyRuntimeStartupUiValidationFailure,
   runtimeStartupUiValidationInfraStatus,
-  runtimeStartupUiValidationRepairHint,
-  type RuntimeStartupUiValidationExecutionEvidence,
-  type RuntimeStartupUiValidationFailureCategory,
-  type RuntimeStartupUiValidationStatus
+  runtimeStartupUiValidationRepairHint
 } from "@runstead/runtime";
 
 import { defaultStartupUiBrowserRunner } from "./startup-ui-browser-runner.js";
@@ -37,164 +34,26 @@ import {
   textChecks,
   uiValidationFailed
 } from "./startup-ui-validation-status.js";
-import {
-  addStartupEvidence,
-  type AddStartupEvidenceResult,
-  type StartupEvidenceSourceInput
-} from "./startup-evidence.js";
+import { addStartupEvidence } from "./startup-evidence.js";
+import type {
+  ExecuteStartupUiValidationOptions,
+  ExecuteStartupUiValidationResult,
+  RecordStartupUiValidationOptions,
+  RecordStartupUiValidationResult,
+  StartupUiFlowAction,
+  StartupUiValidationExecutionEvidence
+} from "./startup-ui-validation-types.js";
 
 export {
   parseStartupUiValidationStatus,
   summarizeStartupUiValidationFailure
 } from "./startup-ui-validation-status.js";
-
-export type StartupUiValidationStatus = RuntimeStartupUiValidationStatus;
-export type StartupUiValidationFailureCategory =
-  RuntimeStartupUiValidationFailureCategory;
-
-export interface RecordStartupUiValidationOptions {
-  cwd?: string;
-  url: string;
-  viewport: string;
-  screenshot?: string;
-  domStatus?: StartupUiValidationStatus;
-  accessibilityStatus?: StartupUiValidationStatus;
-  responsiveStatus?: StartupUiValidationStatus;
-  criticalFlow?: string;
-  criticalFlowStatus?: StartupUiValidationStatus;
-  domArtifact?: string;
-  consoleErrors?: string[];
-  execution?: StartupUiValidationExecutionEvidence;
-  sourceRefs?: string[];
-  sources?: StartupEvidenceSourceInput[];
-  goalId?: string;
-  now?: Date;
-}
-
-export interface RecordStartupUiValidationResult {
-  evidence: AddStartupEvidenceResult;
-  failed: boolean;
-}
-
-export interface ExecuteStartupUiValidationOptions {
-  cwd?: string;
-  url?: string;
-  viewport: string;
-  criticalFlow?: string;
-  expectText?: string[];
-  flowActions?: StartupUiFlowAction[];
-  serverCommand?: string;
-  serverPort?: number;
-  timeoutMs?: number;
-  fetchImpl?: typeof fetch;
-  browserRunner?: StartupUiBrowserRunner;
-  goalId?: string;
-  now?: Date;
-}
-
-export interface ExecuteStartupUiValidationResult extends RecordStartupUiValidationResult {
-  url: string;
-  domArtifact: string;
-  execution: StartupUiValidationExecutionEvidence;
-}
-
-export type StartupUiValidationExecutionEvidence =
-  RuntimeStartupUiValidationExecutionEvidence;
-
-export interface StartupUiValidationTextCheck {
-  text: string;
-  found: boolean;
-}
-
-export interface StartupUiValidationServerEvidence {
-  managed: boolean;
-  command: string;
-  url: string;
-  port: number;
-}
-
-export type StartupUiFlowAction =
-  | {
-      type: "fill";
-      selector?: string;
-      selectors?: string[];
-      value: string;
-    }
-  | {
-      type: "select";
-      selector?: string;
-      selectors?: string[];
-      value: string;
-    }
-  | {
-      type: "click";
-      selector?: string;
-      selectors?: string[];
-    }
-  | {
-      type: "expectText";
-      text: string;
-    }
-  | {
-      type: "expectCount";
-      selector: string;
-      count: number;
-    }
-  | {
-      type: "reload";
-    }
-  | {
-      type: "expectPersisted";
-      text: string;
-      selector?: string;
-      selectors?: string[];
-    }
-  | {
-      type: "expectNoOverlap";
-      selectors: string[];
-    };
-
-export interface StartupUiFlowActionResult {
-  type: StartupUiFlowAction["type"];
-  status: StartupUiValidationStatus;
-  summary: string;
-  selector?: string;
-  expected?: string | number;
-  actual?: string | number;
-}
+export type * from "./startup-ui-validation-types.js";
 
 export const classifyStartupUiValidationFailure =
   classifyRuntimeStartupUiValidationFailure;
 export const startupUiValidationRepairHint = runtimeStartupUiValidationRepairHint;
 export const startupUiValidationInfraStatus = runtimeStartupUiValidationInfraStatus;
-
-export interface StartupUiValidationExecutionArtifacts {
-  dom?: string;
-  screenshot?: string;
-  consoleLog?: string;
-  serverLog?: string;
-}
-
-export interface StartupUiBrowserRunnerInput {
-  url: string;
-  viewport: string;
-  expectText: string[];
-  flowActions: StartupUiFlowAction[];
-  timeoutMs: number;
-}
-
-export interface StartupUiBrowserRunnerResult {
-  responseStatus: number;
-  responseOk: boolean;
-  html: string;
-  screenshot?: Buffer;
-  consoleMessages: string[];
-  actionResults: StartupUiFlowActionResult[];
-}
-
-export type StartupUiBrowserRunner = (
-  input: StartupUiBrowserRunnerInput
-) => Promise<StartupUiBrowserRunnerResult>;
 
 export async function recordStartupUiValidation(
   options: RecordStartupUiValidationOptions

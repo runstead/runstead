@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { resolveRunsteadRoot } from "./runstead-root.js";
-import type { StartupUiFlowAction } from "./startup-ui-validation.js";
+import type { StartupUiFlowAction } from "./startup-ui-validation-types.js";
 
 export async function inferStartupReadyUiSmokeFlowActions(
   cwd: string

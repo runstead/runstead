@@ -3,7 +3,7 @@ import type {
   StartupUiBrowserRunnerResult,
   StartupUiFlowAction,
   StartupUiFlowActionResult
-} from "./startup-ui-validation.js";
+} from "./startup-ui-validation-types.js";
 import {
   dynamicImport,
   viewportSize,
