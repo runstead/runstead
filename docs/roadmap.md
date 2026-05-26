@@ -357,6 +357,9 @@ The current implementation wave closed the highest-confidence product gaps:
   `startup-repo-onboarding` into `startup-repo-ci`.
 - Startup metric assessment, stale-source evaluation, and instrumentation-task
   creation moved out of `startup-metrics` into `startup-metrics-assess`.
+- Startup extension collector selection, governed execution, and collector
+  task/worker finalization moved out of `startup-extension-execution` into
+  `startup-extension-collector-runner`.
 - `packages/cli/src/startup-command.ts` no longer owns startup source command
   registration.
 - `packages/cli/src/startup-command.ts` no longer owns startup artifact
