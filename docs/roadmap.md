@@ -454,6 +454,8 @@ The current implementation wave closed the highest-confidence product gaps:
 - Wrapped worker governance manifest, launch guardrails, hard-proxy status, and
   prompt construction moved out of `wrapped-worker` into
   `wrapped-worker-governance`.
+- Wrapped worker command construction and isolated Codex CLI profile environment
+  setup moved out of `wrapped-worker` into `wrapped-worker-command`.
 - Wrapped-worker stuck progress coverage is stabilized against short timing
   windows in full-suite runs.
 - `startup source collect` records structured provider evidence through
