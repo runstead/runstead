@@ -10,11 +10,10 @@ import {
   readRiskAcceptances
 } from "./startup-collaboration-data.js";
 import { formatStartupCollaborationDigest } from "./startup-collaboration-format.js";
+import { collaborationExpiryReminders } from "./startup-collaboration-reminders.js";
 import type {
   GenerateStartupCollaborationDigestOptions,
-  StartupCollaborationApproval,
-  StartupCollaborationDigestResult,
-  StartupRiskAcceptance
+  StartupCollaborationDigestResult
 } from "./startup-collaboration-types.js";
 
 export type {
@@ -97,55 +96,4 @@ export async function generateStartupCollaborationDigest(
   } finally {
     database.close();
   }
-}
-
-function collaborationExpiryReminders(input: {
-  approvals: StartupCollaborationApproval[];
-  riskAcceptances: StartupRiskAcceptance[];
-  now: Date;
-  expiryWindowDays: number;
-}): string[] {
-  const windowMs = input.expiryWindowDays * 24 * 60 * 60 * 1000;
-  const reminders = [
-    ...input.approvals.flatMap((approval) =>
-      expiringReminder({
-        label: `approval ${approval.id}`,
-        expiresAt: approval.expiresAt,
-        now: input.now,
-        windowMs
-      })
-    ),
-    ...input.riskAcceptances.flatMap((acceptance) =>
-      expiringReminder({
-        label: `risk acceptance ${acceptance.evidenceId}`,
-        expiresAt: acceptance.expiresAt,
-        now: input.now,
-        windowMs
-      })
-    )
-  ];
-
-  return reminders.length === 0
-    ? ["no approval or waiver expiry inside window"]
-    : reminders;
-}
-
-function expiringReminder(input: {
-  label: string;
-  expiresAt: string | undefined;
-  now: Date;
-  windowMs: number;
-}): string[] {
-  if (input.expiresAt === undefined) {
-    return [];
-  }
-
-  const expiresAt = new Date(input.expiresAt);
-  const delta = expiresAt.getTime() - input.now.getTime();
-
-  if (Number.isNaN(delta) || delta < 0 || delta > input.windowMs) {
-    return [];
-  }
-
-  return [`${input.label} expires at ${input.expiresAt}`];
 }
