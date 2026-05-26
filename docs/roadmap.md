@@ -251,6 +251,9 @@ The current implementation wave closed the highest-confidence product gaps:
   startup UI browser runner into `startup-ui-cdp-flow-action`.
 - Playwright UI overlap geometry checks moved out of the startup UI browser
   runner into `startup-ui-playwright-overlap`.
+- Startup UI validation status parsing, summary text, execution status
+  inference, server evidence shaping, and HTML escaping moved out of
+  `startup-ui-validation` into `startup-ui-validation-status`.
 - Local agent task input parsing moved out of the orchestrator into
   `local-agent-task-input`.
 - Local agent task reporting, report formatting, and audit-summary loading
