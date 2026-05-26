@@ -149,6 +149,9 @@ The current implementation wave closed the highest-confidence product gaps:
   out of `codex-auth` into `codex-auth-constants` and `codex-auth-parsers`.
 - Codex OAuth device-code polling, authorization-code exchange, and token
   refresh calls moved out of `codex-auth` into `codex-auth-oauth`.
+- Codex Direct model conversation loop, tool-call dispatch, budget handling,
+  and model interruption mapping moved out of `codex-direct/worker` into
+  `codex-direct/conversation`.
 - Doctor state database schema and runtime backend checks moved out of `doctor`
   into `doctor-runtime-checks`.
 - Doctor workspace health checks for files, directories, domain manifests,
