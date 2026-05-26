@@ -77,7 +77,11 @@ An extension manifest contains:
   `requiredSecrets`, `producesEvidenceTypes`, and `outputSchema`. Startup
   readiness treats these as policy inputs and as runtime contracts. CLI
   execution requires `command`; `adapterId` is stable integration metadata
-  for provider-specific adapters.
+  for provider-specific adapters. When `outputSchema` is non-empty, Runstead
+  validates every emitted evidence item against a conservative JSON Schema
+  subset (`type`, `required`, `properties`, `items`, `enum`, `const`,
+  string length/pattern, numeric minimum/maximum, and array min/max) before
+  recording evidence.
 - `verifiers`: commands that produce local or CI evidence with declared
   `evidenceTier` and `producesEvidenceTypes`.
 - `gates`: stage and target requirements that compose facets and evidence.
@@ -157,11 +161,13 @@ through governed local tool execution
 (`runGovernedToolAction`-based child process), checks every entry of
 `requiredSecrets` against `process.env`, applies a 30 s execution timeout,
 parses JSON evidence from stdout, validates the evidence type against
-`producesEvidenceTypes`, and records startup evidence. A collector with
-only `adapterId` is visible to planning and policy, but is skipped until a
-runtime adapter or command is supplied. Extension verifiers are appended
-to the existing verifier command list and run through the same verifier
-infrastructure as test/lint/typecheck/build.
+`producesEvidenceTypes`, validates the evidence object against
+`outputSchema` when declared, and records startup evidence. Schema failures
+block the collector instead of recording weak or malformed evidence. A
+collector with only `adapterId` is visible to planning and policy, but is
+skipped until a runtime adapter or command is supplied. Extension verifiers
+are appended to the existing verifier command list and run through the same
+verifier infrastructure as test/lint/typecheck/build.
 
 Copyable examples live under [docs/examples/extensions](examples/extensions).
 They cover PostHog activation, Vercel deployment status, Sentry error rate,

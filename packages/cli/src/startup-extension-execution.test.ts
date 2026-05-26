@@ -134,6 +134,52 @@ describe("startup extension execution", () => {
     }
   });
 
+  it("blocks collector evidence that does not satisfy outputSchema", async () => {
+    const workspace = join(tmpdir(), `runstead-extension-output-schema-${process.pid}`);
+
+    try {
+      await prepareExtensionWorkspace(workspace, {
+        collector: {
+          safeForWrappedWorkers: true,
+          qualityTier: "self_reported",
+          outputSchema: {
+            type: "object",
+            required: ["content"],
+            properties: {
+              content: {
+                type: "object",
+                required: ["sampleSize"],
+                properties: {
+                  sampleSize: {
+                    type: "integer",
+                    minimum: 1
+                  }
+                }
+              }
+            }
+          }
+        }
+      });
+
+      const result = await executeStartupReadinessExtensions({
+        cwd: workspace,
+        target: "local",
+        stage: "launch",
+        worker: "codex_cli",
+        governanceProfile: "readiness",
+        now: new Date("2026-05-24T01:12:00.000Z")
+      });
+
+      expect(result.status).toBe("blocked");
+      expect(result.evidenceIds).toEqual([]);
+      expect(result.blockers).toEqual([
+        "extension growth-readiness/activation-local collector failed: collector output failed outputSchema validation: $.content.sampleSize is required"
+      ]);
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
   it("exposes extension verifiers as existing verifier commands", async () => {
     const workspace = join(tmpdir(), `runstead-extension-verifier-${process.pid}`);
 
@@ -166,6 +212,7 @@ async function prepareExtensionWorkspace(
       safeForWrappedWorkers: boolean;
       qualityTier: string;
       defaultFreshnessDays?: number;
+      outputSchema?: Record<string, unknown>;
     };
   }
 ): Promise<void> {
@@ -243,6 +290,9 @@ async function prepareExtensionWorkspace(
             producesEvidenceTypes: ["startup_metric_snapshot"],
             safeForWrappedWorkers: options.collector.safeForWrappedWorkers,
             qualityTier: options.collector.qualityTier,
+            ...(options.collector.outputSchema === undefined
+              ? {}
+              : { outputSchema: options.collector.outputSchema }),
             ...(options.collector.defaultFreshnessDays === undefined
               ? {}
               : { defaultFreshnessDays: options.collector.defaultFreshnessDays })

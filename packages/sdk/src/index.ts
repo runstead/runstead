@@ -188,6 +188,11 @@ export interface RunsteadExtensionRuntimeContract {
   safeForWrappedWorkers: boolean;
 }
 
+export interface RunsteadCollectorOutputValidationResult {
+  valid: boolean;
+  issues: string[];
+}
+
 export class RunsteadExtensionCompileError extends Error {
   readonly issues: string[];
 
@@ -230,6 +235,27 @@ export function validateRunsteadExtension(
 
       return path.length === 0 ? issue.message : `${path}: ${issue.message}`;
     })
+  };
+}
+
+export function validateRunsteadCollectorOutput(
+  collector: RunsteadEvidenceCollector,
+  value: unknown
+): RunsteadCollectorOutputValidationResult {
+  if (Object.keys(collector.outputSchema).length === 0) {
+    return {
+      valid: true,
+      issues: []
+    };
+  }
+
+  const issues: string[] = [];
+
+  validateCollectorJsonSchemaValue(collector.outputSchema, value, "$", issues);
+
+  return {
+    valid: issues.length === 0,
+    issues
   };
 }
 
@@ -614,4 +640,192 @@ function copyEvidenceCollector(
 
 function uniqueStrings(values: string[]): string[] {
   return [...new Set(values)];
+}
+
+function validateCollectorJsonSchemaValue(
+  schema: Record<string, unknown>,
+  value: unknown,
+  path: string,
+  issues: string[]
+): void {
+  const expectedTypes = collectorSchemaTypes(schema.type);
+
+  if (
+    expectedTypes.length > 0 &&
+    !expectedTypes.some((type) => jsonType(value, type))
+  ) {
+    issues.push(`${path} expected ${expectedTypes.join(" or ")}`);
+    return;
+  }
+
+  if ("const" in schema && !jsonEquivalent(value, schema.const)) {
+    issues.push(`${path} must equal ${JSON.stringify(schema.const)}`);
+  }
+
+  if (
+    Array.isArray(schema.enum) &&
+    !schema.enum.some((item) => jsonEquivalent(item, value))
+  ) {
+    issues.push(
+      `${path} must be one of ${schema.enum.map((item) => JSON.stringify(item)).join(", ")}`
+    );
+  }
+
+  if (isRecord(value)) {
+    validateCollectorObjectSchema(schema, value, path, issues);
+  }
+
+  if (Array.isArray(value)) {
+    validateCollectorArraySchema(schema, value, path, issues);
+  }
+
+  if (typeof value === "string") {
+    validateCollectorStringSchema(schema, value, path, issues);
+  }
+
+  if (typeof value === "number") {
+    validateCollectorNumberSchema(schema, value, path, issues);
+  }
+}
+
+function validateCollectorObjectSchema(
+  schema: Record<string, unknown>,
+  value: Record<string, unknown>,
+  path: string,
+  issues: string[]
+): void {
+  const required = stringArrayValue(schema.required);
+
+  for (const key of required) {
+    if (!(key in value)) {
+      issues.push(`${path}.${key} is required`);
+    }
+  }
+
+  if (!isRecord(schema.properties)) {
+    return;
+  }
+
+  for (const [key, childSchema] of Object.entries(schema.properties)) {
+    if (!(key in value) || !isRecord(childSchema)) {
+      continue;
+    }
+
+    validateCollectorJsonSchemaValue(childSchema, value[key], `${path}.${key}`, issues);
+  }
+}
+
+function validateCollectorArraySchema(
+  schema: Record<string, unknown>,
+  value: unknown[],
+  path: string,
+  issues: string[]
+): void {
+  if (typeof schema.minItems === "number" && value.length < schema.minItems) {
+    issues.push(`${path} must contain at least ${schema.minItems} item(s)`);
+  }
+
+  if (typeof schema.maxItems === "number" && value.length > schema.maxItems) {
+    issues.push(`${path} must contain at most ${schema.maxItems} item(s)`);
+  }
+
+  if (!isRecord(schema.items)) {
+    return;
+  }
+
+  value.forEach((item, index) => {
+    validateCollectorJsonSchemaValue(
+      schema.items as Record<string, unknown>,
+      item,
+      `${path}[${index}]`,
+      issues
+    );
+  });
+}
+
+function validateCollectorStringSchema(
+  schema: Record<string, unknown>,
+  value: string,
+  path: string,
+  issues: string[]
+): void {
+  if (typeof schema.minLength === "number" && value.length < schema.minLength) {
+    issues.push(`${path} must be at least ${schema.minLength} character(s)`);
+  }
+
+  if (typeof schema.maxLength === "number" && value.length > schema.maxLength) {
+    issues.push(`${path} must be at most ${schema.maxLength} character(s)`);
+  }
+
+  if (typeof schema.pattern !== "string") {
+    return;
+  }
+
+  try {
+    if (!new RegExp(schema.pattern, "u").test(value)) {
+      issues.push(`${path} must match pattern ${schema.pattern}`);
+    }
+  } catch {
+    issues.push(`${path} has invalid pattern ${schema.pattern}`);
+  }
+}
+
+function validateCollectorNumberSchema(
+  schema: Record<string, unknown>,
+  value: number,
+  path: string,
+  issues: string[]
+): void {
+  if (typeof schema.minimum === "number" && value < schema.minimum) {
+    issues.push(`${path} must be >= ${schema.minimum}`);
+  }
+
+  if (typeof schema.maximum === "number" && value > schema.maximum) {
+    issues.push(`${path} must be <= ${schema.maximum}`);
+  }
+}
+
+function collectorSchemaTypes(value: unknown): string[] {
+  if (typeof value === "string") {
+    return [value];
+  }
+
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string")
+    : [];
+}
+
+function jsonType(value: unknown, type: string): boolean {
+  switch (type) {
+    case "array":
+      return Array.isArray(value);
+    case "boolean":
+      return typeof value === "boolean";
+    case "integer":
+      return typeof value === "number" && Number.isInteger(value);
+    case "null":
+      return value === null;
+    case "number":
+      return typeof value === "number";
+    case "object":
+      return isRecord(value);
+    case "string":
+      return typeof value === "string";
+    default:
+      return false;
+  }
+}
+
+function stringArrayValue(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string")
+    : [];
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function jsonEquivalent(left: unknown, right: unknown): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
 }

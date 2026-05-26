@@ -4,7 +4,10 @@ import { join, resolve } from "node:path";
 import { createRunsteadId, type JsonObject, type Task } from "@runstead/core";
 import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sqlite";
 import type { ReadinessEvidenceRequirement, ReadinessTarget } from "@runstead/runtime";
-import type { RunsteadEvidenceCollector } from "@runstead/sdk";
+import {
+  validateRunsteadCollectorOutput,
+  type RunsteadEvidenceCollector
+} from "@runstead/sdk";
 
 import { createLocalAgentTask, type LocalAgentWorkerKind } from "./local-agent.js";
 import { loadPolicyProfileFromFile } from "./policy-loader.js";
@@ -470,6 +473,14 @@ async function recordExtensionCollectorEvidence(input: {
     if (!produced.has(type)) {
       throw new Error(
         `collector produced ${type || "unknown"} but declares ${input.collector.producesEvidenceTypes.join(", ")}`
+      );
+    }
+
+    const outputValidation = validateRunsteadCollectorOutput(input.collector, item);
+
+    if (!outputValidation.valid) {
+      throw new Error(
+        `collector output failed outputSchema validation: ${outputValidation.issues.join("; ")}`
       );
     }
 

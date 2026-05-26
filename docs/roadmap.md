@@ -26,6 +26,7 @@ just an agent wrapper. The current product surface includes:
 - UI smoke validation and bounded repair hooks
 - SDK extension manifests that can block readiness and execute governed
   collectors
+- extension collector `outputSchema` validation before evidence is recorded
 - quality, freshness, and wrapped-worker safety metadata as readiness policy
   inputs
 - dashboard snapshots, operator action catalogues, and protected local mutating
@@ -526,6 +527,8 @@ The current implementation wave closed the highest-confidence product gaps:
 - CI runs `@runstead/state-postgres` against a real Postgres service via
   `RUNSTEAD_PG_TEST_URL`; local runs skip this integration path unless the env
   var is set.
+- Extension collector `outputSchema` is enforced as a runtime evidence
+  contract instead of remaining manifest metadata.
 
 ## Remaining Backlog
 

@@ -9,6 +9,7 @@ import {
   extensionReadinessRequirementBlockers,
   extensionReadinessTargets,
   RunsteadExtensionCompileError,
+  validateRunsteadCollectorOutput,
   validateRunsteadExtension
 } from "./index.js";
 
@@ -302,6 +303,80 @@ describe("Runstead SDK extension contracts", () => {
     expect(result).toEqual({
       valid: false,
       issues: ["verifiers: Duplicate verifiers id: smoke"]
+    });
+  });
+
+  it("validates collector output against the declared output schema", () => {
+    const collector = defineRunsteadExtension({
+      schemaVersion: 1,
+      id: "schema-readiness",
+      version: "0.1.0",
+      name: "Schema readiness",
+      description: "Collector output schema validation.",
+      domains: ["ai-native-startup"],
+      collectors: [
+        {
+          id: "activation",
+          title: "Activation",
+          description: "Activation metric.",
+          producesEvidenceTypes: ["startup_metric_snapshot"],
+          outputSchema: {
+            type: "object",
+            required: ["type", "content"],
+            properties: {
+              type: {
+                const: "startup_metric_snapshot"
+              },
+              content: {
+                type: "object",
+                required: ["metric", "current"],
+                properties: {
+                  metric: {
+                    type: "string",
+                    minLength: 1
+                  },
+                  current: {
+                    type: "number",
+                    minimum: 0
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    }).collectors[0];
+
+    if (collector === undefined) {
+      throw new Error("Expected collector");
+    }
+
+    expect(
+      validateRunsteadCollectorOutput(collector, {
+        type: "startup_metric_snapshot",
+        content: {
+          metric: "activation",
+          current: 48
+        }
+      })
+    ).toEqual({
+      valid: true,
+      issues: []
+    });
+    expect(
+      validateRunsteadCollectorOutput(collector, {
+        type: "startup_metric_snapshot",
+        content: {
+          metric: "",
+          current: -1
+        }
+      })
+    ).toEqual({
+      valid: false,
+      issues: [
+        "$.content.metric must be at least 1 character(s)",
+        "$.content.current must be >= 0"
+      ]
     });
   });
 });
