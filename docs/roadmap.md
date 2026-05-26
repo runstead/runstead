@@ -91,6 +91,8 @@ The current implementation wave closed the highest-confidence product gaps:
   `commands/ops`.
 - `checkpoint restore` command registration moved out of the CLI entrypoint into
   `commands/checkpoint`.
+- Checkpoint git runner defaults, git execution, and git error-output parsing
+  moved out of `checkpoints` into `checkpoint-git`.
 - Top-level `migrate` command registration moved out of the CLI entrypoint into
   `commands/migrate`.
 - Top-level `run --once` command registration moved out of the CLI entrypoint

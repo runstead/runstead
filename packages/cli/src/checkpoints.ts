@@ -1,7 +1,5 @@
-import { execFile } from "node:child_process";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { promisify } from "node:util";
 
 import { createRunsteadId } from "@runstead/core";
 import type {
@@ -11,6 +9,7 @@ import type {
   RestoreWorkspaceCheckpointResult,
   WorkspaceCheckpoint
 } from "./checkpoints-types.js";
+import { checkpointGitOptions, runCheckpointGit } from "./checkpoint-git.js";
 import {
   copyUntrackedSnapshot,
   isCheckpointExcludedPath,
@@ -19,14 +18,13 @@ import {
   parseNulPaths
 } from "./checkpoint-paths.js";
 export {
+  DEFAULT_CHECKPOINT_GIT_MAX_OUTPUT_BYTES,
+  DEFAULT_CHECKPOINT_GIT_TIMEOUT_MS
+} from "./checkpoint-git.js";
+export {
   recordWorkspaceCheckpointCreatedEvent,
   recordWorkspaceCheckpointRestoreEvent
 } from "./checkpoints-events.js";
-
-const execFileAsync = promisify(execFile);
-
-export const DEFAULT_CHECKPOINT_GIT_TIMEOUT_MS = 60_000;
-export const DEFAULT_CHECKPOINT_GIT_MAX_OUTPUT_BYTES = 1024 * 1024 * 20;
 
 export type {
   CreateWorkspaceCheckpointOptions,
@@ -50,7 +48,7 @@ export async function createWorkspaceCheckpoint(
   const statusPath = join(checkpointDir, `${id}.status.txt`);
   const patchPath = join(checkpointDir, `${id}.patch`);
   const untrackedDir = join(checkpointDir, `${id}.untracked`);
-  const runner = options.runner ?? runGit;
+  const runner = options.runner ?? runCheckpointGit;
   const gitOptions = checkpointGitOptions(options);
   const [head, status, patch, untracked] = await Promise.all([
     runner(["rev-parse", "HEAD"], { cwd: workspace, ...gitOptions }),
@@ -152,7 +150,7 @@ export async function restoreWorkspaceCheckpoint(
 ): Promise<RestoreWorkspaceCheckpointResult> {
   const workspace = resolve(options.workspace);
   const checkpoint = await readWorkspaceCheckpoint(options);
-  const runner = options.runner ?? runGit;
+  const runner = options.runner ?? runCheckpointGit;
   const gitOptions = checkpointGitOptions(options);
 
   if (checkpoint.head === undefined || checkpoint.head.length === 0) {
@@ -243,68 +241,6 @@ export function formatWorkspaceCheckpointRestoreReport(
     `Untracked files restored: ${result.restoredUntrackedFiles.length}`,
     `Untracked files removed: ${result.removedUntrackedFiles.length}`
   ].join("\n");
-}
-
-async function runGit(
-  args: string[],
-  options: { cwd: string; maxOutputBytes: number; timeoutMs: number }
-): Promise<{ stdout: string; stderr: string; exitCode: number }> {
-  try {
-    const result = await execFileAsync("git", args, {
-      cwd: options.cwd,
-      maxBuffer: options.maxOutputBytes,
-      timeout: options.timeoutMs,
-      windowsHide: true
-    });
-
-    return {
-      stdout: result.stdout,
-      stderr: result.stderr,
-      exitCode: 0
-    };
-  } catch (error) {
-    return {
-      stdout: commandOutput(error, "stdout"),
-      stderr: commandOutput(error, "stderr"),
-      exitCode: commandExitCode(error)
-    };
-  }
-}
-
-function checkpointGitOptions(options: {
-  gitMaxOutputBytes?: number;
-  gitTimeoutMs?: number;
-}): { maxOutputBytes: number; timeoutMs: number } {
-  return {
-    maxOutputBytes:
-      options.gitMaxOutputBytes ?? DEFAULT_CHECKPOINT_GIT_MAX_OUTPUT_BYTES,
-    timeoutMs: options.gitTimeoutMs ?? DEFAULT_CHECKPOINT_GIT_TIMEOUT_MS
-  };
-}
-
-function commandExitCode(error: unknown): number {
-  if (
-    typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    typeof error.code === "number"
-  ) {
-    return error.code;
-  }
-
-  return 1;
-}
-
-function commandOutput(error: unknown, key: "stdout" | "stderr"): string {
-  if (typeof error === "object" && error !== null) {
-    const output = (error as Record<string, unknown>)[key];
-
-    if (typeof output === "string") {
-      return output;
-    }
-  }
-
-  return "";
 }
 
 function stringField(
