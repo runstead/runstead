@@ -469,6 +469,9 @@ The current implementation wave closed the highest-confidence product gaps:
   `wrapped-worker-process`.
 - Startup ready UI smoke expected-text inference moved out of the UI smoke
   executor into `startup-ready-ui-smoke-expect-text`.
+- Startup ready UI smoke config types, YAML parsing, legacy shape
+  normalization, and serialization moved out of the UI smoke executor into
+  `startup-ready-ui-smoke-config`.
 - Wrapped-worker stuck progress coverage is stabilized against short timing
   windows in full-suite runs.
 - `startup source collect` records structured provider evidence through
