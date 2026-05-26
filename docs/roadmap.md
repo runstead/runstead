@@ -231,6 +231,8 @@ The current implementation wave closed the highest-confidence product gaps:
   `dashboard-render` into `dashboard-render-assets`.
 - Chrome DevTools Protocol connection handling moved out of the startup UI
   browser runner into `startup-ui-cdp-connection`.
+- Chrome DevTools executable discovery, websocket startup, and profile cleanup
+  moved out of the startup UI browser runner into `startup-ui-chrome-devtools`.
 - Chrome DevTools Protocol UI flow action script generation moved out of the
   startup UI browser runner into `startup-ui-cdp-flow-action`.
 - Playwright UI overlap geometry checks moved out of the startup UI browser
