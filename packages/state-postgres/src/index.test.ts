@@ -8,6 +8,7 @@ import {
   createPostgresTeamControlPlaneProfile,
   formatPostgresControlPlaneMigrationSql,
   migratePostgresControlPlane,
+  NodePostgresControlPlaneClient,
   postgresControlPlaneMigrationPlan,
   PostgresLockUnavailableError,
   PostgresRevisionConflictError,
@@ -59,6 +60,30 @@ describe("@runstead/state-postgres", () => {
       'CREATE TABLE IF NOT EXISTS "runstead_team"."runtime_runners"'
     );
     expect(sql).toContain("ON CONFLICT (version) DO NOTHING");
+  });
+
+  it("adapts pg-compatible Node clients without requiring the psql bridge", async () => {
+    const driver = new FakeNodePostgresDriver();
+    const client = new NodePostgresControlPlaneClient(driver);
+
+    const result = await client.query<{ id: string }>(
+      "SELECT id FROM tasks WHERE status = $1",
+      ["queued"]
+    );
+
+    await client.end();
+
+    expect(result).toEqual({
+      rows: [{ id: "task_1" }],
+      rowCount: 1
+    });
+    expect(driver.queries).toEqual([
+      {
+        sql: "SELECT id FROM tasks WHERE status = $1",
+        params: ["queued"]
+      }
+    ]);
+    expect(driver.ended).toBe(true);
   });
 
   it("passes the reusable runtime control-plane backend conformance suite", async () => {
@@ -520,6 +545,29 @@ class FakePostgresClient implements PostgresControlPlaneClient {
     }
 
     return rows<Row>();
+  }
+}
+
+class FakeNodePostgresDriver {
+  readonly queries: { sql: string; params: readonly unknown[] | undefined }[] = [];
+  ended = false;
+
+  async query<Row extends PostgresRow = PostgresRow>(
+    sql: string,
+    params?: readonly unknown[]
+  ): Promise<PostgresQueryResult<Row>> {
+    await Promise.resolve();
+    this.queries.push({ sql, params });
+
+    return {
+      rows: [{ id: "task_1" }] as unknown as Row[],
+      rowCount: 1
+    };
+  }
+
+  async end(): Promise<void> {
+    await Promise.resolve();
+    this.ended = true;
   }
 }
 

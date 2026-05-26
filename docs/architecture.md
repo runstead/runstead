@@ -48,7 +48,10 @@ Storage backends:
 - `@runstead/state-postgres`: Postgres `RuntimeControlPlaneBackend` adapter
   with `expectedRevision` optimistic concurrency, idempotency keys, advisory
   lock fencing tokens, JSONB projections, hash-addressed artifacts, and
-  schema migrations with checksum verification plus printable migration SQL
+  schema migrations with checksum verification plus printable migration SQL.
+  Hosts can attach either a `pg`-compatible Node client through
+  `NodePostgresControlPlaneClient` or the deployment/test `psql` bridge through
+  `PsqlPostgresControlPlaneClient`.
 
 Domain content and runtime host:
 
@@ -169,6 +172,12 @@ runstead team control-plane migration-sql --schema runstead
 The SQL includes schema creation, versioned migration tracking, runtime event,
 projection, idempotency, lock, artifact tables, query indexes, and a checksum
 record for the applied migration.
+
+Node-based runners should prefer `NodePostgresControlPlaneClient` with a
+`pg.Client` or `pg.Pool`-compatible object so parameterized SQL stays in the
+driver path. `PsqlPostgresControlPlaneClient` remains available for smoke tests,
+deployment diagnostics, and environments where only the `psql` binary is
+installed.
 
 ## Extension Loading Pipeline
 

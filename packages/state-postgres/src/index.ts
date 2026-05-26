@@ -23,6 +23,12 @@ import type {
 
 export { PsqlPostgresControlPlaneClient } from "./psql-client.js";
 export type { PsqlPostgresControlPlaneClientOptions } from "./psql-client.js";
+export { NodePostgresControlPlaneClient } from "./node-postgres-client.js";
+export type {
+  NodePostgresControlPlaneClientOptions,
+  NodePostgresDriverClient,
+  NodePostgresDriverQueryResult
+} from "./node-postgres-client.js";
 
 export const POSTGRES_CONTROL_PLANE_SCHEMA_VERSION = 2;
 
