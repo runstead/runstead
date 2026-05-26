@@ -2,7 +2,6 @@ import { join, resolve } from "node:path";
 
 import {
   createRunsteadId,
-  type Evidence,
   type JsonObject,
   type RunsteadEvent,
   type Task
@@ -16,7 +15,6 @@ import {
 import {
   fetchGitHubWorkflowRunLog,
   getGitHubWorkflowRunStatus,
-  type GitHubCliRunner,
   type GitHubWorkflowRunLog,
   type GitHubWorkflowRunStatus
 } from "./github-actions.js";
@@ -38,54 +36,24 @@ import { withRunsteadManagerLock } from "./manager-lock.js";
 import { loadPolicyProfileFromFile } from "./policy-loader.js";
 import { requireRunsteadStateDbSync } from "./runstead-root.js";
 import { finishWorkerRun, startWorkerRun } from "./runtime-audit.js";
-import type { CommandVerifierInput } from "./verifier-evidence.js";
+import type {
+  CreateCiRepairTaskFromWorkflowRunResult,
+  CreateCiRepairTaskOptions,
+  CreateCiRepairTaskResult
+} from "./ci-repair-types.js";
 import {
   assertRepairableWorkflowRun,
   NonRepairableWorkflowRunError
 } from "./ci-repair-workflow-run.js";
 
-export interface CreateCiRepairTaskOptions {
-  cwd?: string;
-  runId: string;
-  authToken?: string;
-  runner?: GitHubCliRunner;
-  verifierCommands?: CommandVerifierInput[];
-  now?: Date;
-}
-
-export interface CreateCiRepairTaskResult {
-  status: "created";
-  cwd: string;
-  stateDb: string;
-  task: Task;
-  event: RunsteadEvent;
-  evidence: Evidence;
-  evidencePath: string;
-  workflowRun: GitHubWorkflowRunStatus;
-  log: GitHubWorkflowRunLog;
-  created: boolean;
-}
-
-export interface IgnoredCiRepairTaskResult {
-  status: "ignored";
-  reason: "workflow_not_repairable";
-  taskStatus: "cancelled";
-  cwd: string;
-  stateDb: string;
-  task: Task;
-  event: RunsteadEvent;
-  workflowRun: GitHubWorkflowRunStatus;
-  log: GitHubWorkflowRunLog;
-  created: boolean;
-  error: string;
-}
-
-export type CreateCiRepairTaskFromWorkflowRunResult =
-  | CreateCiRepairTaskResult
-  | IgnoredCiRepairTaskResult;
-
 export { formatCiRepairTaskReport } from "./ci-repair-report.js";
 export { repairableWorkflowRunIdFromWebhook } from "./ci-repair-workflow-run.js";
+export type {
+  CreateCiRepairTaskFromWorkflowRunResult,
+  CreateCiRepairTaskOptions,
+  CreateCiRepairTaskResult,
+  IgnoredCiRepairTaskResult
+} from "./ci-repair-types.js";
 
 export async function createCiRepairTaskFromWorkflowRun(
   options: CreateCiRepairTaskOptions
