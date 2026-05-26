@@ -14,6 +14,17 @@ import type {
   PushGitBranchResult,
   RunsteadBranchNameOptions
 } from "./git-branch-types.js";
+import {
+  assertGitCommand,
+  commandExitCode,
+  commandOutput,
+  isCommitExcludedPath,
+  normalizeBranchName,
+  normalizeBranchSegment,
+  parsePathLines,
+  redactGitOutput,
+  uniquePaths
+} from "./git-branch-utils.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -30,6 +41,7 @@ export type {
   PushGitBranchResult,
   RunsteadBranchNameOptions
 } from "./git-branch-types.js";
+export { redactGitOutput } from "./git-branch-utils.js";
 
 export const DEFAULT_GIT_CLI_TIMEOUT_MS = 60_000;
 
@@ -187,25 +199,6 @@ export async function commitGitChanges(
   };
 }
 
-function normalizeBranchName(branchName: string): string {
-  return branchName
-    .split("/")
-    .map((segment) => normalizeBranchSegment(segment))
-    .filter((segment) => segment.length > 0)
-    .join("/");
-}
-
-function normalizeBranchSegment(value: string): string {
-  const normalized = value
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9._-]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .replace(/\.+$/g, "");
-
-  return normalized.length === 0 ? "unnamed" : normalized;
-}
-
 async function runGit(
   args: string[],
   options: { cwd: string; timeoutMs?: number }
@@ -229,70 +222,4 @@ async function runGit(
       exitCode: commandExitCode(error)
     };
   }
-}
-
-function commandExitCode(error: unknown): number {
-  if (
-    typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    typeof error.code === "number"
-  ) {
-    return error.code;
-  }
-
-  return 1;
-}
-
-function assertGitCommand(result: GitCommandResult, description: string): void {
-  if (result.exitCode !== 0) {
-    throw new Error(
-      `${description} failed with exit ${result.exitCode}: ${redactGitOutput(result.stderr)}`
-    );
-  }
-}
-
-export function redactGitOutput(value: string): string {
-  return value
-    .replace(/(https?:\/\/)([^@\s/]+)@/g, "$1[REDACTED_GIT_CREDENTIAL]@")
-    .replace(/github_pat_[A-Za-z0-9_]+/g, "[REDACTED_GITHUB_TOKEN]")
-    .replace(/gh[pousr]_[A-Za-z0-9_]+/g, "[REDACTED_GITHUB_TOKEN]");
-}
-
-function commandOutput(error: unknown, key: "stdout" | "stderr"): string {
-  if (typeof error === "object" && error !== null) {
-    const output = (error as Record<string, unknown>)[key];
-
-    if (typeof output === "string") {
-      return output;
-    }
-  }
-
-  return "";
-}
-
-function parsePathLines(stdout: string): string[] {
-  return stdout
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0);
-}
-
-function uniquePaths(paths: string[]): string[] {
-  return [...new Set(paths)];
-}
-
-function isCommitExcludedPath(path: string): boolean {
-  const normalized = path.replaceAll("\\", "/").replace(/^\.\/+/, "");
-
-  return (
-    normalized === ".runstead" ||
-    normalized.startsWith(".runstead/") ||
-    normalized === ".team" ||
-    normalized.startsWith(".team/") ||
-    normalized === ".git" ||
-    normalized.startsWith(".git/") ||
-    normalized === "node_modules" ||
-    normalized.startsWith("node_modules/")
-  );
 }
