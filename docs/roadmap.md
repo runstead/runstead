@@ -211,6 +211,8 @@ The current implementation wave closed the highest-confidence product gaps:
   browser runner into `startup-ui-cdp-connection`.
 - Chrome DevTools Protocol UI flow action script generation moved out of the
   startup UI browser runner into `startup-ui-cdp-flow-action`.
+- Playwright UI overlap geometry checks moved out of the startup UI browser
+  runner into `startup-ui-playwright-overlap`.
 - Local agent task input parsing moved out of the orchestrator into
   `local-agent-task-input`.
 - Local agent task reporting, report formatting, and audit-summary loading
