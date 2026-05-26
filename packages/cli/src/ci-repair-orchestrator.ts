@@ -3,12 +3,6 @@ import { join, resolve } from "node:path";
 import { openRunsteadDatabase } from "@runstead/state-sqlite";
 
 import {
-  createCiRepairTaskFromWorkflowRunUnlocked,
-  isCreatedCiRepairTaskResult,
-  type CreateCiRepairTaskResult
-} from "./ci-repair.js";
-import { buildRunsteadBranchName } from "./git-branch.js";
-import {
   runGovernedToolAction,
   ToolActionApprovalRequiredError,
   ToolActionDeniedError
@@ -21,7 +15,6 @@ import { showGoal } from "./goals.js";
 import { loadPolicyProfileFromFile } from "./policy-loader.js";
 import { requireRunsteadRootSync } from "./runstead-root.js";
 import { finishWorkerRun, startWorkerRun } from "./runtime-audit.js";
-import { claimTask } from "./tasks.js";
 import { withRunsteadManagerLock } from "./manager-lock.js";
 import type {
   CiRepairWorkerResult,
@@ -36,13 +29,12 @@ import {
   workerOutput
 } from "./ci-repair-orchestrator-worker-output.js";
 import {
-  buildInitialCiRepairStageContext,
   buildPullRequestResumeContext,
-  ciRepairStageContext,
   incrementCiRepairCounter,
   stageAtLeast,
   type CiRepairOrchestratorResumeContext
 } from "./ci-repair-orchestrator-context.js";
+import { prepareCiRepairOrchestratorIntake } from "./ci-repair-orchestrator-intake.js";
 import {
   isStagePersistenceInterruption,
   markTaskTerminal
@@ -118,65 +110,23 @@ export async function runCiRepairOrchestratorUnlocked(
     });
   }
 
-  if (options.verifierCommands.length === 0) {
-    throw new Error("At least one verifier command is required for CI repair");
-  }
-
   const stateDb = join(root, "state.db");
   const policy = await loadPolicyProfileFromFile(
     join(root, "policies", "repo-maintenance.yaml")
   );
-  const queuedCiRepair = await createCiRepairTaskFromWorkflowRunUnlocked({
-    cwd,
-    runId: options.runId,
-    verifierCommands: options.verifierCommands,
-    ...(options.authToken === undefined ? {} : { authToken: options.authToken }),
-    ...(options.githubRunner === undefined ? {} : { runner: options.githubRunner }),
-    ...(options.now === undefined ? {} : { now: options.now })
-  });
+  const intake = await prepareCiRepairOrchestratorIntake({ cwd, options });
 
-  if (!isCreatedCiRepairTaskResult(queuedCiRepair)) {
-    return {
-      status: "ignored",
-      ciRepair: queuedCiRepair
-    };
+  if (intake.status === "ignored") {
+    return intake.result;
   }
 
-  if (queuedCiRepair.task.status !== "queued") {
-    throw new Error(
-      `CI repair task ${queuedCiRepair.task.id} is ${queuedCiRepair.task.status}, expected queued`
-    );
-  }
-
-  let ciRepair: CreateCiRepairTaskResult = {
-    ...queuedCiRepair,
-    task: claimTask({
-      cwd,
-      id: queuedCiRepair.task.id,
-      ...(options.now === undefined ? {} : { now: options.now })
-    }).task
-  };
+  let ciRepair = intake.ciRepair;
   const goal = showGoal({ cwd, id: ciRepair.task.goalId }).goal;
-  const base = options.base ?? ciRepair.workflowRun.headBranch ?? "main";
-  const branchName = buildRunsteadBranchName({
-    taskId: ciRepair.task.id,
-    slug: `ci-${ciRepair.workflowRun.runId}`
-  });
+  const { base, branchName } = intake;
   const database = openRunsteadDatabase(stateDb);
   let orchestratorTask = ciRepair.task;
-  const restoredStageContext = ciRepairStageContext(queuedCiRepair.task);
-  let stageContext =
-    restoredStageContext ??
-    buildInitialCiRepairStageContext({
-      ciRepair,
-      branchName,
-      base,
-      draft: options.draft === true,
-      worker: options.worker,
-      ...(options.provider === undefined ? {} : { provider: options.provider }),
-      ...(options.model === undefined ? {} : { model: options.model }),
-      ...(options.baseUrl === undefined ? {} : { baseUrl: options.baseUrl })
-    });
+  const restoredStageContext = intake.restoredStageContext;
+  let stageContext = intake.stageContext;
 
   try {
     if (restoredStageContext !== undefined) {
