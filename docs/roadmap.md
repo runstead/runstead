@@ -593,6 +593,8 @@ The current implementation wave closed the highest-confidence product gaps:
   into `codex-direct/tool-executor`.
 - Codex Direct model heartbeat, retry, timeout, and transient-error loop moved
   out of `codex-direct/model-request` into `codex-direct/model-request-heartbeat`.
+- Startup agent context evidence summary and context-file formatting moved out
+  of `startup-automation-format` into `startup-context-format`.
 - CI runs `@runstead/state-postgres` against a real Postgres service via
   `RUNSTEAD_PG_TEST_URL`; local runs skip this integration path unless the env
   var is set.
