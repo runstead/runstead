@@ -346,6 +346,8 @@ The current implementation wave closed the highest-confidence product gaps:
   `startup-remediation-guidance`.
 - Startup MVP dependency approval policy parsing, instructions, and formatting
   moved out of `startup-founder-flow` into `startup-dependency-approval`.
+- Startup worker governance profile selection and operator notice text moved
+  out of `startup-founder-flow` into `startup-worker-governance`.
 - Startup gate severity rules and blocker remediation text moved out of
   `startup-evidence` into `startup-gate-rules`.
 - Startup gate artifact parsing and structured-content helper predicates moved
