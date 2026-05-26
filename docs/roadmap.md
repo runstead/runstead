@@ -597,6 +597,8 @@ The current implementation wave closed the highest-confidence product gaps:
   of `startup-automation-format` into `startup-context-format`.
 - Startup ready local MVP and launch baseline evidence inputs moved out of
   `startup-ready/local-evidence-inputs` into focused local evidence modules.
+- Startup evidence record option/result contracts and convenience writers moved
+  out of `startup-evidence-record` into dedicated evidence record modules.
 - CI runs `@runstead/state-postgres` against a real Postgres service via
   `RUNSTEAD_PG_TEST_URL`; local runs skip this integration path unless the env
   var is set.
