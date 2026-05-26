@@ -2,10 +2,7 @@ import { resolve } from "node:path";
 
 import type { Task } from "@runstead/core";
 import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sqlite";
-import {
-  commandVerifierResultsPassed,
-  type CommandVerifierResult
-} from "@runstead/verifiers";
+import { commandVerifierResultsPassed } from "@runstead/verifiers";
 
 import {
   runGovernedToolAction,
@@ -31,23 +28,17 @@ import {
   storeCommandVerifierPolicyEvidence
 } from "./verifier-evidence.js";
 import { policyCommandResult, verifierOutput } from "./verifier-runner-output.js";
+import type {
+  RunTaskVerifierCommandResult,
+  RunTaskVerifiersOptions,
+  RunTaskVerifiersResult
+} from "./verifier-runner-types.js";
 
-export interface RunTaskVerifiersOptions {
-  cwd?: string;
-  taskId: string;
-  timeoutMs?: number;
-  killGraceMs?: number;
-  claim?: boolean;
-  mode?: "finalize_task" | "evidence_only";
-  now?: Date;
-}
-
-export type RunTaskVerifierCommandResult = CommandVerifierResult;
-
-export interface RunTaskVerifiersResult {
-  task: Task;
-  commandResults: RunTaskVerifierCommandResult[];
-}
+export type {
+  RunTaskVerifierCommandResult,
+  RunTaskVerifiersOptions,
+  RunTaskVerifiersResult
+} from "./verifier-runner-types.js";
 
 export async function runTaskVerifiers(
   options: RunTaskVerifiersOptions
