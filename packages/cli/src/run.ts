@@ -1,25 +1,13 @@
 import { resolve } from "node:path";
 
-import {
-  ciRepairPullRequestResumeRunId,
-  isCiRepairPullRequestResumeTask,
-  runCiRepairOrchestratorUnlocked
-} from "./ci-repair-orchestrator.js";
+import { isCiRepairPullRequestResumeTask } from "./ci-repair-orchestrator.js";
 import { isLocalAgentTask, runLocalAgentTask } from "./local-agent.js";
 import { withRunsteadManagerLock } from "./manager-lock.js";
 import {
-  defaultCiRepairWorker,
-  resolveOptionalRunModelProvider
-} from "./run-ci-repair-routing.js";
-import {
-  baseUrlFromCiRepairTask,
-  ciRepairTaskRunId,
-  isRunnableCiRepairTask,
-  modelFromCiRepairTask,
-  providerFromCiRepairTask,
-  verifierCommandsFromCiRepairTask,
-  workerFromCiRepairTask
-} from "./run-ci-repair-task.js";
+  runCiRepairPullRequestResumeTask,
+  runRunnableCiRepairTask
+} from "./run-ci-repair-execution.js";
+import { isRunnableCiRepairTask } from "./run-ci-repair-task.js";
 import {
   pickNextQueuedTask,
   RUN_ONCE_SUPPORTED_TASK_TYPES
@@ -82,131 +70,11 @@ export async function runOnceUnlocked(
   }
 
   if (task !== undefined && isCiRepairPullRequestResumeTask(task)) {
-    const runId = ciRepairPullRequestResumeRunId(task);
-
-    if (runId === undefined) {
-      throw new Error(`Task ${task.id} is not ready to resume CI repair`);
-    }
-
-    const modelProvider = await resolveOptionalRunModelProvider(cwd, {
-      ...(options.provider === undefined ? {} : { provider: options.provider }),
-      ...(options.model === undefined ? {} : { model: options.model }),
-      ...(options.baseUrl === undefined ? {} : { baseUrl: options.baseUrl })
-    });
-    const result = await runCiRepairOrchestratorUnlocked({
-      cwd,
-      runId,
-      worker:
-        options.worker ??
-        (await defaultCiRepairWorker({
-          options,
-          modelProvider
-        })),
-      ...(modelProvider.provider === undefined
-        ? {}
-        : { provider: modelProvider.provider }),
-      ...(modelProvider.model === undefined ? {} : { model: modelProvider.model }),
-      ...(modelProvider.baseUrl === undefined
-        ? {}
-        : { baseUrl: modelProvider.baseUrl }),
-      verifierCommands: [],
-      ...(options.base === undefined ? {} : { base: options.base }),
-      ...(options.draft === undefined ? {} : { draft: options.draft }),
-      ...(options.allowedPaths === undefined
-        ? {}
-        : { allowedPaths: options.allowedPaths }),
-      ...(options.deniedPaths === undefined
-        ? {}
-        : { deniedPaths: options.deniedPaths }),
-      ...(options.authToken === undefined ? {} : { authToken: options.authToken }),
-      ...(options.githubRunner === undefined
-        ? {}
-        : { githubRunner: options.githubRunner }),
-      ...(options.gitRunner === undefined ? {} : { gitRunner: options.gitRunner }),
-      ...(options.workerRunner === undefined
-        ? {}
-        : { workerRunner: options.workerRunner }),
-      ...(options.codexDirectTransport === undefined
-        ? {}
-        : { codexDirectTransport: options.codexDirectTransport }),
-      ...(options.verifierRunner === undefined
-        ? {}
-        : { verifierRunner: options.verifierRunner }),
-      ...(options.now === undefined ? {} : { now: options.now })
-    });
-
-    return {
-      cwd,
-      ranTask: true,
-      task: result.ciRepair.task,
-      ciRepairResult: result
-    };
+    return runCiRepairPullRequestResumeTask({ cwd, task, options });
   }
 
   if (task !== undefined && isRunnableCiRepairTask(task)) {
-    const runId = ciRepairTaskRunId(task);
-
-    if (runId === undefined) {
-      throw new Error(`Task ${task.id} is missing a CI workflow run id`);
-    }
-
-    const requestedProvider = options.provider ?? providerFromCiRepairTask(task);
-    const requestedModel = options.model ?? modelFromCiRepairTask(task);
-    const requestedBaseUrl = options.baseUrl ?? baseUrlFromCiRepairTask(task);
-    const modelProvider = await resolveOptionalRunModelProvider(cwd, {
-      ...(requestedProvider === undefined ? {} : { provider: requestedProvider }),
-      ...(requestedModel === undefined ? {} : { model: requestedModel }),
-      ...(requestedBaseUrl === undefined ? {} : { baseUrl: requestedBaseUrl })
-    });
-    const worker =
-      options.worker ??
-      workerFromCiRepairTask(task) ??
-      (await defaultCiRepairWorker({ options, modelProvider }));
-    const result = await (
-      options.ciRepairOrchestrator ?? runCiRepairOrchestratorUnlocked
-    )({
-      cwd,
-      runId,
-      worker,
-      ...(modelProvider.provider === undefined
-        ? {}
-        : { provider: modelProvider.provider }),
-      ...(modelProvider.model === undefined ? {} : { model: modelProvider.model }),
-      ...(modelProvider.baseUrl === undefined
-        ? {}
-        : { baseUrl: modelProvider.baseUrl }),
-      verifierCommands: verifierCommandsFromCiRepairTask(task),
-      ...(options.base === undefined ? {} : { base: options.base }),
-      ...(options.draft === undefined ? {} : { draft: options.draft }),
-      ...(options.allowedPaths === undefined
-        ? {}
-        : { allowedPaths: options.allowedPaths }),
-      ...(options.deniedPaths === undefined
-        ? {}
-        : { deniedPaths: options.deniedPaths }),
-      ...(options.authToken === undefined ? {} : { authToken: options.authToken }),
-      ...(options.githubRunner === undefined
-        ? {}
-        : { githubRunner: options.githubRunner }),
-      ...(options.gitRunner === undefined ? {} : { gitRunner: options.gitRunner }),
-      ...(options.workerRunner === undefined
-        ? {}
-        : { workerRunner: options.workerRunner }),
-      ...(options.codexDirectTransport === undefined
-        ? {}
-        : { codexDirectTransport: options.codexDirectTransport }),
-      ...(options.verifierRunner === undefined
-        ? {}
-        : { verifierRunner: options.verifierRunner }),
-      ...(options.now === undefined ? {} : { now: options.now })
-    });
-
-    return {
-      cwd,
-      ranTask: true,
-      task: result.ciRepair.task,
-      ciRepairResult: result
-    };
+    return runRunnableCiRepairTask({ cwd, task, options });
   }
 
   if (task?.type === "manual_review") {
