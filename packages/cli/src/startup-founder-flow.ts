@@ -17,10 +17,10 @@ import {
   type LaunchReadinessTarget
 } from "./launch-readiness-report.js";
 import {
-  formatStartupDependencyApprovalBoundary,
   resolveStartupDependencyApprovalBoundary,
   type StartupDependencyApprovalBoundary
 } from "./startup-dependency-approval.js";
+import { listItems } from "./startup-founder-format.js";
 import {
   generateMeasurementFramework,
   generateRepoReadinessAudit,
@@ -37,7 +37,6 @@ import {
 } from "./startup-automation.js";
 import { checkStartupGate, type StartupGateCheckResult } from "./startup-evidence.js";
 import {
-  formatStartupRepoOnboarding,
   prepareStartupRepoOnboarding,
   type StartupRepoOnboardingResult
 } from "./startup-repo-onboarding.js";
@@ -56,6 +55,12 @@ export {
   type StartupDependencyApprovalBoundary,
   type StartupDependencyApprovalPolicy
 } from "./startup-dependency-approval.js";
+export {
+  formatStartupBuildMvp,
+  formatStartupLaunchCheck,
+  formatStartupOnboard,
+  formatStartupScaleCheck
+} from "./startup-founder-format.js";
 export {
   formatStartupWorkerGovernanceNotice,
   resolveStartupWorkerGovernance,
@@ -472,44 +477,6 @@ export async function startupScaleCheck(
   };
 }
 
-export function formatStartupOnboard(result: StartupOnboardResult): string {
-  return [
-    "Startup onboard",
-    `Root: ${result.root}`,
-    `Goal: ${result.init.goal.id} ${result.init.goal.title}`,
-    "",
-    formatStartupRepoOnboarding(result.repo),
-    "",
-    `Context: ${formatGeneratedStep(result.context)}`,
-    `Measurement: ${formatGeneratedStep(result.measurement)}`,
-    "",
-    "Onboarding files:",
-    listItems(result.onboardingFiles),
-    "",
-    "Next commands:",
-    listItems(result.nextCommands)
-  ].join("\n");
-}
-
-export function formatStartupBuildMvp(result: StartupBuildMvpResult): string {
-  return [
-    "Startup build MVP",
-    `Worker: ${result.worker}`,
-    `Task: ${result.localAgentTaskId}`,
-    `Status: ${result.status}`,
-    `Execution: implementation=${result.execution.implementation} verification=${result.execution.verification} agentCompletion=${result.execution.agentCompletion}`,
-    `Summary: ${result.summary}`,
-    `Max turns: ${result.maxTurns}`,
-    `Dependency policy: ${formatStartupDependencyApprovalBoundary(result.dependencyApproval)}`,
-    `Attempts: ${result.attempts.length}`,
-    `Verifier run: ${formatStartupMvpVerifierRun(result.verifierRun)}`,
-    `MVP gate: ${result.gate.passed ? "passed" : "blocked"}`,
-    "",
-    "Next commands:",
-    listItems(result.nextCommands)
-  ].join("\n");
-}
-
 async function startupBuildMvpPromptWithDependencyBoundary(input: {
   cwd: string;
   prompt?: string;
@@ -630,43 +597,6 @@ function normalizeStartupBuildMvpMaxTurns(value: number | undefined): number {
   return value;
 }
 
-function formatStartupMvpVerifierRun(run: StartupMvpVerifierRun): string {
-  if (run.status === "skipped") {
-    return `skipped (${run.reason})`;
-  }
-
-  const passed = run.commandResults.filter(
-    (result) => result.exitCode === 0 && result.timedOut === false
-  ).length;
-
-  return `${run.status} (${passed}/${run.commandResults.length} commands passed, task=${run.taskId})`;
-}
-
-export function formatStartupLaunchCheck(result: StartupLaunchCheckResult): string {
-  return [
-    "Startup launch check",
-    `Status: ${result.status}`,
-    `Report: ${result.reportPath}`,
-    `Gate: ${result.gate.passed ? "passed" : "blocked"}`,
-    `Blockers: ${result.blockers.length}`,
-    "",
-    "Next commands:",
-    listItems(result.nextCommands)
-  ].join("\n");
-}
-
-export function formatStartupScaleCheck(result: StartupScaleCheckResult): string {
-  return [
-    "Startup scale check",
-    `Ops report: ${result.opsReport.files[0] ?? "none"}`,
-    `Gate: ${result.gate.passed ? "passed" : "blocked"}`,
-    `Blockers: ${result.gate.blockers.length}`,
-    "",
-    "Next commands:",
-    listItems(result.nextCommands)
-  ].join("\n");
-}
-
 async function generatedStep<T>(
   action: () => Promise<T>
 ): Promise<StartupGeneratedStep<T>> {
@@ -749,14 +679,6 @@ function verifierContractLines(
     `- typecheck: ${inspection.commands.typecheck.command ?? "missing"}`,
     `- build: ${inspection.commands.build.command ?? "missing"}`
   ];
-}
-
-function formatGeneratedStep<T>(step: StartupGeneratedStep<T>): string {
-  return step.status === "generated" ? "generated" : `skipped (${step.reason})`;
-}
-
-function listItems(items: string[]): string {
-  return items.length === 0 ? "- none" : items.map((item) => `- ${item}`).join("\n");
 }
 
 async function writeStartupOnboardingFiles(input: {
