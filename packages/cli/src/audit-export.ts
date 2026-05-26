@@ -4,45 +4,21 @@ import { dirname, resolve } from "node:path";
 import { openRunsteadDatabase } from "@runstead/state-sqlite";
 
 import { requireRunsteadStateDbSync } from "./runstead-root.js";
+import type {
+  AuditLogEntry,
+  ExportAuditLogOptions,
+  ExportAuditLogResult,
+  ReplayAuditLifecycleOptions,
+  ReplayAuditLifecycleResult
+} from "./audit-export-types.js";
 
-export interface ExportAuditLogOptions {
-  cwd?: string;
-  outputPath?: string;
-  types?: string[];
-  aggregateType?: string;
-  aggregateId?: string;
-}
-
-export interface AuditLogEntry {
-  id: number;
-  eventId: string;
-  type: string;
-  aggregateType: string;
-  aggregateId: string;
-  payload: unknown;
-  createdAt: string;
-}
-
-export interface ExportAuditLogResult {
-  root: string;
-  stateDb: string;
-  entries: AuditLogEntry[];
-  contents: string;
-  outputPath?: string;
-}
-
-export interface ReplayAuditLifecycleOptions {
-  cwd?: string;
-  taskId: string;
-}
-
-export interface ReplayAuditLifecycleResult {
-  root: string;
-  stateDb: string;
-  taskId: string;
-  relatedIds: string[];
-  entries: AuditLogEntry[];
-}
+export type {
+  AuditLogEntry,
+  ExportAuditLogOptions,
+  ExportAuditLogResult,
+  ReplayAuditLifecycleOptions,
+  ReplayAuditLifecycleResult
+} from "./audit-export-types.js";
 
 interface AuditEventRow {
   id: number;
