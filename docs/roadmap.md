@@ -369,6 +369,9 @@ The current implementation wave closed the highest-confidence product gaps:
 - Codex Direct workspace entry types, directory summary, dirent/stat mapping,
   sorted directory reads, and binary-file probing moved out of
   `codex-direct-native-tools` into `codex-direct-workspace-entries`.
+- Codex Direct workspace patch application, touched-file inference, and
+  structured replacement helpers moved out of `codex-direct-native-tools` into
+  `codex-direct-workspace-patch`.
 - Local agent result semantics, worker output serialization, and governance
   report helpers moved out of `local-agent` into `local-agent-result`.
 - Local agent public task, run, resume, undo, and result contracts moved out of
