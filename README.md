@@ -365,6 +365,12 @@ RUNSTEAD_AUDIT_SINK_URI=s3://runstead/audit \
 runstead team control-plane check --cwd /path/to/repo
 ```
 
+Print the Postgres schema migration SQL for deployment tooling:
+
+```bash
+runstead team control-plane migration-sql --schema runstead
+```
+
 The command reports backend selection, Postgres connection string presence,
 shared artifact URI, runner identity, database lease fencing, hash-chain audit,
 OIDC/RBAC, and central secret-store boundaries. `runstead doctor` includes the

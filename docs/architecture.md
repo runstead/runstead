@@ -14,9 +14,10 @@ Contract packages (stable, side-effect free, no Node-specific hosting):
 - `@runstead/runtime`: task execution semantics, worker lifecycle result
   mapping, readiness plan/verdict/release-decision engine,
   storage/lock/artifact backend contracts, team-control-plane contracts,
-  readiness run snapshot helpers, provider-neutral tool-call adapter
-  primitives (Codex Responses, OpenAI-compatible chat completions), and
-  startup UI smoke failure classification
+  readiness run snapshot helpers, source-provider response normalization and
+  secret redaction, provider-neutral tool-call adapter primitives (Codex
+  Responses, OpenAI-compatible chat completions), and startup UI smoke failure
+  classification
 - `@runstead/governance`: policy DSL parser, deterministic evaluator with
   deny > approval > allow precedence, action risk scorer, reusable policy
   factories (protected paths, dangerous shell, dependency change, verifier
@@ -47,7 +48,7 @@ Storage backends:
 - `@runstead/state-postgres`: Postgres `RuntimeControlPlaneBackend` adapter
   with `expectedRevision` optimistic concurrency, idempotency keys, advisory
   lock fencing tokens, JSONB projections, hash-addressed artifacts, and
-  schema migrations with checksum verification
+  schema migrations with checksum verification plus printable migration SQL
 
 Domain content and runtime host:
 
@@ -74,6 +75,9 @@ along with:
 - readiness contracts: `compileReadinessPlan`,
   `evaluateCompiledReadinessPlan`, `compileReadinessReleaseDecision`,
   `ReadinessEvidenceRequirement`
+- source provider contracts: `parseRuntimeSourceConnectorResponseJson`,
+  `collectRuntimeSourceProviderPayload`, and
+  `runtimeSourceProviderAuthHeaders`
 - tool-call adapters: `codexResponsesToolCallAdapter`,
   `openAiChatCompletionsToolCallAdapter`
 - UI smoke semantics: `classifyRuntimeStartupUiValidationFailure`
@@ -150,6 +154,16 @@ checks on both backends:
 wire: runner identity and heartbeat, IdP/RBAC, central secret store, and
 shared artifact storage (S3 or equivalent). Local SQLite must not be
 presented as a multi-tenant security boundary.
+
+Operators can print the deployable Postgres schema with:
+
+```bash
+runstead team control-plane migration-sql --schema runstead
+```
+
+The SQL includes schema creation, versioned migration tracking, runtime event,
+projection, idempotency, lock, artifact tables, query indexes, and a checksum
+record for the applied migration.
 
 ## Extension Loading Pipeline
 
