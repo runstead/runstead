@@ -138,6 +138,8 @@ The current implementation wave closed the highest-confidence product gaps:
   `commands/codex`.
 - Codex auth store path, cache path, auth-file IO, and auth lock helpers moved
   out of `codex-auth` into `codex-auth-store`.
+- Doctor state database schema and runtime backend checks moved out of `doctor`
+  into `doctor-runtime-checks`.
 - Shared secret-print acknowledgement moved out of the CLI entrypoint into
   `cli-secrets`.
 - `github` command registration moved out of the CLI entrypoint into
