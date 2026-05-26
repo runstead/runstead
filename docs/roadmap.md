@@ -393,6 +393,8 @@ The current implementation wave closed the highest-confidence product gaps:
   `startup-gate-artifact-store`.
 - Startup gate blocker, warning, waiver, finding, and diff evaluation moved out
   of `startup-evidence` into `startup-gate-evaluation`.
+- Startup gate UI validation target grouping and failure blocker evaluation moved
+  out of `startup-gate-evaluation` into `startup-gate-ui`.
 - CI repair stage/context persistence helpers moved out of
   `ci-repair-orchestrator` into `ci-repair-orchestrator-stage-persistence`.
 - `packages/cli/src/startup-command.ts` no longer owns startup scale
