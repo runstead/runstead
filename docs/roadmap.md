@@ -510,6 +510,9 @@ The current implementation wave closed the highest-confidence product gaps:
   staging/production tier gates.
 - `startup ready --plan` and final readiness evaluation now consume
   staging/production source connector setup requirements.
+- Extension collector task projection transitions and governed action
+  construction moved out of `startup-extension-execution` into
+  `startup-extension-collector-task`.
 - Dashboard operator controls can run actions and approve/deny pending
   approvals through the protected local API.
 - Dashboard recovery timelines now link resolved blockers to the ready run
