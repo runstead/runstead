@@ -9,7 +9,6 @@ import {
 import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sqlite";
 import {
   commandVerifierResultsPassed,
-  type CommandVerifierInput,
   type CommandVerifierResult
 } from "@runstead/verifiers";
 
@@ -30,9 +29,9 @@ import {
 } from "./verifier-runner-task-input.js";
 import {
   storeCommandVerifierEvidence,
-  storeCommandVerifierPolicyEvidence,
-  type StoreCommandVerifierEvidenceResult
+  storeCommandVerifierPolicyEvidence
 } from "./verifier-evidence.js";
+import { policyCommandResult, verifierOutput } from "./verifier-runner-output.js";
 
 export interface RunTaskVerifiersOptions {
   cwd?: string;
@@ -347,37 +346,6 @@ export async function runTaskVerifiersUnlocked(
   } finally {
     database.close();
   }
-}
-
-function verifierOutput(
-  commandResults: RunTaskVerifierCommandResult[],
-  passed: boolean
-): JsonObject {
-  return {
-    summary: passed
-      ? "All verifier commands passed"
-      : commandResults.length === 0
-        ? "No verifier commands configured"
-        : "One or more verifier commands failed",
-    commands: commandResults
-  };
-}
-
-function policyCommandResult(
-  command: CommandVerifierInput,
-  evidenceResult: StoreCommandVerifierEvidenceResult,
-  policyDecisionId: string,
-  approvalId?: string
-): RunTaskVerifierCommandResult {
-  return {
-    verifier: command.name,
-    exitCode: null,
-    timedOut: false,
-    forceKilled: false,
-    evidenceId: evidenceResult.evidence.id,
-    policyDecisionId,
-    ...(approvalId === undefined ? {} : { approvalId })
-  };
 }
 
 function finalizeTask(input: {
