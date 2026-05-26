@@ -1,19 +1,7 @@
 import { resolve } from "node:path";
 
-import type { RuntimeExecutionSemantics } from "@runstead/runtime";
-
-import {
-  createLocalAgentTask,
-  runLocalAgentTask,
-  type LocalAgentWorkerKind,
-  type RunLocalAgentTaskOptions,
-  type RunLocalAgentTaskResult
-} from "./local-agent.js";
-import type { InitPolicyProfile } from "./init.js";
-import {
-  generateLaunchReadinessReport,
-  type LaunchReadinessTarget
-} from "./launch-readiness-report.js";
+import { createLocalAgentTask, runLocalAgentTask } from "./local-agent.js";
+import { generateLaunchReadinessReport } from "./launch-readiness-report.js";
 import {
   normalizeStartupBuildMvpMaxAttempts,
   normalizeStartupBuildMvpMaxTurns,
@@ -23,38 +11,29 @@ import {
   verifierCommands,
   verifierRunFromLocalAgentRun
 } from "./startup-build-mvp-helpers.js";
-import {
-  resolveStartupDependencyApprovalBoundary,
-  type StartupDependencyApprovalBoundary
-} from "./startup-dependency-approval.js";
+import { resolveStartupDependencyApprovalBoundary } from "./startup-dependency-approval.js";
 import {
   generateMeasurementFramework,
   generateRepoReadinessAudit,
   generateScaleOpsReport,
   generateSecurityBaseline,
   generateStartupContext,
-  initStartup,
-  type GenerateMeasurementFrameworkResult,
-  type GenerateRepoReadinessAuditResult,
-  type GenerateScaleOpsReportResult,
-  type GenerateSecurityBaselineResult,
-  type GenerateStartupContextResult,
-  type StartupInitResult
+  initStartup
 } from "./startup-automation.js";
-import { checkStartupGate, type StartupGateCheckResult } from "./startup-evidence.js";
-import {
-  prepareStartupRepoOnboarding,
-  type StartupRepoOnboardingResult
-} from "./startup-repo-onboarding.js";
+import { checkStartupGate } from "./startup-evidence.js";
+import { prepareStartupRepoOnboarding } from "./startup-repo-onboarding.js";
 import { writeStartupOnboardingFiles } from "./startup-onboarding-files.js";
-import {
-  resolveStartupScaffoldProfile,
-  type StartupAppType,
-  type StartupScaffoldProfile,
-  type StartupScaffoldTemplate
-} from "./startup-scaffold-profile.js";
-import type { RunTaskVerifierCommandResult } from "./verifier-runner.js";
-import type { WorkerProcessRunner } from "./wrapped-worker.js";
+import { resolveStartupScaffoldProfile } from "./startup-scaffold-profile.js";
+import type {
+  StartupBuildMvpAttempt,
+  StartupBuildMvpOptions,
+  StartupBuildMvpResult,
+  StartupFounderFlowOptions,
+  StartupGeneratedStep,
+  StartupLaunchCheckResult,
+  StartupOnboardResult,
+  StartupScaleCheckResult
+} from "./startup-founder-types.js";
 
 export {
   formatStartupDependencyApprovalBoundary,
@@ -75,115 +54,18 @@ export {
   type ResolvedStartupWorkerGovernanceProfile,
   type StartupWorkerGovernanceProfile
 } from "./startup-worker-governance.js";
-
-export interface StartupFounderFlowOptions {
-  cwd?: string;
-  profile?: InitPolicyProfile;
-  force?: boolean;
-  writeCi?: boolean;
-  architecturePrinciples?: string[];
-  technicalConstraints?: string[];
-  acceptedDebt?: string[];
-  writeTrackedContext?: boolean;
-  activationMetric?: string;
-  retentionMetric?: string;
-  day7Metric?: string;
-  day30Metric?: string;
-  falsePositiveMetric?: string;
-  target?: LaunchReadinessTarget;
-  appTemplate?: StartupScaffoldTemplate;
-  appType?: StartupAppType;
-  scaffoldProfile?: StartupScaffoldProfile;
-  now?: Date;
-}
-
-export interface StartupOnboardResult {
-  root: string;
-  repo: StartupRepoOnboardingResult;
-  init: StartupInitResult;
-  context: StartupGeneratedStep<GenerateStartupContextResult>;
-  measurement: StartupGeneratedStep<GenerateMeasurementFrameworkResult>;
-  onboardingFiles: string[];
-  nextCommands: string[];
-}
-
-export interface StartupBuildMvpOptions extends StartupFounderFlowOptions {
-  worker?: LocalAgentWorkerKind;
-  model?: string;
-  prompt?: string;
-  dependencyPolicy?: string;
-  allowedDependencies?: string[];
-  maxAttempts?: number;
-  maxTurns?: number;
-  workerRunner?: WorkerProcessRunner;
-  onWorkerProgress?: RunLocalAgentTaskOptions["onWorkerProgress"];
-  workerProgressIntervalMs?: number;
-}
-
-export interface StartupBuildMvpResult {
-  root: string;
-  worker: LocalAgentWorkerKind;
-  localAgentTaskId: string;
-  status: RunLocalAgentTaskResult["status"];
-  summary: string;
-  execution: RuntimeExecutionSemantics;
-  maxTurns: number;
-  dependencyApproval: StartupDependencyApprovalBoundary;
-  verifierRun: StartupMvpVerifierRun;
-  attempts: StartupBuildMvpAttempt[];
-  gate: StartupGateCheckResult;
-  nextCommands: string[];
-}
-
-export interface StartupBuildMvpAttempt {
-  attempt: number;
-  localAgentTaskId: string;
-  status: RunLocalAgentTaskResult["status"];
-  summary: string;
-  execution: RuntimeExecutionSemantics;
-  verifierRun: StartupMvpVerifierRun;
-}
-
-export interface StartupLaunchCheckResult {
-  root: string;
-  readiness: GenerateRepoReadinessAuditResult;
-  security: GenerateSecurityBaselineResult;
-  gate: StartupGateCheckResult;
-  reportPath: string;
-  status: "launch_ready" | "blocked";
-  blockers: string[];
-  nextCommands: string[];
-}
-
-export interface StartupScaleCheckResult {
-  root: string;
-  opsReport: GenerateScaleOpsReportResult;
-  gate: StartupGateCheckResult;
-  nextCommands: string[];
-}
-
-export interface StartupGeneratedStep<T> {
-  status: "generated" | "skipped";
-  result?: T;
-  reason?: string;
-}
-
-export type StartupMvpVerifierRun =
-  | {
-      status: StartupMvpVerifierTaskStatus;
-      taskId: string;
-      commandResults: RunTaskVerifierCommandResult[];
-    }
-  | {
-      status: "skipped";
-      reason: string;
-    };
-
-export type StartupMvpVerifierTaskStatus =
-  | "completed"
-  | "failed"
-  | "blocked"
-  | "waiting_approval";
+export type {
+  StartupBuildMvpAttempt,
+  StartupBuildMvpOptions,
+  StartupBuildMvpResult,
+  StartupFounderFlowOptions,
+  StartupGeneratedStep,
+  StartupLaunchCheckResult,
+  StartupMvpVerifierRun,
+  StartupMvpVerifierTaskStatus,
+  StartupOnboardResult,
+  StartupScaleCheckResult
+} from "./startup-founder-types.js";
 
 export async function startupOnboard(
   options: StartupFounderFlowOptions = {}
