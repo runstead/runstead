@@ -167,6 +167,8 @@ The current implementation wave closed the highest-confidence product gaps:
   task lookup moved out of `approvals` into `approval-rows`.
 - Approval request, expiration, decision event, payload, and projection
   transition builders moved out of `approvals` into `approval-transitions`.
+- Approval grant lookup, reuse classification, and expiration writes moved out
+  of `approvals` into `approval-grants`.
 - Top-level `repair-ci` command registration moved out of the CLI entrypoint
   into `commands/ci-repair`, and GitHub repair orchestration now reuses that
   command module directly.

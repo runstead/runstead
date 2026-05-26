@@ -1,4 +1,7 @@
-import type { ApprovalGrantMatchKind } from "./approvals.js";
+export type ApprovalGrantMatchKind =
+  | "action_id"
+  | "canonical_signature"
+  | "approval_grant_scope";
 
 export interface ApprovalGrantActionRow {
   action_id: string;
