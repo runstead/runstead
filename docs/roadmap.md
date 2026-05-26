@@ -507,6 +507,9 @@ The current implementation wave closed the highest-confidence product gaps:
 - Startup ready UI smoke config types, YAML parsing, legacy shape
   normalization, and serialization moved out of the UI smoke executor into
   `startup-ready-ui-smoke-config`.
+- Startup ready UI smoke repair signatures, request artifact writing, prompts,
+  warnings, and repair summary types moved out of the bounded repair loop into
+  `startup-ready/ui-smoke-repair-helpers`.
 - Verifier command governed execution and policy deny/approval evidence handling
   moved out of the verifier task runner into `verifier-runner-command`.
 - Wrapped-worker stuck progress coverage is stabilized against short timing
