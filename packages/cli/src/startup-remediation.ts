@@ -19,7 +19,6 @@ import {
 } from "./local-agent.js";
 import { requireRunsteadStateDb } from "./runstead-root.js";
 import {
-  jsonStringArray,
   prioritizedBlockers,
   remediationGuidance,
   remediationNextCommands,
@@ -32,6 +31,11 @@ import {
   remediationExecutionOutcome,
   remediationWorkerPrompt
 } from "./startup-remediation-execution.js";
+import {
+  remediationPlanGraph,
+  remediationTaskSummary,
+  withRemediationDependencies
+} from "./startup-remediation-plan-graph.js";
 import type {
   ExecuteStartupRemediationPlanOptions,
   ExecuteStartupRemediationPlanResult,
@@ -39,7 +43,6 @@ import type {
   GenerateStartupRemediationPlanResult,
   StartupRemediationBudget,
   StartupRemediationExecutionSummary,
-  StartupRemediationPlanGraph,
   StartupRemediationTaskSummary,
   SupersedeStartupRemediationTasksOptions,
   SupersedeStartupRemediationTasksResult
@@ -363,65 +366,6 @@ async function executeRemediationTask(input: {
   });
 
   return execution;
-}
-
-function remediationTaskSummary(input: {
-  task: Task;
-  blocker: string;
-  reused: boolean;
-  gate: Awaited<ReturnType<typeof checkStartupGate>>;
-}): StartupRemediationTaskSummary {
-  const finding = input.gate.findings.find((item) => item.message === input.blocker);
-  const guidance = remediationGuidance(input.blocker);
-
-  return {
-    task: input.task,
-    blocker: input.blocker,
-    reused: input.reused,
-    severity: finding?.severity ?? "major",
-    acceptanceCriteria: jsonStringArray(input.task.input.acceptanceCriteria).length
-      ? jsonStringArray(input.task.input.acceptanceCriteria)
-      : guidance.acceptanceCriteria,
-    dependsOn: []
-  };
-}
-
-function withRemediationDependencies(
-  tasks: StartupRemediationTaskSummary[]
-): StartupRemediationTaskSummary[] {
-  const sorted = [...tasks].sort(
-    (a, b) =>
-      remediationGuidance(a.blocker).order - remediationGuidance(b.blocker).order
-  );
-
-  return sorted.map((item, index) => ({
-    ...item,
-    dependsOn: sorted.slice(0, index).map((previous) => previous.task.id)
-  }));
-}
-
-function remediationPlanGraph(
-  tasks: StartupRemediationTaskSummary[]
-): StartupRemediationPlanGraph {
-  return {
-    nodes: tasks.map((item) => ({
-      taskId: item.task.id,
-      blocker: item.blocker,
-      severity: item.severity,
-      acceptanceCriteria: item.acceptanceCriteria
-    })),
-    edges: tasks.flatMap((item) =>
-      item.dependsOn.map((dependency) => ({
-        fromTaskId: dependency,
-        toTaskId: item.task.id,
-        reason: "resolve earlier launch-readiness dependency first"
-      }))
-    ),
-    budget: {
-      selectedTasks: tasks.length,
-      skippedTasks: 0
-    }
-  };
 }
 
 function activeStartupGoal(input: { cwd: string; domain: string }): Goal {
