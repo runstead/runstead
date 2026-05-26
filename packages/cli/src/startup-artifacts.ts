@@ -4,6 +4,10 @@ import { basename, dirname, join, relative, resolve } from "node:path";
 import { z } from "zod";
 
 import { requireRunsteadStateDb } from "./runstead-root.js";
+export {
+  formatStartupArtifactList,
+  formatStartupArtifactShow
+} from "./startup-artifact-format.js";
 import { startupEvidenceSourceRefIndex } from "./startup-artifact-source-refs.js";
 
 export const STARTUP_STRUCTURED_ARTIFACT_SCHEMA = "runstead.startupArtifact";
@@ -115,33 +119,6 @@ export async function showStartupArtifact(
     stateDb: listed.stateDb,
     artifact
   };
-}
-
-export function formatStartupArtifactList(result: StartupArtifactListResult): string {
-  return [
-    "Startup artifacts:",
-    listOrNone(
-      result.artifacts,
-      (item) =>
-        `- ${item.id} kind=${item.kind} schemaVersion=${item.schemaVersion} evidence=${item.sourceEvidenceIds.length}`
-    )
-  ].join("\n");
-}
-
-export function formatStartupArtifactShow(result: StartupArtifactShowResult): string {
-  return `${JSON.stringify(
-    {
-      id: result.artifact.id,
-      path: result.artifact.path,
-      kind: result.artifact.kind,
-      generatedAt: result.artifact.generatedAt,
-      schemaVersion: result.artifact.schemaVersion,
-      sourceEvidenceIds: result.artifact.sourceEvidenceIds,
-      artifact: result.artifact.artifact
-    },
-    null,
-    2
-  )}\n`;
 }
 
 async function startupArtifactPaths(root: string): Promise<string[]> {
@@ -299,12 +276,4 @@ function artifactMatchesRef(item: StartupArtifactListItem, ref: string): boolean
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function listOrNone<T>(items: T[], formatter: (item: T) => string): string {
-  if (items.length === 0) {
-    return "- none";
-  }
-
-  return items.map(formatter).join("\n");
 }
