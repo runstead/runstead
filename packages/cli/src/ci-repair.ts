@@ -1,6 +1,6 @@
 import { join, resolve } from "node:path";
 
-import { createRunsteadId, type RunsteadEvent, type Task } from "@runstead/core";
+import { createRunsteadId, type Task } from "@runstead/core";
 import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sqlite";
 
 import {
@@ -20,6 +20,7 @@ import {
   writeCiRepairWorkflowRunEvidence
 } from "./ci-repair-evidence.js";
 import { redactGitHubWorkflowRunLog } from "./ci-repair-log-redaction.js";
+import { createQueuedCiRepairTask } from "./ci-repair-task-create.js";
 import { errorMessage, markCiRepairTaskTerminal } from "./ci-repair-task-state.js";
 import { githubRunLogReadAction, githubRunReadAction } from "./ci-repair-actions.js";
 import { runGovernedToolAction } from "./governed-action.js";
@@ -93,46 +94,14 @@ export async function createCiRepairTaskFromWorkflowRunUnlocked(
     }
   }
 
-  const task: Task = {
-    id: createRunsteadId("task"),
+  const { task, event: taskCreatedEvent } = createQueuedCiRepairTask({
     goalId: goal.id,
-    domain: "repo-maintenance",
-    type: "ci_repair",
-    status: "queued",
-    priority: "high",
-    attempt: 0,
-    maxAttempts: 1,
-    input: {
-      source: "github_actions",
-      runId: options.runId,
-      intake: {
-        governed: true
-      },
-      ...(options.verifierCommands === undefined
-        ? {}
-        : { commands: options.verifierCommands })
-    },
-    verifiers: [
-      "evidence:github_workflow_run",
-      ...(options.verifierCommands ?? []).map((command) => `command:${command.name}`),
-      ...(options.verifierCommands === undefined ? ["command:local_verifiers"] : [])
-    ],
-    createdAt,
-    updatedAt: createdAt
-  };
-  const taskCreatedEvent: RunsteadEvent = {
-    eventId: createRunsteadId("evt"),
-    type: "task.created",
-    aggregateType: "task",
-    aggregateId: task.id,
-    payload: {
-      goalId: task.goalId,
-      type: task.type,
-      runId: options.runId,
-      intake: "governed"
-    },
+    runId: options.runId,
+    ...(options.verifierCommands === undefined
+      ? {}
+      : { verifierCommands: options.verifierCommands }),
     createdAt
-  };
+  });
   const database = openRunsteadDatabase(resolvedState.stateDb);
   let fetchedWorkflowRun: GitHubWorkflowRunStatus | undefined;
   let fetchedLog: GitHubWorkflowRunLog | undefined;
