@@ -127,6 +127,8 @@ The current implementation wave closed the highest-confidence product gaps:
   `commands/repo`.
 - Repository list SQL and row mapping for list operations moved out of
   `repositories` into `repositories-store`.
+- Repository path, alias, tag normalization, default alias selection, and event
+  payload shaping moved out of `repositories` into `repository-record-builders`.
 - `domain` command registration moved out of the CLI entrypoint into
   `commands/domain`.
 - `goal` command registration moved out of the CLI entrypoint into

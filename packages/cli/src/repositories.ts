@@ -1,9 +1,7 @@
-import { realpath } from "node:fs/promises";
-import { basename, resolve } from "node:path";
+import { resolve } from "node:path";
 
 import {
   createRunsteadId,
-  type JsonObject,
   type RepositoryRecord,
   RepositoryRecordSchema,
   type RepositoryStatus,
@@ -19,6 +17,13 @@ import {
   listRepositoriesFromDatabase,
   resolveRepositoryFromDatabase
 } from "./repositories-store.js";
+import {
+  defaultRepositoryAlias,
+  normalizeRepositoryAlias,
+  normalizeRepositoryPath,
+  normalizeRepositoryTags,
+  repositoryPayload
+} from "./repository-record-builders.js";
 import { requireRunsteadStateDb, requireRunsteadStateDbSync } from "./runstead-root.js";
 
 export interface RegisterRepositoryOptions {
@@ -78,7 +83,7 @@ export async function registerRepository(
   const stateDb = (await requireRunsteadStateDb(controlCwd)).stateDb;
   const requestedPath = resolve(controlCwd, options.path ?? ".");
   const git = await inspectGitRepository(requestedPath);
-  const localPath = git.root ?? (await normalizePath(requestedPath));
+  const localPath = git.root ?? (await normalizeRepositoryPath(requestedPath));
   const database = openRunsteadDatabase(stateDb);
 
   try {
@@ -89,8 +94,10 @@ export async function registerRepository(
     const github = shouldInspectGitHub
       ? await inspectGitHubRepository({ cwd: localPath })
       : undefined;
-    const alias = normalizeAlias(
-      options.alias ?? existingByPath?.alias ?? defaultAlias(localPath, github)
+    const alias = normalizeRepositoryAlias(
+      options.alias ??
+        existingByPath?.alias ??
+        defaultRepositoryAlias(localPath, github?.repository)
     );
     const existingByAlias = findRepositoryByAlias(database, alias);
 
@@ -126,7 +133,7 @@ export async function registerRepository(
       ...(remoteUrl === undefined ? {} : { remoteUrl }),
       ...(defaultBranch === undefined ? {} : { defaultBranch }),
       status: "active",
-      tags: normalizeTags(options.tags ?? existing?.tags ?? []),
+      tags: normalizeRepositoryTags(options.tags ?? existing?.tags ?? []),
       createdAt: existing?.createdAt ?? updatedAt,
       updatedAt
     });
@@ -257,50 +264,4 @@ export function archiveRepository(
 
 function resolveStateDb(cwd = process.cwd()): string {
   return requireRunsteadStateDbSync(cwd).stateDb;
-}
-
-async function normalizePath(path: string): Promise<string> {
-  try {
-    return await realpath(path);
-  } catch {
-    return resolve(path);
-  }
-}
-
-function normalizeAlias(alias: string): string {
-  const normalized = alias.trim();
-
-  if (normalized.length === 0) {
-    throw new Error("Repository alias cannot be empty");
-  }
-
-  return normalized;
-}
-
-function normalizeTags(tags: string[]): string[] {
-  return [...new Set(tags.map((tag) => tag.trim()).filter(Boolean))].sort();
-}
-
-function defaultAlias(
-  localPath: string,
-  github: Awaited<ReturnType<typeof inspectGitHubRepository>> | undefined
-): string {
-  if (github?.repository !== undefined) {
-    return `${github.repository.owner}/${github.repository.repo}`;
-  }
-
-  return basename(localPath);
-}
-
-function repositoryPayload(repository: RepositoryRecord): JsonObject {
-  return {
-    alias: repository.alias,
-    localPath: repository.localPath,
-    ...(repository.remoteUrl === undefined ? {} : { remoteUrl: repository.remoteUrl }),
-    ...(repository.defaultBranch === undefined
-      ? {}
-      : { defaultBranch: repository.defaultBranch }),
-    status: repository.status,
-    tags: repository.tags
-  };
 }
