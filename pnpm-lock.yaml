@@ -185,6 +185,13 @@ importers:
       '@runstead/core':
         specifier: workspace:*
         version: link:../core
+      '@runstead/runtime':
+        specifier: workspace:*
+        version: link:../runtime
+    devDependencies:
+      '@runstead/testkit':
+        specifier: workspace:*
+        version: link:../testkit
 
   packages/testkit:
     dependencies:

@@ -95,6 +95,7 @@ export function migrateRunsteadDatabase(database: RunsteadDatabase): void {
 export * from "./projections.js";
 export * from "./schema-validation.js";
 export * from "./database-identity.js";
+export * from "./control-plane-backend.js";
 export {
   REQUIRED_STATE_INDEXES,
   REQUIRED_STATE_TABLES,

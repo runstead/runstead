@@ -43,8 +43,10 @@ Contract packages (stable, side-effect free, no Node-specific hosting):
 
 Storage backends:
 
-- `@runstead/state-sqlite`: default local SQLite state store, schema
-  migrations, owner-only file permissions, manager lock, execution leases
+- `@runstead/state-sqlite`: default local SQLite state store and local
+  `RuntimeControlPlaneBackend` adapter with schema migrations, owner-only file
+  permissions, manager lock, execution leases, idempotent event appends,
+  runtime projections, fenced locks, and hash-addressed local artifacts
 - `@runstead/state-postgres`: Postgres `RuntimeControlPlaneBackend` adapter
   with `expectedRevision` optimistic concurrency, idempotency keys, advisory
   lock fencing tokens, JSONB projections, hash-addressed artifacts, and
@@ -141,9 +143,11 @@ The default shipped product is local workstations and CI: SQLite state, local
 artifacts, a manager lock under `.runstead`, and execution leases for
 stale-run recovery.
 
-`@runstead/state-postgres` implements `RuntimeControlPlaneBackend` for shared
-state. `runRuntimeControlPlaneBackendConformance` exercises the same five
-checks on both backends:
+`@runstead/state-sqlite` and `@runstead/state-postgres` implement
+`RuntimeControlPlaneBackend`. SQLite is the default local workstation/CI
+backend; Postgres is the shared team backend.
+`runRuntimeControlPlaneBackendConformance` exercises the same five checks on
+both backends:
 
 - atomic event append + projection write
 - idempotency-keyed retry

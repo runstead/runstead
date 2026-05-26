@@ -1,14 +1,17 @@
 import { chmod, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 
 import { describe, expect, it } from "vitest";
+import { runRuntimeControlPlaneBackendConformance } from "@runstead/testkit";
 
 import {
   RUNSTEAD_SCHEMA_VERSION,
   assertRunsteadDatabasePath,
   appendEventAndProject,
   appendEventsAndProjects,
+  createSqliteControlPlaneBackend,
   formatRunsteadSchemaValidation,
   openRunsteadDatabase,
   readRunsteadDatabasePath,
@@ -40,6 +43,10 @@ describe("openRunsteadDatabase", () => {
           "memory_records",
           "repositories",
           "events",
+          "runtime_event_idempotency",
+          "runtime_locks",
+          "runtime_artifacts",
+          "runtime_projections",
           "schema_migrations"
         ])
       );
@@ -68,7 +75,7 @@ describe("openRunsteadDatabase", () => {
 
       database.close();
 
-      expect(migrations).toHaveLength(3);
+      expect(migrations).toHaveLength(4);
       expect(migrations[0]).toMatchObject({
         version: 1,
         name: "initial_state_schema"
@@ -81,9 +88,14 @@ describe("openRunsteadDatabase", () => {
         version: 3,
         name: "state_execution_leases"
       });
+      expect(migrations[3]).toMatchObject({
+        version: 4,
+        name: "runtime_control_plane_backend"
+      });
       expect(migrations[0]?.checksum).toMatch(/^[a-f0-9]{64}$/);
       expect(migrations[1]?.checksum).toMatch(/^[a-f0-9]{64}$/);
       expect(migrations[2]?.checksum).toMatch(/^[a-f0-9]{64}$/);
+      expect(migrations[3]?.checksum).toMatch(/^[a-f0-9]{64}$/);
       expect(userVersion.user_version).toBe(RUNSTEAD_SCHEMA_VERSION);
     } finally {
       await rm(workspace, { force: true, recursive: true });
@@ -146,7 +158,10 @@ describe("openRunsteadDatabase", () => {
           "idx_tool_calls_action_status_started",
           "idx_worker_runs_task_status_started",
           "idx_tasks_status_lease",
-          "idx_worker_runs_status_lease"
+          "idx_worker_runs_status_lease",
+          "idx_runtime_locks_expires",
+          "idx_runtime_artifacts_path_created",
+          "idx_runtime_projections_type_updated"
         ])
       );
     } finally {
@@ -208,6 +223,75 @@ describe("openRunsteadDatabase", () => {
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }
+  });
+});
+
+describe("createSqliteControlPlaneBackend", () => {
+  it("satisfies the runtime control-plane backend conformance suite", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-state-"));
+    const stateDb = join(workspace, "state.db");
+
+    const result = await runRuntimeControlPlaneBackendConformance({
+      name: "sqlite",
+      create: async () => {
+        await Promise.resolve();
+        const database = openRunsteadDatabase(stateDb);
+        const backend = createSqliteControlPlaneBackend({
+          database,
+          stateUri: pathToFileURL(stateDb).href,
+          close: () => database.close()
+        });
+
+        return {
+          backend,
+          inspect: {
+            eventCount: async (aggregateType, aggregateId) => {
+              await Promise.resolve();
+              const row = database
+                .prepare(
+                  `
+                  SELECT COUNT(*) AS count
+                  FROM events
+                  WHERE aggregate_type = ? AND aggregate_id = ?
+                `
+                )
+                .get(aggregateType, aggregateId) as { count: number };
+
+              return row.count;
+            },
+            projectionCount: async (projectionType, aggregateId) => {
+              await Promise.resolve();
+              const row = database
+                .prepare(
+                  `
+                  SELECT COUNT(*) AS count
+                  FROM runtime_projections
+                  WHERE projection_type = ? AND aggregate_id = ?
+                `
+                )
+                .get(projectionType, aggregateId) as { count: number };
+
+              return row.count;
+            }
+          },
+          cleanup: async () => {
+            backend.close();
+            await rm(workspace, { force: true, recursive: true });
+          }
+        };
+      }
+    });
+
+    expect(result).toEqual({
+      name: "sqlite",
+      checks: [
+        "event_append_projection",
+        "idempotency_key",
+        "expected_revision_conflict",
+        "lock_renew_release",
+        "artifact_hash_read"
+      ]
+    });
   });
 });
 

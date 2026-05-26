@@ -1,4 +1,4 @@
-export const RUNSTEAD_SCHEMA_VERSION = 3;
+export const RUNSTEAD_SCHEMA_VERSION = 4;
 
 export const REQUIRED_STATE_TABLES = [
   "goals",
@@ -11,6 +11,10 @@ export const REQUIRED_STATE_TABLES = [
   "memory_records",
   "repositories",
   "events",
+  "runtime_event_idempotency",
+  "runtime_locks",
+  "runtime_artifacts",
+  "runtime_projections",
   "schema_migrations"
 ];
 
@@ -35,7 +39,10 @@ export const REQUIRED_STATE_INDEXES = [
   "idx_tool_calls_action_status_started",
   "idx_tool_calls_policy_decision",
   "idx_worker_runs_task_status_started",
-  "idx_worker_runs_status_lease"
+  "idx_worker_runs_status_lease",
+  "idx_runtime_locks_expires",
+  "idx_runtime_artifacts_path_created",
+  "idx_runtime_projections_type_updated"
 ];
 
 export interface RunsteadSchemaMigration {
@@ -266,6 +273,51 @@ CREATE INDEX IF NOT EXISTS idx_worker_runs_status_lease
   ON worker_runs(status, lease_expires_at, started_at DESC, id ASC);
 `;
 
+export const runtimeBackendSql = `
+CREATE TABLE IF NOT EXISTS runtime_event_idempotency (
+  idempotency_key TEXT PRIMARY KEY,
+  result_json TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS runtime_locks (
+  resource TEXT PRIMARY KEY,
+  owner TEXT NOT NULL,
+  token TEXT NOT NULL,
+  fencing_token INTEGER NOT NULL,
+  expires_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS runtime_artifacts (
+  uri TEXT PRIMARY KEY,
+  path TEXT NOT NULL,
+  content_type TEXT NOT NULL,
+  sha256 TEXT NOT NULL,
+  metadata_json TEXT NOT NULL,
+  contents BLOB NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS runtime_projections (
+  projection_type TEXT NOT NULL,
+  aggregate_type TEXT NOT NULL,
+  aggregate_id TEXT NOT NULL,
+  payload_json TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (projection_type, aggregate_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_runtime_locks_expires
+  ON runtime_locks(expires_at ASC);
+
+CREATE INDEX IF NOT EXISTS idx_runtime_artifacts_path_created
+  ON runtime_artifacts(path, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_runtime_projections_type_updated
+  ON runtime_projections(projection_type, updated_at DESC);
+`;
+
 export const runsteadSchemaMigrations: RunsteadSchemaMigration[] = [
   {
     version: 1,
@@ -281,6 +333,11 @@ export const runsteadSchemaMigrations: RunsteadSchemaMigration[] = [
     version: 3,
     name: "state_execution_leases",
     sql: stateExecutionLeasesSql
+  },
+  {
+    version: 4,
+    name: "runtime_control_plane_backend",
+    sql: runtimeBackendSql
   }
 ];
 
