@@ -140,6 +140,9 @@ The current implementation wave closed the highest-confidence product gaps:
   out of `codex-auth` into `codex-auth-store`.
 - Doctor state database schema and runtime backend checks moved out of `doctor`
   into `doctor-runtime-checks`.
+- Doctor workspace health checks for files, directories, domain manifests,
+  daemon heartbeat, RBAC/team policy, GitHub App config, and runtime artifact
+  ignores moved out of `doctor` into `doctor-workspace-checks`.
 - Shared secret-print acknowledgement moved out of the CLI entrypoint into
   `cli-secrets`.
 - `github` command registration moved out of the CLI entrypoint into
