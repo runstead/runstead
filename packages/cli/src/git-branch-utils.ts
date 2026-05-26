@@ -19,10 +19,7 @@ export function normalizeBranchSegment(value: string): string {
   return normalized.length === 0 ? "unnamed" : normalized;
 }
 
-export function assertGitCommand(
-  result: GitCommandResult,
-  description: string
-): void {
+export function assertGitCommand(result: GitCommandResult, description: string): void {
   if (result.exitCode !== 0) {
     throw new Error(
       `${description} failed with exit ${result.exitCode}: ${redactGitOutput(result.stderr)}`

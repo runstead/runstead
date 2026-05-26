@@ -42,8 +42,7 @@ export interface ClaimTaskResult {
   stateDb: string;
 }
 
-export interface CreateRunLocalVerifiersTaskOptions
-  extends BuildRunLocalVerifiersTaskOptions {
+export interface CreateRunLocalVerifiersTaskOptions extends BuildRunLocalVerifiersTaskOptions {
   stateDb?: string;
 }
 
