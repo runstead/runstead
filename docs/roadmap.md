@@ -138,6 +138,8 @@ The current implementation wave closed the highest-confidence product gaps:
   `commands/codex`.
 - Codex auth store path, cache path, auth-file IO, and auth lock helpers moved
   out of `codex-auth` into `codex-auth-store`.
+- Codex JWT expiry and ChatGPT account header helpers moved out of
+  `codex-auth` into `codex-auth-token`.
 - Doctor state database schema and runtime backend checks moved out of `doctor`
   into `doctor-runtime-checks`.
 - Doctor workspace health checks for files, directories, domain manifests,
