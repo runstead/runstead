@@ -7,6 +7,7 @@ import {
   readAuditEntries,
   readAuditEntriesReferencingIds
 } from "./audit-export-data.js";
+export { formatAuditReplay, formatAuditTimeline } from "./audit-export-format.js";
 import { requireRunsteadStateDbSync } from "./runstead-root.js";
 import type {
   AuditLogEntry,
@@ -58,26 +59,6 @@ export async function exportAuditLog(
   }
 }
 
-export function formatAuditTimeline(entries: AuditLogEntry[]): string {
-  if (entries.length === 0) {
-    return "No audit events.";
-  }
-
-  return entries
-    .map((entry) =>
-      [
-        String(entry.id).padStart(4, " "),
-        entry.createdAt,
-        entry.type,
-        `${entry.aggregateType}:${entry.aggregateId}`,
-        auditPayloadSummary(entry.payload)
-      ]
-        .filter((part) => part.length > 0)
-        .join(" ")
-    )
-    .join("\n");
-}
-
 export function replayAuditLifecycle(
   options: ReplayAuditLifecycleOptions
 ): Promise<ReplayAuditLifecycleResult> {
@@ -101,18 +82,6 @@ export function replayAuditLifecycle(
   } finally {
     database.close();
   }
-}
-
-export function formatAuditReplay(result: ReplayAuditLifecycleResult): string {
-  if (result.entries.length === 0) {
-    return `No audit events found for task ${result.taskId}.`;
-  }
-
-  return [
-    `Replay task: ${result.taskId}`,
-    `Related ids: ${result.relatedIds.join(", ")}`,
-    formatAuditTimeline(result.entries)
-  ].join("\n");
 }
 
 function collectAuditLifecycleEntriesFromDatabase(
@@ -190,28 +159,4 @@ function collectReferenceIdsInto(value: unknown, ids: string[]): void {
 
 function isReferenceIdKey(key: string): boolean {
   return key === "id" || key.endsWith("Id") || key.endsWith("Ids");
-}
-
-function auditPayloadSummary(payload: unknown): string {
-  if (typeof payload !== "object" || payload === null) {
-    return "";
-  }
-
-  const record = payload as Record<string, unknown>;
-  const parts = [
-    stringSummary("action", record.actionType),
-    stringSummary("status", record.status),
-    stringSummary("decision", record.decision),
-    stringSummary("approval", record.approvalId),
-    stringSummary("worker", record.workerType),
-    stringSummary("task", record.taskId)
-  ].filter((part): part is string => part !== undefined);
-
-  return parts.length === 0 ? "" : `[${parts.join(" ")}]`;
-}
-
-function stringSummary(label: string, value: unknown): string | undefined {
-  return typeof value === "string" && value.length > 0
-    ? `${label}=${value}`
-    : undefined;
 }
