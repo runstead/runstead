@@ -1,8 +1,6 @@
 import {
-  ApprovalRequestSchema,
   createRunsteadId,
   type ApprovalRequest,
-  type JsonObject,
   type PolicyDecisionRecord,
   type RunsteadEvent,
   type Task
@@ -26,10 +24,21 @@ import {
   type ApprovalRow,
   type ApprovedApprovalRow
 } from "./approval-rows.js";
+import {
+  createApprovalDecisionTransition,
+  createApprovalExpirationTransition,
+  createApprovalRequestTransition
+} from "./approval-transitions.js";
 export {
   approvalActionMetadata,
   type ApprovalActionMetadata
 } from "./approval-action-metadata.js";
+export {
+  createApprovalExpirationTransition,
+  createApprovalRequestTransition,
+  DEFAULT_APPROVAL_TTL_MS,
+  type ApprovalTransition
+} from "./approval-transitions.js";
 
 export interface RequestApprovalOptions {
   database: ReturnType<typeof openRunsteadDatabase>;
@@ -100,54 +109,6 @@ export interface ExpireApprovalGrantOptions {
   database: ReturnType<typeof openRunsteadDatabase>;
   approval: ApprovalRequest;
   now?: Date;
-}
-
-export interface ApprovalTransition {
-  approval: ApprovalRequest;
-  event: RunsteadEvent;
-  entry: AppendEventAndProjectInput;
-}
-
-export const DEFAULT_APPROVAL_TTL_MS = 24 * 60 * 60 * 1000;
-
-export function createApprovalRequestTransition(
-  options: Omit<RequestApprovalOptions, "database">
-): ApprovalTransition {
-  const now = options.now ?? new Date();
-  const createdAt = now.toISOString();
-  const expiresAt =
-    options.expiresAt ??
-    new Date(now.getTime() + DEFAULT_APPROVAL_TTL_MS).toISOString();
-  const approval = ApprovalRequestSchema.parse({
-    id: createRunsteadId("appr"),
-    policyDecisionId: options.policyDecision.id,
-    actionId: options.policyDecision.actionId,
-    status: "pending",
-    risk: options.policyDecision.risk,
-    reason: options.policyDecision.reason,
-    requestedBy: options.requestedBy ?? "runstead",
-    expiresAt,
-    createdAt,
-    updatedAt: createdAt
-  });
-  const event = approvalEvent(
-    "approval.requested",
-    approval,
-    approvalPayload(approval, options.policyDecision),
-    createdAt
-  );
-
-  return {
-    approval,
-    event,
-    entry: {
-      event,
-      projection: {
-        type: "approval",
-        value: approval
-      }
-    }
-  };
 }
 
 export function requestApproval(options: RequestApprovalOptions): ApprovalRequest {
@@ -352,38 +313,6 @@ export function findApprovedApprovalGrantForAction(
   return undefined;
 }
 
-export function createApprovalExpirationTransition(
-  options: ExpireApprovalGrantOptions
-): ApprovalTransition {
-  const expiredAt = (options.now ?? new Date()).toISOString();
-  const approval: ApprovalRequest = {
-    ...options.approval,
-    status: "expired",
-    updatedAt: expiredAt
-  };
-  const event = approvalEvent(
-    "approval.expired",
-    approval,
-    approvalPayload(
-      approval,
-      findPolicyDecision(options.database, approval.policyDecisionId)
-    ),
-    expiredAt
-  );
-
-  return {
-    approval,
-    event,
-    entry: {
-      event,
-      projection: {
-        type: "approval",
-        value: approval
-      }
-    }
-  };
-}
-
 export function expireApprovalGrant(
   options: ExpireApprovalGrantOptions
 ): ApprovalRequest {
@@ -392,74 +321,6 @@ export function expireApprovalGrant(
   appendEventAndProject(options.database, transition.entry);
 
   return transition.approval;
-}
-
-function createApprovalDecisionTransition(options: {
-  approval: ApprovalRequest;
-  policyDecision?: PolicyDecisionRecord;
-  decidedAt: string;
-}): ApprovalTransition {
-  const event = approvalEvent(
-    options.approval.status === "approved" ? "approval.approved" : "approval.denied",
-    options.approval,
-    approvalPayload(options.approval, options.policyDecision),
-    options.decidedAt
-  );
-
-  return {
-    approval: options.approval,
-    event,
-    entry: {
-      event,
-      projection: {
-        type: "approval",
-        value: options.approval
-      }
-    }
-  };
-}
-
-function approvalEvent(
-  type: string,
-  approval: ApprovalRequest,
-  payload: JsonObject,
-  createdAt: string
-): RunsteadEvent {
-  return {
-    eventId: createRunsteadId("evt"),
-    type,
-    aggregateType: "approval",
-    aggregateId: approval.id,
-    payload,
-    createdAt
-  };
-}
-
-function approvalPayload(
-  approval: ApprovalRequest,
-  policyDecision?: PolicyDecisionRecord
-): JsonObject {
-  const policyFingerprint = policyDecision?.result.policyFingerprint;
-
-  return {
-    approvalId: approval.id,
-    policyDecisionId: approval.policyDecisionId,
-    actionId: approval.actionId,
-    status: approval.status,
-    risk: approval.risk,
-    reason: approval.reason,
-    ...(policyDecision === undefined
-      ? {}
-      : {
-          policyId: policyDecision.policyId,
-          action: policyDecision.action,
-          obligations: policyDecision.obligations,
-          ...(typeof policyFingerprint === "string" ? { policyFingerprint } : {})
-        }),
-    ...(approval.expiresAt === undefined ? {} : { expiresAt: approval.expiresAt }),
-    ...(approval.decidedAt === undefined ? {} : { decidedAt: approval.decidedAt }),
-    ...(approval.decidedBy === undefined ? {} : { decidedBy: approval.decidedBy })
-  };
 }
 
 function createTaskTransitionForApprovalDecision(

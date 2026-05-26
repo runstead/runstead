@@ -165,6 +165,8 @@ The current implementation wave closed the highest-confidence product gaps:
   `approval-action-metadata`.
 - Approval row mapping, pending-approval lookup, policy-decision lookup, and
   task lookup moved out of `approvals` into `approval-rows`.
+- Approval request, expiration, decision event, payload, and projection
+  transition builders moved out of `approvals` into `approval-transitions`.
 - Top-level `repair-ci` command registration moved out of the CLI entrypoint
   into `commands/ci-repair`, and GitHub repair orchestration now reuses that
   command module directly.
