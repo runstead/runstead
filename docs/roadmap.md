@@ -379,6 +379,9 @@ The current implementation wave closed the highest-confidence product gaps:
 - Codex Direct governed workspace read tools for package scripts, file info,
   tree, multi-file reads, search, and file listing moved out of
   `codex-direct/governed-tools` into `codex-direct/workspace-read-tools`.
+- Codex Direct governed git read tools for diff summaries, log, show, and raw
+  status/diff reads moved out of `codex-direct/governed-tools` into
+  `codex-direct/git-read-tools`.
 - Local agent result semantics, worker output serialization, and governance
   report helpers moved out of `local-agent` into `local-agent-result`.
 - Local agent public task, run, resume, undo, and result contracts moved out of
