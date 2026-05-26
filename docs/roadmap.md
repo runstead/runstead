@@ -591,6 +591,8 @@ The current implementation wave closed the highest-confidence product gaps:
   of `startup-ready/operator-actions` into `startup-ready/operator-guided-flow`.
 - Codex Direct tool execution dispatch moved out of `codex-direct/tool-router`
   into `codex-direct/tool-executor`.
+- Codex Direct model heartbeat, retry, timeout, and transient-error loop moved
+  out of `codex-direct/model-request` into `codex-direct/model-request-heartbeat`.
 - CI runs `@runstead/state-postgres` against a real Postgres service via
   `RUNSTEAD_PG_TEST_URL`; local runs skip this integration path unless the env
   var is set.
