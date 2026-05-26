@@ -1,6 +1,17 @@
 import type { collectRepoInspection } from "./inspection-evidence.js";
+import {
+  formatDetectedCommand,
+  listItems,
+  listItemsOrNone
+} from "./startup-format-helpers.js";
 import type { LaunchSecurityRiskScan } from "./startup-automation-types.js";
 
+export {
+  formatDetectedCommand,
+  listItems,
+  listItemsOrNone,
+  safeTimestamp
+} from "./startup-format-helpers.js";
 export {
   formatDelegationPolicy,
   formatFounderBottleneckMap,
@@ -209,10 +220,6 @@ export function measurementMetricDefinitions(input: {
   ];
 }
 
-export function listItems(items: string[]): string {
-  return items.map((item) => `- ${item}`).join("\n");
-}
-
 export function formatRepoReadinessAudit(input: {
   generatedAt: string;
   inspection: Awaited<ReturnType<typeof collectRepoInspection>>;
@@ -376,19 +383,4 @@ export function formatSupportTriage(input: {
     ]),
     ""
   ].join("\n");
-}
-
-export function formatDetectedCommand(command: {
-  detected: boolean;
-  command?: string;
-}): string {
-  return command.detected ? (command.command ?? "detected") : "missing";
-}
-
-export function listItemsOrNone(items: string[]): string {
-  return items.length === 0 ? "- none" : listItems(items);
-}
-
-export function safeTimestamp(value: string): string {
-  return value.replace(/[:.]/g, "-");
 }
