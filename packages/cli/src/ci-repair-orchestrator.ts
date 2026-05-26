@@ -12,18 +12,12 @@ import type {
   RunCiRepairOrchestratorOptions,
   RunCiRepairOrchestratorResult
 } from "./ci-repair-orchestrator-types.js";
-import {
-  buildPullRequestResumeContext,
-  type CiRepairOrchestratorResumeContext
-} from "./ci-repair-orchestrator-context.js";
 import { claimCiRepairOrchestratorTask } from "./ci-repair-orchestrator-claim.js";
 import { prepareCiRepairOrchestratorIntake } from "./ci-repair-orchestrator-intake.js";
-import { writeCiRepairStage } from "./ci-repair-orchestrator-stage-persistence.js";
+import { executeCiRepairPublishStage } from "./ci-repair-orchestrator-publish-stage.js";
 import { executeCiRepairWorkerStage } from "./ci-repair-orchestrator-worker-stage.js";
 import { handleCiRepairWorkerTerminalOutcome } from "./ci-repair-orchestrator-worker-terminal.js";
 import { prepareCiRepairWorkspace } from "./ci-repair-orchestrator-workspace.js";
-import { publishCiRepairPullRequest } from "./ci-repair-orchestrator-publish-flow.js";
-import { verifyCiRepairWorkerChanges } from "./ci-repair-orchestrator-verification.js";
 import {
   assertNoRunningCiRepairOrchestratorWorker,
   findPullRequestResumeTask,
@@ -195,7 +189,7 @@ export async function runCiRepairOrchestratorUnlocked(
         return terminalWorkerOutcome;
       }
 
-      const verifiedChanges = await verifyCiRepairWorkerChanges({
+      return await executeCiRepairPublishStage({
         cwd,
         root,
         stateDb,
@@ -205,110 +199,15 @@ export async function runCiRepairOrchestratorUnlocked(
         workerRun,
         context: stageContext,
         ciRepair,
+        branchName,
         base,
         workerResult,
-        ...(options.allowedPaths === undefined
-          ? {}
-          : { allowedPaths: options.allowedPaths }),
-        ...(options.deniedPaths === undefined
-          ? {}
-          : { deniedPaths: options.deniedPaths }),
-        ...(options.gitRunner === undefined ? {} : { gitRunner: options.gitRunner }),
-        ...(options.verifierRunner === undefined
-          ? {}
-          : { verifierRunner: options.verifierRunner }),
-        ...(options.onStagePersisted === undefined
-          ? {}
-          : { onStagePersisted: options.onStagePersisted }),
-        ...(options.now === undefined ? {} : { now: options.now })
+        options,
+        onOrchestratorStateUpdated: (state) => {
+          orchestratorTask = state.task;
+          stageContext = state.context;
+        }
       });
-      orchestratorTask = verifiedChanges.task;
-      stageContext = verifiedChanges.context;
-      const {
-        commit,
-        diffScope,
-        verifierResult: normalizedVerifierResult
-      } = verifiedChanges;
-
-      const resumeContext: CiRepairOrchestratorResumeContext = {
-        ...stageContext,
-        ...buildPullRequestResumeContext({
-          ciRepair,
-          branchName,
-          base,
-          draft: options.draft === true,
-          workerResult,
-          ...(commit === undefined ? {} : { commit }),
-          diffScope,
-          verifierResult: normalizedVerifierResult
-        })
-      };
-      ({ task: orchestratorTask, context: stageContext } = writeCiRepairStage({
-        database,
-        task: orchestratorTask,
-        context: resumeContext,
-        stage: "ready_for_push",
-        ...(options.onStagePersisted === undefined
-          ? {}
-          : { onStagePersisted: options.onStagePersisted }),
-        ...(options.now === undefined ? {} : { now: options.now })
-      }));
-
-      const publishResult = await publishCiRepairPullRequest({
-        cwd,
-        stateDb,
-        database,
-        policy,
-        task: orchestratorTask,
-        workerRun,
-        ciRepair,
-        context: stageContext as CiRepairOrchestratorResumeContext,
-        ...(options.gitRunner === undefined ? {} : { gitRunner: options.gitRunner }),
-        ...(options.githubRunner === undefined
-          ? {}
-          : { githubRunner: options.githubRunner }),
-        ...(options.authToken === undefined ? {} : { authToken: options.authToken }),
-        ...(options.onStagePersisted === undefined
-          ? {}
-          : { onStagePersisted: options.onStagePersisted }),
-        ...(options.now === undefined ? {} : { now: options.now })
-      });
-
-      if (publishResult.status === "waiting_approval") {
-        return {
-          status: "waiting_approval",
-          ciRepair: {
-            ...ciRepair,
-            task: publishResult.task
-          },
-          branchName,
-          workerResult,
-          ...(commit === undefined ? {} : { commit }),
-          diffScope,
-          verifierResult: {
-            ...normalizedVerifierResult,
-            task: publishResult.task
-          },
-          approval: publishResult.approval
-        };
-      }
-
-      return {
-        status: "completed",
-        ciRepair: {
-          ...ciRepair,
-          task: publishResult.task
-        },
-        branchName,
-        workerResult,
-        ...(commit === undefined ? {} : { commit }),
-        diffScope,
-        verifierResult: {
-          ...normalizedVerifierResult,
-          task: publishResult.task
-        },
-        pullRequest: publishResult.pullRequest
-      };
     } catch (error) {
       const handled = handleCiRepairOrchestratorError({
         error,
