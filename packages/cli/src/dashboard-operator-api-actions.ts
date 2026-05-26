@@ -1,5 +1,4 @@
-import { createRunsteadId, type JsonObject, type RunsteadEvent } from "@runstead/core";
-import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sqlite";
+import type { JsonObject } from "@runstead/core";
 
 import { decideApproval } from "./approvals.js";
 import { DashboardOperatorApiHttpError } from "./dashboard-operator-api-http.js";
@@ -25,6 +24,7 @@ export {
   dashboardOperatorActionDescriptor,
   dashboardOperatorMutationPath
 } from "./dashboard-operator-api-routes.js";
+export { recordDashboardOperatorApiEvent } from "./dashboard-operator-api-events.js";
 export type { DashboardOperatorApiAction } from "./dashboard-operator-api-routes.js";
 
 export type DashboardRebuild = (options: {
@@ -85,38 +85,6 @@ export async function executeDashboardOperatorApiAction(input: {
     actionId: input.action.id,
     rebuildDashboard: input.rebuildDashboard
   });
-}
-
-export function recordDashboardOperatorApiEvent(input: {
-  build: BuildDashboardResult;
-  actor: string;
-  action: DashboardOperatorApiAction;
-  status: "completed" | "failed";
-  result?: JsonObject;
-  error?: string;
-}): void {
-  const createdAt = new Date().toISOString();
-  const event: RunsteadEvent = {
-    eventId: createRunsteadId("evt"),
-    type: `dashboard.operator_action.${input.status}`,
-    aggregateType: "dashboard_operator_action",
-    aggregateId: input.action.id,
-    payload: {
-      actor: input.actor,
-      action: input.action,
-      status: input.status,
-      ...(input.result === undefined ? {} : { result: input.result }),
-      ...(input.error === undefined ? {} : { error: input.error })
-    },
-    createdAt
-  };
-  const database = openRunsteadDatabase(input.build.stateDb);
-
-  try {
-    appendEventAndProject(database, { event });
-  } finally {
-    database.close();
-  }
 }
 
 async function approveDashboardApproval(input: {
