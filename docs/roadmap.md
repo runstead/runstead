@@ -211,6 +211,8 @@ The current implementation wave closed the highest-confidence product gaps:
   `dashboard-startup-timeline`.
 - Dashboard HTML rendering moved out of the dashboard server/orchestration
   module into `dashboard-render`.
+- Dashboard static CSS and operator-console browser script moved out of
+  `dashboard-render` into `dashboard-render-assets`.
 - Chrome DevTools Protocol connection handling moved out of the startup UI
   browser runner into `startup-ui-cdp-connection`.
 - Chrome DevTools Protocol UI flow action script generation moved out of the
