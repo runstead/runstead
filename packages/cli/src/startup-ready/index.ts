@@ -1,5 +1,4 @@
 import { startupLaunchCheck, startupScaleCheck } from "../startup-founder-flow.js";
-import { executeStartupReadinessExtensions } from "../startup-extension-execution.js";
 import { generateStartupCompleteProductCheck } from "../startup-complete-check.js";
 import { supersedeStartupRemediationTasks } from "../startup-remediation.js";
 import { executeStartupReadyUiSmoke } from "../startup-ready-ui-smoke.js";
@@ -31,7 +30,7 @@ import { executeStartupReadyRuntimeBackendPhase } from "./runtime-backend-phase.
 import { emitStartupReadyPhaseResult, emitStartupReadyProgress } from "./progress.js";
 import { ensureStartupReadyLocalLaunchEvidence } from "./local-evidence.js";
 import { executeStartupReadyBuildAndVerifierPhase } from "./build-verifier-phase.js";
-import { startupReadyExtensionWarnings } from "./verifier-phase.js";
+import { executeStartupReadyExtensionsPhase } from "./extensions-phase.js";
 import {
   attemptStartupReadyUiSmokeRepair,
   startupReadyUiSmokeRepairWarnings
@@ -243,38 +242,7 @@ async function executeStartupReadyRun(
     emitStartupReadyPhaseResult(run, options, "ui_smoke");
   }
 
-  if (shouldRunPhase(run, "extensions")) {
-    updatePhase(run, "extensions", { status: "running" });
-    await writeStartupReadinessRun(run);
-    emitStartupReadyProgress(run, options, {
-      phaseId: "extensions",
-      status: "started",
-      message: "running extension collectors"
-    });
-    const extensions = await executeStartupReadinessExtensions({
-      cwd: run.cwd,
-      target: run.target,
-      stage: startupReadyStageToGateStage(run.stage),
-      worker: run.worker,
-      governanceProfile: run.governanceProfile,
-      ...(options.now === undefined ? {} : { now: options.now })
-    });
-
-    updatePhase(run, "extensions", {
-      status: extensions.status,
-      evidenceIds: extensions.evidenceIds,
-      artifacts: extensions.artifacts,
-      blockers: extensions.blockers,
-      warnings: startupReadyExtensionWarnings(extensions),
-      nextAction:
-        extensions.status === "passed"
-          ? "continue launch readiness"
-          : "resolve extension collector blockers and rerun startup ready"
-    });
-    collectRunEvidence(run);
-    await writeStartupReadinessRun(run);
-    emitStartupReadyPhaseResult(run, options, "extensions");
-  }
+  await executeStartupReadyExtensionsPhase(run, options);
 
   if (run.target === "local" && hasPhase(run, "launch_audit")) {
     await ensureStartupReadyLocalLaunchEvidence(run, options.now ?? new Date());
