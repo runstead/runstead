@@ -6,49 +6,19 @@ import { openRunsteadDatabase } from "@runstead/state-sqlite";
 
 import { requireRunsteadStateDb } from "./runstead-root.js";
 import { addStartupEvidence } from "./startup-evidence.js";
+import type {
+  GenerateStartupCollaborationDigestOptions,
+  StartupCollaborationApproval,
+  StartupCollaborationDigestResult,
+  StartupRiskAcceptance
+} from "./startup-collaboration-types.js";
 
-export interface GenerateStartupCollaborationDigestOptions {
-  cwd?: string;
-  owner?: string;
-  reviewer?: string;
-  notify?: string[];
-  expiryWindowDays?: number;
-  now?: Date;
-}
-
-export interface StartupCollaborationDigestResult {
-  root: string;
-  stateDb: string;
-  files: string[];
-  jsonPath: string;
-  evidenceId: string;
-  pendingApprovals: StartupCollaborationApproval[];
-  riskAcceptances: StartupRiskAcceptance[];
-  expiryReminders: string[];
-  notifications: string[];
-}
-
-export interface StartupCollaborationApproval {
-  id: string;
-  status: string;
-  risk: string;
-  reason: string;
-  actionId: string;
-  requestedBy: string;
-  expiresAt?: string;
-  decidedBy?: string;
-}
-
-export interface StartupRiskAcceptance {
-  evidenceId: string;
-  gate: string;
-  decision: string;
-  reason: string;
-  owner: string;
-  blocker?: string;
-  expiresAt?: string;
-  comment?: string;
-}
+export type {
+  GenerateStartupCollaborationDigestOptions,
+  StartupCollaborationApproval,
+  StartupCollaborationDigestResult,
+  StartupRiskAcceptance
+} from "./startup-collaboration-types.js";
 
 interface ApprovalRow {
   id: string;
