@@ -19,10 +19,8 @@ import {
 } from "./checkpoints.js";
 import {
   CODEX_DIRECT_WORKER_KIND,
-  runCodexDirectPendingPatchResume,
-  runCodexDirectWorker,
-  type CodexDirectTransport,
-  type CodexDirectPendingPatchResume
+  type CodexDirectPendingPatchResume,
+  type CodexDirectTransport
 } from "./codex-direct-worker.js";
 import { runGovernedToolAction } from "./governed-action.js";
 import { showGoal } from "./goals.js";
@@ -32,13 +30,9 @@ import {
   localAgentShouldIncrementAttempt,
   localAgentTaskBaseUrl,
   localAgentTaskCheckpointId,
-  localAgentTaskFinalizeOnBudget,
-  localAgentTaskMaxTurns,
   localAgentTaskMode,
   localAgentTaskModel,
-  localAgentTaskModelRequestTiming,
   localAgentTaskProvider,
-  localAgentTaskToolBudget,
   localAgentTaskWorker,
   verifierCommandsFromLocalAgentTask,
   type LocalAgentWorkerKind
@@ -53,21 +47,17 @@ import {
   localAgentTaskOutput,
   localAgentWorkerCompleted,
   localAgentWorkerOutput,
-  localAgentWorkerRunStatus,
-  type LocalAgentWorkerResult
+  localAgentWorkerRunStatus
 } from "./local-agent-result.js";
 import { summarizeLocalAgentAudit } from "./local-agent-report.js";
 import { readLocalAgentApprovedPendingPatch } from "./local-agent-resume.js";
 import {
-  buildLocalAgentPrompt,
   formatVerifierEvidencePrompt,
-  localAgentAllowedScope,
-  localAgentApprovalRequired,
-  localAgentDeniedActions,
   localAgentTaskInput,
   requiredTaskString,
   verifierEvidenceInput
 } from "./local-agent-prompt.js";
+import { runLocalAgentWorker } from "./local-agent-worker-run.js";
 import {
   LOCAL_AGENT_TASK_TYPE,
   type CreateLocalAgentTaskOptions,
@@ -90,11 +80,7 @@ import {
   createModelProviderRuntime,
   resolveModelProviderModel
 } from "./model-provider-runtime.js";
-import {
-  startWrappedWorker,
-  type WorkerProcessRunner,
-  type WorkerProcessProgress
-} from "./wrapped-worker.js";
+import type { WorkerProcessProgress, WorkerProcessRunner } from "./wrapped-worker.js";
 
 export { LOCAL_AGENT_TASK_TYPE } from "./local-agent-types.js";
 export type { LocalAgentMode, LocalAgentWorkerKind } from "./local-agent-task-input.js";
@@ -551,118 +537,6 @@ async function runLocalAgentTaskWithDatabase(options: {
       ...(failure.approval === undefined ? {} : { approval: failure.approval })
     };
   }
-}
-
-async function runLocalAgentWorker(options: {
-  cwd: string;
-  root: string;
-  stateDb: string;
-  database: RunsteadDatabase;
-  policy: PolicyProfile;
-  goal: Goal;
-  task: Task;
-  worker: LocalAgentWorkerKind;
-  model?: string;
-  modelProviderResourceId?: string;
-  modelProviderNetworkDomains?: string[];
-  transport?: CodexDirectTransport;
-  workerRunner?: WorkerProcessRunner;
-  workerProgressIntervalMs?: number;
-  onWorkerProgress?: (progress: WorkerProcessProgress) => void;
-  checkpoint?: WorkspaceCheckpoint;
-  pendingPatchResume?: CodexDirectPendingPatchResume;
-  now?: Date;
-}): Promise<LocalAgentWorkerResult> {
-  if (options.worker === CODEX_DIRECT_WORKER_KIND) {
-    const maxTurns = localAgentTaskMaxTurns(options.task);
-
-    if (options.pendingPatchResume !== undefined) {
-      return runCodexDirectPendingPatchResume({
-        cwd: options.cwd,
-        stateDb: options.stateDb,
-        database: options.database,
-        policy: options.policy,
-        goal: options.goal,
-        task: options.task,
-        model: options.model ?? localAgentTaskModel(options.task) ?? "codex_direct",
-        ...(options.modelProviderResourceId === undefined
-          ? {}
-          : { modelProviderResourceId: options.modelProviderResourceId }),
-        ...(options.modelProviderNetworkDomains === undefined
-          ? {}
-          : { modelProviderNetworkDomains: options.modelProviderNetworkDomains }),
-        evidenceDir: join(options.root, "evidence"),
-        ...(options.transport === undefined ? {} : { transport: options.transport }),
-        pendingPatch: options.pendingPatchResume,
-        ...(maxTurns === undefined ? {} : { maxTurns }),
-        ...localAgentTaskToolBudget(options.task),
-        ...localAgentTaskModelRequestTiming(options.task),
-        finalizeOnBudget: localAgentTaskFinalizeOnBudget(options.task),
-        ...(options.now === undefined ? {} : { now: options.now })
-      });
-    }
-
-    if (
-      options.model === undefined ||
-      options.modelProviderResourceId === undefined ||
-      options.modelProviderNetworkDomains === undefined ||
-      options.transport === undefined
-    ) {
-      throw new Error("Codex Direct local agent runtime is incomplete");
-    }
-
-    return runCodexDirectWorker({
-      cwd: options.cwd,
-      stateDb: options.stateDb,
-      database: options.database,
-      policy: options.policy,
-      goal: options.goal,
-      task: options.task,
-      model: options.model,
-      modelProviderResourceId: options.modelProviderResourceId,
-      modelProviderNetworkDomains: options.modelProviderNetworkDomains,
-      evidenceDir: join(options.root, "evidence"),
-      transport: options.transport,
-      prompt: buildLocalAgentPrompt(options.task),
-      ...(maxTurns === undefined ? {} : { maxTurns }),
-      ...localAgentTaskToolBudget(options.task),
-      ...localAgentTaskModelRequestTiming(options.task),
-      finalizeOnBudget: localAgentTaskFinalizeOnBudget(options.task),
-      ...(options.now === undefined ? {} : { now: options.now })
-    });
-  }
-
-  if (options.worker === "codex_cli" || options.worker === "claude_code") {
-    return startWrappedWorker({
-      worker: options.worker,
-      goal: options.goal,
-      task: options.task,
-      workspace: options.cwd,
-      evidenceDir: join(options.root, "evidence"),
-      workerRuntimeDir: join(options.root, "worker-profiles"),
-      allowedScope: localAgentAllowedScope(options.task),
-      deniedActions: localAgentDeniedActions(options.task),
-      approvalRequired: localAgentApprovalRequired(options.task),
-      verifierContract: verifierCommandsFromLocalAgentTask(options.task).map(
-        (command) => `${command.name}: ${command.command}`
-      ),
-      policySummary: "repo-maintenance policy enforced by Runstead local agent",
-      instructions: [buildLocalAgentPrompt(options.task)],
-      ...(options.model === undefined ? {} : { model: options.model }),
-      ...(options.checkpoint === undefined
-        ? {}
-        : { checkpointBefore: options.checkpoint }),
-      ...(options.workerRunner === undefined ? {} : { runner: options.workerRunner }),
-      ...(options.workerProgressIntervalMs === undefined
-        ? {}
-        : { progressIntervalMs: options.workerProgressIntervalMs }),
-      ...(options.onWorkerProgress === undefined
-        ? {}
-        : { onProgress: options.onWorkerProgress })
-    });
-  }
-
-  throw new Error("Local agent task execution reached an unsupported worker");
 }
 
 export async function undoLocalAgentTask(

@@ -381,6 +381,8 @@ The current implementation wave closed the highest-confidence product gaps:
   `local-agent-actions`.
 - Local agent run, undo, exit-code, and diagnostic report formatting moved out
   of `local-agent` into `local-agent-run-report`.
+- Local agent worker invocation for Codex Direct, approved pending-patch resume,
+  and wrapped workers moved out of `local-agent` into `local-agent-worker-run`.
 - Startup remediation blocker guidance, prioritization, deduplication, evidence
   expectations, and next-command helpers moved out of `startup-remediation` into
   `startup-remediation-guidance`.
