@@ -2,7 +2,6 @@ import { resolve } from "node:path";
 
 import {
   createRunsteadId,
-  TaskSchema,
   type Goal,
   type JsonObject,
   type RunsteadEvent,
@@ -19,6 +18,7 @@ import {
   type PackageScriptCommandInspection
 } from "./repo-inspection.js";
 import { requireRunsteadStateDbSync } from "./runstead-root.js";
+import { rowToTask, type TaskRow } from "./task-rows.js";
 
 const EXECUTION_LEASE_MS = 30 * 60 * 1000;
 
@@ -500,42 +500,6 @@ function goalRepositoryPath(goal: Goal, cwd: string): string {
   const repositoryPath = goal.scope.repositoryPath;
 
   return typeof repositoryPath === "string" ? repositoryPath : cwd;
-}
-
-interface TaskRow {
-  id: string;
-  goal_id: string;
-  domain: string;
-  type: string;
-  status: string;
-  priority: string;
-  attempt: number;
-  max_attempts: number;
-  input_json: string;
-  output_json: string | null;
-  verifiers_json: string;
-  created_at: string;
-  updated_at: string;
-}
-
-function rowToTask(row: TaskRow): Task {
-  return TaskSchema.parse({
-    id: row.id,
-    goalId: row.goal_id,
-    domain: row.domain,
-    type: row.type,
-    status: row.status,
-    priority: row.priority,
-    attempt: row.attempt,
-    maxAttempts: row.max_attempts,
-    input: JSON.parse(row.input_json) as JsonObject,
-    ...(row.output_json === null
-      ? {}
-      : { output: JSON.parse(row.output_json) as JsonObject }),
-    verifiers: JSON.parse(row.verifiers_json) as string[],
-    createdAt: row.created_at,
-    updatedAt: row.updated_at
-  });
 }
 
 function insertEvent(
