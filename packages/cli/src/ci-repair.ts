@@ -1,16 +1,7 @@
 import { join, resolve } from "node:path";
 
-import {
-  createRunsteadId,
-  type JsonObject,
-  type RunsteadEvent,
-  type Task
-} from "@runstead/core";
-import {
-  appendEventAndProject,
-  openRunsteadDatabase,
-  type RunsteadDatabase
-} from "@runstead/state-sqlite";
+import { createRunsteadId, type RunsteadEvent, type Task } from "@runstead/core";
+import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sqlite";
 
 import {
   fetchGitHubWorkflowRunLog,
@@ -29,6 +20,7 @@ import {
   writeCiRepairWorkflowRunEvidence
 } from "./ci-repair-evidence.js";
 import { redactGitHubWorkflowRunLog } from "./ci-repair-log-redaction.js";
+import { errorMessage, markCiRepairTaskTerminal } from "./ci-repair-task-state.js";
 import { githubRunLogReadAction, githubRunReadAction } from "./ci-repair-actions.js";
 import { runGovernedToolAction } from "./governed-action.js";
 import { listGoals } from "./goals.js";
@@ -374,44 +366,4 @@ export function isCreatedCiRepairTaskResult(
   result: CreateCiRepairTaskFromWorkflowRunResult
 ): result is CreateCiRepairTaskResult {
   return result.status === "created";
-}
-
-function markCiRepairTaskTerminal(input: {
-  database: RunsteadDatabase;
-  task: Task;
-  status: "cancelled" | "failed";
-  error: unknown;
-  now?: Date;
-}): Task {
-  const updatedAt = (input.now ?? new Date()).toISOString();
-  const output: JsonObject = {
-    error: errorMessage(input.error)
-  };
-  const task: Task = {
-    ...input.task,
-    status: input.status,
-    output,
-    updatedAt
-  };
-
-  appendEventAndProject(input.database, {
-    event: {
-      eventId: createRunsteadId("evt"),
-      type: `task.${input.status}`,
-      aggregateType: "task",
-      aggregateId: task.id,
-      payload: output,
-      createdAt: updatedAt
-    },
-    projection: {
-      type: "task",
-      value: task
-    }
-  });
-
-  return task;
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }
