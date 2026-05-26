@@ -15,7 +15,7 @@ export type {
   LocalAgentPresetInput,
   LocalAgentPresetMode,
   LocalAgentVerifierPolicy
-} from "./local-agent-preset-catalog.js";
+} from "./local-agent-preset-types.js";
 
 export interface ResolvedLocalAgentPreset {
   preset: LocalAgentPreset;

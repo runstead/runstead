@@ -1,23 +1,12 @@
 import { structuredPresetPrompt, verifierFocus } from "./local-agent-preset-prompt.js";
+import type { LocalAgentPreset } from "./local-agent-preset-types.js";
 
-export type LocalAgentPresetMode = "read-only" | "edit" | "repair";
-export type LocalAgentVerifierPolicy = "none" | "optional" | "required" | "auto";
-
-export interface LocalAgentPresetInput {
-  prompt?: string;
-  verifierNames?: string[];
-}
-
-export interface LocalAgentPreset {
-  id: string;
-  mode: LocalAgentPresetMode;
-  maxTurns: number;
-  maxToolCalls: number;
-  maxFailedToolCalls: number;
-  checkpoint: boolean;
-  verifierPolicy: LocalAgentVerifierPolicy;
-  promptTemplate(input: LocalAgentPresetInput): string;
-}
+export type {
+  LocalAgentPreset,
+  LocalAgentPresetInput,
+  LocalAgentPresetMode,
+  LocalAgentVerifierPolicy
+} from "./local-agent-preset-types.js";
 
 export const LOCAL_AGENT_PRESETS: readonly LocalAgentPreset[] = [
   {

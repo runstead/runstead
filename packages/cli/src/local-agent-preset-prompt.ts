@@ -1,4 +1,4 @@
-import type { LocalAgentPresetInput } from "./local-agent-presets.js";
+import type { LocalAgentPresetInput } from "./local-agent-preset-types.js";
 
 export function structuredPresetPrompt(input: {
   id: string;
