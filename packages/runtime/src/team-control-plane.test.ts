@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  assessRuntimeRunnerHeartbeat,
   assessTeamControlPlaneReadiness,
   type RuntimeTeamControlPlaneProfile
 } from "./index.js";
@@ -43,6 +44,7 @@ describe("team control-plane contracts", () => {
       sharedStorage: false,
       distributedLeases: false,
       registeredRunners: 0,
+      freshRunnerHeartbeats: 0,
       appendOnlyAudit: false,
       organizationAuthz: false
     });
@@ -107,7 +109,10 @@ describe("team control-plane contracts", () => {
       }
     };
 
-    const result = assessTeamControlPlaneReadiness(profile);
+    const result = assessTeamControlPlaneReadiness(profile, {
+      now: new Date("2026-05-24T00:00:15.000Z"),
+      requireRunnerHeartbeats: true
+    });
 
     expect(result).toEqual({
       target: "team",
@@ -118,6 +123,7 @@ describe("team control-plane contracts", () => {
         sharedStorage: true,
         distributedLeases: true,
         registeredRunners: 2,
+        freshRunnerHeartbeats: 2,
         appendOnlyAudit: true,
         organizationAuthz: true
       }
@@ -168,5 +174,92 @@ describe("team control-plane contracts", () => {
       "some audit sinks retain records for fewer than 90 days",
       "only one active runner is registered; failover is not covered"
     ]);
+  });
+
+  it("can require fresh runner heartbeats for stricter team readiness", () => {
+    const profile: RuntimeTeamControlPlaneProfile = {
+      scope: {
+        kind: "team",
+        organizationId: "org_123"
+      },
+      storage: {
+        backend: "postgres",
+        stateUri: "postgres://runstead/state"
+      },
+      runners: [
+        {
+          runnerId: "runner_stale",
+          labels: ["linux"],
+          status: "active",
+          lastSeenAt: "2026-05-24T00:00:00.000Z"
+        }
+      ],
+      leasePolicy: {
+        backend: "database",
+        fencingTokens: true,
+        heartbeatTtlMs: 30_000
+      },
+      auditSinks: [
+        {
+          id: "audit",
+          type: "object_store",
+          uri: "s3://runstead/audit",
+          tamperEvidence: "hash_chain"
+        }
+      ],
+      authz: {
+        identityProvider: "oidc",
+        rbac: true,
+        tenantIsolation: "organization",
+        secretsBoundary: "central_secret_store"
+      }
+    };
+
+    const result = assessTeamControlPlaneReadiness(profile, {
+      now: new Date("2026-05-24T00:01:00.000Z"),
+      requireRunnerHeartbeats: true
+    });
+
+    expect(result.passed).toBe(false);
+    expect(result.blockers).toContain(
+      "at least one fresh active runner heartbeat is required"
+    );
+    expect(result.warnings).toContain("some active runner heartbeats are stale");
+    expect(result.capabilities.freshRunnerHeartbeats).toBe(0);
+  });
+
+  it("classifies individual runner heartbeat timestamps", () => {
+    expect(
+      assessRuntimeRunnerHeartbeat({
+        runner: {
+          runnerId: "runner_fresh",
+          labels: [],
+          status: "active",
+          lastSeenAt: "2026-05-24T00:00:00.000Z"
+        },
+        heartbeatTtlMs: 30_000,
+        now: new Date("2026-05-24T00:00:10.000Z")
+      })
+    ).toMatchObject({
+      runnerId: "runner_fresh",
+      fresh: true,
+      stale: false,
+      ageMs: 10_000
+    });
+    expect(
+      assessRuntimeRunnerHeartbeat({
+        runner: {
+          runnerId: "runner_missing",
+          labels: [],
+          status: "active"
+        },
+        heartbeatTtlMs: 30_000,
+        now: new Date("2026-05-24T00:00:10.000Z")
+      })
+    ).toMatchObject({
+      runnerId: "runner_missing",
+      fresh: false,
+      missing: true
+    });
   });
 });
