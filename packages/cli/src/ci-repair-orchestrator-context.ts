@@ -4,8 +4,7 @@ import {
   type CiRepairOrchestratorCounterName,
   type CiRepairOrchestratorCounters,
   type CiRepairOrchestratorResumeContext,
-  type CiRepairOrchestratorStageContext,
-  type PublishCoverage
+  type CiRepairOrchestratorStageContext
 } from "./ci-repair-orchestrator-context-types.js";
 import {
   ciRepairProgressStageAtLeast,
@@ -16,6 +15,10 @@ export {
   buildInitialCiRepairStageContext,
   buildPullRequestResumeContext
 } from "./ci-repair-orchestrator-context-builders.js";
+export {
+  publishCoverageFromContext,
+  publishCoverageStagePatch
+} from "./ci-repair-orchestrator-publish-coverage.js";
 export type {
   CiRepairOrchestratorCounterName,
   CiRepairOrchestratorCounters,
@@ -134,37 +137,6 @@ export function ciRepairOrchestratorContext(
   }
 
   return value as unknown as CiRepairOrchestratorResumeContext;
-}
-
-export function publishCoverageFromContext(
-  context: CiRepairOrchestratorResumeContext
-): PublishCoverage | undefined {
-  if (
-    context.publishToolCallId === undefined ||
-    context.publishPolicyDecisionId === undefined
-  ) {
-    return undefined;
-  }
-
-  return {
-    toolCallId: context.publishToolCallId,
-    policyDecisionId: context.publishPolicyDecisionId,
-    ...(context.publishApprovalId === undefined
-      ? {}
-      : { approvalId: context.publishApprovalId })
-  };
-}
-
-export function publishCoverageStagePatch(
-  coverage: PublishCoverage
-): Partial<CiRepairOrchestratorStageContext> {
-  return {
-    publishToolCallId: coverage.toolCallId,
-    publishPolicyDecisionId: coverage.policyDecisionId,
-    ...(coverage.approvalId === undefined
-      ? {}
-      : { publishApprovalId: coverage.approvalId })
-  };
 }
 
 function numberOrZero(value: unknown): number {
