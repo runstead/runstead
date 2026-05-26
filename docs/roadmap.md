@@ -587,6 +587,8 @@ The current implementation wave closed the highest-confidence product gaps:
   out of `team-control-plane-runner` into `team-control-plane-runner-connection`.
 - Codex Direct approved pending-patch resume execution and lookup moved out of
   `codex-direct/worker` into `codex-direct/pending-patch-resume`.
+- Startup readiness guided-flow blocker classification and formatting moved out
+  of `startup-ready/operator-actions` into `startup-ready/operator-guided-flow`.
 - CI runs `@runstead/state-postgres` against a real Postgres service via
   `RUNSTEAD_PG_TEST_URL`; local runs skip this integration path unless the env
   var is set.
