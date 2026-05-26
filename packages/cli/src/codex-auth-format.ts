@@ -1,6 +1,5 @@
+import { DEFAULT_CODEX_BASE_URL } from "./codex-auth-constants.js";
 import type { CodexAuthStatus, CodexModel } from "./codex-auth.js";
-
-const DEFAULT_CODEX_BASE_URL = "https://chatgpt.com/backend-api/codex";
 
 export function formatCodexAuthStatus(status: CodexAuthStatus): string {
   if (!status.loggedIn) {
