@@ -21,6 +21,9 @@ import type {
   RuntimeTeamControlPlaneProfile
 } from "@runstead/runtime";
 
+export { PsqlPostgresControlPlaneClient } from "./psql-client.js";
+export type { PsqlPostgresControlPlaneClientOptions } from "./psql-client.js";
+
 export const POSTGRES_CONTROL_PLANE_SCHEMA_VERSION = 2;
 
 export type PostgresRow = Record<string, unknown>;
