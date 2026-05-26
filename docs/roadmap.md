@@ -595,6 +595,8 @@ The current implementation wave closed the highest-confidence product gaps:
   out of `codex-direct/model-request` into `codex-direct/model-request-heartbeat`.
 - Startup agent context evidence summary and context-file formatting moved out
   of `startup-automation-format` into `startup-context-format`.
+- Startup ready local MVP and launch baseline evidence inputs moved out of
+  `startup-ready/local-evidence-inputs` into focused local evidence modules.
 - CI runs `@runstead/state-postgres` against a real Postgres service via
   `RUNSTEAD_PG_TEST_URL`; local runs skip this integration path unless the env
   var is set.
