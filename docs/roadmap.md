@@ -410,6 +410,9 @@ The current implementation wave closed the highest-confidence product gaps:
   `startup-remediation-guidance`.
 - Startup remediation plan and execution formatting moved out of
   `startup-remediation` into `startup-remediation-format`.
+- Startup remediation execution prompt, failure evidence, task-status, and
+  outcome helpers moved out of `startup-remediation` into
+  `startup-remediation-execution`.
 - Startup MVP dependency approval policy parsing, instructions, and formatting
   moved out of `startup-founder-flow` into `startup-dependency-approval`.
 - Startup worker governance profile selection and operator notice text moved
