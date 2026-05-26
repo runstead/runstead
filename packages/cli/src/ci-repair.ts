@@ -26,6 +26,7 @@ import {
   type GitHubWorkflowRunStatus
 } from "./github-actions.js";
 import { classifyCiFailure } from "./ci-repair-classification.js";
+import { redactGitHubWorkflowRunLog } from "./ci-repair-log-redaction.js";
 import { runGovernedToolAction } from "./governed-action.js";
 import { listGoals } from "./goals.js";
 import { withRunsteadManagerLock } from "./manager-lock.js";
@@ -717,36 +718,6 @@ function markCiRepairTaskTerminal(input: {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
-}
-
-function redactGitHubWorkflowRunLog(log: GitHubWorkflowRunLog): GitHubWorkflowRunLog {
-  const redactedLog = redactSecretLikeValues(log.log);
-
-  return {
-    ...log,
-    log: redactedLog,
-    byteLength: Buffer.byteLength(redactedLog)
-  };
-}
-
-function redactSecretLikeValues(value: string): string {
-  return value
-    .replace(
-      /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g,
-      "[REDACTED_PRIVATE_KEY]"
-    )
-    .replace(/github_pat_[A-Za-z0-9_]+/g, "[REDACTED_GITHUB_TOKEN]")
-    .replace(/gh[pousr]_[A-Za-z0-9_]+/g, "[REDACTED_GITHUB_TOKEN]")
-    .replace(/\bAKIA[0-9A-Z]{16}\b/g, "[REDACTED_AWS_ACCESS_KEY]")
-    .replace(
-      /\b(Authorization:\s*(?:Bearer|Basic)\s+)[A-Za-z0-9._~+/-]+=*/gi,
-      "$1[REDACTED]"
-    )
-    .replace(/\b(Bearer\s+)[A-Za-z0-9._~+/-]+=*/gi, "$1[REDACTED]")
-    .replace(
-      /\b([A-Z0-9_ -]*(?:TOKEN|SECRET|PASSWORD|PASS|KEY|API[_ -]?KEY)[A-Z0-9_ -]*)(\s*[:=]\s*)([^\s]+)/gi,
-      "$1$2[REDACTED]"
-    );
 }
 
 function githubRunReadAction(input: {

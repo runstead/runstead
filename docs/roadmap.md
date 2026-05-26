@@ -160,6 +160,8 @@ The current implementation wave closed the highest-confidence product gaps:
   command module directly.
 - CI repair workflow failure classification moved out of `ci-repair` into
   `ci-repair-classification`.
+- CI repair GitHub workflow log redaction moved out of `ci-repair` into
+  `ci-repair-log-redaction`.
 - Top-level `agent` command registration and local-agent CLI option helpers
   moved out of the CLI entrypoint into `commands/agent`.
 - Agent provider listing moved out of the agent command adapter into
