@@ -541,6 +541,8 @@ The current implementation wave closed the highest-confidence product gaps:
 - Doctor worker policy action builders, CLI auth hints, Claude probe parsing,
   and model-provider helper predicates moved out of `doctor` into
   `doctor-worker-helpers`.
+- Doctor Codex Direct auth, default model, model-provider selection, and
+  provider credential checks moved out of `doctor` into `doctor-codex-checks`.
 - Startup complete-check criteria and blocker-accountability rules moved out of
   `startup-complete-check` into `startup-complete-check-criteria`.
 - Startup complete-check markdown, JSON, event, score, and status output helpers
