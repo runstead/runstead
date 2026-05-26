@@ -143,6 +143,8 @@ The current implementation wave closed the highest-confidence product gaps:
 - Doctor workspace health checks for files, directories, domain manifests,
   daemon heartbeat, RBAC/team policy, GitHub App config, and runtime artifact
   ignores moved out of `doctor` into `doctor-workspace-checks`.
+- Launch readiness Markdown formatting and source/risk helper rendering moved
+  out of `launch-readiness-report` into `launch-readiness-report-format`.
 - Shared secret-print acknowledgement moved out of the CLI entrypoint into
   `cli-secrets`.
 - `github` command registration moved out of the CLI entrypoint into
