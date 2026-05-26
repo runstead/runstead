@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
-import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { dirname, isAbsolute, join, normalize, resolve, sep } from "node:path";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 
 import { createRunsteadId } from "@runstead/core";
@@ -11,6 +11,13 @@ import type {
   RestoreWorkspaceCheckpointResult,
   WorkspaceCheckpoint
 } from "./checkpoints-types.js";
+import {
+  copyUntrackedSnapshot,
+  isCheckpointExcludedPath,
+  isCheckpointSnapshotPath,
+  isSafeRelativePath,
+  parseNulPaths
+} from "./checkpoint-paths.js";
 export {
   recordWorkspaceCheckpointCreatedEvent,
   recordWorkspaceCheckpointRestoreEvent
@@ -298,59 +305,6 @@ function commandOutput(error: unknown, key: "stdout" | "stderr"): string {
   }
 
   return "";
-}
-
-async function copyUntrackedSnapshot(
-  sourceRoot: string,
-  destinationRoot: string,
-  files: string[]
-): Promise<void> {
-  await Promise.all(
-    files.map(async (path) => {
-      const source = join(sourceRoot, path);
-      const destination = join(destinationRoot, path);
-
-      await mkdir(dirname(destination), { recursive: true });
-      await cp(source, destination, { force: true, recursive: true });
-    })
-  );
-}
-
-function parseNulPaths(stdout: string): string[] {
-  return stdout
-    .split("\0")
-    .map((path) => path.trim())
-    .filter((path) => path.length > 0);
-}
-
-function isSafeRelativePath(path: string): boolean {
-  const normalized = normalize(path);
-
-  return (
-    path.length > 0 &&
-    !isAbsolute(path) &&
-    normalized !== ".." &&
-    !normalized.startsWith(`..${sep}`)
-  );
-}
-
-function isCheckpointSnapshotPath(path: string): boolean {
-  return isSafeRelativePath(path) && !isCheckpointExcludedPath(path);
-}
-
-function isCheckpointExcludedPath(path: string): boolean {
-  const normalized = normalize(path);
-
-  return (
-    normalized === ".runstead" ||
-    normalized.startsWith(`.runstead${sep}`) ||
-    normalized === ".team" ||
-    normalized.startsWith(`.team${sep}`) ||
-    normalized === ".git" ||
-    normalized.startsWith(`.git${sep}`) ||
-    normalized === "node_modules" ||
-    normalized.startsWith(`node_modules${sep}`)
-  );
 }
 
 function stringField(
