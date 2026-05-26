@@ -377,6 +377,8 @@ The current implementation wave closed the highest-confidence product gaps:
   command registration.
 - `packages/cli/src/startup-command.ts` no longer owns startup launch
   audit/security/report/support/git/UI/bottleneck command registration.
+- Startup launch support-triage and bottleneck-map subcommands moved out of
+  `commands/startup-launch` into `commands/startup-launch-ops`.
 - Startup automation markdown and metric formatting helpers moved out of
   `startup-automation` into `startup-automation-format`.
 - Startup UI smoke default browser runner moved out of `startup-ui-validation`
