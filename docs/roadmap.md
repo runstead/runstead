@@ -164,6 +164,8 @@ The current implementation wave closed the highest-confidence product gaps:
   `ci-repair-log-redaction`.
 - CI repair GitHub governed action builders moved out of `ci-repair` into
   `ci-repair-actions`.
+- CI repair task report formatting moved out of `ci-repair` into
+  `ci-repair-report`.
 - Top-level `agent` command registration and local-agent CLI option helpers
   moved out of the CLI entrypoint into `commands/agent`.
 - Agent provider listing moved out of the agent command adapter into

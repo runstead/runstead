@@ -90,6 +90,8 @@ const CI_LOG_EVIDENCE_METADATA = {
   used_for_prompt: false
 };
 
+export { formatCiRepairTaskReport } from "./ci-repair-report.js";
+
 export async function createCiRepairTaskFromWorkflowRun(
   options: CreateCiRepairTaskOptions
 ): Promise<CreateCiRepairTaskFromWorkflowRunResult> {
@@ -436,35 +438,6 @@ export async function createCiRepairTaskFromWorkflowRunUnlocked(
   } finally {
     database.close();
   }
-}
-
-export function formatCiRepairTaskReport(
-  result: CreateCiRepairTaskFromWorkflowRunResult
-): string {
-  if (result.status === "ignored") {
-    return [
-      "Runstead CI repair task",
-      "Status: ignored",
-      `Reason: ${result.reason}`,
-      `Task: ${result.task.id}`,
-      `Task status: ${result.taskStatus}`,
-      `Run: ${result.workflowRun.runId}`,
-      `Workflow: ${result.workflowRun.workflowName ?? "unknown"}`,
-      `Conclusion: ${result.workflowRun.conclusion ?? "none"}`,
-      `Message: ${result.error}`
-    ].join("\n");
-  }
-
-  return [
-    "Runstead CI repair task",
-    "Status: created",
-    `Task: ${result.task.id}`,
-    `Run: ${result.workflowRun.runId}`,
-    `Workflow: ${result.workflowRun.workflowName ?? "unknown"}`,
-    `Conclusion: ${result.workflowRun.conclusion ?? "none"}`,
-    `Evidence: ${result.evidence.id}`,
-    `Log bytes: ${result.log.byteLength}`
-  ].join("\n");
 }
 
 export function isCreatedCiRepairTaskResult(
