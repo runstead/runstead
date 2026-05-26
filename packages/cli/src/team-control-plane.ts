@@ -23,6 +23,7 @@ export interface TeamControlPlaneAssertion {
 export interface TeamControlPlaneCheckOptions {
   cwd?: string;
   env?: RuntimeBackendConfigEnv;
+  now?: Date;
 }
 
 export interface TeamControlPlaneCheckResult {
@@ -64,6 +65,8 @@ RUNSTEAD_ARTIFACT_BASE_URI=s3://runstead/evidence
 RUNSTEAD_TEAM_ORG_ID=org_123
 RUNSTEAD_TEAM_WORKSPACE_ID=workspace_123
 RUNSTEAD_RUNNER_ID=runner_1
+RUNSTEAD_RUNNER_LAST_SEEN_AT=runner_1=2026-05-24T00:00:00.000Z
+RUNSTEAD_REQUIRE_RUNNER_HEARTBEAT=true
 RUNSTEAD_AUDIT_SINK_URI=s3://runstead/audit
 RUNSTEAD_TEAM_IDENTITY_PROVIDER=oidc
 RUNSTEAD_TEAM_TENANT_ISOLATION=organization
@@ -83,7 +86,8 @@ export async function checkTeamControlPlane(
   try {
     selection = resolveRuntimeBackendSelection({
       rootPath: root.root,
-      env
+      env,
+      ...(options.now === undefined ? {} : { now: options.now })
     });
   } catch (error) {
     selectionError = errorMessage(error);
@@ -239,6 +243,13 @@ function teamControlPlaneAssertions(input: {
       fail: "RUNSTEAD_RUNNER_ID must include at least one active runner id"
     }),
     assertion({
+      id: "runner-heartbeat",
+      title: "Runner heartbeat",
+      ok: (capabilities?.freshRunnerHeartbeats ?? 0) > 0,
+      pass: `${capabilities?.freshRunnerHeartbeats ?? 0} fresh runner heartbeat(s) recorded`,
+      fail: "RUNSTEAD_RUNNER_LAST_SEEN_AT must include at least one fresh active runner heartbeat"
+    }),
+    assertion({
       id: "lock-lease-fencing",
       title: "Distributed lock lease fencing",
       ok: capabilities?.distributedLeases === true,
@@ -325,6 +336,9 @@ function teamControlPlaneNextActions(
       : undefined,
     failed.has("runner-identity")
       ? "export RUNSTEAD_TEAM_ORG_ID and RUNSTEAD_RUNNER_ID"
+      : undefined,
+    failed.has("runner-heartbeat")
+      ? "export RUNSTEAD_RUNNER_LAST_SEEN_AT with fresh runner heartbeat timestamps"
       : undefined,
     failed.has("audit-hash-chain")
       ? "export RUNSTEAD_AUDIT_SINK_URI for hash-chain audit export"

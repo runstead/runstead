@@ -19,6 +19,8 @@ export interface RuntimeBackendConfigEnv {
   RUNSTEAD_TEAM_ORG_ID?: string;
   RUNSTEAD_TEAM_WORKSPACE_ID?: string;
   RUNSTEAD_RUNNER_ID?: string;
+  RUNSTEAD_RUNNER_LAST_SEEN_AT?: string;
+  RUNSTEAD_REQUIRE_RUNNER_HEARTBEAT?: string;
   RUNSTEAD_AUDIT_SINK_URI?: string;
   RUNSTEAD_TEAM_IDENTITY_PROVIDER?: string;
   RUNSTEAD_TEAM_TENANT_ISOLATION?: string;
@@ -29,6 +31,7 @@ export interface RuntimeBackendConfigEnv {
 export interface RuntimeBackendSelectionInput {
   rootPath: string;
   env?: RuntimeBackendConfigEnv;
+  now?: Date;
 }
 
 export interface RuntimeBackendSelection {
@@ -57,11 +60,12 @@ export function resolveRuntimeBackendSelection(
     };
   }
 
-  return resolvePostgresBackendSelection(env);
+  return resolvePostgresBackendSelection(env, input.now ?? new Date());
 }
 
 function resolvePostgresBackendSelection(
-  env: RuntimeBackendConfigEnv
+  env: RuntimeBackendConfigEnv,
+  now: Date
 ): RuntimeBackendSelection {
   const postgresUrl = env.RUNSTEAD_POSTGRES_URL;
   const artifactBaseUri = env.RUNSTEAD_ARTIFACT_BASE_URI;
@@ -93,6 +97,10 @@ function resolvePostgresBackendSelection(
     };
   }
 
+  const runnerLastSeenAt = parseRunnerLastSeenAt(
+    splitRunnerIds(runnerIds ?? ""),
+    env.RUNSTEAD_RUNNER_LAST_SEEN_AT
+  );
   const profile: RuntimeTeamControlPlaneProfile = {
     scope: {
       kind: "team",
@@ -102,15 +110,20 @@ function resolvePostgresBackendSelection(
         : { workspaceId: env.RUNSTEAD_TEAM_WORKSPACE_ID })
     },
     storage,
-    runners: splitRunnerIds(runnerIds ?? "").map((runnerId) => ({
-      runnerId,
-      organizationId: organizationId ?? "",
-      ...(env.RUNSTEAD_TEAM_WORKSPACE_ID === undefined
-        ? {}
-        : { workspaceId: env.RUNSTEAD_TEAM_WORKSPACE_ID }),
-      labels: ["runstead", "team"],
-      status: "active" as const
-    })),
+    runners: splitRunnerIds(runnerIds ?? "").map((runnerId) => {
+      const lastSeenAt = runnerLastSeenAt.get(runnerId);
+
+      return {
+        runnerId,
+        organizationId: organizationId ?? "",
+        ...(env.RUNSTEAD_TEAM_WORKSPACE_ID === undefined
+          ? {}
+          : { workspaceId: env.RUNSTEAD_TEAM_WORKSPACE_ID }),
+        labels: ["runstead", "team"],
+        status: "active" as const,
+        ...(lastSeenAt === undefined ? {} : { lastSeenAt })
+      };
+    }),
     leasePolicy: {
       backend: "database",
       fencingTokens: true,
@@ -127,7 +140,12 @@ function resolvePostgresBackendSelection(
     ],
     authz: resolveTeamAuthzPolicy(env)
   };
-  const teamAssessment = assessTeamControlPlaneReadiness(profile);
+  const teamAssessment = assessTeamControlPlaneReadiness(profile, {
+    now,
+    requireRunnerHeartbeats:
+      env.RUNSTEAD_REQUIRE_RUNNER_HEARTBEAT === undefined ||
+      env.RUNSTEAD_REQUIRE_RUNNER_HEARTBEAT !== "false"
+  });
 
   return {
     backend: "postgres",
@@ -158,6 +176,47 @@ function splitRunnerIds(value: string): string[] {
     .split(",")
     .map((item) => item.trim())
     .filter((item) => item.length > 0);
+}
+
+function parseRunnerLastSeenAt(
+  runnerIds: string[],
+  value: string | undefined
+): Map<string, string> {
+  const result = new Map<string, string>();
+
+  if (value === undefined || value.trim() === "") {
+    return result;
+  }
+
+  const entries = value
+    .split(",")
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0);
+
+  if (entries.length === 1 && !entries[0]?.includes("=")) {
+    for (const runnerId of runnerIds) {
+      result.set(runnerId, entries[0] ?? "");
+    }
+
+    return result;
+  }
+
+  for (const entry of entries) {
+    const separator = entry.indexOf("=");
+
+    if (separator <= 0) {
+      continue;
+    }
+
+    const runnerId = entry.slice(0, separator).trim();
+    const lastSeenAt = entry.slice(separator + 1).trim();
+
+    if (runnerId.length > 0 && lastSeenAt.length > 0) {
+      result.set(runnerId, lastSeenAt);
+    }
+  }
+
+  return result;
 }
 
 function resolveTeamAuthzPolicy(env: RuntimeBackendConfigEnv): RuntimeTeamAuthzPolicy {

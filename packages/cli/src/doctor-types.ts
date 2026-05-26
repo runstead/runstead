@@ -33,6 +33,7 @@ export interface DoctorRunsteadOptions {
   wrappedWorkerProbeRunner?: WorkerProcessRunner;
   modelProviderEnv?: NodeJS.ProcessEnv;
   runtimeBackendEnv?: RuntimeBackendConfigEnv;
+  runtimeBackendNow?: Date;
 }
 
 export function pass(id: string, label: string, message: string): DoctorCheck {

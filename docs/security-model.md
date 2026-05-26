@@ -190,10 +190,15 @@ organization-wide, multi-tenant security boundary.
 Runtime backend selection is explicit. The default is local SQLite. Set
 `RUNSTEAD_RUNTIME_BACKEND=postgres` only when the team backend is configured
 with `RUNSTEAD_POSTGRES_URL`, `RUNSTEAD_ARTIFACT_BASE_URI`,
-`RUNSTEAD_TEAM_ORG_ID`, `RUNSTEAD_RUNNER_ID`, and
-`RUNSTEAD_AUDIT_SINK_URI`. `runstead doctor` reports missing values and runs
-the team-control-plane readiness assessment before treating the selected
-backend as team-ready. Operators can also run:
+`RUNSTEAD_TEAM_ORG_ID`, `RUNSTEAD_RUNNER_ID`,
+`RUNSTEAD_RUNNER_LAST_SEEN_AT`, and `RUNSTEAD_AUDIT_SINK_URI`.
+`RUNSTEAD_RUNNER_LAST_SEEN_AT` may be a single ISO timestamp for all runner
+ids or comma-separated `runner_id=timestamp` entries. Fresh runner heartbeat
+evidence is required by default; set `RUNSTEAD_REQUIRE_RUNNER_HEARTBEAT=false`
+only for transitional diagnostics where a warning is acceptable. `runstead
+doctor` reports missing values and runs the team-control-plane readiness
+assessment before treating the selected backend as team-ready. Operators can
+also run:
 
 ```bash
 runstead team control-plane bootstrap --cwd /path/to/repo
@@ -203,8 +208,9 @@ runstead team control-plane migration-sql --schema runstead
 
 The dedicated check reports the concrete assertions required for team mode:
 Postgres backend selection, connection string, shared artifact URI, runner
-identity, distributed lease fencing, hash-chain or append-only audit export,
-OIDC/RBAC/tenant isolation, and central secret-store boundaries.
+identity, fresh runner heartbeat, distributed lease fencing, hash-chain or
+append-only audit export, OIDC/RBAC/tenant isolation, and central secret-store
+boundaries.
 
 The migration SQL command is a deployment aid only. It prints the shared
 backend schema and migration tracking statements; it does not grant auth,

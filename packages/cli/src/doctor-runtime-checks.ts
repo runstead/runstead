@@ -40,12 +40,14 @@ export async function checkStateDatabase(path: string): Promise<DoctorCheck> {
 
 export function checkRuntimeBackend(
   root: string,
-  env: RuntimeBackendConfigEnv
+  env: RuntimeBackendConfigEnv,
+  options: { now?: Date } = {}
 ): DoctorCheck {
   try {
     const selection = resolveRuntimeBackendSelection({
       rootPath: root,
-      env
+      env,
+      ...(options.now === undefined ? {} : { now: options.now })
     });
 
     if (selection.backend === "sqlite") {
@@ -69,7 +71,7 @@ export function checkRuntimeBackend(
     return pass(
       "runtime-backend",
       "runtime backend",
-      `postgres team backend: runners=${capabilities?.registeredRunners ?? 0} storage=${selection.storage.stateUri}`
+      `postgres team backend: runners=${capabilities?.registeredRunners ?? 0} freshHeartbeats=${capabilities?.freshRunnerHeartbeats ?? 0} storage=${selection.storage.stateUri}`
     );
   } catch (error) {
     return fail("runtime-backend", "runtime backend", errorMessage(error));

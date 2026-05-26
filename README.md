@@ -361,6 +361,7 @@ RUNSTEAD_POSTGRES_URL=postgres://runstead/state \
 RUNSTEAD_ARTIFACT_BASE_URI=s3://runstead/evidence \
 RUNSTEAD_TEAM_ORG_ID=org_123 \
 RUNSTEAD_RUNNER_ID=runner_1 \
+RUNSTEAD_RUNNER_LAST_SEEN_AT=2026-05-24T00:00:00.000Z \
 RUNSTEAD_AUDIT_SINK_URI=s3://runstead/audit \
 runstead team control-plane check --cwd /path/to/repo
 ```
@@ -372,9 +373,11 @@ runstead team control-plane migration-sql --schema runstead
 ```
 
 The command reports backend selection, Postgres connection string presence,
-shared artifact URI, runner identity, database lease fencing, hash-chain audit,
-OIDC/RBAC, and central secret-store boundaries. `runstead doctor` includes the
-same backend assessment as part of the broader local health check.
+shared artifact URI, runner identity, fresh runner heartbeat, database lease
+fencing, hash-chain audit, OIDC/RBAC, and central secret-store boundaries.
+`RUNSTEAD_RUNNER_LAST_SEEN_AT` may be one ISO timestamp applied to all runners
+or comma-separated `runner_id=timestamp` entries. `runstead doctor` includes
+the same backend assessment as part of the broader local health check.
 
 ## Setup For This Monorepo
 

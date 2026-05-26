@@ -108,7 +108,13 @@ export async function doctorRunstead(
     await checkDirectory("reports-dir", "reports directory", join(root, "reports"))
   );
   checks.push(await checkStateDatabase(join(root, "state.db")));
-  checks.push(checkRuntimeBackend(root, options.runtimeBackendEnv ?? process.env));
+  checks.push(
+    checkRuntimeBackend(root, options.runtimeBackendEnv ?? process.env, {
+      ...(options.runtimeBackendNow === undefined
+        ? {}
+        : { now: options.runtimeBackendNow })
+    })
+  );
 
   if (options.codex === true) {
     checks.push(checkRunsteadInitialized(resolvedRoot));

@@ -134,12 +134,15 @@ describe("doctorRunstead", () => {
 
       const result = await doctorRunstead({
         cwd: workspace,
+        runtimeBackendNow: new Date("2026-05-24T00:00:15.000Z"),
         runtimeBackendEnv: {
           RUNSTEAD_RUNTIME_BACKEND: "postgres",
           RUNSTEAD_POSTGRES_URL: "postgres://runstead/state",
           RUNSTEAD_ARTIFACT_BASE_URI: "s3://runstead/evidence",
           RUNSTEAD_TEAM_ORG_ID: "org_123",
           RUNSTEAD_RUNNER_ID: "runner_1,runner_2",
+          RUNSTEAD_RUNNER_LAST_SEEN_AT:
+            "runner_1=2026-05-24T00:00:00.000Z,runner_2=2026-05-24T00:00:01.000Z",
           RUNSTEAD_AUDIT_SINK_URI: "s3://runstead/audit"
         }
       });
@@ -150,6 +153,42 @@ describe("doctorRunstead", () => {
       );
       expect(runtimeCheck?.status).toBe("pass");
       expect(runtimeCheck?.message).toContain("postgres team backend: runners=2");
+      expect(runtimeCheck?.message).toContain("freshHeartbeats=2");
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("fails Postgres team runtime setup when runner heartbeat is stale", async () => {
+    const workspace = join(tmpdir(), `runstead-doctor-runtime-pg-stale-${process.pid}`);
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await mkdir(workspace, { recursive: true });
+      await initRunstead({ cwd: workspace });
+
+      const result = await doctorRunstead({
+        cwd: workspace,
+        runtimeBackendNow: new Date("2026-05-24T00:01:00.000Z"),
+        runtimeBackendEnv: {
+          RUNSTEAD_RUNTIME_BACKEND: "postgres",
+          RUNSTEAD_POSTGRES_URL: "postgres://runstead/state",
+          RUNSTEAD_ARTIFACT_BASE_URI: "s3://runstead/evidence",
+          RUNSTEAD_TEAM_ORG_ID: "org_123",
+          RUNSTEAD_RUNNER_ID: "runner_1",
+          RUNSTEAD_RUNNER_LAST_SEEN_AT: "2026-05-24T00:00:00.000Z",
+          RUNSTEAD_AUDIT_SINK_URI: "s3://runstead/audit"
+        }
+      });
+
+      expect(result.ok).toBe(false);
+      const runtimeCheck = result.checks.find(
+        (check) => check.id === "runtime-backend"
+      );
+      expect(runtimeCheck?.status).toBe("fail");
+      expect(runtimeCheck?.message).toContain(
+        "at least one fresh active runner heartbeat is required"
+      );
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }
