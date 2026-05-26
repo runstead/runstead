@@ -10,6 +10,13 @@ import {
   DASHBOARD_OPERATOR_SCRIPT,
   DASHBOARD_RENDER_STYLES
 } from "./dashboard-render-assets.js";
+import {
+  escapeHtml,
+  metric,
+  riskCell,
+  statusCell,
+  tableSection
+} from "./dashboard-render-html.js";
 
 export function formatDashboardHtml(snapshot: DashboardSnapshot): string {
   const summary = snapshot.summary;
@@ -97,10 +104,6 @@ export function formatDashboardHtml(snapshot: DashboardSnapshot): string {
 </body>
 </html>
 `;
-}
-
-function metric(label: string, value: number): string {
-  return `<div class="metric"><strong>${value}</strong><span>${escapeHtml(label)}</span></div>`;
 }
 
 function operatorConsoleSection(operator: DashboardOperatorConsole): string {
@@ -455,46 +458,4 @@ function daemonSectionLabel(status: DashboardDaemonStatus): string {
   }
 
   return status.stale === true ? "stale" : "heartbeat";
-}
-
-function tableSection<T>(
-  title: string,
-  rows: T[],
-  columns: string[],
-  mapRow: (row: T) => string[]
-): string {
-  const body =
-    rows.length === 0
-      ? `<div class="empty">No ${escapeHtml(title.toLowerCase())}.</div>`
-      : `<table>
-        <thead><tr>${columns.map((column) => `<th>${escapeHtml(column)}</th>`).join("")}</tr></thead>
-        <tbody>
-          ${rows
-            .map(
-              (row) =>
-                `<tr>${mapRow(row)
-                  .map((cell) => `<td>${cell}</td>`)
-                  .join("")}</tr>`
-            )
-            .join("\n")}
-        </tbody>
-      </table>`;
-
-  return `<section><header><h2>${escapeHtml(title)}</h2><span class="muted">${rows.length}</span></header>${body}</section>`;
-}
-
-function statusCell(status: string): string {
-  return `<span class="status-${escapeHtml(status)}">${escapeHtml(status)}</span>`;
-}
-
-function riskCell(risk: string): string {
-  return `<span class="risk-${escapeHtml(risk)}">${escapeHtml(risk)}</span>`;
-}
-
-function escapeHtml(value: string): string {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;");
 }
