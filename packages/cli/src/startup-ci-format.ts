@@ -1,9 +1,9 @@
 import type {
   GenerateStartupCiSummaryResult,
-  StartupGitHubActionsRemoteStatus,
   StartupGitHubCheckRunSummary,
   StartupReleaseGateSummary
 } from "./startup-ci-integration.js";
+import type { StartupGitHubActionsRemoteStatus } from "./startup-ci-github-actions.js";
 import type { StartupGateCheckResult } from "./startup-evidence.js";
 
 export function formatStartupCiSummary(result: GenerateStartupCiSummaryResult): string {
