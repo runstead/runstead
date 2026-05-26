@@ -579,6 +579,8 @@ The current implementation wave closed the highest-confidence product gaps:
   maturity regression tests for `research-monitor` and `email-followup`.
 - `runstead team control-plane bootstrap/check` gives operators a dedicated
   team backend assertion surface.
+- Team control-plane runner heartbeat and list formatting moved out of
+  `team-control-plane-runner` into `team-control-plane-runner-format`.
 - CI runs `@runstead/state-postgres` against a real Postgres service via
   `RUNSTEAD_PG_TEST_URL`; local runs skip this integration path unless the env
   var is set.
