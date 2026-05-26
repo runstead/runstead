@@ -379,6 +379,8 @@ The current implementation wave closed the highest-confidence product gaps:
   out of `startup-founder-flow` into `startup-worker-governance`.
 - Startup founder onboard/build/launch/scale result formatting moved out of
   `startup-founder-flow` into `startup-founder-format`.
+- Startup onboarding quickstart and upgrade-guide artifact writing moved out of
+  `startup-founder-flow` into `startup-onboarding-files`.
 - Startup gate severity rules and blocker remediation text moved out of
   `startup-evidence` into `startup-gate-rules`.
 - Startup gate artifact parsing and structured-content helper predicates moved
