@@ -2,10 +2,39 @@ import type { JsonObject, Task } from "@runstead/core";
 import { appendEventAndProject, type RunsteadDatabase } from "@runstead/state-sqlite";
 
 import { localAgentEvent } from "./local-agent-actions.js";
+import { localAgentShouldIncrementAttempt } from "./local-agent-task-input.js";
 import { LOCAL_AGENT_TASK_TYPE } from "./local-agent-types.js";
 
 export function isLocalAgentTask(task: Task): boolean {
   return task.domain === "repo-maintenance" && task.type === LOCAL_AGENT_TASK_TYPE;
+}
+
+export function startLocalAgentTask(input: {
+  database: RunsteadDatabase;
+  task: Task;
+  now?: Date;
+}): Task {
+  const startedAt = (input.now ?? new Date()).toISOString();
+  const task: Task = {
+    ...input.task,
+    status: "running",
+    attempt:
+      input.task.attempt + (localAgentShouldIncrementAttempt(input.task) ? 1 : 0),
+    updatedAt: startedAt
+  };
+
+  appendEventAndProject(input.database, {
+    event: localAgentEvent("task.started", "task", task.id, startedAt, {
+      previousStatus: input.task.status,
+      attempt: task.attempt
+    }),
+    projection: {
+      type: "task",
+      value: task
+    }
+  });
+
+  return task;
 }
 
 export function finalizeLocalAgentTask(input: {

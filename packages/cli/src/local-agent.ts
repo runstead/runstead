@@ -1,11 +1,7 @@
 import { join, resolve } from "node:path";
 
 import { type Goal, type Task } from "@runstead/core";
-import {
-  appendEventAndProject,
-  openRunsteadDatabase,
-  type RunsteadDatabase
-} from "@runstead/state-sqlite";
+import { openRunsteadDatabase, type RunsteadDatabase } from "@runstead/state-sqlite";
 
 import {
   recordWorkspaceCheckpointRestoreEvent,
@@ -19,14 +15,17 @@ import type {
 import { runGovernedToolAction } from "./governed-action.js";
 import { showGoal } from "./goals.js";
 import { createLocalAgentCheckpointIfNeeded } from "./local-agent-checkpoint.js";
-import { localAgentEvent, localAgentWorkerStartAction } from "./local-agent-actions.js";
+import { localAgentWorkerStartAction } from "./local-agent-actions.js";
 import {
-  localAgentShouldIncrementAttempt,
   localAgentTaskCheckpointId,
   type LocalAgentWorkerKind
 } from "./local-agent-task-input.js";
 import { resolveLocalAgentRuntime } from "./local-agent-runtime.js";
-import { finalizeLocalAgentTask, isLocalAgentTask } from "./local-agent-task-state.js";
+import {
+  finalizeLocalAgentTask,
+  isLocalAgentTask,
+  startLocalAgentTask
+} from "./local-agent-task-state.js";
 import {
   isCodexDirectLocalAgentWorkerResult,
   localAgentExecutionSemantics,
@@ -120,30 +119,17 @@ export async function runLocalAgentTask(
     ...(options.now === undefined ? {} : { now: options.now })
   });
 
-  const startedAt = (options.now ?? new Date()).toISOString();
-  const runningTask: Task = {
-    ...claimedTask,
-    status: "running",
-    attempt:
-      claimedTask.attempt + (localAgentShouldIncrementAttempt(claimedTask) ? 1 : 0),
-    updatedAt: startedAt
-  };
-  const goal = showGoal({ cwd, id: runningTask.goalId }).goal;
+  const goal = showGoal({ cwd, id: claimedTask.goalId }).goal;
   const policy = await loadPolicyProfileFromFile(
     join(root.root, "policies", "repo-maintenance.yaml")
   );
   const database = openRunsteadDatabase(state.stateDb);
 
   try {
-    appendEventAndProject(database, {
-      event: localAgentEvent("task.started", "task", runningTask.id, startedAt, {
-        previousStatus: claimedTask.status,
-        attempt: runningTask.attempt
-      }),
-      projection: {
-        type: "task",
-        value: runningTask
-      }
+    const runningTask = startLocalAgentTask({
+      database,
+      task: claimedTask,
+      ...(options.now === undefined ? {} : { now: options.now })
     });
 
     return await runLocalAgentTaskWithDatabase({
