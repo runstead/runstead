@@ -19,7 +19,6 @@ import {
   type StartupHypothesisKind,
   type StartupHypothesisStatus
 } from "./startup-evidence-types.js";
-import { hasNonEmptyString, isRecord } from "./startup-gate-artifacts.js";
 import {
   normalizeStartupEvidenceSources,
   startupEvidenceProvenance,
@@ -29,12 +28,14 @@ import {
 import {
   evaluateStartupGate,
   type StartupGateDiff,
-  type StartupGateEvidenceRow,
   type StartupGateFinding,
-  type StartupGatePreviousEvent,
-  type StartupGateTaskRow,
   type StartupGateWaiver
 } from "./startup-gate-evaluation.js";
+import {
+  readPreviousStartupGateEvent,
+  readStartupGateEvidence,
+  readStartupGateTasks
+} from "./startup-gate-state.js";
 
 export type {
   StartupEvidenceSource,
@@ -171,11 +172,6 @@ export interface StartupGateCheckResult {
   waivedBlockers: StartupGateWaiver[];
   diff: StartupGateDiff;
   event: RunsteadEvent;
-}
-
-interface StartupGatePreviousEventRow {
-  event_id: string;
-  payload_json: string;
 }
 
 const STARTUP_DOMAIN = "ai-native-startup";
@@ -440,83 +436,6 @@ export async function recordStartupGateDecision(
     ),
     ...(options.now === undefined ? {} : { now: options.now })
   });
-}
-
-function readStartupGateTasks(
-  database: ReturnType<typeof openRunsteadDatabase>,
-  domain: string
-): StartupGateTaskRow[] {
-  return database
-    .prepare(
-      `
-      SELECT id, type, status
-      FROM tasks
-      WHERE domain = ?
-      ORDER BY updated_at DESC, id ASC
-    `
-    )
-    .all(domain) as unknown as StartupGateTaskRow[];
-}
-
-function readStartupGateEvidence(
-  database: ReturnType<typeof openRunsteadDatabase>,
-  domain: string
-): StartupGateEvidenceRow[] {
-  return database
-    .prepare(
-      `
-      SELECT DISTINCT e.id, e.type, e.subject_type, e.subject_id, e.uri,
-             e.summary, e.created_at
-      FROM evidence e
-      LEFT JOIN tasks t ON e.subject_type = 'task' AND e.subject_id = t.id
-      WHERE t.domain = ?
-         OR e.type = 'command_output'
-         OR e.type LIKE 'startup_%'
-      ORDER BY e.created_at DESC, e.id ASC
-    `
-    )
-    .all(domain) as unknown as StartupGateEvidenceRow[];
-}
-
-function readPreviousStartupGateEvent(
-  database: ReturnType<typeof openRunsteadDatabase>,
-  domain: string,
-  stage: StartupGateStage
-): StartupGatePreviousEvent | undefined {
-  const row = database
-    .prepare(
-      `
-      SELECT event_id, payload_json
-      FROM events
-      WHERE type = 'startup_gate.checked'
-        AND aggregate_type = 'startup_gate'
-        AND aggregate_id = ?
-      ORDER BY created_at DESC, id DESC
-      LIMIT 1
-    `
-    )
-    .get(`${domain}_${stage}`) as StartupGatePreviousEventRow | undefined;
-
-  if (row === undefined) {
-    return undefined;
-  }
-
-  try {
-    const payload = JSON.parse(row.payload_json) as unknown;
-
-    return {
-      eventId: row.event_id,
-      blockers:
-        isRecord(payload) && Array.isArray(payload.blockers)
-          ? payload.blockers.filter(hasNonEmptyString)
-          : []
-    };
-  } catch {
-    return {
-      eventId: row.event_id,
-      blockers: []
-    };
-  }
 }
 
 function evidenceSubject(artifact: StartupEvidenceArtifact): {
