@@ -10,7 +10,6 @@ import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sql
 
 import { writeJsonArtifactFile } from "./artifact-store.js";
 import { requireRunsteadStateDb } from "./runstead-root.js";
-import { readStartupGateEvidenceArtifacts } from "./startup-gate-artifact-store.js";
 import {
   parseStartupEvidenceType,
   validateStartupEvidenceContent,
@@ -25,17 +24,6 @@ import {
   type StartupEvidenceSource,
   type StartupEvidenceSourceInput
 } from "./startup-evidence-sources.js";
-import {
-  evaluateStartupGate,
-  type StartupGateDiff,
-  type StartupGateFinding,
-  type StartupGateWaiver
-} from "./startup-gate-evaluation.js";
-import {
-  readPreviousStartupGateEvent,
-  readStartupGateEvidence,
-  readStartupGateTasks
-} from "./startup-gate-state.js";
 
 export type {
   StartupEvidenceSource,
@@ -62,6 +50,11 @@ export type {
   StartupGateWaiver
 } from "./startup-gate-evaluation.js";
 export { formatStartupGateCheckResult } from "./startup-gate-format.js";
+export { checkStartupGate } from "./startup-gate-check.js";
+export type {
+  CheckStartupGateOptions,
+  StartupGateCheckResult
+} from "./startup-gate-check.js";
 
 export interface AddStartupEvidenceOptions {
   cwd?: string;
@@ -139,14 +132,6 @@ export interface StartupEvidenceArtifact {
   content?: string;
 }
 
-export interface CheckStartupGateOptions {
-  cwd?: string;
-  domain?: string;
-  stage?: StartupGateStage;
-  now?: Date;
-  recordEvent?: boolean;
-}
-
 export interface RecordStartupGateDecisionOptions {
   cwd?: string;
   domain?: string;
@@ -158,20 +143,6 @@ export interface RecordStartupGateDecisionOptions {
   blocker?: string;
   expiresAt?: string;
   now?: Date;
-}
-
-export interface StartupGateCheckResult {
-  root: string;
-  stateDb: string;
-  domain: string;
-  stage: StartupGateStage;
-  passed: boolean;
-  blockers: string[];
-  warnings: string[];
-  findings: StartupGateFinding[];
-  waivedBlockers: StartupGateWaiver[];
-  diff: StartupGateDiff;
-  event: RunsteadEvent;
 }
 
 const STARTUP_DOMAIN = "ai-native-startup";
@@ -324,69 +295,6 @@ export async function recordStartupManualChange(
     ...(options.blocker === undefined ? {} : { blocker: options.blocker }),
     ...(options.now === undefined ? {} : { now: options.now })
   });
-}
-
-export async function checkStartupGate(
-  options: CheckStartupGateOptions = {}
-): Promise<StartupGateCheckResult> {
-  const cwd = resolve(options.cwd ?? process.cwd());
-  const domain = options.domain ?? STARTUP_DOMAIN;
-  const stage = options.stage ?? "launch";
-  const checkedAt = (options.now ?? new Date()).toISOString();
-  const resolvedState = await requireRunsteadStateDb(cwd);
-  const database = openRunsteadDatabase(resolvedState.stateDb);
-
-  try {
-    const tasks = readStartupGateTasks(database, domain);
-    const evidence = readStartupGateEvidence(database, domain);
-    const artifacts = readStartupGateEvidenceArtifacts(evidence);
-    const previousEvent = readPreviousStartupGateEvent(database, domain, stage);
-    const gate = evaluateStartupGate({
-      stage,
-      tasks,
-      evidence,
-      artifacts,
-      checkedAt,
-      ...(previousEvent === undefined ? {} : { previousEvent })
-    });
-    const event: RunsteadEvent = {
-      eventId: createRunsteadId("evt"),
-      type: "startup_gate.checked",
-      aggregateType: "startup_gate",
-      aggregateId: `${domain}_${stage}`,
-      payload: {
-        domain,
-        stage,
-        passed: gate.passed,
-        blockers: gate.blockers,
-        warnings: gate.warnings,
-        findings: gate.findings,
-        waivedBlockers: gate.waivedBlockers,
-        diff: gate.diff
-      },
-      createdAt: checkedAt
-    };
-
-    if (options.recordEvent !== false) {
-      appendEventAndProject(database, { event });
-    }
-
-    return {
-      root: resolvedState.root,
-      stateDb: resolvedState.stateDb,
-      domain,
-      stage,
-      passed: gate.passed,
-      blockers: gate.blockers,
-      warnings: gate.warnings,
-      findings: gate.findings,
-      waivedBlockers: gate.waivedBlockers,
-      diff: gate.diff,
-      event
-    };
-  } finally {
-    database.close();
-  }
 }
 
 export async function recordStartupGateDecision(
