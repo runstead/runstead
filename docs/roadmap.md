@@ -202,6 +202,8 @@ The current implementation wave closed the highest-confidence product gaps:
   `commands/agent-test`.
 - Local-agent verifier option resolution moved out of the agent command adapter
   into `local-agent-verifier-options`.
+- Local agent preset override loading and YAML parsing moved out of
+  `local-agent-presets` into `local-agent-preset-overrides`.
 - `packages/cli/src/index.ts` no longer owns dashboard or doctor command
   registration.
 - Dashboard snapshot and operator API contracts moved out of the dashboard
