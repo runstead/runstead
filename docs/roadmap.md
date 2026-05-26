@@ -507,6 +507,8 @@ The current implementation wave closed the highest-confidence product gaps:
 - Startup ready UI smoke config types, YAML parsing, legacy shape
   normalization, and serialization moved out of the UI smoke executor into
   `startup-ready-ui-smoke-config`.
+- Verifier command governed execution and policy deny/approval evidence handling
+  moved out of the verifier task runner into `verifier-runner-command`.
 - Wrapped-worker stuck progress coverage is stabilized against short timing
   windows in full-suite runs.
 - `startup source collect` records structured provider evidence through
