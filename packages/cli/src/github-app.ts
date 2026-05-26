@@ -4,7 +4,7 @@ import { isAbsolute, join, resolve } from "node:path";
 
 import { createRunsteadId, type RunsteadEvent } from "@runstead/core";
 import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sqlite";
-import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
+import { parse as parseYaml } from "yaml";
 import { z } from "zod";
 
 import {
@@ -12,6 +12,7 @@ import {
   requireRunsteadRootSync,
   requireRunsteadStateDbSync
 } from "./runstead-root.js";
+import { formatGitHubAppConfigYaml } from "./github-app-format.js";
 import { createGitHubAppJwt } from "./github-app-jwt.js";
 import type { GitHubAppJwtResult } from "./github-app-jwt.js";
 import type {
@@ -40,6 +41,10 @@ export type {
   InitGitHubAppModeOptions,
   InitGitHubAppModeResult
 } from "./github-app-types.js";
+export {
+  formatGitHubAppConfigSummary,
+  formatGitHubAppConfigYaml
+} from "./github-app-format.js";
 
 const DEFAULT_GITHUB_API_BASE_URL = "https://api.github.com";
 
@@ -236,26 +241,6 @@ export async function createGitHubAppInstallationTokenFromConfig(
     event,
     stateDb
   };
-}
-
-export function formatGitHubAppConfigSummary(config: GitHubAppConfig): string {
-  return [
-    `GitHub App: ${config.appId}`,
-    `Installation: ${config.installationId ?? "none"}`,
-    `API: ${config.apiBaseUrl}`,
-    `Private key: ${config.privateKeyPath}`
-  ].join("\n");
-}
-
-function formatGitHubAppConfigYaml(config: GitHubAppConfig): string {
-  return stringifyYaml({
-    app_id: config.appId,
-    ...(config.installationId === undefined
-      ? {}
-      : { installation_id: config.installationId }),
-    private_key_path: config.privateKeyPath,
-    api_base_url: config.apiBaseUrl
-  });
 }
 
 function trimTrailingSlashes(value: string): string {
