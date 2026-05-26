@@ -34,15 +34,13 @@ import {
   stageAtLeast,
   type CiRepairOrchestratorResumeContext
 } from "./ci-repair-orchestrator-context.js";
+import { claimCiRepairOrchestratorTask } from "./ci-repair-orchestrator-claim.js";
 import { prepareCiRepairOrchestratorIntake } from "./ci-repair-orchestrator-intake.js";
 import {
   isStagePersistenceInterruption,
   markTaskTerminal
 } from "./ci-repair-orchestrator-task-state.js";
-import {
-  writeCiRepairContextPatch,
-  writeCiRepairStage
-} from "./ci-repair-orchestrator-stage-persistence.js";
+import { writeCiRepairStage } from "./ci-repair-orchestrator-stage-persistence.js";
 import {
   rollbackWorkerChanges,
   startCiRepairWorker
@@ -129,42 +127,16 @@ export async function runCiRepairOrchestratorUnlocked(
   let stageContext = intake.stageContext;
 
   try {
-    if (restoredStageContext !== undefined) {
-      ({ task: orchestratorTask, context: stageContext } = writeCiRepairContextPatch({
-        database,
-        task: orchestratorTask,
-        context: stageContext,
-        patch: {
-          counters: incrementCiRepairCounter(stageContext, "orchestratorAttempt")
-        },
-        ...(options.now === undefined ? {} : { now: options.now })
-      }));
-    }
-
-    if (!stageAtLeast(stageContext.stage, "intake_completed")) {
-      ({ task: orchestratorTask, context: stageContext } = writeCiRepairStage({
-        database,
-        task: orchestratorTask,
-        context: stageContext,
-        stage: "intake_completed",
-        ...(options.onStagePersisted === undefined
-          ? {}
-          : { onStagePersisted: options.onStagePersisted }),
-        ...(options.now === undefined ? {} : { now: options.now })
-      }));
-    }
-    if (!stageAtLeast(stageContext.stage, "claimed")) {
-      ({ task: orchestratorTask, context: stageContext } = writeCiRepairStage({
-        database,
-        task: orchestratorTask,
-        context: stageContext,
-        stage: "claimed",
-        ...(options.onStagePersisted === undefined
-          ? {}
-          : { onStagePersisted: options.onStagePersisted }),
-        ...(options.now === undefined ? {} : { now: options.now })
-      }));
-    }
+    ({ task: orchestratorTask, context: stageContext } = claimCiRepairOrchestratorTask({
+      database,
+      task: orchestratorTask,
+      context: stageContext,
+      restored: restoredStageContext !== undefined,
+      ...(options.onStagePersisted === undefined
+        ? {}
+        : { onStagePersisted: options.onStagePersisted }),
+      ...(options.now === undefined ? {} : { now: options.now })
+    }));
     ciRepair = {
       ...ciRepair,
       task: orchestratorTask
