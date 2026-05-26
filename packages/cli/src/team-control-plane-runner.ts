@@ -4,22 +4,22 @@ import type {
 } from "@runstead/runtime";
 import {
   createPostgresControlPlaneBackend,
-  migratePostgresControlPlane,
-  PsqlPostgresControlPlaneClient,
-  type PostgresControlPlaneClient
+  migratePostgresControlPlane
 } from "@runstead/state-postgres";
 
 import { requireRunsteadRoot } from "./runstead-root.js";
+import {
+  connectTeamPostgresClient,
+  resolveTeamPostgresConnection,
+  type TeamControlPlanePostgresClientFactory
+} from "./team-control-plane-runner-connection.js";
 
 export type TeamControlPlaneRunnerStatus = RuntimeRunnerRegistration["status"];
 
-export type TeamControlPlanePostgresClient = PostgresControlPlaneClient & {
-  end?: () => Promise<void>;
-};
-
-export type TeamControlPlanePostgresClientFactory = (
-  stateUri: string
-) => Promise<TeamControlPlanePostgresClient>;
+export type {
+  TeamControlPlanePostgresClient,
+  TeamControlPlanePostgresClientFactory
+} from "./team-control-plane-runner-connection.js";
 
 export interface TeamControlPlaneRunnerOptions {
   cwd?: string;
@@ -222,46 +222,6 @@ export {
   formatTeamControlPlaneRunnerHeartbeat,
   formatTeamControlPlaneRunnerList
 } from "./team-control-plane-runner-format.js";
-
-function resolveTeamPostgresConnection(options: TeamControlPlaneRunnerOptions): {
-  stateUri: string;
-  schema: string;
-  postgresClientFactory?: TeamControlPlanePostgresClientFactory;
-} {
-  const env = options.env ?? process.env;
-  const stateUri = env.RUNSTEAD_POSTGRES_URL?.trim();
-
-  if (env.RUNSTEAD_RUNTIME_BACKEND !== "postgres") {
-    throw new Error(
-      "RUNSTEAD_RUNTIME_BACKEND=postgres is required for live team runner operations"
-    );
-  }
-
-  if (stateUri === undefined || stateUri.length === 0) {
-    throw new Error(
-      "RUNSTEAD_POSTGRES_URL is required for live team runner operations"
-    );
-  }
-
-  return {
-    stateUri,
-    schema: options.schema ?? "runstead",
-    ...(options.postgresClientFactory === undefined
-      ? {}
-      : { postgresClientFactory: options.postgresClientFactory })
-  };
-}
-
-async function connectTeamPostgresClient(input: {
-  stateUri: string;
-  postgresClientFactory?: TeamControlPlanePostgresClientFactory;
-}): Promise<TeamControlPlanePostgresClient> {
-  if (input.postgresClientFactory !== undefined) {
-    return input.postgresClientFactory(input.stateUri);
-  }
-
-  return PsqlPostgresControlPlaneClient.connect(input.stateUri);
-}
 
 function firstRunnerId(value: string | undefined): string | undefined {
   return value

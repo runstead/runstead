@@ -581,6 +581,8 @@ The current implementation wave closed the highest-confidence product gaps:
   team backend assertion surface.
 - Team control-plane runner heartbeat and list formatting moved out of
   `team-control-plane-runner` into `team-control-plane-runner-format`.
+- Team control-plane Postgres connection validation and client creation moved
+  out of `team-control-plane-runner` into `team-control-plane-runner-connection`.
 - CI runs `@runstead/state-postgres` against a real Postgres service via
   `RUNSTEAD_PG_TEST_URL`; local runs skip this integration path unless the env
   var is set.
