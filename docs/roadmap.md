@@ -400,6 +400,9 @@ The current implementation wave closed the highest-confidence product gaps:
 - Startup MVP hypothesis, validation, disconfirming-evidence, and structured
   metric gate rules moved out of `startup-gate-evaluation` into
   `startup-gate-validation`.
+- Startup launch blocker rules for measurement, repo/security, command,
+  remediation quality, UI validation, and accepted debt moved out of
+  `startup-gate-evaluation` into `startup-gate-launch`.
 - CI repair stage/context persistence helpers moved out of
   `ci-repair-orchestrator` into `ci-repair-orchestrator-stage-persistence`.
 - `packages/cli/src/startup-command.ts` no longer owns startup scale
