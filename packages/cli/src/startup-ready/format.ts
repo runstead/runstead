@@ -100,6 +100,18 @@ function formatStartupReadyPlanRuntimeBackend(plan: StartupReadyPlan): string {
   return `${backend.backend} ${status} (${backend.storageUri}${team}${warnings})`;
 }
 
+function formatStartupReadinessRunRuntimeBackend(run: StartupReadinessRun): string {
+  const backend = run.runtimeBackend;
+
+  if (backend === undefined) {
+    return "unknown";
+  }
+
+  const status = backend.setupBlockers.length === 0 ? "ready" : "blocked";
+
+  return `${backend.backend} ${status} (${backend.storageUri})`;
+}
+
 export function formatStartupReadinessRun(run: StartupReadinessRun): string {
   const decisions = startupReadinessDecisionMatrix(run);
   const orderedDecisions = [
@@ -125,6 +137,7 @@ export function formatStartupReadinessRun(run: StartupReadinessRun): string {
       run.worker,
       startupReadinessRunGovernanceProfile(run)
     ),
+    `Runtime backend: ${formatStartupReadinessRunRuntimeBackend(run)}`,
     ...(run.scaffoldProfile === undefined
       ? []
       : [`Scaffold profile: ${run.scaffoldProfile.id} (${run.scaffoldProfile.title})`]),
@@ -205,6 +218,7 @@ export function formatStartupReadinessDecisionMarkdown(input: {
     target: StartupReadyTarget;
     worker: LocalAgentWorkerKind;
     workerGovernance: string;
+    runtimeBackend?: StartupReadyPlan["runtimeBackend"];
     scaffoldProfile?: StartupScaffoldProfile;
     status: StartupReadinessRunStatus;
     verdict: StartupReadinessVerdict;
@@ -259,6 +273,11 @@ export function formatStartupReadinessDecisionMarkdown(input: {
     `Requested target: ${input.run.target}`,
     `Worker: ${input.run.worker}`,
     input.run.workerGovernance,
+    ...(input.run.runtimeBackend === undefined
+      ? []
+      : [
+          `Runtime backend: ${input.run.runtimeBackend.backend} (${input.run.runtimeBackend.storageUri})`
+        ]),
     ...(input.run.scaffoldProfile === undefined
       ? []
       : [

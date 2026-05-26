@@ -67,6 +67,9 @@ describe("startup readiness run model", () => {
         status: "planned",
         startedAt: "2026-05-22T01:00:00.000Z"
       });
+      expect(run.runtimeBackend).toMatchObject({
+        backend: "sqlite"
+      });
       expect(run.id).toMatch(/^run_[a-f0-9]{32}$/);
       expect(run.phases.map((phase) => phase.id)).toEqual([
         "runtime_backend",
@@ -90,6 +93,7 @@ describe("startup readiness run model", () => {
       ]);
       expect(run.operatorCommands[0]?.command).toContain(`--resume ${run.id}`);
       expect(formatStartupReadinessRun(run)).toContain("Operator commands:");
+      expect(formatStartupReadinessRun(run)).toContain("Runtime backend: sqlite ready");
       expect(loaded.run).toEqual(run);
     } finally {
       await rm(workspace, { force: true, recursive: true });
@@ -906,10 +910,28 @@ describe("startup readiness run model", () => {
       });
       const backend = result.run.phases.find((phase) => phase.id === "runtime_backend");
       const build = result.run.phases.find((phase) => phase.id === "build_mvp");
+      const decisionJson = result.run.reportPaths.find((path) =>
+        path.endsWith(`startup-readiness-run-${result.run.id}.json`)
+      );
+      const decisionPayload =
+        decisionJson === undefined
+          ? undefined
+          : (JSON.parse(await readFile(decisionJson, "utf8")) as {
+              run?: { runtimeBackend?: { backend?: string; setupBlockers?: string[] } };
+            });
 
       expect(workerCalled).toBe(false);
       expect(result.run.status).toBe("blocked");
       expect(result.run.verdict).toBe("local_launch_blocked");
+      expect(result.run.runtimeBackend?.backend).toBe("postgres");
+      expect(result.run.runtimeBackend?.setupBlockers).toEqual(
+        expect.arrayContaining([
+          "RUNSTEAD_POSTGRES_URL is required for RUNSTEAD_RUNTIME_BACKEND=postgres"
+        ])
+      );
+      expect(decisionPayload?.run?.runtimeBackend).toMatchObject({
+        backend: "postgres"
+      });
       expect(backend?.status).toBe("blocked");
       expect(backend?.blockers).toEqual(
         expect.arrayContaining([

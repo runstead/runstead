@@ -116,7 +116,10 @@ It also writes reports under `.runstead/reports/`, including:
 
 Persisted run state includes guided steps and operator commands so the
 dashboard and `runstead startup ready --resume` can pick up exactly where
-the previous run left off.
+the previous run left off. It also records the selected runtime backend,
+storage URI, setup blockers, warnings, and team-readiness flag so reports and
+dashboard snapshots can audit whether a local SQLite or Postgres team backend
+was actually used for the run.
 
 The CI summary separates Runstead's local release gate from remote GitHub
 Actions state. Remote state is one of `passed`, `failed`, `pending`,

@@ -18,6 +18,7 @@ export interface RuntimeReadinessRunSnapshot {
   target: string;
   worker: string;
   governanceProfile?: string;
+  runtimeBackend?: JsonObject;
   status: string;
   phases: RuntimeReadinessRunPhaseSnapshot[];
   evidenceIds: string[];
@@ -69,6 +70,7 @@ export function readinessRunSnapshotPayload(
     target: run.target,
     worker: run.worker,
     governanceProfile: readinessRunGovernanceProfile(run),
+    ...(run.runtimeBackend === undefined ? {} : { runtimeBackend: run.runtimeBackend }),
     status: run.status,
     verdict: run.verdict,
     verdictBlockers: run.verdictBlockers,

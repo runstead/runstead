@@ -175,6 +175,7 @@ export interface StartupReadinessRun {
   worker: LocalAgentWorkerKind;
   governanceProfile: ResolvedStartupWorkerGovernanceProfile;
   scaffoldProfile?: StartupScaffoldProfile;
+  runtimeBackend?: StartupReadyPlanRuntimeBackend;
   status: StartupReadinessRunStatus;
   phases: StartupReadinessRunPhase[];
   evidenceIds: string[];

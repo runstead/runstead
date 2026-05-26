@@ -43,6 +43,7 @@ export async function createStartupReadinessRun(
     ...(plan.scaffoldProfile === undefined
       ? {}
       : { scaffoldProfile: plan.scaffoldProfile }),
+    runtimeBackend: plan.runtimeBackend,
     status: "planned",
     phases: plan.phases.map((phase) => ({
       id: phase.id,

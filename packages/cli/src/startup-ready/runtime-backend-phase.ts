@@ -71,6 +71,7 @@ export async function executeStartupReadyRuntimeBackendPhase(
   });
   const passed = plan.setupBlockers.length === 0;
 
+  run.runtimeBackend = plan;
   updatePhase(run, "runtime_backend", {
     status: passed ? "passed" : "blocked",
     blockers: plan.setupBlockers,

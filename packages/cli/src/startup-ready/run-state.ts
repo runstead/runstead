@@ -32,6 +32,9 @@ export async function readStartupReadinessRun(input: {
       ...(typeof parsed.codeFingerprint === "string"
         ? { codeFingerprint: parsed.codeFingerprint }
         : {}),
+      ...(parsed.runtimeBackend === undefined
+        ? {}
+        : { runtimeBackend: parsed.runtimeBackend }),
       governanceProfile: startupReadinessRunGovernanceProfile(parsed)
     }),
     path

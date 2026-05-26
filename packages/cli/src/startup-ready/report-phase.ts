@@ -68,6 +68,9 @@ export async function writeStartupReadinessDecisionReport(
       target: run.target,
       worker: run.worker,
       workerGovernance: formatStartupWorkerGovernanceNotice(run.worker),
+      ...(run.runtimeBackend === undefined
+        ? {}
+        : { runtimeBackend: run.runtimeBackend }),
       ...(run.scaffoldProfile === undefined
         ? {}
         : { scaffoldProfile: run.scaffoldProfile }),

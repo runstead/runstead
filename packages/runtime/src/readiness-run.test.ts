@@ -15,6 +15,11 @@ describe("readiness run snapshots", () => {
         stage: "launch",
         target: "local",
         worker: "codex_direct",
+        runtimeBackend: {
+          backend: "postgres",
+          storageUri: "postgres://runstead/state",
+          setupBlockers: []
+        },
         status: "completed",
         phases: [
           {
@@ -53,6 +58,10 @@ describe("readiness run snapshots", () => {
       runId: "run_123",
       worker: "codex_direct",
       governanceProfile: "governed",
+      runtimeBackend: {
+        backend: "postgres",
+        storageUri: "postgres://runstead/state"
+      },
       verdict: "local_launch_ready",
       evidenceTiers: ["synthetic_smoke", "local_command"],
       phases: [
