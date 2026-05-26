@@ -18,23 +18,24 @@ import {
   ToolActionApprovalRequiredError,
   ToolActionDeniedError
 } from "./governed-action.js";
+export {
+  formatExecutionSemanticsLines,
+  formatLocalAgentWorkerResultLines
+} from "./local-agent-result-format.js";
+import {
+  localNativeWorkerGovernanceOutput,
+  localWrappedWorkerGovernanceOutput,
+  redactedLocalWrappedWorkerArgs,
+  wrappedWorkerDefaultModelSource,
+  wrappedWorkerModel
+} from "./local-agent-worker-output.js";
+export type {
+  LocalAgentWorkerGovernanceOutput,
+  LocalAgentWorkerGovernanceProfile,
+  LocalAgentWorkerResult
+} from "./local-agent-worker-types.js";
+import type { LocalAgentWorkerResult } from "./local-agent-worker-types.js";
 import type { RunTaskVerifiersResult } from "./verifier-runner.js";
-import type { WrappedWorkerRunResult } from "./wrapped-worker.js";
-
-export type LocalAgentWorkerResult = CodexDirectWorkerResult | WrappedWorkerRunResult;
-
-export interface LocalAgentWorkerGovernanceProfile {
-  level: "level_1_wrapper" | "level_2_native_proxy";
-  enforcement?: string;
-  boundary: "process_wrapper" | "native_tool_proxy";
-  hardProxyToolCalls: boolean;
-  internalToolProxy: "none" | "runstead_governed_actions";
-  policyEnforcement: "launch_gate" | "per_tool_call";
-  workspaceCheckpoint?: boolean;
-  postRunDiffVerification?: boolean;
-  auditedActions: string[];
-  limitations: string[];
-}
 
 export function localAgentFinalTaskStatus(
   workerResult: LocalAgentWorkerResult,
@@ -259,53 +260,6 @@ export function localAgentWorkerOutput(input: {
   };
 }
 
-export function formatLocalAgentWorkerResultLines(
-  workerResult: LocalAgentWorkerResult
-): string[] {
-  if (isCodexDirectLocalAgentWorkerResult(workerResult)) {
-    const governance = localNativeWorkerGovernanceOutput();
-
-    return [
-      `Worker: ${workerResult.worker}`,
-      `Provider: ${workerResult.modelProvider}`,
-      `Model: ${workerResult.model}`,
-      `Worker status: ${workerResult.status}`,
-      `Governance: ${String(governance.level)}`,
-      `Tool proxy: ${String(governance.internalToolProxy)} (${String(governance.policyEnforcement)})`,
-      `Tool calls: ${workerResult.toolCalls}`,
-      `Failed tool calls: ${workerResult.failedToolCalls}`,
-      ...(workerResult.interruption === undefined
-        ? []
-        : formatCodexDirectInterruptionLines(workerResult.interruption))
-    ];
-  }
-
-  return [
-    `Worker: ${workerResult.worker}`,
-    `Command: ${workerResult.command}`,
-    `Mode: wrapped external worker`,
-    `Model: ${wrappedWorkerModel(workerResult) ?? wrappedWorkerDefaultModelLabel(workerResult)}`,
-    `Model source: ${wrappedWorkerModelSource(workerResult)}`,
-    `Governance: ${String(localWrappedWorkerGovernanceOutput(workerResult).level)}`,
-    "Tool proxy: none (worker-internal tool calls are not hard-proxied)",
-    `Exit: ${workerResult.exitCode}`,
-    `Output valid: ${workerResult.outputValidation.valid ? "yes" : "no"}`,
-    `Stdout: ${Buffer.byteLength(workerResult.stdout, "utf8")} bytes`,
-    `Stderr: ${Buffer.byteLength(workerResult.stderr, "utf8")} bytes`
-  ];
-}
-
-export function formatExecutionSemanticsLines(
-  execution: RuntimeExecutionSemantics
-): string[] {
-  return [
-    "Execution:",
-    `  implementation: ${execution.implementation}`,
-    `  verification: ${execution.verification}`,
-    `  agentCompletion: ${execution.agentCompletion}`
-  ];
-}
-
 export function localAgentFailureFromError(
   error: unknown,
   checkpoint?: WorkspaceCheckpoint
@@ -456,22 +410,6 @@ function localAgentVerifiersPassed(
   );
 }
 
-function formatCodexDirectInterruptionLines(
-  interruption: NonNullable<CodexDirectWorkerResult["interruption"]>
-): string[] {
-  if (interruption.reason === "model_timeout") {
-    return [
-      `Interruption: ${interruption.reason} after ${interruption.timeoutMs}ms`,
-      `Retry: ${interruption.retryCommand}`
-    ];
-  }
-
-  return [
-    `Interruption: ${interruption.reason} after ${interruption.attempts} attempts`,
-    `Retry: ${interruption.retryCommand}`
-  ];
-}
-
 function localAgentFailureExecution(
   agentCompletion: RuntimeExecutionSemantics["agentCompletion"]
 ): RuntimeExecutionSemantics {
@@ -480,94 +418,4 @@ function localAgentFailureExecution(
     verification: "skipped",
     agentCompletion
   };
-}
-
-function redactedLocalWrappedWorkerArgs(
-  workerResult: WrappedWorkerRunResult
-): string[] {
-  const omitted = "[omitted from Runstead durable state]";
-
-  return workerResult.args.map((arg) => (arg === workerResult.prompt ? omitted : arg));
-}
-
-function wrappedWorkerModel(workerResult: WrappedWorkerRunResult): string | undefined {
-  const modelFlagIndex = workerResult.args.indexOf("--model");
-  const model =
-    modelFlagIndex === -1 ? undefined : workerResult.args[modelFlagIndex + 1];
-
-  return typeof model === "string" && model.trim().length > 0
-    ? model.trim()
-    : undefined;
-}
-
-function wrappedWorkerModelSource(workerResult: WrappedWorkerRunResult): string {
-  return wrappedWorkerModel(workerResult) === undefined
-    ? wrappedWorkerDefaultModelSource(workerResult)
-    : "runstead_model_option";
-}
-
-function wrappedWorkerDefaultModelSource(workerResult: WrappedWorkerRunResult): string {
-  return workerResult.worker === "codex_cli"
-    ? "codex_cli_config"
-    : "claude_code_config";
-}
-
-function wrappedWorkerDefaultModelLabel(workerResult: WrappedWorkerRunResult): string {
-  return workerResult.worker === "codex_cli"
-    ? "Codex CLI default"
-    : "Claude Code CLI default";
-}
-
-function localWrappedWorkerGovernanceOutput(
-  workerResult: WrappedWorkerRunResult
-): JsonObject {
-  const profile: LocalAgentWorkerGovernanceProfile = {
-    level: "level_1_wrapper",
-    enforcement: workerResult.governance.enforcement,
-    boundary: "process_wrapper",
-    hardProxyToolCalls: workerResult.governance.capabilities.hardProxyToolCalls,
-    internalToolProxy: workerResult.governance.internalToolProxy.mode,
-    policyEnforcement: "launch_gate",
-    workspaceCheckpoint: workerResult.governance.capabilities.workspaceCheckpoint,
-    postRunDiffVerification:
-      workerResult.governance.capabilities.postRunDiffVerification,
-    auditedActions: ["worker.external.start", "checkpoint", "diff_scope", "verifier"],
-    limitations: [
-      "worker-internal tool calls are governed only by the worker runtime",
-      "Runstead verifies process launch, checkpoint, diff, and verifier evidence after exit"
-    ]
-  };
-
-  return profile as unknown as JsonObject;
-}
-
-function localNativeWorkerGovernanceOutput(): JsonObject {
-  const profile: LocalAgentWorkerGovernanceProfile = {
-    level: "level_2_native_proxy",
-    boundary: "native_tool_proxy",
-    hardProxyToolCalls: true,
-    internalToolProxy: "runstead_governed_actions",
-    policyEnforcement: "per_tool_call",
-    auditedActions: [
-      "worker.native.start",
-      "model.inference.request",
-      "filesystem.read",
-      "filesystem.write",
-      "filesystem.patch",
-      "shell.exec",
-      "git.status",
-      "git.diff",
-      "git.log",
-      "git.show",
-      "verifier.run",
-      "evidence.read",
-      "workspace.facts.read"
-    ],
-    limitations: [
-      "native proxy depends on Runstead-owned tool implementations",
-      "external MCP/plugin ecosystems remain available through wrapped workers"
-    ]
-  };
-
-  return profile as unknown as JsonObject;
 }
