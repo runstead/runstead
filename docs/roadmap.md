@@ -589,6 +589,8 @@ The current implementation wave closed the highest-confidence product gaps:
   `codex-direct/worker` into `codex-direct/pending-patch-resume`.
 - Startup readiness guided-flow blocker classification and formatting moved out
   of `startup-ready/operator-actions` into `startup-ready/operator-guided-flow`.
+- Codex Direct tool execution dispatch moved out of `codex-direct/tool-router`
+  into `codex-direct/tool-executor`.
 - CI runs `@runstead/state-postgres` against a real Postgres service via
   `RUNSTEAD_PG_TEST_URL`; local runs skip this integration path unless the env
   var is set.
