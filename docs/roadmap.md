@@ -513,6 +513,9 @@ The current implementation wave closed the highest-confidence product gaps:
 - Extension collector task projection transitions and governed action
   construction moved out of `startup-extension-execution` into
   `startup-extension-collector-task`.
+- Extension collector subprocess execution, stdout parsing, output-schema
+  validation, and evidence artifact writing moved out of
+  `startup-extension-execution` into `startup-extension-collector-evidence`.
 - Dashboard operator controls can run actions and approve/deny pending
   approvals through the protected local API.
 - Dashboard recovery timelines now link resolved blockers to the ready run
