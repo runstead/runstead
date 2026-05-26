@@ -1,4 +1,5 @@
 import type {
+  RuntimeBackendConfigEnv,
   ReadinessEvidenceRequirement,
   RuntimeExecutionSemantics
 } from "@runstead/runtime";
@@ -86,6 +87,7 @@ export interface StartupReadyOptions {
   appType?: StartupAppType;
   maxAttempts?: number;
   forceBuild?: boolean;
+  runtimeBackendEnv?: RuntimeBackendConfigEnv;
   sourceConnectorEnv?: Record<string, string | undefined>;
   workerRunner?: StartupBuildMvpOptions["workerRunner"];
   onProgress?: (event: StartupReadyProgressEvent) => void;
@@ -130,9 +132,19 @@ export interface StartupReadyPlan {
   governanceProfile: ResolvedStartupWorkerGovernanceProfile;
   scaffoldProfile?: StartupScaffoldProfile;
   runsteadInitialized: boolean;
+  runtimeBackend: StartupReadyPlanRuntimeBackend;
   extensions: StartupReadyPlanExtensions;
   sourceConnectors: StartupReadyPlanSourceConnectors;
   phases: StartupReadyPlanPhase[];
+}
+
+export interface StartupReadyPlanRuntimeBackend {
+  backend: string;
+  storageUri: string;
+  artifactBaseUri?: string;
+  setupBlockers: string[];
+  warnings: string[];
+  teamReady?: boolean;
 }
 
 export interface StartupReadyPlanExtensions {

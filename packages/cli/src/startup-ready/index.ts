@@ -27,6 +27,7 @@ import {
   updatePhase
 } from "./shared.js";
 import { executeStartupReadyOnboardingPhase } from "./onboarding-phase.js";
+import { executeStartupReadyRuntimeBackendPhase } from "./runtime-backend-phase.js";
 import { emitStartupReadyPhaseResult, emitStartupReadyProgress } from "./progress.js";
 import { ensureStartupReadyLocalLaunchEvidence } from "./local-evidence.js";
 import { executeStartupReadyBuildAndVerifierPhase } from "./build-verifier-phase.js";
@@ -185,6 +186,10 @@ async function executeStartupReadyRun(
   run: StartupReadinessRun,
   options: StartupReadyOptions
 ): Promise<void> {
+  if (!(await executeStartupReadyRuntimeBackendPhase(run, options))) {
+    return;
+  }
+
   await executeStartupReadyOnboardingPhase(run, options);
   await executeStartupReadyBuildAndVerifierPhase(run, options);
 

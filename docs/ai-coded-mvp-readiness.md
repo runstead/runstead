@@ -63,23 +63,25 @@ support, or customer evidence.
 
 Each readiness run performs these phases:
 
-1. onboard repository and initialize Runstead state
-2. generate or ingest agent context (`AGENTS.md`, `CLAUDE.md`, `CODEX.md`)
-3. generate or ingest the measurement framework
-4. run bounded MVP build/repair with the selected worker, or **skip the
+1. check the selected runtime backend; an incomplete
+   `RUNSTEAD_RUNTIME_BACKEND=postgres` team setup blocks before any worker runs
+2. onboard repository and initialize Runstead state
+3. generate or ingest agent context (`AGENTS.md`, `CLAUDE.md`, `CODEX.md`)
+4. generate or ingest the measurement framework
+5. run bounded MVP build/repair with the selected worker, or **skip the
    worker on the green path** when the current app surface already has
    discoverable test/lint/typecheck/build commands and matching verifier
    evidence
-5. discover and run verifiers (test, lint, typecheck, build, plus any
+6. discover and run verifiers (test, lint, typecheck, build, plus any
    verifiers contributed by `.runstead/extensions`)
-6. read or create `.runstead/startup/ui-smoke.yaml` and execute UI smoke
-7. on UI smoke failure classified as `product_gap` or `selector_unstable`,
+7. read or create `.runstead/startup/ui-smoke.yaml` and execute UI smoke
+8. on UI smoke failure classified as `product_gap` or `selector_unstable`,
    write a structured repair-request artifact and run one bounded MVP repair
    attempt; abort cleanly on `browser_runtime` or `network` failure
-8. run required extension collectors declared under `.runstead/extensions`
-9. generate repo readiness and security audit evidence
-10. generate launch readiness and decision reports
-11. run the complete-product check
+9. run required extension collectors declared under `.runstead/extensions`
+10. generate repo readiness and security audit evidence
+11. generate launch readiness and decision reports
+12. run the complete-product check
 
 If the agent worker reports failure but the current code fingerprint matches
 and verifiers pass, Runstead records the run as `completed_with_warnings`

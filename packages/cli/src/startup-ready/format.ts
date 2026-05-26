@@ -51,6 +51,7 @@ export function formatStartupReadyPlan(plan: StartupReadyPlan): string {
           `Scaffold profile: ${plan.scaffoldProfile.id} (${plan.scaffoldProfile.title})`
         ]),
     `Runstead initialized: ${plan.runsteadInitialized ? "yes" : "no"}`,
+    `Runtime backend: ${formatStartupReadyPlanRuntimeBackend(plan)}`,
     `Extensions: ${
       plan.extensions.loaded.length === 0 ? "none" : plan.extensions.loaded.join(", ")
     }`,
@@ -84,6 +85,19 @@ function formatStartupReadyPlanSourceConnectors(plan: StartupReadyPlan): string[
       return `- ${requirement.id}: ${status} (${requirement.connectors.join(" or ")}${missing})`;
     })
   ];
+}
+
+function formatStartupReadyPlanRuntimeBackend(plan: StartupReadyPlan): string {
+  const backend = plan.runtimeBackend;
+  const status = backend.setupBlockers.length === 0 ? "ready" : "blocked";
+  const team =
+    backend.teamReady === undefined
+      ? ""
+      : `, team=${backend.teamReady ? "ready" : "blocked"}`;
+  const warnings =
+    backend.warnings.length === 0 ? "" : `, warnings=${backend.warnings.length}`;
+
+  return `${backend.backend} ${status} (${backend.storageUri}${team}${warnings})`;
 }
 
 export function formatStartupReadinessRun(run: StartupReadinessRun): string {

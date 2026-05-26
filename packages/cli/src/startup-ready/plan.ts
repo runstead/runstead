@@ -18,6 +18,7 @@ import { resolveStartupWorkerGovernance } from "../startup-founder-flow.js";
 import { resolveStartupScaffoldProfile } from "../startup-scaffold-profile.js";
 import { STARTUP_CONTEXT_FILE_NAMES, STALE_STARTUP_DOC_DAYS } from "./constants.js";
 import { collectRecordedStartupReadinessEvidence } from "./evidence.js";
+import { inspectStartupReadyRuntimeBackend } from "./runtime-backend-phase.js";
 import type {
   StartupReadyOptions,
   StartupReadyPlan,
@@ -108,6 +109,11 @@ export async function planStartupReady(
   const sourceConnectorBlockers = startupSourceConnectorRequirementBlockers(
     sourceConnectorRequirements
   );
+  const runtimeBackend = inspectStartupReadyRuntimeBackend({
+    rootPath: root.root,
+    env: options.runtimeBackendEnv ?? process.env,
+    now
+  });
 
   return {
     cwd,
@@ -117,6 +123,7 @@ export async function planStartupReady(
     governanceProfile: governance.profile,
     ...(scaffoldProfile === undefined ? {} : { scaffoldProfile }),
     runsteadInitialized: root.source !== "missing",
+    runtimeBackend,
     extensions: {
       discoveredPaths: extensions.discoveredPaths,
       loaded: extensions.extensions.map((extension) => extension.contract.extensionId),
@@ -127,6 +134,14 @@ export async function planStartupReady(
       blockers: sourceConnectorBlockers
     },
     phases: [
+      planPhase(
+        "runtime_backend",
+        "Runtime backend",
+        runtimeBackend.setupBlockers,
+        runtimeBackend.setupBlockers.length === 0
+          ? `use ${runtimeBackend.backend} runtime backend`
+          : "fix runtime backend configuration before execution"
+      ),
       planPhase(
         "onboard",
         "Onboard repo",

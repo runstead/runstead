@@ -69,6 +69,7 @@ describe("startup readiness run model", () => {
       });
       expect(run.id).toMatch(/^run_[a-f0-9]{32}$/);
       expect(run.phases.map((phase) => phase.id)).toEqual([
+        "runtime_backend",
         "onboard",
         "context",
         "measurement",
@@ -330,6 +331,8 @@ describe("startup readiness run model", () => {
       expect(progress.map((event) => [event.phaseId ?? "run", event.status])).toEqual(
         expect.arrayContaining([
           ["run", "started"],
+          ["runtime_backend", "started"],
+          ["runtime_backend", "completed"],
           ["onboard", "started"],
           ["onboard", "completed"],
           ["context", "completed"],
@@ -346,6 +349,7 @@ describe("startup readiness run model", () => {
         )?.evidenceIds
       ).toHaveLength(4);
       expect(result.run.phases.map((phase) => [phase.id, phase.status])).toEqual([
+        ["runtime_backend", "passed"],
         ["onboard", "passed"],
         ["context", "passed"],
         ["measurement", "passed"],
@@ -830,6 +834,92 @@ describe("startup readiness run model", () => {
       expect(formatted).toContain("Level 2 native tool proxy path");
       expect(formatted).toContain("Source connectors:");
       expect(formatted).toContain("- remote-ci: blocked");
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("surfaces runtime backend setup blockers in startup readiness planning", async () => {
+    const workspace = join(
+      tmpdir(),
+      `runstead-startup-ready-backend-plan-${process.pid}`
+    );
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await mkdir(workspace, { recursive: true });
+
+      const plan = await planStartupReady({
+        cwd: workspace,
+        stage: "launch",
+        target: "local",
+        runtimeBackendEnv: {
+          RUNSTEAD_RUNTIME_BACKEND: "postgres"
+        },
+        now: new Date("2026-05-22T01:20:30.000Z")
+      });
+      const backend = plan.phases.find((phase) => phase.id === "runtime_backend");
+      const formatted = formatStartupReadyPlan(plan);
+
+      expect(plan.runtimeBackend).toMatchObject({
+        backend: "postgres",
+        storageUri: "postgres://unconfigured"
+      });
+      expect(backend?.status).toBe("blocked");
+      expect(backend?.blockers).toEqual(
+        expect.arrayContaining([
+          "RUNSTEAD_POSTGRES_URL is required for RUNSTEAD_RUNTIME_BACKEND=postgres",
+          "RUNSTEAD_RUNNER_ID is required for RUNSTEAD_RUNTIME_BACKEND=postgres"
+        ])
+      );
+      expect(formatted).toContain("Runtime backend: postgres blocked");
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("blocks startup ready before worker execution when team backend setup is incomplete", async () => {
+    const workspace = join(
+      tmpdir(),
+      `runstead-startup-ready-backend-block-${process.pid}`
+    );
+    let workerCalled = false;
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await mkdir(workspace, { recursive: true });
+
+      const result = await runStartupReady({
+        cwd: workspace,
+        stage: "mvp",
+        target: "local",
+        runtimeBackendEnv: {
+          RUNSTEAD_RUNTIME_BACKEND: "postgres"
+        },
+        workerRunner: () => {
+          workerCalled = true;
+          return Promise.reject(
+            new Error("worker should not run with blocked backend")
+          );
+        },
+        now: new Date("2026-05-22T01:20:45.000Z")
+      });
+      const backend = result.run.phases.find((phase) => phase.id === "runtime_backend");
+      const build = result.run.phases.find((phase) => phase.id === "build_mvp");
+
+      expect(workerCalled).toBe(false);
+      expect(result.run.status).toBe("blocked");
+      expect(result.run.verdict).toBe("local_launch_blocked");
+      expect(backend?.status).toBe("blocked");
+      expect(backend?.blockers).toEqual(
+        expect.arrayContaining([
+          "RUNSTEAD_POSTGRES_URL is required for RUNSTEAD_RUNTIME_BACKEND=postgres"
+        ])
+      );
+      expect(build?.status).toBe("pending");
+      expect(result.run.verdictBlockers).toEqual(
+        expect.arrayContaining(["Runtime backend is blocked"])
+      );
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }

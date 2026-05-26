@@ -170,7 +170,14 @@ export function completePlanBlockers(evidenceTypes: Set<string>): string[] {
 }
 
 export function phaseIncludedForStage(id: string, stage: StartupReadyStage): boolean {
-  const mvp = new Set(["onboard", "context", "measurement", "build_mvp", "verifiers"]);
+  const mvp = new Set([
+    "runtime_backend",
+    "onboard",
+    "context",
+    "measurement",
+    "build_mvp",
+    "verifiers"
+  ]);
   const launch = new Set([
     ...mvp,
     "ui_smoke",
