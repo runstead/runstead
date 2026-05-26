@@ -1,83 +1,32 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 
-import {
-  createRunsteadId,
-  type JsonObject,
-  type ManagerLock,
-  type RunsteadEvent
-} from "@runstead/core";
+import { createRunsteadId, type JsonObject, type RunsteadEvent } from "@runstead/core";
 import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sqlite";
 
-import {
-  runOnce,
-  runOnceUnlocked,
-  type RunOnceOptions,
-  type RunOnceResult
-} from "./run.js";
+import { runOnce, runOnceUnlocked, type RunOnceResult } from "./run.js";
 import { withRunsteadManagerLock } from "./manager-lock.js";
 import {
   scheduleDueTasks,
   scheduleDueTasksUnlocked,
-  type ScheduleDueTasksOptions,
   type ScheduleDueTasksResult
 } from "./scheduler.js";
 import { requireRunsteadRoot, requireRunsteadStateDbSync } from "./runstead-root.js";
+import type {
+  DaemonHeartbeatStatus,
+  DaemonTick,
+  RunDaemonOptions,
+  RunDaemonResult
+} from "./daemon-types.js";
 
-export interface RunDaemonOptions {
-  cwd?: string;
-  intervalMs?: number;
-  maxTicks?: number;
-  runner?: DaemonRunner;
-  scheduler?: DaemonScheduler;
-  schedulerEnabled?: boolean;
-  audit?: boolean;
-  heartbeat?: boolean;
-  managerLock?: Pick<ManagerLock, "heartbeat">;
-  now?: Date;
-}
-
-export type DaemonRunner = (options: RunOnceOptions) => Promise<RunOnceResult>;
-export type DaemonScheduler = (
-  options: ScheduleDueTasksOptions
-) => Promise<ScheduleDueTasksResult>;
-
-export interface DaemonTick {
-  tick: number;
-  scheduled?: ScheduleDueTasksResult;
-  result: RunOnceResult;
-  event?: RunsteadEvent;
-  heartbeat?: DaemonHeartbeatStatus;
-}
-
-export interface RunDaemonResult {
-  cwd: string;
-  intervalMs: number;
-  ticks: DaemonTick[];
-  stoppedReason: "max_ticks";
-}
-
-export interface DaemonHeartbeatStatus {
-  cwd: string;
-  pid: number;
-  tick: number;
-  intervalMs: number;
-  updatedAt: string;
-  scheduledTasks: number;
-  skippedTasks: number;
-  ranTask: boolean;
-  reason?: string;
-  taskId?: string;
-  taskType?: string;
-  taskStatus?: string;
-  ciRepairStatus?: string;
-  branchName?: string;
-  approvalId?: string;
-  pullRequest?: string;
-  eventId?: string;
-  ageMs?: number;
-  stale?: boolean;
-}
+export type {
+  DaemonHeartbeatStatus,
+  DaemonRunner,
+  DaemonScheduler,
+  DaemonTick,
+  RunDaemonOptions,
+  RunDaemonResult
+} from "./daemon-types.js";
 
 export async function runDaemon(
   options: RunDaemonOptions = {}
