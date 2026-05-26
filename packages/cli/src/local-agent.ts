@@ -4,8 +4,7 @@ import {
   createRunsteadId,
   type Goal,
   type JsonObject,
-  type Task,
-  type WorkerRun
+  type Task
 } from "@runstead/core";
 import {
   appendEventAndProject,
@@ -14,8 +13,6 @@ import {
 } from "@runstead/state-sqlite";
 
 import {
-  createWorkspaceCheckpoint,
-  recordWorkspaceCheckpointCreatedEvent,
   recordWorkspaceCheckpointRestoreEvent,
   restoreWorkspaceCheckpoint,
   type WorkspaceCheckpoint
@@ -29,12 +26,8 @@ import {
 } from "./codex-direct-worker.js";
 import { runGovernedToolAction } from "./governed-action.js";
 import { showGoal } from "./goals.js";
-import {
-  localAgentCheckpointCreateAction,
-  localAgentCheckpointOutput,
-  localAgentEvent,
-  localAgentWorkerStartAction
-} from "./local-agent-actions.js";
+import { createLocalAgentCheckpointIfNeeded } from "./local-agent-checkpoint.js";
+import { localAgentEvent, localAgentWorkerStartAction } from "./local-agent-actions.js";
 import {
   localAgentShouldIncrementAttempt,
   localAgentTaskBaseUrl,
@@ -44,7 +37,6 @@ import {
   localAgentTaskMode,
   localAgentTaskModel,
   localAgentTaskModelRequestTiming,
-  localAgentTaskNeedsCheckpoint,
   localAgentTaskProvider,
   localAgentTaskToolBudget,
   localAgentTaskWorker,
@@ -711,58 +703,6 @@ export async function undoLocalAgentTask(
     checkpointId,
     restore
   };
-}
-
-async function createLocalAgentCheckpointIfNeeded(options: {
-  cwd: string;
-  root: string;
-  stateDb: string;
-  database: RunsteadDatabase;
-  policy: PolicyProfile;
-  task: Task;
-  workerRun: WorkerRun;
-  now?: Date;
-}): Promise<WorkspaceCheckpoint | undefined> {
-  if (!localAgentTaskNeedsCheckpoint(options.task)) {
-    return undefined;
-  }
-
-  const checkpointDir = join(options.root, "checkpoints");
-  const governed = await runGovernedToolAction({
-    cwd: options.cwd,
-    stateDb: options.stateDb,
-    database: options.database,
-    policy: options.policy,
-    task: options.task,
-    workerRun: options.workerRun,
-    action: localAgentCheckpointCreateAction({
-      task: options.task,
-      cwd: options.cwd,
-      checkpointDir
-    }),
-    requestedBy: "runstead:local-agent",
-    ...(options.now === undefined ? {} : { now: options.now }),
-    run: async () => {
-      const value = await createWorkspaceCheckpoint({
-        workspace: options.cwd,
-        checkpointDir,
-        ...(options.now === undefined ? {} : { now: options.now })
-      });
-      recordWorkspaceCheckpointCreatedEvent({
-        stateDb: options.stateDb,
-        checkpoint: value,
-        actor: "runstead:local-agent",
-        ...(options.now === undefined ? {} : { now: options.now })
-      });
-
-      return {
-        value,
-        output: localAgentCheckpointOutput(value)
-      };
-    }
-  });
-
-  return governed.value;
 }
 
 async function runLocalAgentVerifiersIfNeeded(options: {

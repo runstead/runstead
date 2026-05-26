@@ -209,6 +209,8 @@ The current implementation wave closed the highest-confidence product gaps:
   out of the orchestrator into `local-agent-prompt`.
 - Local agent resume-target resolution and approved pending-patch lookup moved
   out of the orchestrator into `local-agent-resume`.
+- Local agent checkpoint creation governed action moved out of the orchestrator
+  into `local-agent-checkpoint`.
 - CI repair orchestrator public option/result contracts moved into
   `ci-repair-orchestrator-types`.
 - CI repair progress stage ordering moved into `ci-repair-orchestrator-stage`.
