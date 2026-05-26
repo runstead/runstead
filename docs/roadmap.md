@@ -439,6 +439,9 @@ The current implementation wave closed the highest-confidence product gaps:
   moved out of `startup-founder-flow` into `startup-dependency-approval`.
 - Startup worker governance profile selection and operator notice text moved
   out of `startup-founder-flow` into `startup-worker-governance`.
+- Startup build-MVP prompt construction, verifier contract inference, retry
+  prompt generation, and bounded budget normalization moved out of
+  `startup-founder-flow` into `startup-build-mvp-helpers`.
 - Startup founder onboard/build/launch/scale result formatting moved out of
   `startup-founder-flow` into `startup-founder-format`.
 - Startup onboarding quickstart and upgrade-guide artifact writing moved out of
