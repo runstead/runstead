@@ -403,6 +403,8 @@ The current implementation wave closed the highest-confidence product gaps:
 - Startup launch blocker rules for measurement, repo/security, command,
   remediation quality, UI validation, and accepted debt moved out of
   `startup-gate-evaluation` into `startup-gate-launch`.
+- Startup scale founder handoff and support-triage evidence writers moved out
+  of `startup-scale-automation` into `startup-scale-founder`.
 - CI repair stage/context persistence helpers moved out of
   `ci-repair-orchestrator` into `ci-repair-orchestrator-stage-persistence`.
 - `packages/cli/src/startup-command.ts` no longer owns startup scale
