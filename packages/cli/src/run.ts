@@ -11,7 +11,7 @@ import {
   type RunCiRepairOrchestratorOptions,
   type RunCiRepairOrchestratorResult
 } from "./ci-repair-orchestrator.js";
-import { getCodexAuthStatus, type CodexAuthStatus } from "./codex-auth.js";
+import type { CodexAuthStatus } from "./codex-auth.js";
 import type { CodexDirectTransport } from "./codex-direct-worker.js";
 import type { GitHubCliRunner } from "./github-actions.js";
 import {
@@ -20,7 +20,10 @@ import {
   type RunLocalAgentTaskResult
 } from "./local-agent.js";
 import { withRunsteadManagerLock } from "./manager-lock.js";
-import { resolveModelProviderModel } from "./model-provider-runtime.js";
+import {
+  defaultCiRepairWorker,
+  resolveOptionalRunModelProvider
+} from "./run-ci-repair-routing.js";
 import {
   baseUrlFromCiRepairTask,
   ciRepairTaskRunId,
@@ -86,12 +89,6 @@ export interface RunOnceExecutedTaskResult {
   commandResults?: RunTaskVerifierCommandResult[];
   ciRepairResult?: RunCiRepairOrchestratorResult;
   localAgentResult?: RunLocalAgentTaskResult;
-}
-
-interface RunOnceModelProvider {
-  provider?: string;
-  model?: string;
-  baseUrl?: string;
 }
 
 export async function runOnce(options: RunOnceOptions = {}): Promise<RunOnceResult> {
@@ -309,52 +306,4 @@ export async function runOnceUnlocked(
     ranTask: false,
     reason: "no_queued_task"
   };
-}
-
-async function resolveOptionalRunModelProvider(
-  cwd: string,
-  requested: RunOnceModelProvider
-): Promise<RunOnceModelProvider> {
-  try {
-    const resolved = await resolveModelProviderModel({
-      cwd,
-      ...(requested.provider === undefined
-        ? {}
-        : { explicitProvider: requested.provider }),
-      ...(requested.model === undefined ? {} : { explicitModel: requested.model }),
-      ...(requested.baseUrl === undefined ? {} : { explicitBaseUrl: requested.baseUrl })
-    });
-
-    return {
-      provider: resolved.selection.provider,
-      model: resolved.model,
-      ...(resolved.selection.baseUrl === undefined
-        ? {}
-        : { baseUrl: resolved.selection.baseUrl })
-    };
-  } catch {
-    return requested;
-  }
-}
-
-async function defaultCiRepairWorker(input: {
-  options: RunOnceOptions;
-  modelProvider: RunOnceModelProvider;
-}): Promise<CiRepairWorkerKind> {
-  if (input.modelProvider.model === undefined) {
-    return "codex_cli";
-  }
-
-  if (
-    input.modelProvider.provider !== undefined &&
-    input.modelProvider.provider !== "codex"
-  ) {
-    return "codex_direct";
-  }
-
-  const status = await (input.options.codexAuthStatus ?? getCodexAuthStatus)();
-
-  return status.loggedIn && status.accessTokenExpired !== true
-    ? "codex_direct"
-    : "codex_cli";
 }
