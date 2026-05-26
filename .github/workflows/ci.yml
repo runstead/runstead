@@ -100,3 +100,5 @@ jobs:
           node packages/cli/dist/index.js startup build-mvp --help
           node packages/cli/dist/index.js startup complete-check --help
           node packages/cli/dist/index.js agent run --help
+          node packages/cli/dist/index.js team control-plane runner --help
+          node packages/cli/dist/index.js team control-plane runner heartbeat --help
