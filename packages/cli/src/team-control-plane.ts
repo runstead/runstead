@@ -4,8 +4,7 @@ import { dirname, join, resolve } from "node:path";
 import {
   resolveRuntimeBackendSelection,
   type RuntimeBackendConfigEnv,
-  type RuntimeBackendSelection,
-  type RuntimeRunnerRegistration
+  type RuntimeBackendSelection
 } from "@runstead/runtime";
 import { formatPostgresControlPlaneMigrationSql } from "@runstead/state-postgres";
 
@@ -14,6 +13,13 @@ import {
   teamControlPlaneAssertions,
   teamControlPlaneNextActions
 } from "./team-control-plane-assessment.js";
+import {
+  envWithLiveRunnerHeartbeats,
+  inspectLiveTeamControlPlaneBackend,
+  liveTeamControlPlaneAssertions,
+  liveTeamControlPlaneCheckSnapshot,
+  type TeamControlPlaneCheckLiveBackend
+} from "./team-control-plane-live.js";
 import type { TeamControlPlanePostgresClientFactory } from "./team-control-plane-runner.js";
 
 export {
@@ -35,6 +41,7 @@ export type {
   TeamControlPlaneRunnerOptions,
   TeamControlPlaneRunnerStatus
 } from "./team-control-plane-runner.js";
+export type { TeamControlPlaneCheckLiveBackend } from "./team-control-plane-live.js";
 
 export type TeamControlPlaneAssertionStatus = "pass" | "fail" | "warn";
 
@@ -70,16 +77,6 @@ export interface TeamControlPlaneCheckResult {
   warnings: string[];
   nextActions: string[];
   liveBackend?: TeamControlPlaneCheckLiveBackend;
-}
-
-export interface TeamControlPlaneCheckLiveBackend {
-  enabled: boolean;
-  migrated: boolean;
-  connected: boolean;
-  schema?: string;
-  runnerCount: number;
-  freshRunnerHeartbeats: number;
-  blockers: string[];
 }
 
 export interface BootstrapTeamControlPlaneOptions {
@@ -189,18 +186,10 @@ export async function checkTeamControlPlane(
     ...(liveBackend === undefined
       ? {}
       : {
-          liveBackend: {
-            enabled: true,
-            migrated: liveBackend.migrated,
-            connected: liveBackend.connected,
-            ...(liveBackend.schema === undefined ? {} : { schema: liveBackend.schema }),
-            runnerCount: liveBackend.runners.length,
-            freshRunnerHeartbeats: liveBackendFreshRunnerHeartbeats(
-              liveBackend.runners,
-              options.now ?? new Date()
-            ),
-            blockers: liveBackend.blockers
-          }
+          liveBackend: liveTeamControlPlaneCheckSnapshot(
+            liveBackend,
+            options.now ?? new Date()
+          )
         })
   };
 }
@@ -287,112 +276,6 @@ async function pathExists(path: string): Promise<boolean> {
   } catch {
     return false;
   }
-}
-
-interface InspectedLiveTeamControlPlaneBackend {
-  connected: boolean;
-  migrated: boolean;
-  schema?: string;
-  runners: RuntimeRunnerRegistration[];
-  blockers: string[];
-}
-
-async function inspectLiveTeamControlPlaneBackend(input: {
-  cwd: string;
-  env: RuntimeBackendConfigEnv;
-  migrate: boolean;
-  requireInitialized: boolean;
-  schema?: string;
-  postgresClientFactory?: TeamControlPlanePostgresClientFactory;
-}): Promise<InspectedLiveTeamControlPlaneBackend> {
-  const { checkTeamControlPlaneLiveBackend } =
-    await import("./team-control-plane-runner.js");
-
-  try {
-    const result = await checkTeamControlPlaneLiveBackend({
-      cwd: input.cwd,
-      env: input.env,
-      migrate: input.migrate,
-      requireInitialized: input.requireInitialized,
-      ...(input.schema === undefined ? {} : { schema: input.schema }),
-      ...(input.postgresClientFactory === undefined
-        ? {}
-        : { postgresClientFactory: input.postgresClientFactory })
-    });
-
-    return {
-      connected: true,
-      migrated: result.migrated,
-      schema: result.schema,
-      runners: result.runners,
-      blockers: []
-    };
-  } catch (error) {
-    return {
-      connected: false,
-      migrated: false,
-      ...(input.schema === undefined ? {} : { schema: input.schema }),
-      runners: [],
-      blockers: [`live Postgres backend check failed: ${errorMessage(error)}`]
-    };
-  }
-}
-
-function envWithLiveRunnerHeartbeats(
-  env: RuntimeBackendConfigEnv,
-  runners: RuntimeRunnerRegistration[]
-): RuntimeBackendConfigEnv {
-  const activeRunners = runners.filter((runner) => runner.status === "active");
-  const runnerIds = activeRunners.map((runner) => runner.runnerId).join(",");
-  const lastSeenAt = activeRunners
-    .filter((runner) => runner.lastSeenAt !== undefined)
-    .map((runner) => `${runner.runnerId}=${runner.lastSeenAt}`)
-    .join(",");
-
-  return {
-    ...env,
-    ...(runnerIds.length === 0 ? {} : { RUNSTEAD_RUNNER_ID: runnerIds }),
-    ...(lastSeenAt.length === 0 ? {} : { RUNSTEAD_RUNNER_LAST_SEEN_AT: lastSeenAt })
-  };
-}
-
-function liveTeamControlPlaneAssertions(
-  live: InspectedLiveTeamControlPlaneBackend
-): TeamControlPlaneAssertion[] {
-  return [
-    {
-      id: "postgres-live-backend",
-      title: "Live Postgres backend",
-      status: live.connected ? "pass" : "fail",
-      message: live.connected
-        ? `connected to Postgres backend and read ${live.runners.length} runner(s)`
-        : (live.blockers[0] ?? "live Postgres backend check failed"),
-      evidence: live.connected
-        ? [
-            `schema=${live.schema ?? "runstead"}`,
-            `migrated=${live.migrated ? "yes" : "no"}`,
-            `runners=${live.runners.length}`
-          ]
-        : []
-    }
-  ];
-}
-
-function liveBackendFreshRunnerHeartbeats(
-  runners: RuntimeRunnerRegistration[],
-  now: Date
-): number {
-  const ttlMs = 30_000;
-
-  return runners.filter((runner) => {
-    if (runner.status !== "active" || runner.lastSeenAt === undefined) {
-      return false;
-    }
-
-    const parsed = Date.parse(runner.lastSeenAt);
-
-    return Number.isFinite(parsed) && now.getTime() - parsed <= ttlMs;
-  }).length;
 }
 
 function shellQuote(value: string): string {
