@@ -168,6 +168,8 @@ The current implementation wave closed the highest-confidence product gaps:
   `ci-repair-actions`.
 - CI repair task report formatting moved out of `ci-repair` into
   `ci-repair-report`.
+- Startup CI summary, PR comment, check-run, and remote-Actions rendering moved
+  out of `startup-ci-integration` into `startup-ci-format`.
 - Top-level `agent` command registration and local-agent CLI option helpers
   moved out of the CLI entrypoint into `commands/agent`.
 - Agent provider listing moved out of the agent command adapter into
