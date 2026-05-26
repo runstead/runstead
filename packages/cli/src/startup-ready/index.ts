@@ -1,4 +1,3 @@
-import { generateStartupCompleteProductCheck } from "../startup-complete-check.js";
 import { supersedeStartupRemediationTasks } from "../startup-remediation.js";
 import { executeStartupReadyUiSmoke } from "../startup-ready-ui-smoke.js";
 import { planStartupReady } from "./plan.js";
@@ -27,6 +26,7 @@ import { executeStartupReadyOnboardingPhase } from "./onboarding-phase.js";
 import { executeStartupReadyRuntimeBackendPhase } from "./runtime-backend-phase.js";
 import { emitStartupReadyPhaseResult, emitStartupReadyProgress } from "./progress.js";
 import { executeStartupReadyBuildAndVerifierPhase } from "./build-verifier-phase.js";
+import { executeStartupReadyCompleteCheckPhase } from "./complete-check-phase.js";
 import { executeStartupReadyExtensionsPhase } from "./extensions-phase.js";
 import { executeStartupReadyLaunchPhase } from "./launch-phase.js";
 import {
@@ -35,7 +35,6 @@ import {
 } from "./ui-smoke-phase.js";
 import { finalizeRun } from "./finalize.js";
 import {
-  startupCompleteProductArtifacts,
   writeStartupReadinessCiOutputs,
   writeStartupReadinessDecisionReport
 } from "./report-phase.js";
@@ -242,41 +241,5 @@ async function executeStartupReadyRun(
 
   await executeStartupReadyExtensionsPhase(run, options);
   await executeStartupReadyLaunchPhase(run, options);
-
-  if (shouldRunPhase(run, "complete_check")) {
-    updatePhase(run, "complete_check", { status: "running" });
-    await writeStartupReadinessRun(run);
-    emitStartupReadyProgress(run, options, {
-      phaseId: "complete_check",
-      status: "started",
-      message: "running complete product readiness check"
-    });
-    const provisional = await finalizeRun(run, options.now ?? new Date());
-    const complete = await generateStartupCompleteProductCheck({
-      cwd: run.cwd,
-      target: run.target,
-      readiness: {
-        verdict: provisional.verdict,
-        blockers: provisional.verdictBlockers
-      },
-      ...(options.now === undefined ? {} : { now: options.now })
-    });
-
-    const completeArtifacts = startupCompleteProductArtifacts(complete);
-
-    updatePhase(run, "complete_check", {
-      status: complete.status === "complete" ? "passed" : "blocked",
-      evidenceIds: [complete.evidenceId],
-      artifacts: completeArtifacts,
-      blockers: complete.criteria.flatMap((criterion) => criterion.missing),
-      nextAction:
-        complete.status === "complete"
-          ? "ship with recorded evidence"
-          : "resolve complete-product missing evidence and rerun startup ready"
-    });
-    run.reportPaths = unique([...run.reportPaths, ...completeArtifacts]);
-    collectRunEvidence(run);
-    await writeStartupReadinessRun(run);
-    emitStartupReadyPhaseResult(run, options, "complete_check");
-  }
+  await executeStartupReadyCompleteCheckPhase(run, options);
 }
