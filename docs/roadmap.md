@@ -180,6 +180,8 @@ The current implementation wave closed the highest-confidence product gaps:
   `ci-repair` into `ci-repair-workflow-run`.
 - CI repair duplicate-intake existing-task lookup and artifact reload helpers
   moved out of `ci-repair` into `ci-repair-existing-task`.
+- CI repair workflow-run evidence artifact writing moved out of `ci-repair`
+  into `ci-repair-evidence`.
 - CI repair GitHub workflow log redaction moved out of `ci-repair` into
   `ci-repair-log-redaction`.
 - CI repair GitHub governed action builders moved out of `ci-repair` into
