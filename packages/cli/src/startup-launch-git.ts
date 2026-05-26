@@ -9,51 +9,19 @@ import { requireRunsteadStateDb } from "./runstead-root.js";
 import { addStartupEvidence } from "./startup-evidence.js";
 import { inspectGitHubRepository } from "./github.js";
 import { listGitChangedFiles, redactGitOutput } from "./git-branch.js";
+import type {
+  GenerateStartupLaunchGitSummaryOptions,
+  GenerateStartupLaunchGitSummaryResult,
+  StartupLaunchGitSummary
+} from "./startup-launch-git-types.js";
 
 const execFileAsync = promisify(execFile);
 
-export interface GenerateStartupLaunchGitSummaryOptions {
-  cwd?: string;
-  remote?: string;
-  now?: Date;
-}
-
-export interface GenerateStartupLaunchGitSummaryResult {
-  root: string;
-  stateDb: string;
-  markdownPath: string;
-  jsonPath: string;
-  evidenceId: string;
-  summary: StartupLaunchGitSummary;
-  nextCommands: string[];
-}
-
-export interface StartupLaunchGitSummary {
-  generatedAt: string;
-  isGitRepo: boolean;
-  branch?: string;
-  headSha?: string;
-  upstream?: string;
-  ahead?: number;
-  behind?: number;
-  changedFiles: string[];
-  stagedFiles: string[];
-  untrackedFiles: string[];
-  remote: {
-    name: string;
-    detected: boolean;
-    url?: string;
-    github?: {
-      owner: string;
-      repo: string;
-    };
-  };
-  ciDetected: boolean;
-  ciProviders: string[];
-  suggestedCommitMessage: string;
-  recommendedBranch: string;
-  launchActions: string[];
-}
+export type {
+  GenerateStartupLaunchGitSummaryOptions,
+  GenerateStartupLaunchGitSummaryResult,
+  StartupLaunchGitSummary
+} from "./startup-launch-git-types.js";
 
 interface GitCommandResult {
   stdout: string;
