@@ -3,7 +3,6 @@ import { join, resolve } from "node:path";
 import {
   createRunsteadId,
   type Goal,
-  GoalSchema,
   type JsonObject,
   type RunsteadEvent,
   type Task
@@ -17,6 +16,7 @@ import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sql
 import { inspectGitRepository } from "./repo-inspection.js";
 import { resolveRepositoryReference } from "./repositories.js";
 import { requireRunsteadStateDb, requireRunsteadStateDbSync } from "./runstead-root.js";
+import { rowToGoal, type GoalRow } from "./goals-rows.js";
 import {
   buildCommandVerifierDomainTask,
   buildDomainTask,
@@ -290,36 +290,4 @@ function goalScope(input: {
 
 function resolveStateDb(cwd = process.cwd()): string {
   return requireRunsteadStateDbSync(cwd).stateDb;
-}
-
-interface GoalRow {
-  id: string;
-  domain: string;
-  title: string;
-  status: string;
-  priority: string;
-  scope_json: string;
-  budget_json: string | null;
-  policy_ref: string | null;
-  acceptance_ref: string | null;
-  created_at: string;
-  updated_at: string;
-}
-
-function rowToGoal(row: GoalRow): Goal {
-  return GoalSchema.parse({
-    id: row.id,
-    domain: row.domain,
-    title: row.title,
-    status: row.status,
-    priority: row.priority,
-    scope: JSON.parse(row.scope_json) as JsonObject,
-    ...(row.budget_json === null
-      ? {}
-      : { budget: JSON.parse(row.budget_json) as JsonObject }),
-    ...(row.policy_ref === null ? {} : { policyRef: row.policy_ref }),
-    ...(row.acceptance_ref === null ? {} : { acceptanceRef: row.acceptance_ref }),
-    createdAt: row.created_at,
-    updatedAt: row.updated_at
-  });
 }
