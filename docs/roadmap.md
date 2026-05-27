@@ -640,6 +640,8 @@ The current implementation wave closed the highest-confidence product gaps:
   execution facade into `startup-source-evidence-types`.
 - Startup source HTTP verification execution moved out of the connector facade
   into `startup-source-verification`.
+- Startup source provider collection execution moved out of the connector facade
+  into `startup-source-collection`.
 
 ## Remaining Backlog
 
