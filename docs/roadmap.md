@@ -646,6 +646,8 @@ The current implementation wave closed the highest-confidence product gaps:
   `memory-types`.
 - Memory write paths moved out of `memory` into `memory-writes`.
 - Memory read and retrieval paths moved out of `memory` into `memory-reads`.
+- Startup metric snapshot loading and artifact parsing moved out of
+  `startup-metrics-assess` into `startup-metrics-snapshots`.
 
 ## Remaining Backlog
 
