@@ -613,6 +613,8 @@ The current implementation wave closed the highest-confidence product gaps:
   moved out of `startup-complete-check` into `startup-complete-check-output`.
 - Startup complete-check evidence/event/path state reads moved out of
   `startup-complete-check` into `startup-complete-check-data`.
+- Startup complete-check public option, result, criterion, blocker, and surface
+  contracts moved out of the generator into `startup-complete-check-types`.
 - `email-followup` now has a mature draft-only lifecycle, fixtures, evals,
   gates, report sections, and docs.
 - Non-startup golden paths are covered by a combined runbook and CLI/domain

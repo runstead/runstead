@@ -1,20 +1,12 @@
 import { writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
-import { createRunsteadId, type RunsteadEvent } from "@runstead/core";
-import type {
-  RuntimeCompleteProductCriterion,
-  RuntimeCompleteProductCriterionStatus,
-  RuntimeCompleteProductStatus
-} from "@runstead/runtime";
+import { createRunsteadId } from "@runstead/core";
 import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sqlite";
 
 import { buildDashboard } from "./dashboard.js";
 import { collectRepoInspection } from "./inspection-evidence.js";
-import {
-  generateLaunchReadinessReport,
-  type LaunchReadinessTarget
-} from "./launch-readiness-report.js";
+import { generateLaunchReadinessReport } from "./launch-readiness-report.js";
 import { generateOpsDiagnosticsBundle } from "./ops-diagnostics.js";
 import { requireRunsteadStateDb } from "./runstead-root.js";
 import { generateStartupCiSummary } from "./startup-ci-integration.js";
@@ -35,71 +27,25 @@ import {
   startupCompleteProductEvent,
   startupCompleteProductJson
 } from "./startup-complete-check-output.js";
-import {
-  addStartupEvidence,
-  checkStartupGate,
-  type StartupGateFindingSeverity
-} from "./startup-evidence.js";
+import type {
+  GenerateStartupCompleteProductCheckOptions,
+  StartupCompleteProductCheckResult,
+  StartupCompleteProductSurfaces
+} from "./startup-complete-check-types.js";
+import { addStartupEvidence, checkStartupGate } from "./startup-evidence.js";
 import { generateStartupRemediationPlan } from "./startup-remediation.js";
 import { getStartupStatus } from "./startup-status.js";
 
 export { formatStartupCompleteProductCheck } from "./startup-complete-check-output.js";
-
-export interface GenerateStartupCompleteProductCheckOptions {
-  cwd?: string;
-  domain?: string;
-  target?: LaunchReadinessTarget;
-  readiness?: {
-    verdict: string;
-    blockers: string[];
-  };
-  now?: Date;
-}
-
-export interface StartupCompleteProductCheckResult {
-  root: string;
-  stateDb: string;
-  domain: string;
-  generatedAt: string;
-  status: StartupCompleteProductStatus;
-  score: number;
-  markdownPath: string;
-  jsonPath: string;
-  markdown: string;
-  event: RunsteadEvent;
-  evidenceId: string;
-  criteria: StartupCompleteProductCriterion[];
-  blockers: StartupCompleteProductBlockerAudit[];
-  surfaces: StartupCompleteProductSurfaces;
-}
-
-export type StartupCompleteProductStatus = RuntimeCompleteProductStatus;
-export type StartupCompleteProductCriterionStatus =
-  RuntimeCompleteProductCriterionStatus;
-export type StartupCompleteProductCriterion = RuntimeCompleteProductCriterion;
-
-export interface StartupCompleteProductBlockerAudit {
-  blocker: string;
-  severity: StartupGateFindingSeverity;
-  owner: string;
-  remediationTask: string;
-  evidenceSources: string[];
-}
-
-export interface StartupCompleteProductSurfaces {
-  launchReportMarkdown: string;
-  launchReportJson: string;
-  ciMarkdown: string;
-  ciJson: string;
-  dashboardHtml: string;
-  dashboardJson: string;
-  diagnosticsMarkdown: string;
-  diagnosticsJson: string;
-  completeCheckMarkdown: string;
-  completeCheckJson: string;
-  evidenceId: string;
-  eventId: string;
-}
+export type {
+  GenerateStartupCompleteProductCheckOptions,
+  StartupCompleteProductBlockerAudit,
+  StartupCompleteProductCheckResult,
+  StartupCompleteProductCriterion,
+  StartupCompleteProductCriterionStatus,
+  StartupCompleteProductStatus,
+  StartupCompleteProductSurfaces
+} from "./startup-complete-check-types.js";
 
 const STARTUP_DOMAIN = "ai-native-startup";
 

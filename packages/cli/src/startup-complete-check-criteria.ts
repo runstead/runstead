@@ -15,7 +15,7 @@ import type {
   StartupCompleteProductBlockerAudit,
   StartupCompleteProductCriterion,
   StartupCompleteProductSurfaces
-} from "./startup-complete-check.js";
+} from "./startup-complete-check-types.js";
 import type { StartupCompleteProductEvidenceRow } from "./startup-complete-check-blockers.js";
 export {
   startupCompleteProductBlockers,

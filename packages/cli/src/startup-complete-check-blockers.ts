@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import type { LaunchReadinessReportResult } from "./launch-readiness-report.js";
-import type { StartupCompleteProductBlockerAudit } from "./startup-complete-check.js";
+import type { StartupCompleteProductBlockerAudit } from "./startup-complete-check-types.js";
 import type { StartupGateCheckResult } from "./startup-evidence.js";
 
 export interface StartupCompleteProductEvidenceRow {

@@ -17,7 +17,7 @@ import type {
   StartupCompleteProductCheckResult,
   StartupCompleteProductCriterion,
   StartupCompleteProductStatus
-} from "./startup-complete-check.js";
+} from "./startup-complete-check-types.js";
 import type { LaunchReadinessReportResult } from "./launch-readiness-report.js";
 import type { OpsDiagnosticsBundleResult } from "./ops-diagnostics.js";
 import type { GenerateStartupRemediationPlanResult } from "./startup-remediation.js";
