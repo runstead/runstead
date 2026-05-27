@@ -1,6 +1,3 @@
-import { requireRbacPermission } from "../cli-rbac.js";
-import { requireSecretPrintAcknowledgement } from "../cli-secrets.js";
-
 export interface GitHubAppInitCommandOptions {
   cwd?: string;
   appId: string;
@@ -16,18 +13,14 @@ export interface GitHubAppStatusCommandOptions {
   actor: string;
 }
 
-export interface GitHubAppJwtCommandOptions {
-  cwd?: string;
-  actor: string;
-  printSecret?: boolean;
-}
-
-export interface GitHubAppTokenCommandOptions {
-  cwd?: string;
-  installationId?: string;
-  actor: string;
-  printSecret?: boolean;
-}
+export {
+  runGitHubAppJwtCommand,
+  runGitHubAppTokenCommand
+} from "./github-app-secret-actions.js";
+export type {
+  GitHubAppJwtCommandOptions,
+  GitHubAppTokenCommandOptions
+} from "./github-app-secret-actions.js";
 
 export async function runGitHubAppInitCommand(
   options: GitHubAppInitCommandOptions
@@ -85,52 +78,4 @@ export async function runGitHubAppStatusCommand(
   });
 
   console.log(formatGitHubAppConfigSummary(config));
-}
-
-export async function runGitHubAppJwtCommand(
-  options: GitHubAppJwtCommandOptions
-): Promise<void> {
-  requireSecretPrintAcknowledgement(options, "GitHub App JWTs");
-  const { checkPermission } = await import("../rbac.js");
-  const permission = await checkPermission({
-    ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-    subject: options.actor,
-    permission: "github_app.manage"
-  });
-
-  if (permission.decision !== "allow") {
-    throw new Error(
-      `Subject ${options.actor} cannot sign GitHub App JWTs: ${permission.reason}`
-    );
-  }
-
-  const { createGitHubAppJwtFromConfig } = await import("../github-app.js");
-  const result = await createGitHubAppJwtFromConfig({
-    ...(options.cwd === undefined ? {} : { cwd: options.cwd })
-  });
-
-  console.log(result.token);
-}
-
-export async function runGitHubAppTokenCommand(
-  options: GitHubAppTokenCommandOptions
-): Promise<void> {
-  requireSecretPrintAcknowledgement(options, "GitHub App installation tokens");
-  await requireRbacPermission({
-    ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-    actor: options.actor,
-    permission: "github_app.manage",
-    action: "manage GitHub App mode"
-  });
-
-  const { createGitHubAppInstallationTokenFromConfig } =
-    await import("../github-app.js");
-  const result = await createGitHubAppInstallationTokenFromConfig({
-    ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-    ...(options.installationId === undefined
-      ? {}
-      : { installationId: options.installationId })
-  });
-
-  console.log(result.token);
 }

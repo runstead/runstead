@@ -823,6 +823,8 @@ The current implementation wave closed the highest-confidence product gaps:
   resolution moved out of `github-app` into `github-app-config`.
 - GitHub App init, status, JWT, and installation-token command handlers moved
   out of `commands/github-app` into `commands/github-app-actions`.
+- GitHub App JWT and installation-token secret-print handlers moved out of
+  `commands/github-app-actions` into `commands/github-app-secret-actions`.
 - Startup scale institutional memory capture and retrieval moved out of
   `startup-scale-workflow` into `startup-scale-memory`.
 - Startup scale integration-depth map generation moved out of
