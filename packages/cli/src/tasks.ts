@@ -1,19 +1,16 @@
 import { createRunsteadId, type RunsteadEvent, type Task } from "@runstead/core";
 import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sqlite";
 
-import { requireRunsteadStateDbSync } from "./runstead-root.js";
-import { buildRunLocalVerifiersTask } from "./task-builders.js";
 import {
   executionLeaseExpiresAt,
   executionLeaseOwnerId
 } from "./task-execution-lease.js";
 import { rowToTask, type TaskRow } from "./task-rows.js";
+import { insertTaskEvent, resolveTaskStateDb } from "./task-state.js";
 import type {
   BlockTaskOptions,
   ClaimTaskOptions,
   ClaimTaskResult,
-  CreateRunLocalVerifiersTaskOptions,
-  CreateTaskResult,
   ListTasksOptions,
   ListTasksResult,
   ShowTaskOptions,
@@ -26,6 +23,7 @@ export {
   buildDomainTask,
   buildRunLocalVerifiersTask
 } from "./task-builders.js";
+export { createRunLocalVerifiersTask } from "./task-create.js";
 export type {
   BuildDomainTaskOptions,
   BuildRunLocalVerifiersTaskOptions
@@ -43,33 +41,8 @@ export type {
   UpdateTaskResult
 } from "./tasks-types.js";
 
-export async function createRunLocalVerifiersTask(
-  options: CreateRunLocalVerifiersTaskOptions
-): Promise<CreateTaskResult> {
-  const stateDb = options.stateDb ?? resolveStateDb(options.cwd);
-  const generated = await buildRunLocalVerifiersTask(options);
-  const database = openRunsteadDatabase(stateDb);
-
-  try {
-    appendEventAndProject(database, {
-      event: generated.event,
-      projection: {
-        type: "task",
-        value: generated.task
-      }
-    });
-  } finally {
-    database.close();
-  }
-
-  return {
-    ...generated,
-    stateDb
-  };
-}
-
 export function listTasks(options: ListTasksOptions = {}): ListTasksResult {
-  const stateDb = resolveStateDb(options.cwd);
+  const stateDb = resolveTaskStateDb(options.cwd);
   const database = openRunsteadDatabase(stateDb);
 
   try {
@@ -109,7 +82,7 @@ export function listTasks(options: ListTasksOptions = {}): ListTasksResult {
 }
 
 export function showTask(options: ShowTaskOptions): ShowTaskResult {
-  const stateDb = resolveStateDb(options.cwd);
+  const stateDb = resolveTaskStateDb(options.cwd);
   const database = openRunsteadDatabase(stateDb);
 
   try {
@@ -139,7 +112,7 @@ export function showTask(options: ShowTaskOptions): ShowTaskResult {
 }
 
 export function claimTask(options: ClaimTaskOptions): ClaimTaskResult {
-  const stateDb = resolveStateDb(options.cwd);
+  const stateDb = resolveTaskStateDb(options.cwd);
   const claimedAt = (options.now ?? new Date()).toISOString();
   const database = openRunsteadDatabase(stateDb);
   let inTransaction = false;
@@ -207,7 +180,7 @@ export function claimTask(options: ClaimTaskOptions): ClaimTaskResult {
       throw new Error(`Task ${options.id} could not be claimed atomically`);
     }
 
-    insertEvent(database, event);
+    insertTaskEvent(database, event);
     database.exec("COMMIT");
     inTransaction = false;
 
@@ -228,7 +201,7 @@ export function claimTask(options: ClaimTaskOptions): ClaimTaskResult {
 }
 
 export function blockTask(options: BlockTaskOptions): UpdateTaskResult {
-  const stateDb = resolveStateDb(options.cwd);
+  const stateDb = resolveTaskStateDb(options.cwd);
   const blockedAt = (options.now ?? new Date()).toISOString();
   const task: Task = {
     ...options.task,
@@ -271,35 +244,4 @@ export function blockTask(options: BlockTaskOptions): UpdateTaskResult {
     event,
     stateDb
   };
-}
-
-function resolveStateDb(cwd = process.cwd()): string {
-  return requireRunsteadStateDbSync(cwd).stateDb;
-}
-
-function insertEvent(
-  database: ReturnType<typeof openRunsteadDatabase>,
-  event: RunsteadEvent
-): void {
-  database
-    .prepare(
-      `
-      INSERT INTO events (
-        event_id,
-        type,
-        aggregate_type,
-        aggregate_id,
-        payload_json,
-        created_at
-      ) VALUES (?, ?, ?, ?, ?, ?)
-    `
-    )
-    .run(
-      event.eventId,
-      event.type,
-      event.aggregateType,
-      event.aggregateId,
-      JSON.stringify(event.payload),
-      event.createdAt
-    );
 }

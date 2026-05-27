@@ -648,6 +648,8 @@ The current implementation wave closed the highest-confidence product gaps:
 - Memory read and retrieval paths moved out of `memory` into `memory-reads`.
 - Startup metric snapshot loading and artifact parsing moved out of
   `startup-metrics-assess` into `startup-metrics-snapshots`.
+- Task creation and shared task state/event helpers moved out of `tasks` into
+  `task-create` and `task-state`.
 
 ## Remaining Backlog
 
