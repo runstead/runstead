@@ -1,0 +1,96 @@
+import { requireRbacPermission } from "../cli-rbac.js";
+import { approvalGrantReuseSummary } from "./approval-format.js";
+
+export interface ApprovalDecisionCliOptions {
+  cwd?: string;
+  actor: string;
+  decidedBy?: string;
+}
+
+export async function approveApprovalCommand(
+  id: string,
+  options: ApprovalDecisionCliOptions
+): Promise<void> {
+  const actor = options.decidedBy ?? options.actor;
+  const { approvalActionMetadata, decideApproval, showApproval } =
+    await import("../approvals.js");
+  const shown = showApproval({ ...options, id });
+  const metadata = approvalActionMetadata(shown.policyDecision);
+  const result = await decideApproval({
+    ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+    id,
+    decision: "approved",
+    decidedBy: actor
+  });
+
+  console.log(`Approved: ${result.approval.id}`);
+  console.log(`Task: ${shown.task?.id ?? "none"}`);
+  console.log(`Grant reuse: ${approvalGrantReuseSummary(metadata)}`);
+  if (shown.task !== undefined) {
+    console.log(`Resume: runstead agent resume ${shown.task.id}`);
+    console.log(`Resume by approval: runstead agent resume ${result.approval.id}`);
+  }
+}
+
+export async function approveAndResumeApprovalCommand(
+  id: string,
+  options: ApprovalDecisionCliOptions
+): Promise<void> {
+  const actor = options.decidedBy ?? options.actor;
+  await requireRbacPermission({
+    ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+    actor,
+    permission: "task.run",
+    action: "resume local agent tasks"
+  });
+
+  const { approvalActionMetadata, decideApproval, showApproval } =
+    await import("../approvals.js");
+  const { formatLocalAgentRunReport, localAgentRunExitCode, runLocalAgentTask } =
+    await import("../local-agent.js");
+  const shown = showApproval({ ...options, id });
+  const metadata = approvalActionMetadata(shown.policyDecision);
+  const result = await decideApproval({
+    ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+    id,
+    decision: "approved",
+    decidedBy: actor
+  });
+
+  console.log(`Approved: ${result.approval.id}`);
+  console.log(`Grant reuse: ${approvalGrantReuseSummary(metadata)}`);
+
+  if (shown.task === undefined) {
+    console.log(
+      "Resume: skipped; no local agent task is associated with this approval."
+    );
+    return;
+  }
+
+  const resumed = await runLocalAgentTask({
+    ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+    taskId: shown.task.id
+  });
+  const exitCode = localAgentRunExitCode(resumed);
+
+  console.log(formatLocalAgentRunReport(resumed));
+  if (exitCode !== 0) {
+    process.exitCode = exitCode;
+  }
+}
+
+export async function denyApprovalCommand(
+  id: string,
+  options: ApprovalDecisionCliOptions
+): Promise<void> {
+  const actor = options.decidedBy ?? options.actor;
+  const { decideApproval } = await import("../approvals.js");
+  const result = await decideApproval({
+    ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+    id,
+    decision: "denied",
+    decidedBy: actor
+  });
+
+  console.log(`Denied: ${result.approval.id}`);
+}

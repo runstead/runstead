@@ -764,6 +764,8 @@ The current implementation wave closed the highest-confidence product gaps:
   `commands/domain-registry` into `commands/domain-registry-actions`.
 - Agent inspect execution moved out of `commands/agent-inspect` into
   `commands/agent-inspect-action`.
+- Approval approve/approve-and-resume/deny handlers moved out of
+  `commands/approval-decisions` into `commands/approval-decision-actions`.
 - Startup generic evidence add command registration and write handler moved out
   of `commands/startup-evidence` into `commands/startup-evidence-add`.
 - Startup manual-change evidence command registration and write handler moved

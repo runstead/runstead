@@ -1,7 +1,10 @@
 import type { Command } from "commander";
 
-import { requireRbacPermission } from "../cli-rbac.js";
-import { approvalGrantReuseSummary } from "./approval-format.js";
+import {
+  approveAndResumeApprovalCommand,
+  approveApprovalCommand,
+  denyApprovalCommand
+} from "./approval-decision-actions.js";
 
 export function registerApprovalDecisionCommands(approval: Command): void {
   approval
@@ -11,34 +14,7 @@ export function registerApprovalDecisionCommands(approval: Command): void {
     .option("--cwd <path>", "Workspace directory")
     .option("--actor <id>", "RBAC subject for approval decisions", "local-admin")
     .option("--decided-by <id>", "Approver id")
-    .action(
-      async (
-        id: string,
-        options: { cwd?: string; actor: string; decidedBy?: string }
-      ) => {
-        const actor = options.decidedBy ?? options.actor;
-        const { approvalActionMetadata, decideApproval, showApproval } =
-          await import("../approvals.js");
-        const shown = showApproval({ ...options, id });
-        const metadata = approvalActionMetadata(shown.policyDecision);
-        const result = await decideApproval({
-          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-          id,
-          decision: "approved",
-          decidedBy: actor
-        });
-
-        console.log(`Approved: ${result.approval.id}`);
-        console.log(`Task: ${shown.task?.id ?? "none"}`);
-        console.log(`Grant reuse: ${approvalGrantReuseSummary(metadata)}`);
-        if (shown.task !== undefined) {
-          console.log(`Resume: runstead agent resume ${shown.task.id}`);
-          console.log(
-            `Resume by approval: runstead agent resume ${result.approval.id}`
-          );
-        }
-      }
-    );
+    .action(approveApprovalCommand);
 
   approval
     .command("approve-and-resume")
@@ -51,54 +27,7 @@ export function registerApprovalDecisionCommands(approval: Command): void {
       "local-admin"
     )
     .option("--decided-by <id>", "Approver id")
-    .action(
-      async (
-        id: string,
-        options: { cwd?: string; actor: string; decidedBy?: string }
-      ) => {
-        const actor = options.decidedBy ?? options.actor;
-        await requireRbacPermission({
-          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-          actor,
-          permission: "task.run",
-          action: "resume local agent tasks"
-        });
-
-        const { approvalActionMetadata, decideApproval, showApproval } =
-          await import("../approvals.js");
-        const { formatLocalAgentRunReport, localAgentRunExitCode, runLocalAgentTask } =
-          await import("../local-agent.js");
-        const shown = showApproval({ ...options, id });
-        const metadata = approvalActionMetadata(shown.policyDecision);
-        const result = await decideApproval({
-          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-          id,
-          decision: "approved",
-          decidedBy: actor
-        });
-
-        console.log(`Approved: ${result.approval.id}`);
-        console.log(`Grant reuse: ${approvalGrantReuseSummary(metadata)}`);
-
-        if (shown.task === undefined) {
-          console.log(
-            "Resume: skipped; no local agent task is associated with this approval."
-          );
-          return;
-        }
-
-        const resumed = await runLocalAgentTask({
-          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-          taskId: shown.task.id
-        });
-        const exitCode = localAgentRunExitCode(resumed);
-
-        console.log(formatLocalAgentRunReport(resumed));
-        if (exitCode !== 0) {
-          process.exitCode = exitCode;
-        }
-      }
-    );
+    .action(approveAndResumeApprovalCommand);
 
   approval
     .command("deny")
@@ -107,21 +36,5 @@ export function registerApprovalDecisionCommands(approval: Command): void {
     .option("--cwd <path>", "Workspace directory")
     .option("--actor <id>", "RBAC subject for approval decisions", "local-admin")
     .option("--decided-by <id>", "Approver id")
-    .action(
-      async (
-        id: string,
-        options: { cwd?: string; actor: string; decidedBy?: string }
-      ) => {
-        const actor = options.decidedBy ?? options.actor;
-        const { decideApproval } = await import("../approvals.js");
-        const result = await decideApproval({
-          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-          id,
-          decision: "denied",
-          decidedBy: actor
-        });
-
-        console.log(`Denied: ${result.approval.id}`);
-      }
-    );
+    .action(denyApprovalCommand);
 }
