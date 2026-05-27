@@ -652,6 +652,9 @@ The current implementation wave closed the highest-confidence product gaps:
   `task-create` and `task-state`.
 - Task list/show read paths moved out of `tasks` into `task-read`.
 - Task claim/block transitions moved out of `tasks` into `task-transitions`.
+- CI repair pull-request audit-summary querying and policy-line formatting moved
+  out of `ci-repair-orchestrator-report` into
+  `ci-repair-orchestrator-pr-audit`.
 
 ## Remaining Backlog
 

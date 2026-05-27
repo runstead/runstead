@@ -13,10 +13,8 @@ import type {
 } from "./ci-repair-orchestrator-context.js";
 import { pullRequestOutput } from "./ci-repair-orchestrator-output.js";
 import { runPublishCoveredToolAction } from "./ci-repair-orchestrator-publish-covered-action.js";
-import {
-  buildCiRepairPullRequestBody,
-  readCiRepairPullRequestAuditSummary
-} from "./ci-repair-orchestrator-report.js";
+import { readCiRepairPullRequestAuditSummary } from "./ci-repair-orchestrator-pr-audit.js";
+import { buildCiRepairPullRequestBody } from "./ci-repair-orchestrator-report.js";
 import type { CiRepairGitRunner } from "./ci-repair-orchestrator-types.js";
 import type { GitHubCliRunner } from "./github-actions.js";
 import {

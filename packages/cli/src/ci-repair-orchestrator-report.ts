@@ -1,9 +1,12 @@
 import type { JsonObject, Task } from "@runstead/core";
-import type { RunsteadDatabase } from "@runstead/state-sqlite";
 
 import type { CreateCiRepairTaskResult } from "./ci-repair.js";
 import type { GitDiffScopeVerification } from "./diff-scope-verifier.js";
 import type { CommitGitChangesResult } from "./git-branch.js";
+import {
+  formatPullRequestToolPolicyLine,
+  type CiRepairPullRequestAuditSummary
+} from "./ci-repair-orchestrator-pr-audit.js";
 import type {
   RunCiRepairOrchestratorResult,
   CiRepairWorkerResult
@@ -139,60 +142,6 @@ export function buildCiRepairPullRequestBody(
   return sections.join("\n\n");
 }
 
-export interface CiRepairPullRequestAuditSummary {
-  toolCalls: CiRepairPullRequestToolPolicy[];
-}
-
-interface CiRepairPullRequestToolPolicy {
-  actionType: string;
-  status: string;
-  decision?: string;
-  risk?: string;
-  ruleId?: string;
-}
-
-export function readCiRepairPullRequestAuditSummary(
-  database: RunsteadDatabase,
-  taskId: string
-): CiRepairPullRequestAuditSummary {
-  const rows = database
-    .prepare(
-      `
-      SELECT
-        tc.action_type,
-        tc.status,
-        pd.decision,
-        pd.risk,
-        pd.rule_id
-      FROM tool_calls tc
-      LEFT JOIN policy_decisions pd ON pd.id = tc.policy_decision_id
-      WHERE tc.task_id = ?
-        AND tc.status != 'requested'
-      ORDER BY tc.started_at ASC, tc.id ASC
-      LIMIT 16
-    `
-    )
-    .all(taskId) as unknown as ToolPolicyRow[];
-
-  return {
-    toolCalls: rows.map((row) => ({
-      actionType: row.action_type,
-      status: row.status,
-      ...(row.decision === null ? {} : { decision: row.decision }),
-      ...(row.risk === null ? {} : { risk: row.risk }),
-      ...(row.rule_id === null ? {} : { ruleId: row.rule_id })
-    }))
-  };
-}
-
-interface ToolPolicyRow {
-  action_type: string;
-  status: string;
-  decision: string | null;
-  risk: string | null;
-  rule_id: string | null;
-}
-
 interface CiRepairPullRequestBodyContext extends JsonObject {
   verifierCommandResults: RunTaskVerifiersResult["commandResults"];
   workerResult: CiRepairWorkerResult;
@@ -230,17 +179,6 @@ function ciRepairPullRequestBodyContext(
   }
 
   return value as unknown as CiRepairPullRequestBodyContext;
-}
-
-function formatPullRequestToolPolicyLine(item: CiRepairPullRequestToolPolicy): string {
-  return [
-    `- ${item.actionType}: ${item.status}`,
-    item.decision === undefined ? undefined : `policy=${item.decision}`,
-    item.risk === undefined ? undefined : `risk=${item.risk}`,
-    item.ruleId === undefined ? undefined : `rule=${item.ruleId}`
-  ]
-    .filter((part): part is string => part !== undefined)
-    .join(" ");
 }
 
 function failureClassificationOutput(task: Task):
