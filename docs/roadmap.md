@@ -669,6 +669,8 @@ The current implementation wave closed the highest-confidence product gaps:
   `commands/memory-quarantine`.
 - Memory fact command registration moved out of `commands/memory` into
   `commands/memory-fact`.
+- Agent fix shared execution moved out of `commands/agent-fix` into
+  `commands/agent-fix-runner`.
 - Team control-plane runner heartbeat and list formatting moved out of
   `team-control-plane-runner` into `team-control-plane-runner-format`.
 - Team control-plane Postgres connection validation and client creation moved
