@@ -534,6 +534,16 @@ describe("buildDashboard", () => {
         "startup-run-command-1",
         "startup-run-command-2"
       ]);
+      expect(
+        snapshot.operator.actions.find((action) => action.id === "startup-next-action")
+          ?.executable
+      ).toBe(false);
+      expect(
+        snapshot.operator.actions.find(
+          (action) => action.id === "startup-run-command-2"
+        )?.executable
+      ).toBe(true);
+      expect(html).toContain("CLI only");
       expect(snapshot.operator.blockerCount).toBeGreaterThan(0);
       expect(operator).toEqual(snapshot.operator);
 

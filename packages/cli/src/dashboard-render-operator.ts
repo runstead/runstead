@@ -30,7 +30,7 @@ export function operatorConsoleSection(operator: DashboardOperatorConsole): stri
         <div><strong>${escapeHtml(action.title)}</strong><br><span class="muted">${escapeHtml(action.source)} · ${statusCell(action.status)}</span></div>
         <div><code>${escapeHtml(action.command)}</code><br><span class="muted">${escapeHtml(action.reason)}</span></div>
         <button type="button" data-command="${escapeHtml(action.command)}" onclick="copyOperatorCommand(this)">Copy</button>
-        <button type="button" class="primary" data-operator-action-id="${escapeHtml(action.id)}" onclick="runOperatorAction(this)">Run</button>
+        ${operatorActionRunControl(action)}
       </div>`
     )
     .join("");
@@ -90,4 +90,14 @@ function operatorConsoleContextTable(
     <tr><th>Stale evidence</th><td>${operator.staleEvidenceCount}</td></tr>
     <tr><th>API</th><td><code>/operator-actions.json</code></td></tr>
   </tbody></table>`;
+}
+
+function operatorActionRunControl(
+  action: DashboardOperatorConsole["actions"][number]
+): string {
+  if (action.executable === false) {
+    return `<span class="muted">CLI only</span>`;
+  }
+
+  return `<button type="button" class="primary" data-operator-action-id="${escapeHtml(action.id)}" onclick="runOperatorAction(this)">Run</button>`;
 }

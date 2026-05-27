@@ -305,6 +305,7 @@ export interface DashboardOperatorAction {
   title: string;
   command: string;
   reason: string;
+  executable?: boolean;
   source:
     | "startup_next_action"
     | "startup_run_command"

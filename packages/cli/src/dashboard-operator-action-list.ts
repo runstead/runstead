@@ -4,6 +4,7 @@ import type {
   DashboardOperatorAction,
   DashboardStartupSnapshot
 } from "./dashboard-types.js";
+import { dashboardOperatorActionExecutable } from "./dashboard-operator-action-executable.js";
 import { dashboardApprovalApproveAndResumeCommand } from "./dashboard-operator-commands.js";
 
 export function dashboardOperatorActions(input: {
@@ -22,7 +23,10 @@ export function dashboardOperatorActions(input: {
     }
 
     seen.add(key);
-    actions.push(action);
+    actions.push({
+      ...action,
+      executable: dashboardOperatorActionExecutable(action.command)
+    });
   };
 
   if (input.daemon.approvalId !== undefined) {

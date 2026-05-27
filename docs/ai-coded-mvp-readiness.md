@@ -187,6 +187,8 @@ rejects cross-origin requests. Mutating endpoints:
 complete-product audit, dashboard rebuild, and source refresh planning actions
 shown in the operator queue. Every mutation still goes through Runstead policy,
 RBAC, and audit; the API is a transport, not a bypass.
+Operator actions that would start broader worker/build flows remain copy-only
+until Runstead exposes a bounded API handler for that action type.
 
 ## UI Smoke
 
