@@ -3,6 +3,10 @@ import {
   startupReadinessRunGovernanceProfile,
   startupReadyShellArg
 } from "./shared.js";
+import {
+  startupReadySourceConnectorBlocker,
+  startupReadySourcePlanCommand
+} from "./source-guidance.js";
 
 export {
   buildStartupReadyGuidedFlow,
@@ -74,7 +78,7 @@ export function buildStartupReadyOperatorCommands(
     commands.splice(2, 0, {
       kind: "source_plan",
       title: "Plan source connector refresh",
-      command: `runstead startup source plan --cwd ${cwd} --target ${run.target}`,
+      command: startupReadySourcePlanCommand(run),
       when: "Show required external source connector evidence, credential blockers, and refresh commands for this target."
     });
   }
@@ -95,15 +99,7 @@ export function buildStartupReadyOperatorCommands(
 }
 
 function startupReadyHasSourceConnectorBlocker(run: StartupReadinessRun): boolean {
-  return run.verdictBlockers.some((blocker) => {
-    const lower = blocker.toLowerCase();
-
-    return (
-      lower.includes(" connector requires ") ||
-      lower.includes("startup_source ") ||
-      lower.includes("source connector")
-    );
-  });
+  return run.verdictBlockers.some(startupReadySourceConnectorBlocker);
 }
 
 export function startupReadyVerifierOnlyRecoveryAvailable(
