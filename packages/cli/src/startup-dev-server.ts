@@ -1,7 +1,9 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createConnection, createServer } from "node:net";
-import { readFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { resolve } from "node:path";
+
+export { detectStartupDevServerCommand } from "./startup-dev-server-command.js";
+import { detectStartupDevServerCommand } from "./startup-dev-server-command.js";
 
 export interface StartupDevServerOptions {
   cwd?: string;
@@ -26,11 +28,6 @@ export interface StartupDevServerHandle {
 export interface StartupDevServerLogs {
   stdout: string;
   stderr: string;
-}
-
-interface PackageJson {
-  packageManager?: unknown;
-  scripts?: unknown;
 }
 
 export async function startStartupDevServer(
@@ -98,25 +95,6 @@ function collectStartupDevServerLogs(
   });
 }
 
-export async function detectStartupDevServerCommand(cwd: string): Promise<string> {
-  const packageJson = await readPackageJson(cwd);
-  const scripts = isRecord(packageJson.scripts) ? packageJson.scripts : {};
-  const packageManager = packageManagerCommand(packageJson.packageManager);
-  const scriptName = ["dev", "start", "preview"].find(
-    (name) => typeof scripts[name] === "string"
-  );
-
-  if (scriptName === undefined) {
-    throw new Error(
-      "No dev server command found. Add a dev/start/preview script or pass --server-command."
-    );
-  }
-
-  return scriptName === "start"
-    ? `${packageManager} start`
-    : `${packageManager} run ${scriptName}`;
-}
-
 export async function waitForStartupDevServer(input: {
   url: string;
   timeoutMs: number;
@@ -146,18 +124,6 @@ export async function waitForStartupDevServer(input: {
       : "";
 
   throw new Error(`Timed out waiting for dev server at ${input.url}.${suffix}`);
-}
-
-async function readPackageJson(cwd: string): Promise<PackageJson> {
-  try {
-    const parsed = JSON.parse(
-      await readFile(join(cwd, "package.json"), "utf8")
-    ) as unknown;
-
-    return isRecord(parsed) ? parsed : {};
-  } catch {
-    return {};
-  }
 }
 
 async function findAvailablePort(): Promise<number> {
@@ -272,32 +238,8 @@ function signalStartupDevServerProcess(
   }
 }
 
-function packageManagerCommand(value: unknown): string {
-  if (typeof value !== "string") {
-    return "npm";
-  }
-
-  if (value.startsWith("pnpm@")) {
-    return "pnpm";
-  }
-
-  if (value.startsWith("yarn@")) {
-    return "yarn";
-  }
-
-  if (value.startsWith("bun@")) {
-    return "bun";
-  }
-
-  return "npm";
-}
-
 function sleep(ms: number): Promise<void> {
   return new Promise((resolveSleep) => setTimeout(resolveSleep, ms));
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function isSystemError(error: unknown): error is NodeJS.ErrnoException {

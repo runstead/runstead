@@ -237,6 +237,8 @@ The current implementation wave closed the highest-confidence product gaps:
 - CI repair publish covered-action policy/audit wrapper moved out of
   `ci-repair-orchestrator-publish` into
   `ci-repair-orchestrator-publish-covered-action`.
+- Startup dev server package-script detection moved out of `startup-dev-server`
+  into `startup-dev-server-command`.
 - Agent provider listing moved out of the agent command adapter into
   `commands/agent-providers`.
 - Agent inspect subcommand and depth-to-preset parsing moved out of the agent
