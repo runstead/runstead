@@ -1,6 +1,4 @@
-import { applyWorkspacePatch } from "../codex-direct-native-tools.js";
 import {
-  runGovernedToolAction,
   ToolActionApprovalRequiredError,
   ToolActionDeniedError
 } from "../governed-action.js";
@@ -10,11 +8,11 @@ import {
   DEFAULT_CODEX_DIRECT_MAX_TURNS
 } from "./constants.js";
 import { runCodexDirectConversation } from "./conversation.js";
+import { applyCodexDirectPendingPatch } from "./pending-patch-apply.js";
 import {
   completedWorkerResult,
   CodexDirectModelTimeoutError,
-  governedToolOptions,
-  modelTimeoutInterruption,
+  modelTimeoutInterruption
 } from "./tool-router.js";
 import type {
   CodexDirectPendingPatchResumeOptions,
@@ -35,39 +33,9 @@ export async function runCodexDirectPendingPatchResume(
   });
 
   try {
-    const governed = await runGovernedToolAction({
-      ...governedToolOptions({ ...options, workerRun }),
-      action: options.pendingPatch.action,
-      run: async () => {
-        const value = await applyWorkspacePatch(options.cwd, {
-          ...(options.pendingPatch.pendingPatch.patch === undefined
-            ? {}
-            : { patch: options.pendingPatch.pendingPatch.patch }),
-          ...(options.pendingPatch.pendingPatch.replacements === undefined
-            ? {}
-            : { replacements: options.pendingPatch.pendingPatch.replacements })
-        });
-
-        return {
-          value,
-          output: {
-            mode: value.mode,
-            filesTouched: value.filesTouched,
-            applied: value.applied,
-            approvalId: options.pendingPatch.approvalId,
-            policyDecisionId: options.pendingPatch.policyDecisionId,
-            resume: "approved_pending_patch"
-          }
-        };
-      }
-    });
-    const output = JSON.stringify({
-      mode: governed.value.mode,
-      filesTouched: governed.value.filesTouched,
-      applied: governed.value.applied,
-      approvalId: options.pendingPatch.approvalId,
-      policyDecisionId: options.pendingPatch.policyDecisionId,
-      resume: "approved_pending_patch"
+    const appliedPatch = await applyCodexDirectPendingPatch({
+      options,
+      workerRun
     });
     const resumeContext = options.pendingPatch.pendingPatch.resumeContext;
 
@@ -111,7 +79,7 @@ export async function runCodexDirectPendingPatchResume(
         {
           type: "function_call_output",
           call_id: resumeContext.toolCall.call_id,
-          output
+          output: appliedPatch.functionCallOutput
         }
       ],
       maxTurns: options.maxTurns ?? DEFAULT_CODEX_DIRECT_MAX_TURNS,
