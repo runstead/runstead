@@ -6,10 +6,7 @@ import {
   startupGateRuleForBlocker
 } from "./startup-gate-rules.js";
 import type { StartupGateStage } from "./startup-evidence-types.js";
-import type {
-  StartupGateFinding,
-  StartupGateWaiver
-} from "./startup-gate-types.js";
+import type { StartupGateFinding, StartupGateWaiver } from "./startup-gate-types.js";
 
 export function startupGateFindings(
   stage: StartupGateStage,
