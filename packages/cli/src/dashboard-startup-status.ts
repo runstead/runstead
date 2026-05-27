@@ -2,11 +2,11 @@ import { join } from "node:path";
 
 import type { RunsteadDatabase } from "@runstead/state-sqlite";
 
+import { latestStartupAgentPatch } from "./dashboard-startup-agent-patch.js";
 import { readStartupRuns } from "./dashboard-startup-runs.js";
 import {
   dashboardStartupRunComparison,
-  dashboardStartupTimelineGroups,
-  latestStartupAgentPatch
+  dashboardStartupTimelineGroups
 } from "./dashboard-startup-timeline.js";
 import type { DashboardStartupSnapshot } from "./dashboard-types.js";
 import { getStartupStatus } from "./startup-status.js";

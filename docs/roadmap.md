@@ -900,6 +900,8 @@ The current implementation wave closed the highest-confidence product gaps:
 - Dashboard operator command quoting, approval resume command construction, and
   startup-run context construction moved out of the operator console aggregate
   into `dashboard-operator-commands`.
+- Dashboard startup agent patch audit summary querying moved out of the startup
+  timeline aggregate into `dashboard-startup-agent-patch`.
 
 ## Remaining Backlog
 
