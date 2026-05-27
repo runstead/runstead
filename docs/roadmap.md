@@ -641,6 +641,8 @@ The current implementation wave closed the highest-confidence product gaps:
 - Local-agent checkpoint restore and undo audit recording moved out of
   `local-agent` into `local-agent-undo`, leaving `local-agent` as a
   compatibility export surface.
+- Startup measurement snapshot command registration moved out of
+  `commands/startup-measurement` into `commands/startup-measurement-snapshot`.
 - Team control-plane runner heartbeat and list formatting moved out of
   `team-control-plane-runner` into `team-control-plane-runner-format`.
 - Team control-plane Postgres connection validation and client creation moved
