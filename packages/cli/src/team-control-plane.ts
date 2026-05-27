@@ -2,7 +2,6 @@ import { resolve } from "node:path";
 
 import {
   resolveRuntimeBackendSelection,
-  type RuntimeBackendConfigEnv,
   type RuntimeBackendSelection
 } from "@runstead/runtime";
 
@@ -15,10 +14,12 @@ import {
   envWithLiveRunnerHeartbeats,
   inspectLiveTeamControlPlaneBackend,
   liveTeamControlPlaneAssertions,
-  liveTeamControlPlaneCheckSnapshot,
-  type TeamControlPlaneCheckLiveBackend
+  liveTeamControlPlaneCheckSnapshot
 } from "./team-control-plane-live.js";
-import type { TeamControlPlanePostgresClientFactory } from "./team-control-plane-runner.js";
+import type {
+  TeamControlPlaneCheckOptions,
+  TeamControlPlaneCheckResult
+} from "./team-control-plane-types.js";
 
 export {
   bootstrapTeamControlPlane,
@@ -38,6 +39,12 @@ export {
   recordTeamControlPlaneRunnerHeartbeat
 } from "./team-control-plane-runner.js";
 export type {
+  TeamControlPlaneAssertion,
+  TeamControlPlaneAssertionStatus,
+  TeamControlPlaneCheckOptions,
+  TeamControlPlaneCheckResult
+} from "./team-control-plane-types.js";
+export type {
   TeamControlPlaneLiveCheckOptions,
   TeamControlPlaneLiveCheckResult,
   TeamControlPlanePostgresClient,
@@ -50,42 +57,6 @@ export type {
   TeamControlPlaneRunnerStatus
 } from "./team-control-plane-runner.js";
 export type { TeamControlPlaneCheckLiveBackend } from "./team-control-plane-live.js";
-
-export type TeamControlPlaneAssertionStatus = "pass" | "fail" | "warn";
-
-export interface TeamControlPlaneAssertion {
-  id: string;
-  title: string;
-  status: TeamControlPlaneAssertionStatus;
-  message: string;
-  evidence: string[];
-}
-
-export interface TeamControlPlaneCheckOptions {
-  cwd?: string;
-  env?: RuntimeBackendConfigEnv;
-  live?: boolean;
-  liveMigrate?: boolean;
-  liveRequireInitialized?: boolean;
-  schema?: string;
-  postgresClientFactory?: TeamControlPlanePostgresClientFactory;
-  now?: Date;
-}
-
-export interface TeamControlPlaneCheckResult {
-  cwd: string;
-  root: string;
-  initialized: boolean;
-  backend: string;
-  storageUri: string;
-  artifactBaseUri?: string;
-  passed: boolean;
-  assertions: TeamControlPlaneAssertion[];
-  setupBlockers: string[];
-  warnings: string[];
-  nextActions: string[];
-  liveBackend?: TeamControlPlaneCheckLiveBackend;
-}
 
 export async function checkTeamControlPlane(
   options: TeamControlPlaneCheckOptions = {}

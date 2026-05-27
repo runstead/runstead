@@ -1,4 +1,4 @@
-import type { TeamControlPlaneCheckResult } from "./team-control-plane.js";
+import type { TeamControlPlaneCheckResult } from "./team-control-plane-types.js";
 
 export function formatTeamControlPlaneCheck(
   result: TeamControlPlaneCheckResult
