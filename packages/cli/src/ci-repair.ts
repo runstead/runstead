@@ -13,8 +13,8 @@ import {
 } from "./ci-repair-existing-task.js";
 import { completeCiRepairWorkflowRunIntake } from "./ci-repair-intake-completion.js";
 import { fetchCiRepairWorkflowRunIntake } from "./ci-repair-intake-fetch.js";
+import { handleCiRepairWorkflowRunIntakeFailure } from "./ci-repair-intake-failure.js";
 import { createQueuedCiRepairTask } from "./ci-repair-task-create.js";
-import { errorMessage, markCiRepairTaskTerminal } from "./ci-repair-task-state.js";
 import { listGoals } from "./goals.js";
 import { withRunsteadManagerLock } from "./manager-lock.js";
 import { loadPolicyProfileFromFile } from "./policy-loader.js";
@@ -25,10 +25,7 @@ import type {
   CreateCiRepairTaskOptions,
   CreateCiRepairTaskResult
 } from "./ci-repair-types.js";
-import {
-  assertRepairableWorkflowRun,
-  NonRepairableWorkflowRunError
-} from "./ci-repair-workflow-run.js";
+import { assertRepairableWorkflowRun } from "./ci-repair-workflow-run.js";
 
 export { formatCiRepairTaskReport } from "./ci-repair-report.js";
 export { repairableWorkflowRunIdFromWebhook } from "./ci-repair-workflow-run.js";
@@ -173,47 +170,18 @@ export async function createCiRepairTaskFromWorkflowRunUnlocked(
         created: true
       };
     } catch (error) {
-      const notRepairable = error instanceof NonRepairableWorkflowRunError;
-
-      const terminalTask = markCiRepairTaskTerminal({
+      return handleCiRepairWorkflowRunIntakeFailure({
         database,
+        cwd,
+        stateDb: resolvedState.stateDb,
         task,
-        status: notRepairable ? "cancelled" : "failed",
-        error,
-        ...(options.now === undefined ? {} : { now: options.now })
-      });
-      finishWorkerRun({
-        database,
+        taskCreatedEvent,
         workerRun,
-        status: notRepairable ? "completed" : "failed",
-        output: {
-          error: errorMessage(error),
-          ...(notRepairable ? { reason: "workflow_not_repairable" } : {})
-        },
+        error,
+        ...(fetchedWorkflowRun === undefined ? {} : { fetchedWorkflowRun }),
+        ...(fetchedLog === undefined ? {} : { fetchedLog }),
         ...(options.now === undefined ? {} : { now: options.now })
       });
-
-      if (
-        notRepairable &&
-        fetchedWorkflowRun !== undefined &&
-        fetchedLog !== undefined
-      ) {
-        return {
-          status: "ignored",
-          reason: "workflow_not_repairable",
-          taskStatus: "cancelled",
-          cwd,
-          stateDb: resolvedState.stateDb,
-          task: terminalTask,
-          event: taskCreatedEvent,
-          workflowRun: fetchedWorkflowRun,
-          log: fetchedLog,
-          created: true,
-          error: errorMessage(error)
-        };
-      }
-
-      throw error;
     }
   } finally {
     database.close();
