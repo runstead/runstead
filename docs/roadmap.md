@@ -817,6 +817,8 @@ The current implementation wave closed the highest-confidence product gaps:
 - Goal list/show SQLite read paths moved out of `goals` into `goals-read`.
 - Repository add, list, show, and archive command handlers moved out of
   `commands/repo` into `commands/repo-actions`.
+- Repository list/show read handlers moved out of `commands/repo-actions` into
+  `commands/repo-read-actions`.
 - GitHub App config schema, config loading, default API URL, and config path
   resolution moved out of `github-app` into `github-app-config`.
 - GitHub App init, status, JWT, and installation-token command handlers moved
