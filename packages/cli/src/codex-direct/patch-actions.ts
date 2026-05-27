@@ -1,10 +1,11 @@
 import { createHash } from "node:crypto";
 
 import type { Task } from "@runstead/core";
-import { matchesPolicyPathPattern } from "../policy.js";
 import { inferWorkspacePatchTouchedFiles } from "../codex-direct-native-tools.js";
-import { isRecord } from "./tool-json.js";
-import { stringArray } from "./patch-payload.js";
+import {
+  codexDirectTaskScaffoldProfile,
+  isScaffoldAppOwnedPatchPath
+} from "./patch-scaffold-profile.js";
 
 export {
   cloneCodexResponsesMessages,
@@ -22,6 +23,11 @@ export type {
   CodexDirectPendingPatchPayload,
   CodexDirectPendingToolResumeContext
 } from "./patch-payload.js";
+export {
+  codexDirectTaskScaffoldProfile,
+  isScaffoldAppOwnedPatchPath,
+  type CodexDirectTaskScaffoldProfile
+} from "./patch-scaffold-profile.js";
 
 const DEPENDENCY_FILE_NAMES = new Set([
   "package.json",
@@ -43,59 +49,6 @@ export function codexDirectPatchFilesTouched(input: {
   }[];
 }): string[] {
   return inferWorkspacePatchTouchedFiles(input);
-}
-
-export interface CodexDirectTaskScaffoldProfile {
-  id: string;
-  appOwnedPaths: string[];
-}
-
-const SCAFFOLD_APP_PATCH_PROTECTED_PATH_PATTERNS = [
-  ".env",
-  ".env.*",
-  "**/secrets/**",
-  ".git/**",
-  ".runstead/**",
-  "infra/prod/**",
-  "node_modules/**",
-  "dist/**",
-  "build/**"
-];
-
-export function codexDirectTaskScaffoldProfile(
-  task: Task
-): CodexDirectTaskScaffoldProfile | undefined {
-  const profile = task.input.scaffoldProfile;
-
-  if (!isRecord(profile) || typeof profile.id !== "string") {
-    return undefined;
-  }
-
-  const appOwnedPaths = stringArray(profile.appOwnedPaths);
-
-  if (appOwnedPaths === undefined || appOwnedPaths.length === 0) {
-    return undefined;
-  }
-
-  return {
-    id: profile.id,
-    appOwnedPaths
-  };
-}
-
-export function isScaffoldAppOwnedPatchPath(
-  path: string,
-  appOwnedPaths: string[]
-): boolean {
-  if (
-    SCAFFOLD_APP_PATCH_PROTECTED_PATH_PATTERNS.some((pattern) =>
-      matchesPolicyPathPattern(path, pattern)
-    )
-  ) {
-    return false;
-  }
-
-  return appOwnedPaths.some((pattern) => matchesPolicyPathPattern(path, pattern));
 }
 
 export interface CodexDirectPatchApprovalMetadata {
