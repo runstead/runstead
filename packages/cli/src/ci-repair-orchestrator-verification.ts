@@ -2,14 +2,10 @@ import type { Task, WorkerRun } from "@runstead/core";
 import type { RunsteadDatabase } from "@runstead/state-sqlite";
 
 import type { CreateCiRepairTaskResult } from "./ci-repair.js";
-import { gitCommitAction, gitStatusAction } from "./ci-repair-orchestrator-actions.js";
+import { resolveCiRepairCommit } from "./ci-repair-orchestrator-commit.js";
 import type { CiRepairOrchestratorStageContext } from "./ci-repair-orchestrator-context.js";
 import { stageAtLeast } from "./ci-repair-orchestrator-context.js";
 import { resolveCiRepairDiffScope } from "./ci-repair-orchestrator-diff-scope.js";
-import {
-  gitChangedFilesOutput,
-  gitCommitOutput
-} from "./ci-repair-orchestrator-output.js";
 import { writeCiRepairStage } from "./ci-repair-orchestrator-stage-persistence.js";
 import type {
   CiRepairGitRunner,
@@ -22,12 +18,7 @@ import {
 } from "./ci-repair-orchestrator-verification-failures.js";
 import { normalizeCiRepairVerifierResult } from "./ci-repair-orchestrator-verifier-result.js";
 import type { GitDiffScopeVerification } from "./diff-scope-verifier.js";
-import {
-  commitGitChanges,
-  listGitChangedFiles,
-  type CommitGitChangesResult
-} from "./git-branch.js";
-import { runGovernedToolAction } from "./governed-action.js";
+import type { CommitGitChangesResult } from "./git-branch.js";
 import type { PolicyProfile } from "./policy.js";
 import {
   runTaskVerifiersUnlocked,
@@ -70,84 +61,25 @@ export async function verifyCiRepairWorkerChanges(
 ): Promise<VerifyCiRepairWorkerChangesResult> {
   let task = input.task;
   let context = input.context;
-  const changedFiles = await runGovernedToolAction({
+  const commitResult = await resolveCiRepairCommit({
     cwd: input.cwd,
     stateDb: input.stateDb,
     database: input.database,
     policy: input.policy,
     task,
     workerRun: input.workerRun,
-    action: gitStatusAction({
-      task,
-      cwd: input.cwd
-    }),
-    requestedBy: "runstead:ci-repair",
-    ...(input.now === undefined ? {} : { now: input.now }),
-    run: async () => {
-      const value = await listGitChangedFiles({
-        cwd: input.cwd,
-        ...(input.gitRunner === undefined ? {} : { runner: input.gitRunner })
-      });
+    context,
+    ciRepair: input.ciRepair,
+    ...(input.gitRunner === undefined ? {} : { gitRunner: input.gitRunner }),
+    ...(input.onStagePersisted === undefined
+      ? {}
+      : { onStagePersisted: input.onStagePersisted }),
+    ...(input.now === undefined ? {} : { now: input.now })
+  });
 
-      return {
-        value,
-        output: gitChangedFilesOutput(value)
-      };
-    }
-  }).then((result) => result.value);
-  const hasCommittableChanges =
-    changedFiles.changedFiles.length > changedFiles.excludedFiles.length;
-  let commit = context.commit;
-
-  if (
-    (!stageAtLeast(context.stage, "committed") || commit === undefined) &&
-    hasCommittableChanges
-  ) {
-    commit = await runGovernedToolAction({
-      cwd: input.cwd,
-      stateDb: input.stateDb,
-      database: input.database,
-      policy: input.policy,
-      task,
-      workerRun: input.workerRun,
-      action: gitCommitAction({
-        task,
-        cwd: input.cwd,
-        changedFiles: changedFiles.changedFiles
-      }),
-      requestedBy: "runstead:ci-repair",
-      ...(input.now === undefined ? {} : { now: input.now }),
-      run: async () => {
-        const value = await commitGitChanges({
-          cwd: input.cwd,
-          message: `Runstead repair CI run ${input.ciRepair.workflowRun.runId}`,
-          changedFiles: changedFiles.changedFiles,
-          ...(input.gitRunner === undefined ? {} : { runner: input.gitRunner })
-        });
-
-        return {
-          value,
-          output: gitCommitOutput(value)
-        };
-      }
-    }).then((result) => result.value);
-    if (commit === undefined) {
-      throw new Error("CI repair commit context is missing");
-    }
-    ({ task, context } = writeCiRepairStage({
-      database: input.database,
-      task,
-      context,
-      stage: "committed",
-      patch: {
-        commit
-      },
-      ...(input.onStagePersisted === undefined
-        ? {}
-        : { onStagePersisted: input.onStagePersisted }),
-      ...(input.now === undefined ? {} : { now: input.now })
-    }));
-  }
+  task = commitResult.task;
+  context = commitResult.context;
+  const commit = commitResult.commit;
 
   const diffScope = await resolveCiRepairDiffScope({
     cwd: input.cwd,
