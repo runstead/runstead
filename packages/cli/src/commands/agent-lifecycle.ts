@@ -1,10 +1,8 @@
 import type { Command } from "commander";
 
-import {
-  runAgentReportCommand,
-  runAgentUndoCommand
-} from "./agent-lifecycle-actions.js";
+import { runAgentReportCommand } from "./agent-lifecycle-actions.js";
 import { runAgentResumeCommand } from "./agent-resume-action.js";
+import { runAgentUndoCommand } from "./agent-undo-action.js";
 
 export function registerAgentLifecycleCommands(command: Command): void {
   command

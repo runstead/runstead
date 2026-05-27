@@ -857,6 +857,8 @@ The current implementation wave closed the highest-confidence product gaps:
   lifecycle actions into `commands/agent-report-output`.
 - Agent resume command handling moved out of lifecycle actions into
   `commands/agent-resume-action`.
+- Agent undo command handling moved out of lifecycle actions into
+  `commands/agent-undo-action`.
 
 ## Remaining Backlog
 
