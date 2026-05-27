@@ -875,6 +875,8 @@ The current implementation wave closed the highest-confidence product gaps:
   into `dashboard-render-operator-script`.
 - Dashboard render now imports style/script assets directly without the former
   generic `dashboard-render-assets` re-export layer.
+- Dashboard startup run-comparison and timeline table rendering moved out of
+  `dashboard-render-startup` into `dashboard-render-startup-tables`.
 
 ## Remaining Backlog
 
