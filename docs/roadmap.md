@@ -300,6 +300,8 @@ The current implementation wave closed the highest-confidence product gaps:
   runner into `startup-ui-playwright-overlap`.
 - Startup UI Playwright browser, page, locator, response, and console message
   shim contracts moved out of the browser runner into `startup-ui-playwright-types`.
+- Startup UI Playwright flow-action execution, text waits, and selector lookup
+  moved out of the browser runner into `startup-ui-playwright-flow-action`.
 - Startup UI validation status parsing, summary text, execution status
   inference, server evidence shaping, and HTML escaping moved out of
   `startup-ui-validation` into `startup-ui-validation-status`.
