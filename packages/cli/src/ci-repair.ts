@@ -1,6 +1,5 @@
 import { join, resolve } from "node:path";
 
-import { createRunsteadId, type Task } from "@runstead/core";
 import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sqlite";
 
 import {
@@ -12,11 +11,12 @@ import {
   findExistingCiRepairTaskForWorkflowRun,
   loadExistingCiRepairTaskResult
 } from "./ci-repair-existing-task.js";
-import {
-  CI_LOG_EVIDENCE_METADATA,
-  writeCiRepairWorkflowRunEvidence
-} from "./ci-repair-evidence.js";
+import { writeCiRepairWorkflowRunEvidence } from "./ci-repair-evidence.js";
 import { fetchCiRepairWorkflowRunIntake } from "./ci-repair-intake-fetch.js";
+import {
+  buildCiRepairIntakeTask,
+  createCiRepairIntakeTaskUpdatedEvent
+} from "./ci-repair-intake-task-update.js";
 import { createQueuedCiRepairTask } from "./ci-repair-task-create.js";
 import { errorMessage, markCiRepairTaskTerminal } from "./ci-repair-task-state.js";
 import { listGoals } from "./goals.js";
@@ -141,27 +141,15 @@ export async function createCiRepairTaskFromWorkflowRunUnlocked(
       fetchedLog = evidenceLog;
       assertRepairableWorkflowRun(workflowRun);
 
-      const finalTask: Task = {
-        ...task,
-        input: {
-          source: "github_actions",
-          runId: workflowRun.runId,
-          workflowRun,
-          logEvidenceType: "github_workflow_run",
-          logEvidenceMetadata: CI_LOG_EVIDENCE_METADATA,
-          failureClassification,
-          repairPlan: {
-            fetchLog: true,
-            classifyFailure: true,
-            runLocalVerifiers: true,
-            createPullRequestWithEvidence: true
-          },
-          ...(options.verifierCommands === undefined
-            ? {}
-            : { commands: options.verifierCommands })
-        },
+      const finalTask = buildCiRepairIntakeTask({
+        task,
+        workflowRun,
+        failureClassification,
+        ...(options.verifierCommands === undefined
+          ? {}
+          : { verifierCommands: options.verifierCommands }),
         updatedAt: createdAt
-      };
+      });
       const {
         evidence,
         evidencePath,
@@ -183,20 +171,13 @@ export async function createCiRepairTaskFromWorkflowRunUnlocked(
         }
       });
       appendEventAndProject(database, {
-        event: {
-          eventId: createRunsteadId("evt"),
-          type: "task.updated",
-          aggregateType: "task",
-          aggregateId: finalTask.id,
-          payload: {
-            runId: workflowRun.runId,
-            workflowName: workflowRun.workflowName,
-            conclusion: workflowRun.conclusion,
-            failureCategory: failureClassification.category,
-            evidenceId: evidence.id
-          },
+        event: createCiRepairIntakeTaskUpdatedEvent({
+          task: finalTask,
+          workflowRun,
+          failureClassification,
+          evidenceId: evidence.id,
           createdAt
-        },
+        }),
         projection: {
           type: "task",
           value: finalTask
