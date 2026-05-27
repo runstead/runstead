@@ -638,6 +638,8 @@ The current implementation wave closed the highest-confidence product gaps:
   contract instead of remaining manifest metadata.
 - Startup source evidence option/result contracts moved out of the connector
   execution facade into `startup-source-evidence-types`.
+- Startup source HTTP verification execution moved out of the connector facade
+  into `startup-source-verification`.
 
 ## Remaining Backlog
 
