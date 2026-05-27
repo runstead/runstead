@@ -676,6 +676,8 @@ The current implementation wave closed the highest-confidence product gaps:
   `goals-generated-tasks`.
 - Goal scope payload construction moved out of `goals` into `goals-scope`.
 - Goal list/show SQLite read paths moved out of `goals` into `goals-read`.
+- GitHub App config schema, config loading, default API URL, and config path
+  resolution moved out of `github-app` into `github-app-config`.
 
 ## Remaining Backlog
 

@@ -4,7 +4,6 @@ import { isAbsolute, join, resolve } from "node:path";
 
 import { createRunsteadId, type RunsteadEvent } from "@runstead/core";
 import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sqlite";
-import { parse as parseYaml } from "yaml";
 import { z } from "zod";
 
 import {
@@ -15,6 +14,10 @@ import {
 import { formatGitHubAppConfigYaml } from "./github-app-format.js";
 import { createGitHubAppJwt } from "./github-app-jwt.js";
 import type { GitHubAppJwtResult } from "./github-app-jwt.js";
+import {
+  DEFAULT_GITHUB_API_BASE_URL,
+  loadGitHubAppConfig
+} from "./github-app-config.js";
 import type {
   CreateGitHubAppInstallationTokenOptions,
   CreateGitHubAppJwtFromConfigOptions,
@@ -27,6 +30,7 @@ import type {
 } from "./github-app-types.js";
 
 export { createGitHubAppJwt } from "./github-app-jwt.js";
+export { loadGitHubAppConfig } from "./github-app-config.js";
 export type {
   CreateGitHubAppJwtOptions,
   GitHubAppJwtResult
@@ -45,15 +49,6 @@ export {
   formatGitHubAppConfigSummary,
   formatGitHubAppConfigYaml
 } from "./github-app-format.js";
-
-const DEFAULT_GITHUB_API_BASE_URL = "https://api.github.com";
-
-const GitHubAppConfigYamlSchema = z.object({
-  app_id: z.union([z.string().min(1), z.number().int().positive()]),
-  private_key_path: z.string().min(1),
-  installation_id: z.union([z.string().min(1), z.number().int().positive()]).optional(),
-  api_base_url: z.string().url().optional()
-});
 
 const GitHubAppInstallationTokenResponseSchema = z.object({
   token: z.string().min(1),
@@ -124,23 +119,6 @@ export async function initGitHubAppMode(
     event,
     stateDb,
     overwritten: existing
-  };
-}
-
-export async function loadGitHubAppConfig(
-  options: { cwd?: string } = {}
-): Promise<GitHubAppConfig> {
-  const path = resolveGitHubAppConfigPath(options.cwd);
-  const raw = await readFile(path, "utf8");
-  const parsed = GitHubAppConfigYamlSchema.parse(parseYaml(raw));
-
-  return {
-    appId: String(parsed.app_id),
-    privateKeyPath: parsed.private_key_path,
-    ...(parsed.installation_id === undefined
-      ? {}
-      : { installationId: String(parsed.installation_id) }),
-    apiBaseUrl: parsed.api_base_url ?? DEFAULT_GITHUB_API_BASE_URL
   };
 }
 
@@ -258,12 +236,6 @@ async function defaultGitHubAppFetch(
   }
 
   return await fetcher(url, init);
-}
-
-function resolveGitHubAppConfigPath(cwd = process.cwd()): string {
-  const root = requireRunsteadRootSync(cwd);
-
-  return join(root.root, "github-app.yaml");
 }
 
 async function resolveInitializedRoot(cwd = process.cwd()): Promise<string> {
