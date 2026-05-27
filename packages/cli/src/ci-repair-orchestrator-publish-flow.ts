@@ -3,10 +3,6 @@ import type { RunsteadDatabase } from "@runstead/state-sqlite";
 
 import type { CreateCiRepairTaskResult } from "./ci-repair.js";
 import {
-  ciRepairApprovalSummary,
-  ciRepairPublishApprovalStage
-} from "./ci-repair-orchestrator-approval.js";
-import {
   incrementCiRepairCounter,
   publishCoverageFromContext,
   publishCoverageStagePatch,
@@ -15,6 +11,10 @@ import {
 } from "./ci-repair-orchestrator-context.js";
 import { pullRequestOutput } from "./ci-repair-orchestrator-output.js";
 import {
+  markCiRepairPublishDenied,
+  waitForCiRepairPublishApproval
+} from "./ci-repair-orchestrator-publish-errors.js";
+import {
   createRepairPullRequestWithPublishApproval,
   ensureGovernedRepairPublishApproval,
   pushRepairBranchWithPublishApproval
@@ -22,7 +22,6 @@ import {
 import {
   failCiRepairOrchestratorRun,
   isStagePersistenceInterruption,
-  markTaskTerminal,
   writeTaskOutput
 } from "./ci-repair-orchestrator-task-state.js";
 import { writeCiRepairStage } from "./ci-repair-orchestrator-stage-persistence.js";
@@ -205,64 +204,23 @@ export async function publishCiRepairPullRequest(
     }
 
     if (error instanceof ToolActionApprovalRequiredError) {
-      const approvalStage = ciRepairPublishApprovalStage(error.toolCall.actionType);
-      const waitingContext = {
-        ...publishContext,
-        counters: incrementCiRepairCounter(publishContext, "approvalRound")
-      };
-      const waitingTask = markTaskTerminal({
+      return waitForCiRepairPublishApproval({
         database: input.database,
         task: publishTask,
-        status: "waiting_approval",
-        output: {
-          ...(publishTask.output ?? {}),
-          ciRepairOrchestrator: {
-            ...waitingContext,
-            stage: approvalStage,
-            approvalId: error.approval.id
-          }
-        },
-        ...(input.now === undefined ? {} : { now: input.now })
-      });
-      finishWorkerRun({
-        database: input.database,
         workerRun: input.workerRun,
-        status: "waiting_approval",
-        output: {
-          approvalId: error.approval.id,
-          actionType: error.toolCall.actionType
-        },
+        context: publishContext,
+        error,
         ...(input.now === undefined ? {} : { now: input.now })
       });
-
-      return {
-        status: "waiting_approval",
-        task: waitingTask,
-        context: waitingContext,
-        approval: ciRepairApprovalSummary(error)
-      };
     }
 
     if (error instanceof ToolActionDeniedError) {
       if (input.deniedAction === "mark_blocked") {
-        markTaskTerminal({
+        markCiRepairPublishDenied({
           database: input.database,
           task: publishTask,
-          status: "blocked",
-          output: {
-            summary: error.message,
-            policyDecisionId: error.policyDecision.id
-          },
-          ...(input.now === undefined ? {} : { now: input.now })
-        });
-        finishWorkerRun({
-          database: input.database,
           workerRun: input.workerRun,
-          status: "blocked",
-          output: {
-            error: error.message,
-            policyDecisionId: error.policyDecision.id
-          },
+          error,
           ...(input.now === undefined ? {} : { now: input.now })
         });
       }
