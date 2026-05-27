@@ -891,6 +891,8 @@ The current implementation wave closed the highest-confidence product gaps:
   without the former `dashboard-audit-timeline` re-export layer.
 - Dashboard static-file target selection and response handling moved out of the
   dashboard server/router into `dashboard-static-server`.
+- Dashboard operator API local-origin, bearer-token, and CSRF auth helpers moved
+  out of the generic HTTP helper module into `dashboard-operator-api-auth`.
 
 ## Remaining Backlog
 
