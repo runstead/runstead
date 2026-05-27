@@ -15,6 +15,7 @@ export async function planStartupSourceCommand(
   await Promise.resolve();
 
   const plan = createStartupSourceRefreshPlan({
+    ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
     target: options.target
   });
 

@@ -661,6 +661,23 @@ describe("startup source connectors", () => {
     expect(formatStartupSourceRefreshPlan(plan)).toContain(
       "posthog: freshness=14d adapter=posthog"
     );
+
+    const workspacePlan = createStartupSourceRefreshPlan({
+      cwd: "/tmp/runstead source workspace",
+      target: "staging",
+      env: {
+        GITHUB_TOKEN: "ghs_fixture",
+        VERCEL_TOKEN: "vercel_fixture",
+        SENTRY_AUTH_TOKEN: "sentry_fixture"
+      }
+    });
+    const github = workspacePlan.requirements
+      .find((requirement) => requirement.id === "remote-ci")
+      ?.connectors.find((connector) => connector.connector === "github_actions");
+
+    expect(github?.collectCommand).toBe(
+      "runstead startup source collect --cwd '/tmp/runstead source workspace' --connector github_actions --target staging --source-uri <provider-api-url>"
+    );
   });
 
   it("records target-specific deployment tiers for named hosting connectors", async () => {

@@ -9,6 +9,7 @@ import {
 import { startupSourceConnectorRequirementsForTarget } from "./startup-source-readiness-requirements.js";
 
 export interface StartupSourceRefreshPlanOptions {
+  cwd?: string;
   target: string;
   env?: Record<string, string | undefined>;
 }
@@ -60,10 +61,11 @@ export function createStartupSourceRefreshPlan(
       missingTokenEnv: [...requirement.missingTokenEnv],
       blockers: [...requirement.blockers],
       connectors: requirement.connectors.map((connector, index) =>
-        refreshPlanConnector(
-          parseStartupSourceConnector(connector),
-          requirement.collectCommands[index]
-        )
+        refreshPlanConnector({
+          connector: parseStartupSourceConnector(connector),
+          collectCommand: requirement.collectCommands[index],
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd })
+        })
       )
     }))
   };
@@ -106,27 +108,59 @@ export function formatStartupSourceRefreshPlan(plan: StartupSourceRefreshPlan): 
   return lines.join("\n").trimEnd();
 }
 
-function refreshPlanConnector(
-  connector: StartupSourceConnector,
-  collectCommand: string | undefined
-): StartupSourceRefreshPlanConnector {
-  const definition = getStartupSourceConnectorDefinition(connector);
-  const adapter = getStartupSourceProviderAdapter(connector);
+function refreshPlanConnector(input: {
+  connector: StartupSourceConnector;
+  collectCommand: string | undefined;
+  cwd?: string;
+}): StartupSourceRefreshPlanConnector {
+  const definition = getStartupSourceConnectorDefinition(input.connector);
+  const adapter = getStartupSourceProviderAdapter(input.connector);
 
   if (definition === undefined) {
-    throw new Error(`Startup source connector definition not found: ${connector}`);
+    throw new Error(
+      `Startup source connector definition not found: ${input.connector}`
+    );
   }
 
   return {
-    connector,
+    connector: input.connector,
     displayName: definition.displayName,
     ...(adapter?.provider === undefined ? {} : { adapterProvider: adapter.provider }),
     ...(adapter?.requiredTokenEnv === undefined
       ? {}
       : { requiredTokenEnv: adapter.requiredTokenEnv }),
     defaultFreshnessDays: definition.defaultFreshnessDays,
-    collectCommand:
-      collectCommand ??
-      `runstead startup source collect --connector ${connector} --target <target> --source-uri <provider-api-url>`
+    collectCommand: sourceCollectCommand({
+      connector: input.connector,
+      collectCommand: input.collectCommand,
+      ...(input.cwd === undefined ? {} : { cwd: input.cwd })
+    })
   };
+}
+
+function sourceCollectCommand(input: {
+  connector: StartupSourceConnector;
+  collectCommand: string | undefined;
+  cwd?: string;
+}): string {
+  const command =
+    input.collectCommand ??
+    `runstead startup source collect --connector ${input.connector} --target <target> --source-uri <provider-api-url>`;
+
+  if (input.cwd === undefined) {
+    return command;
+  }
+
+  return command.replace(
+    /^runstead startup source collect\b/u,
+    `runstead startup source collect --cwd ${shellQuote(input.cwd)}`
+  );
+}
+
+function shellQuote(value: string): string {
+  if (/^[A-Za-z0-9_./:@=-]+$/.test(value)) {
+    return value;
+  }
+
+  return `'${value.replaceAll("'", "'\"'\"'")}'`;
 }

@@ -366,7 +366,7 @@ runstead startup evidence manual-change \
   --evidence ev_after_fix \
   --gate launch
 runstead startup source list
-runstead startup source plan --target production
+runstead startup source plan --cwd /path/to/mvp --target production
 runstead startup source record --cwd /path/to/mvp --connector vercel --target staging --source-uri https://vercel.com/acme/todo/deployments/dpl_123 --summary "Staging deployment smoke passed" --status pass
 runstead startup source collect --cwd /path/to/mvp --connector github_actions --target staging --source-uri https://api.github.com/repos/acme/todo/actions/runs/123
 runstead startup source collect --cwd /path/to/mvp --connector posthog --target production --source-uri https://app.posthog.com/api/projects/1/insights/activation

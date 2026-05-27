@@ -950,7 +950,13 @@ describe("buildDashboard", () => {
             operatorActionId: string;
             target: string;
             blockers: string[];
-            requirements: { id: string }[];
+            requirements: {
+              id: string;
+              connectors: {
+                connector: string;
+                collectCommand: string;
+              }[];
+            }[];
           };
         };
 
@@ -974,6 +980,9 @@ describe("buildDashboard", () => {
           "monitoring-provider",
           "analytics-provider"
         ]);
+        expect(body.result.requirements[0]?.connectors[0]?.collectCommand).toContain(
+          `--cwd ${workspace}`
+        );
       } finally {
         await closeServer(served.server);
       }

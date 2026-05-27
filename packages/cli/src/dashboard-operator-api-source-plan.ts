@@ -32,7 +32,10 @@ export async function runDashboardSourcePlanOperatorAction(input: {
     );
   }
 
-  const plan = createStartupSourceRefreshPlan({ target });
+  const plan = createStartupSourceRefreshPlan({
+    cwd: input.cwd,
+    target
+  });
 
   return {
     operatorActionId: input.actionId,
