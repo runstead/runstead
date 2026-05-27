@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 
 import type { Task } from "@runstead/core";
 import { inferWorkspacePatchTouchedFiles } from "../codex-direct-native-tools.js";
+import { isDependencyFilePath } from "./patch-dependency-files.js";
 import {
   codexDirectTaskScaffoldProfile,
   isScaffoldAppOwnedPatchPath
@@ -28,16 +29,7 @@ export {
   isScaffoldAppOwnedPatchPath,
   type CodexDirectTaskScaffoldProfile
 } from "./patch-scaffold-profile.js";
-
-const DEPENDENCY_FILE_NAMES = new Set([
-  "package.json",
-  "pnpm-lock.yaml",
-  "package-lock.json",
-  "npm-shrinkwrap.json",
-  "yarn.lock",
-  "bun.lock",
-  "bun.lockb"
-]);
+export { isDependencyFilePath } from "./patch-dependency-files.js";
 
 export function codexDirectPatchFilesTouched(input: {
   patch?: string;
@@ -136,12 +128,6 @@ export function codexDirectPatchApprovalMetadata(input: {
     canonicalSignature,
     ...(approvalGrant === undefined ? {} : { approvalGrant })
   };
-}
-
-export function isDependencyFilePath(path: string): boolean {
-  const fileName = path.split("/").pop() ?? path;
-
-  return DEPENDENCY_FILE_NAMES.has(fileName);
 }
 
 export function sha256(value: unknown): string {
