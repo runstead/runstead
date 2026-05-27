@@ -9,7 +9,7 @@ import {
   stageAtLeast,
   type CiRepairOrchestratorResumeContext
 } from "./ci-repair-orchestrator-context.js";
-import { pullRequestOutput } from "./ci-repair-orchestrator-output.js";
+import { completeCiRepairPublish } from "./ci-repair-orchestrator-publish-completion.js";
 import {
   markCiRepairPublishDenied,
   waitForCiRepairPublishApproval
@@ -21,8 +21,7 @@ import {
 } from "./ci-repair-orchestrator-publish.js";
 import {
   failCiRepairOrchestratorRun,
-  isStagePersistenceInterruption,
-  writeTaskOutput
+  isStagePersistenceInterruption
 } from "./ci-repair-orchestrator-task-state.js";
 import { writeCiRepairStage } from "./ci-repair-orchestrator-stage-persistence.js";
 import type { CiRepairGitRunner } from "./ci-repair-orchestrator-types.js";
@@ -33,7 +32,6 @@ import {
 } from "./governed-action.js";
 import type { CreateGitHubPullRequestResult } from "./github-pr.js";
 import type { PolicyProfile } from "./policy.js";
-import { finishWorkerRun } from "./runtime-audit.js";
 
 export interface PublishCiRepairPullRequestInput {
   cwd: string;
@@ -166,38 +164,14 @@ export async function publishCiRepairPullRequest(
       ...(input.authToken === undefined ? {} : { authToken: input.authToken }),
       ...(input.now === undefined ? {} : { now: input.now })
     });
-    const completedTask = writeTaskOutput({
+    return completeCiRepairPublish({
       database: input.database,
       task: publishTask,
-      status: "completed",
-      output: {
-        ...(publishTask.output ?? {}),
-        ciRepairOrchestrator: {
-          ...publishContext,
-          stage: "completed",
-          pullRequest
-        }
-      },
-      eventType: "task.completed",
-      ...(input.now === undefined ? {} : { now: input.now })
-    });
-
-    finishWorkerRun({
-      database: input.database,
       workerRun: input.workerRun,
-      status: "completed",
-      output: {
-        pullRequest: pullRequestOutput(pullRequest)
-      },
+      context: publishContext,
+      pullRequest,
       ...(input.now === undefined ? {} : { now: input.now })
     });
-
-    return {
-      status: "completed",
-      task: completedTask,
-      context: publishContext,
-      pullRequest
-    };
   } catch (error) {
     if (isStagePersistenceInterruption(error)) {
       throw error;
