@@ -1,5 +1,10 @@
 import type { Command } from "commander";
 
+import {
+  bootstrapTeamControlPlaneCommand,
+  checkTeamControlPlaneCommand,
+  printTeamControlPlaneMigrationSqlCommand
+} from "./team-control-plane-actions.js";
 import { registerTeamControlPlaneRunnerCommand } from "./team-control-plane-runner.js";
 
 export function registerTeamControlPlaneCommand(program: Command): Command {
@@ -21,33 +26,7 @@ export function registerTeamControlPlaneCommand(program: Command): Command {
     .option("--migrate", "Apply Postgres control-plane migrations before live check")
     .option("--schema <name>", "Postgres schema name for live checks", "runstead")
     .option("--json", "Print the check result as JSON")
-    .action(
-      async (options: {
-        cwd?: string;
-        live?: boolean;
-        migrate?: boolean;
-        schema: string;
-        json?: boolean;
-      }) => {
-        const { checkTeamControlPlane, formatTeamControlPlaneCheck } =
-          await import("../team-control-plane.js");
-        const result = await checkTeamControlPlane({
-          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-          live: options.live === true,
-          liveMigrate: options.migrate === true,
-          schema: options.schema
-        });
-
-        console.log(
-          options.json === true
-            ? `${JSON.stringify(result, null, 2)}`
-            : formatTeamControlPlaneCheck(result)
-        );
-        if (!result.passed) {
-          process.exitCode = 1;
-        }
-      }
-    );
+    .action(checkTeamControlPlaneCommand);
 
   controlPlane
     .command("bootstrap")
@@ -60,49 +39,13 @@ export function registerTeamControlPlaneCommand(program: Command): Command {
       "RBAC subject for team control-plane bootstrap",
       "local-admin"
     )
-    .action(
-      async (options: {
-        cwd?: string;
-        output?: string;
-        force?: boolean;
-        actor: string;
-      }) => {
-        const { checkPermission } = await import("../rbac.js");
-        const permission = await checkPermission({
-          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-          subject: options.actor,
-          permission: "team_policy.manage"
-        });
-
-        if (permission.decision !== "allow") {
-          throw new Error(
-            `Subject ${options.actor} cannot bootstrap team control plane: ${permission.reason}`
-          );
-        }
-
-        const { bootstrapTeamControlPlane } = await import("../team-control-plane.js");
-        const result = await bootstrapTeamControlPlane({
-          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-          ...(options.output === undefined ? {} : { output: options.output }),
-          ...(options.force === undefined ? {} : { force: options.force })
-        });
-
-        console.log(
-          `${result.overwritten ? "Overwrote" : "Wrote"} team control-plane env template: ${result.path}`
-        );
-        console.log(`Check command: ${result.checkCommand}`);
-      }
-    );
+    .action(bootstrapTeamControlPlaneCommand);
 
   controlPlane
     .command("migration-sql")
     .description("Print SQL for the Postgres team control-plane schema.")
     .option("--schema <name>", "Postgres schema name", "runstead")
-    .action(async (options: { schema: string }) => {
-      const { teamControlPlaneMigrationSql } = await import("../team-control-plane.js");
-
-      console.log(teamControlPlaneMigrationSql({ schema: options.schema }));
-    });
+    .action(printTeamControlPlaneMigrationSqlCommand);
 
   registerTeamControlPlaneRunnerCommand(controlPlane);
 

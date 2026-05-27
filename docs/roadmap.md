@@ -771,6 +771,8 @@ The current implementation wave closed the highest-confidence product gaps:
 - Team control-plane runner heartbeat/list handlers moved out of
   `commands/team-control-plane-runner` into
   `commands/team-control-plane-runner-actions`.
+- Team control-plane check/bootstrap/migration-sql handlers moved out of
+  `commands/team-control-plane` into `commands/team-control-plane-actions`.
 - Audit export/timeline/replay handlers moved out of `commands/audit` into
   `commands/audit-actions`.
 - Startup source record/verify/collect subcommand registration moved out of
