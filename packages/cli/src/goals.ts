@@ -1,11 +1,6 @@
 import { join, resolve } from "node:path";
 
-import {
-  createRunsteadId,
-  type Goal,
-  type JsonObject,
-  type RunsteadEvent
-} from "@runstead/core";
+import { createRunsteadId, type Goal, type RunsteadEvent } from "@runstead/core";
 import { loadDomainPackBundleFromDir } from "@runstead/domain-packs";
 import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sqlite";
 
@@ -14,6 +9,7 @@ import { resolveRepositoryReference } from "./repositories.js";
 import { requireRunsteadStateDb, requireRunsteadStateDbSync } from "./runstead-root.js";
 import { buildGeneratedGoalTasks } from "./goals-generated-tasks.js";
 import { rowToGoal, type GoalRow } from "./goals-rows.js";
+import { goalScope } from "./goals-scope.js";
 import type {
   CreateGoalOptions,
   CreateGoalResult,
@@ -201,26 +197,6 @@ export function showGoal(options: ShowGoalOptions): ShowGoalResult {
   } finally {
     database.close();
   }
-}
-
-function goalScope(input: {
-  repositoryPath: string;
-  repositoryId?: string;
-  repositoryAlias?: string;
-  templateId: string;
-  recurringTasks: string[];
-  acceptanceContracts: string[];
-}): JsonObject {
-  return {
-    repositoryPath: input.repositoryPath,
-    ...(input.repositoryId === undefined ? {} : { repositoryId: input.repositoryId }),
-    ...(input.repositoryAlias === undefined
-      ? {}
-      : { repositoryAlias: input.repositoryAlias }),
-    templateId: input.templateId,
-    recurringTasks: input.recurringTasks,
-    acceptanceContracts: input.acceptanceContracts
-  };
 }
 
 function resolveStateDb(cwd = process.cwd()): string {

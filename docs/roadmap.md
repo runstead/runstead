@@ -674,6 +674,7 @@ The current implementation wave closed the highest-confidence product gaps:
   `local-agent-diagnostics` into `local-agent-codex-diagnostics`.
 - Goal recurring task generation moved out of `goals` into
   `goals-generated-tasks`.
+- Goal scope payload construction moved out of `goals` into `goals-scope`.
 
 ## Remaining Backlog
 
