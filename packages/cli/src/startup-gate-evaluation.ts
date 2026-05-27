@@ -1,8 +1,6 @@
 import {
   artifactSources,
   hasNonEmptyString,
-  isRecord,
-  parsedArtifactContent,
   type StartupGateEvidenceArtifact
 } from "./startup-gate-artifacts.js";
 import {
@@ -19,6 +17,7 @@ import {
   hasStructuredMetricEvidence,
   validationBlockers
 } from "./startup-gate-validation.js";
+import { activeStartupGateWaivers } from "./startup-gate-waivers.js";
 import type {
   StartupGateDiff,
   StartupGateEvaluationContext,
@@ -108,42 +107,6 @@ function gateWarnings(input: StartupGateEvaluationContext): string[] {
       : ["no verifier or metric evidence is recorded"]),
     ...staleEvidenceSourceWarnings(input.evidence, input.artifacts, input.checkedAt)
   ];
-}
-
-function activeStartupGateWaivers(
-  input: StartupGateEvaluationContext
-): StartupGateWaiver[] {
-  return input.evidence
-    .filter((item) => item.type === "startup_decision")
-    .flatMap((item) => {
-      const content = parsedArtifactContent(input.artifacts.get(item.id));
-
-      if (
-        !isRecord(content) ||
-        content.kind !== "gate_waiver" ||
-        content.gate !== input.stage ||
-        !hasNonEmptyString(content.blocker) ||
-        !hasNonEmptyString(content.owner) ||
-        !hasNonEmptyString(content.reason) ||
-        !hasNonEmptyString(content.expiresAt)
-      ) {
-        return [];
-      }
-
-      if (Date.parse(content.expiresAt) <= Date.parse(input.checkedAt)) {
-        return [];
-      }
-
-      return [
-        {
-          evidenceId: item.id,
-          blocker: content.blocker,
-          owner: content.owner,
-          reason: content.reason,
-          expiresAt: content.expiresAt
-        }
-      ];
-    });
 }
 
 function startupGateFindings(
