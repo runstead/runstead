@@ -672,6 +672,8 @@ The current implementation wave closed the highest-confidence product gaps:
   of `local-agent-diagnostics` into `local-agent-verifier-diagnostics`.
 - Local-agent Codex auth/model failure classification moved out of
   `local-agent-diagnostics` into `local-agent-codex-diagnostics`.
+- Goal recurring task generation moved out of `goals` into
+  `goals-generated-tasks`.
 
 ## Remaining Backlog
 
