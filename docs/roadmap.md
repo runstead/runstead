@@ -902,6 +902,8 @@ The current implementation wave closed the highest-confidence product gaps:
   into `dashboard-operator-commands`.
 - Dashboard startup agent patch audit summary querying moved out of the startup
   timeline aggregate into `dashboard-startup-agent-patch`.
+- Dashboard protected operator API request lifecycle handling moved out of the
+  top-level dashboard server/router into `dashboard-operator-api-server`.
 
 ## Remaining Backlog
 
