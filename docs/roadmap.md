@@ -948,14 +948,30 @@ The current implementation wave closed the highest-confidence product gaps:
   console aggregate into `dashboard-operator-action-list`.
 - Dashboard operator pending-approval rows and blocker-count calculation moved
   out of the operator console aggregate into `dashboard-operator-summary`.
+- Startup gate evaluation row/result contracts moved out of
+  `startup-gate-evaluation` into `startup-gate-types`.
+- Startup gate waiver artifact parsing moved out of `startup-gate-evaluation`
+  into `startup-gate-waivers`.
+- Startup gate warning and freshness evaluation moved out of
+  `startup-gate-evaluation` into `startup-gate-warnings`.
+- Startup gate finding assembly moved out of `startup-gate-evaluation` into
+  `startup-gate-findings`.
+- Startup gate blocker diff calculation moved out of `startup-gate-evaluation`
+  into `startup-gate-diff`.
 
 ## Remaining Backlog
 
 ### 1. Continue splitting long CLI runtime modules
 
-`dashboard.ts`, `ci-repair-orchestrator.ts`, `startup-automation.ts`,
-`startup-command.ts`, `local-agent.ts`, and the remaining command groups still
-carry too much behavior.
+The former top-level host files such as `dashboard.ts`,
+`ci-repair-orchestrator.ts`, `startup-automation.ts`, and `local-agent.ts` are
+now mostly compatibility export surfaces, but their implementation graphs still
+concentrate most runtime behavior inside `@runstead/cli`.
+
+The next structural hotspots are mid-sized host modules and module clusters:
+startup UI smoke/config execution, extension collector execution,
+verifier/evidence persistence, approval/governed-action audit paths, CI repair
+intake/publish helpers, and Codex Direct tool modules.
 
 Acceptance:
 
