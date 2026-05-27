@@ -289,7 +289,7 @@ The current implementation wave closed the highest-confidence product gaps:
 - Dashboard HTML rendering moved out of the dashboard server/orchestration
   module into `dashboard-render`.
 - Dashboard static CSS and operator-console browser script moved out of
-  `dashboard-render` into `dashboard-render-assets`.
+  `dashboard-render` into focused style and browser-script modules.
 - Chrome DevTools Protocol connection handling moved out of the startup UI
   browser runner into `startup-ui-cdp-connection`.
 - Chrome DevTools executable discovery, websocket startup, and profile cleanup
@@ -873,6 +873,8 @@ The current implementation wave closed the highest-confidence product gaps:
   `dashboard-render-styles`.
 - Dashboard operator browser script moved out of the generic render-asset module
   into `dashboard-render-operator-script`.
+- Dashboard render now imports style/script assets directly without the former
+  generic `dashboard-render-assets` re-export layer.
 
 ## Remaining Backlog
 

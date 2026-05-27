@@ -1,8 +1,6 @@
 import type { DashboardDaemonStatus, DashboardSnapshot } from "./dashboard-types.js";
-import {
-  DASHBOARD_OPERATOR_SCRIPT,
-  DASHBOARD_RENDER_STYLES
-} from "./dashboard-render-assets.js";
+import { DASHBOARD_OPERATOR_SCRIPT } from "./dashboard-render-operator-script.js";
+import { DASHBOARD_RENDER_STYLES } from "./dashboard-render-styles.js";
 import {
   escapeHtml,
   metric,
