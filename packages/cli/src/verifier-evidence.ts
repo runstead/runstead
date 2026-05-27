@@ -6,7 +6,6 @@ import type { CommandVerifierInput } from "@runstead/verifiers";
 
 import {
   createCommandVerifierArtifact,
-  deniedCommandVerifierResult,
   summarizeCommandResult,
   type CommandVerifierArtifact
 } from "./verifier-evidence-artifact.js";
@@ -21,6 +20,11 @@ export type {
   CommandVerifierCodeState
 } from "./verifier-code-state.js";
 export type { CommandVerifierArtifact } from "./verifier-evidence-artifact.js";
+export {
+  storeCommandVerifierPolicyEvidence,
+  type StoreCommandVerifierPolicyEvidenceOptions,
+  type StoreCommandVerifierPolicyEvidenceResult
+} from "./verifier-policy-evidence.js";
 
 export interface StoreCommandVerifierEvidenceOptions {
   cwd?: string;
@@ -71,70 +75,6 @@ export async function storeCommandVerifierEvidence(
     summary: summarizeCommandResult(options.command.name, result),
     evidenceType: "command_output",
     artifactSubject: "command_verifier"
-  });
-
-  return {
-    evidence: persisted.evidence,
-    event: persisted.event,
-    artifact,
-    artifactPath: persisted.artifactPath,
-    artifactManifestPath: persisted.artifactManifestPath
-  };
-}
-
-export interface StoreCommandVerifierPolicyEvidenceOptions {
-  cwd?: string;
-  runsteadRoot: string;
-  database: RunsteadDatabase;
-  task: Task;
-  command: CommandVerifierInput;
-  policyDecisionId: string;
-  decision: "deny" | "require_approval";
-  reason: string;
-  approvalId?: string;
-  now?: Date;
-}
-
-export async function storeCommandVerifierPolicyEvidence(
-  options: StoreCommandVerifierPolicyEvidenceOptions
-): Promise<StoreCommandVerifierEvidenceResult> {
-  const cwd = resolve(options.cwd ?? process.cwd());
-  const createdAt = (options.now ?? new Date()).toISOString();
-  const codeState = await collectCommandVerifierCodeState(cwd);
-  const result = deniedCommandVerifierResult({
-    cwd,
-    command: options.command
-  });
-  const artifact = createCommandVerifierArtifact({
-    createdAt,
-    task: options.task,
-    command: options.command,
-    codeState,
-    result,
-    policy: {
-      policyDecisionId: options.policyDecisionId,
-      decision: options.decision,
-      reason: options.reason,
-      ...(options.approvalId === undefined ? {} : { approvalId: options.approvalId })
-    }
-  });
-  const persisted = await persistCommandVerifierEvidence({
-    runsteadRoot: options.runsteadRoot,
-    database: options.database,
-    task: options.task,
-    command: options.command,
-    artifact,
-    result,
-    createdAt,
-    summary: `${options.command.name}: ${options.decision} by policy`,
-    evidenceType: "policy_decision",
-    artifactSubject: "command_verifier_policy",
-    artifactSuffix: options.decision,
-    payload: {
-      policyDecisionId: options.policyDecisionId,
-      decision: options.decision,
-      ...(options.approvalId === undefined ? {} : { approvalId: options.approvalId })
-    }
   });
 
   return {
