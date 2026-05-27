@@ -636,6 +636,8 @@ The current implementation wave closed the highest-confidence product gaps:
   `startup-automation` into `startup-repo-readiness-audit`.
 - Startup security baseline generation moved out of `startup-automation` into
   `startup-security-baseline`.
+- Local-agent task claim, runtime resolution, policy loading, and run execution
+  moved out of `local-agent` into `local-agent-run`.
 - Team control-plane runner heartbeat and list formatting moved out of
   `team-control-plane-runner` into `team-control-plane-runner-format`.
 - Team control-plane Postgres connection validation and client creation moved
