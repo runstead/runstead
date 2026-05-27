@@ -908,6 +908,8 @@ The current implementation wave closed the highest-confidence product gaps:
   into `dashboard-render-daemon`.
 - Dashboard repository, goal, task, approval, and event table rendering moved
   out of the dashboard page shell into `dashboard-render-core-tables`.
+- Dashboard summary metric rendering moved out of the dashboard page shell into
+  `dashboard-render-summary`.
 
 ## Remaining Backlog
 
