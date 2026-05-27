@@ -869,6 +869,8 @@ The current implementation wave closed the highest-confidence product gaps:
   agent runners into `commands/agent-preset-task-options`.
 - Agent run task-option construction for preset and non-preset runs moved out
   of the runner into `commands/agent-run-task-options`.
+- Dashboard CSS rendering moved out of the generic render-asset module into
+  `dashboard-render-styles`.
 
 ## Remaining Backlog
 
