@@ -1,13 +1,7 @@
 import { resolve } from "node:path";
 
-import { DEFAULT_UI_SMOKE_TIMEOUT_MS } from "./startup-ready-ui-smoke-default.js";
+import { runStartupReadyUiSmokeCheck } from "./startup-ready-ui-smoke-check-runner.js";
 import { loadOrCreateStartupReadyUiSmokeConfig } from "./startup-ready-ui-smoke-loader.js";
-import {
-  classifyStartupUiValidationFailure,
-  executeStartupUiValidation,
-  summarizeStartupUiValidationFailure,
-  startupUiValidationRepairHint
-} from "./startup-ui-validation.js";
 import type {
   StartupReadyUiSmokeCheckResult,
   StartupReadyUiSmokeRunResult
@@ -50,58 +44,14 @@ export async function executeStartupReadyUiSmoke(input: {
   const checks: StartupReadyUiSmokeCheckResult[] = [];
 
   for (const check of loaded.config.checks) {
-    try {
-      const url = check.url ?? loaded.config.server.url;
-      const result = await executeStartupUiValidation({
+    checks.push(
+      await runStartupReadyUiSmokeCheck({
         cwd,
-        viewport: check.viewport ?? "desktop",
-        serverCommand: loaded.config.server.command,
-        serverPort: loaded.config.server.port,
-        timeoutMs:
-          check.timeoutMs ??
-          loaded.config.server.timeoutMs ??
-          DEFAULT_UI_SMOKE_TIMEOUT_MS,
-        expectText: check.expectText,
-        ...(check.steps === undefined ? {} : { flowActions: check.steps }),
-        ...(url === undefined ? {} : { url }),
-        ...(check.flow === undefined ? {} : { criticalFlow: check.flow }),
+        server: loaded.config.server,
+        check,
         ...(input.now === undefined ? {} : { now: input.now })
-      });
-      const failureSummary = result.failed
-        ? summarizeStartupUiValidationFailure(result.execution)
-        : undefined;
-      const failureCategory = result.failed
-        ? classifyStartupUiValidationFailure(result.execution)
-        : undefined;
-      const repairHint = result.failed
-        ? startupUiValidationRepairHint(result.execution)
-        : undefined;
-      const failedAction = result.failed
-        ? result.execution.flowActions?.find((action) => action.status === "fail")
-        : undefined;
-
-      checks.push({
-        name: check.name,
-        status: result.failed ? "failed" : "passed",
-        evidenceId: result.evidence.evidence.id,
-        artifact: result.domArtifact,
-        ...(failureCategory === undefined ? {} : { failureCategory }),
-        ...(failureSummary === undefined ? {} : { failureSummary }),
-        ...(repairHint === undefined ? {} : { repairHint }),
-        ...(failedAction === undefined ? {} : { failedAction }),
-        blockers: result.failed
-          ? [
-              `UI smoke check failed: ${check.name}: ${failureCategory ?? "unknown"}: ${failureSummary}; suggested patch: ${repairHint}`
-            ]
-          : []
-      });
-    } catch (error) {
-      checks.push({
-        name: check.name,
-        status: "failed",
-        blockers: [`UI smoke check failed: ${check.name}: ${errorMessage(error)}`]
-      });
-    }
+      })
+    );
   }
 
   const blockers = checks.flatMap((check) => check.blockers);
@@ -126,8 +76,4 @@ export async function executeStartupReadyUiSmoke(input: {
     artifacts,
     blockers
   };
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }
