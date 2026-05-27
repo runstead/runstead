@@ -1,8 +1,10 @@
 import type { Command } from "commander";
 
-import { requireRbacPermission } from "../cli-rbac.js";
 import { collectValues } from "../startup-command-parsers.js";
-import { logStructuredFiles } from "./startup-launch-output.js";
+import {
+  generateStartupBottleneckMapCommand,
+  recordStartupSupportTriageCommand
+} from "./startup-launch-ops-actions.js";
 
 export function registerSupportTriageCommand(startupLaunch: Command): void {
   startupLaunch
@@ -16,42 +18,7 @@ export function registerSupportTriageCommand(startupLaunch: Command): void {
     .option("--category <name>", "Support category", "uncategorized")
     .option("--source <ref>", "Evidence source reference", collectValues, [])
     .option("--actor <id>", "RBAC subject for support triage writes", "local-admin")
-    .action(
-      async (options: {
-        cwd?: string;
-        request: string;
-        outcome: string;
-        customer?: string;
-        severity: string;
-        category: string;
-        source: string[];
-        actor: string;
-      }) => {
-        await requireRbacPermission({
-          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-          actor: options.actor,
-          permission: "evidence.write",
-          action: "record startup support triage"
-        });
-
-        const { recordSupportTriage } = await import("../startup-automation.js");
-        const result = await recordSupportTriage({
-          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-          request: options.request,
-          outcome: options.outcome,
-          ...(options.customer === undefined ? {} : { customer: options.customer }),
-          severity: options.severity,
-          category: options.category,
-          sourceRefs: options.source
-        });
-
-        console.log(`Recorded support triage evidence: ${result.evidenceId}`);
-        for (const file of result.files) {
-          console.log(`Wrote support triage file: ${file}`);
-        }
-        logStructuredFiles(result.structuredFiles);
-      }
-    );
+    .action(recordStartupSupportTriageCommand);
 }
 
 export function registerBottleneckMapCommand(startupLaunch: Command): void {
@@ -74,44 +41,5 @@ export function registerBottleneckMapCommand(startupLaunch: Command): void {
       "handoff-in-progress"
     )
     .option("--actor <id>", "RBAC subject for bottleneck audit writes", "local-admin")
-    .action(
-      async (options: {
-        cwd?: string;
-        bottleneck: string[];
-        owner?: string;
-        systemOfRecord?: string;
-        handoffDue?: string;
-        status: string;
-        actor: string;
-      }) => {
-        await requireRbacPermission({
-          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-          actor: options.actor,
-          permission: "evidence.write",
-          action: "generate founder bottleneck map"
-        });
-
-        const { generateFounderBottleneckMap } =
-          await import("../startup-automation.js");
-        const result = await generateFounderBottleneckMap({
-          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-          bottlenecks: options.bottleneck,
-          ...(options.owner === undefined ? {} : { owner: options.owner }),
-          ...(options.systemOfRecord === undefined
-            ? {}
-            : { systemOfRecord: options.systemOfRecord }),
-          ...(options.handoffDue === undefined
-            ? {}
-            : { handoffDueDate: options.handoffDue }),
-          status: options.status
-        });
-
-        console.log(`Generated founder bottleneck evidence: ${result.evidenceId}`);
-        console.log(`Bottlenecks: ${result.bottlenecks.length}`);
-        for (const file of result.files) {
-          console.log(`Wrote bottleneck map file: ${file}`);
-        }
-        logStructuredFiles(result.structuredFiles);
-      }
-    );
+    .action(generateStartupBottleneckMapCommand);
 }

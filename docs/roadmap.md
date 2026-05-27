@@ -778,6 +778,8 @@ The current implementation wave closed the highest-confidence product gaps:
 - Startup metric snapshot write handler moved out of
   `commands/startup-measurement-snapshot` into
   `commands/startup-measurement-snapshot-action`.
+- Startup support-triage and bottleneck-map write handlers moved out of
+  `commands/startup-launch-ops` into `commands/startup-launch-ops-actions`.
 - Startup generic evidence add command registration and write handler moved out
   of `commands/startup-evidence` into `commands/startup-evidence-add`.
 - Startup manual-change evidence command registration and write handler moved
