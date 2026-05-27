@@ -127,6 +127,8 @@ The current implementation wave closed the highest-confidence product gaps:
   `commands/memory`.
 - `skill` command registration moved out of the CLI entrypoint into
   `commands/skill`.
+- Skill candidate create, validate, test, promote, and deprecate handlers moved
+  out of `commands/skill` into `commands/skill-actions`.
 - `repo` command registration moved out of the CLI entrypoint into
   `commands/repo`.
 - Repository list SQL and row mapping for list operations moved out of
