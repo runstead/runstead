@@ -678,6 +678,8 @@ The current implementation wave closed the highest-confidence product gaps:
   `commands/memory-quarantine`.
 - Memory fact command registration moved out of `commands/memory` into
   `commands/memory-fact`.
+- Memory fact add, list, and search command handlers moved out of
+  `commands/memory-fact` into `commands/memory-fact-actions`.
 - Agent fix shared execution moved out of `commands/agent-fix` into
   `commands/agent-fix-runner`.
 - Startup source connector contract listing moved out of
