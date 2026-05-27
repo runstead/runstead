@@ -2,11 +2,9 @@ import type { WorkerRun } from "@runstead/core";
 
 import { applyWorkspacePatch } from "../codex-direct-native-tools.js";
 import { runGovernedToolAction } from "../governed-action.js";
-import { runShellCommand, type ShellCommandResult } from "../shell-executor.js";
 import type { CodexDirectWorkerOptions } from "./worker.js";
 import { governedToolOptions } from "./policy-actions.js";
-import { filesystemPatchAction, shellAction } from "./policy-actions.js";
-import { shellCommandOutput } from "./tool-arguments.js";
+import { filesystemPatchAction } from "./policy-actions.js";
 import {
   codexDirectPatchApprovalMetadata,
   codexDirectPatchFilesTouched,
@@ -31,6 +29,7 @@ export {
   runGovernedReadEvidence,
   runGovernedWorkspaceFacts
 } from "./governed-evidence-tools.js";
+export { runGovernedShellCommand } from "./governed-shell-tools.js";
 export { runGovernedVerifier } from "./governed-verifier-tools.js";
 export { runGovernedPackageScripts } from "./workspace-metadata-tools.js";
 export { runGovernedSearchText } from "./workspace-search-tools.js";
@@ -93,34 +92,6 @@ export async function runGovernedApplyPatch(
           filesTouched: value.filesTouched,
           applied: value.applied
         }
-      };
-    }
-  }).then((result) => result.value);
-}
-
-export async function runGovernedShellCommand(
-  options: CodexDirectWorkerOptions & {
-    workerRun: WorkerRun;
-    command: string;
-    timeoutMs?: number;
-  }
-): Promise<ShellCommandResult> {
-  return runGovernedToolAction({
-    ...governedToolOptions(options),
-    action: shellAction({
-      cwd: options.cwd,
-      command: options.command
-    }),
-    run: async () => {
-      const value = await runShellCommand({
-        command: options.command,
-        cwd: options.cwd,
-        ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs })
-      });
-
-      return {
-        value,
-        output: shellCommandOutput(value)
       };
     }
   }).then((result) => result.value);
