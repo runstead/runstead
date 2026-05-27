@@ -686,6 +686,8 @@ The current implementation wave closed the highest-confidence product gaps:
 - Startup launch audit, security, prepare, report, and Git summary action
   handlers moved out of `commands/startup-launch` into
   `commands/startup-launch-readiness`.
+- Startup launch UI validation and UI test scaffold action handlers moved out
+  of `commands/startup-launch-ui` into `commands/startup-launch-ui-actions`.
 - Team control-plane runner heartbeat and list formatting moved out of
   `team-control-plane-runner` into `team-control-plane-runner-format`.
 - Team control-plane Postgres connection validation and client creation moved
