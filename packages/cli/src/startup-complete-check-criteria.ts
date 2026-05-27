@@ -16,6 +16,14 @@ import type {
   StartupCompleteProductCriterion,
   StartupCompleteProductSurfaces
 } from "./startup-complete-check-types.js";
+import {
+  startupCompleteProductDiagnosticsMissing,
+  startupCompleteProductMissingPaths,
+  startupCompleteProductMissingStartupEvidence,
+  startupCompleteProductRepoDiscoveryMissing,
+  startupCompleteProductRepoRiskEvidence,
+  startupCompleteProductReviewSurfaceMissing
+} from "./startup-complete-check-missing.js";
 import type { StartupCompleteProductEvidenceRow } from "./startup-complete-check-blockers.js";
 export {
   startupCompleteProductBlockers,
@@ -23,18 +31,6 @@ export {
 } from "./startup-complete-check-blockers.js";
 import type { GenerateStartupRemediationPlanResult } from "./startup-remediation.js";
 import type { StartupStatusResult } from "./startup-status.js";
-
-const REQUIRED_STARTUP_EVIDENCE = [
-  "startup_agent_context",
-  "startup_measurement_framework",
-  "startup_metric_snapshot",
-  "startup_repo_readiness",
-  "startup_security_baseline",
-  "startup_migration_plan",
-  "startup_rollback_plan",
-  "startup_observability",
-  "startup_founder_bottleneck"
-];
 
 export function startupCompleteProductBaseCriteria(input: {
   repo: RepoInspectionSnapshot;
@@ -52,47 +48,18 @@ export function startupCompleteProductBaseCriteria(input: {
 }): StartupCompleteProductCriterion[] {
   const evidenceTypes = new Set(input.evidenceRows.map((item) => item.type));
   const sourceKinds = new Set(input.status.evidence.sourceKinds);
-  const missingStartupEvidence = REQUIRED_STARTUP_EVIDENCE.filter(
-    (type) => !evidenceTypes.has(type)
-  );
-  const repoRiskEvidence = input.evidenceRows.filter((item) =>
-    [
-      "startup_repo_readiness",
-      "startup_security_baseline",
-      "startup_release_plan"
-    ].includes(item.type)
-  );
+  const missingStartupEvidence =
+    startupCompleteProductMissingStartupEvidence(evidenceTypes);
+  const repoRiskEvidence = startupCompleteProductRepoRiskEvidence(input.evidenceRows);
   const deploymentVerified = sourceKinds.has("deployment");
-  const repoDiscoveryMissing = [
-    ...(input.repo.packageManager.detected ? [] : ["package manager"]),
-    ...(input.repo.commands.test.detected ? [] : ["test command"]),
-    ...(input.repo.commands.lint.detected ? [] : ["lint command"]),
-    ...(input.repo.commands.typecheck.detected ? [] : ["typecheck command"]),
-    ...(input.repo.commands.build.detected ? [] : ["build command"]),
-    ...(input.target === "local" || input.repo.ci.detected ? [] : ["CI config"]),
-    ...(evidenceTypes.has("startup_repo_readiness") ? [] : ["repo readiness evidence"]),
-    ...(evidenceTypes.has("startup_security_baseline")
-      ? []
-      : ["security baseline evidence"]),
-    ...(evidenceTypes.has("startup_release_plan") ? [] : ["release-plan evidence"]),
-    ...(deploymentVerified ? [] : ["deployment verification evidence"])
-  ];
-  const reviewSurfaceMissing = missingPaths(input.pathState, [
-    input.launchReport.reportPath,
-    input.launchReport.jsonPath,
-    input.ci.markdownPath,
-    input.ci.jsonPath,
-    input.dashboard.htmlPath,
-    input.dashboard.dataPath,
-    input.diagnostics.markdownPath,
-    input.diagnostics.jsonPath
-  ]);
-  const diagnosticsMissing = [
-    ...(input.diagnostics.stateBackupPath === undefined
-      ? ["state backup"]
-      : missingPaths(input.pathState, [input.diagnostics.stateBackupPath])),
-    ...(input.eventCount > 0 ? [] : ["audit events"])
-  ];
+  const repoDiscoveryMissing = startupCompleteProductRepoDiscoveryMissing({
+    repo: input.repo,
+    target: input.target,
+    evidenceTypes,
+    deploymentVerified
+  });
+  const reviewSurfaceMissing = startupCompleteProductReviewSurfaceMissing(input);
+  const diagnosticsMissing = startupCompleteProductDiagnosticsMissing(input);
 
   return [
     criterion({
@@ -147,7 +114,7 @@ export function startupCompleteProductBaseCriteria(input: {
         `status=${input.launchReport.status}`,
         `trust=${Math.round(input.launchReport.trustSummary.qualityScore * 100)}%`
       ],
-      missing: missingPaths(input.pathState, [
+      missing: startupCompleteProductMissingPaths(input.pathState, [
         input.launchReport.reportPath,
         input.launchReport.jsonPath
       ]),
@@ -225,7 +192,10 @@ export function startupCompleteProductBaseCriteria(input: {
         `gateEvent=${input.ci.gate.event.eventId}`
       ],
       missing: [
-        ...missingPaths(input.pathState, [input.ci.jsonPath, input.ci.markdownPath]),
+        ...startupCompleteProductMissingPaths(input.pathState, [
+          input.ci.jsonPath,
+          input.ci.markdownPath
+        ]),
         ...(input.ci.releaseDecision.status === "allow_release"
           ? []
           : input.ci.releaseDecision.blockers)
@@ -275,8 +245,4 @@ function criterion(input: {
     missing: input.missing,
     nextAction: input.nextAction
   });
-}
-
-function missingPaths(pathState: Map<string, boolean>, paths: string[]): string[] {
-  return paths.filter((path) => pathState.get(path) !== true);
 }
