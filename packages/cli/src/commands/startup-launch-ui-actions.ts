@@ -5,6 +5,9 @@ import {
 } from "../startup-command-parsers.js";
 import { evidenceSourceDetails } from "../startup-evidence-source-options.js";
 
+export { runStartupLaunchUiTestScaffoldCommand } from "./startup-launch-ui-scaffold-action.js";
+export type { StartupLaunchUiTestScaffoldCommandOptions } from "./startup-launch-ui-scaffold-action.js";
+
 export interface StartupLaunchUiValidateCommandOptions {
   cwd?: string;
   url?: string;
@@ -27,15 +30,6 @@ export interface StartupLaunchUiValidateCommandOptions {
   freshnessDays?: string;
   sourceHash?: string;
   goal?: string;
-  actor: string;
-}
-
-export interface StartupLaunchUiTestScaffoldCommandOptions {
-  cwd?: string;
-  url?: string;
-  testPath?: string;
-  flow?: string;
-  expectText: string[];
   actor: string;
 }
 
@@ -106,27 +100,4 @@ export async function runStartupLaunchUiValidateCommand(
     console.log(`Executed DOM artifact: ${executedDomArtifact}`);
   }
   console.log(`Artifact: ${result.evidence.artifactPath}`);
-}
-
-export async function runStartupLaunchUiTestScaffoldCommand(
-  options: StartupLaunchUiTestScaffoldCommandOptions
-): Promise<void> {
-  await requireRbacPermission({
-    ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-    actor: options.actor,
-    permission: "evidence.write",
-    action: "generate startup UI test scaffold"
-  });
-
-  const { formatStartupUiTestScaffold, generateStartupUiTestScaffold } =
-    await import("../startup-ui-test-scaffold.js");
-  const result = await generateStartupUiTestScaffold({
-    ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-    ...(options.url === undefined ? {} : { url: options.url }),
-    ...(options.testPath === undefined ? {} : { testPath: options.testPath }),
-    ...(options.flow === undefined ? {} : { flow: options.flow }),
-    expectText: options.expectText
-  });
-
-  console.log(formatStartupUiTestScaffold(result));
 }

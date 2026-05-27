@@ -701,6 +701,9 @@ The current implementation wave closed the highest-confidence product gaps:
   `commands/startup-launch-readiness`.
 - Startup launch UI validation and UI test scaffold action handlers moved out
   of `commands/startup-launch-ui` into `commands/startup-launch-ui-actions`.
+- Startup launch UI test scaffold action moved out of
+  `commands/startup-launch-ui-actions` into
+  `commands/startup-launch-ui-scaffold-action`.
 - Team control-plane runner heartbeat and list formatting moved out of
   `team-control-plane-runner` into `team-control-plane-runner-format`.
 - Team control-plane Postgres connection validation and client creation moved
