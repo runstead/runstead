@@ -5,6 +5,10 @@ import type {
   CodexDirectInterruptionSummary
 } from "./codex-direct-worker.js";
 import { budgetDiagnostic } from "./local-agent-budget-diagnostics.js";
+import {
+  codexAuthDiagnostic,
+  codexModelDiagnostic
+} from "./local-agent-codex-diagnostics.js";
 import type { LocalAgentDiagnostic } from "./local-agent-diagnostic-types.js";
 import {
   approvalFromOutput,
@@ -134,48 +138,6 @@ function policyDeniedDiagnostic(
         cause: summary.length === 0 ? "policy denied the requested action" : summary,
         likelyReason: "A Runstead policy rule denied a tool or worker action.",
         retry: "adjust the prompt scope, allowed paths, or repo-maintenance policy"
-      }
-    : undefined;
-}
-
-function codexAuthDiagnostic(
-  status: string,
-  summary: string
-): LocalAgentDiagnostic | undefined {
-  if (status !== "failed") {
-    return undefined;
-  }
-
-  const normalized = summary.toLowerCase();
-  const authSignals = ["401", "unauthorized", "access token", "credentials", "login"];
-
-  return normalized.includes("codex") &&
-    authSignals.some((signal) => normalized.includes(signal))
-    ? {
-        cause: summary,
-        likelyReason: "Codex Direct credentials are missing, expired, or rejected.",
-        retry: "runstead codex status, then runstead codex login if needed"
-      }
-    : undefined;
-}
-
-function codexModelDiagnostic(
-  status: string,
-  summary: string
-): LocalAgentDiagnostic | undefined {
-  if (status !== "failed") {
-    return undefined;
-  }
-
-  const normalized = summary.toLowerCase();
-  const modelSignals = ["not found", "does not exist", "unsupported"];
-
-  return normalized.includes("model") &&
-    modelSignals.some((signal) => normalized.includes(signal))
-    ? {
-        cause: summary,
-        likelyReason: "The selected Codex model is unavailable to the current account.",
-        retry: "runstead codex models --refresh"
       }
     : undefined;
 }

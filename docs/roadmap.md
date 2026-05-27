@@ -670,6 +670,8 @@ The current implementation wave closed the highest-confidence product gaps:
   `local-agent-diagnostics` into `local-agent-budget-diagnostics`.
 - Local-agent verifier-result and stored verifier-output diagnostics moved out
   of `local-agent-diagnostics` into `local-agent-verifier-diagnostics`.
+- Local-agent Codex auth/model failure classification moved out of
+  `local-agent-diagnostics` into `local-agent-codex-diagnostics`.
 
 ## Remaining Backlog
 
