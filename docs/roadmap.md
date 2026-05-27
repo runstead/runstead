@@ -763,6 +763,8 @@ The current implementation wave closed the highest-confidence product gaps:
 - Startup scale starter-pack, workflow-registry, and integration-map command
   handlers moved out of `commands/startup-scale` into
   `commands/startup-scale-actions`.
+- Startup gate check, fixture test, waiver, and decision command handlers moved
+  out of `commands/startup-gate` into `commands/startup-gate-actions`.
 
 ## Remaining Backlog
 
