@@ -14,17 +14,13 @@ import {
 } from "./tool-arguments.js";
 import {
   runGovernedApplyPatch,
-  runGovernedDiffSummary,
-  runGovernedGitLog,
-  runGovernedGitRead,
-  runGovernedGitShow,
   runGovernedReadEvidence,
   runGovernedShellCommand,
   runGovernedVerifier,
   runGovernedWorkspaceFacts
 } from "./governed-tools.js";
-import { gitDiffCommand, taskGitDiffBase, taskGitDiffStaged } from "./git-actions.js";
 import { governedToolOptions } from "./policy-actions.js";
+import { executeCodexDirectGitTool } from "./tool-executor-git.js";
 import { executeCodexDirectWorkspaceReadTool } from "./tool-executor-workspace-read.js";
 
 export async function executeCodexDirectTool(
@@ -38,6 +34,12 @@ export async function executeCodexDirectTool(
 
   if (workspaceReadResult !== undefined) {
     return workspaceReadResult;
+  }
+
+  const gitResult = await executeCodexDirectGitTool(options);
+
+  if (gitResult !== undefined) {
+    return gitResult;
   }
 
   switch (options.toolCall.name) {
@@ -77,64 +79,6 @@ export async function executeCodexDirectTool(
           ...optionalTimeoutMs(options.toolCall.arguments.timeoutMs)
         })
       );
-    case "git_status":
-      return JSON.stringify(await runGovernedGitRead(options, "git status --short"));
-    case "git_diff": {
-      const path = optionalString(options.toolCall.arguments.path);
-      const requestedStaged = options.toolCall.arguments.staged === true;
-      const staged = taskGitDiffStaged(options.task) ?? requestedStaged;
-      const base =
-        taskGitDiffBase(options.task) ??
-        optionalString(options.toolCall.arguments.base);
-      const command = gitDiffCommand({ path, staged, base });
-
-      return JSON.stringify(await runGovernedGitRead(options, command));
-    }
-    case "git_log":
-      return JSON.stringify(
-        await runGovernedGitLog({
-          ...options,
-          ...optionalField("range", optionalString(options.toolCall.arguments.range)),
-          ...optionalField("path", optionalString(options.toolCall.arguments.path)),
-          ...optionalField(
-            "maxCommits",
-            optionalPositiveInteger(options.toolCall.arguments.maxCommits)
-          )
-        })
-      );
-    case "git_show":
-      return JSON.stringify(
-        await runGovernedGitShow({
-          ...options,
-          ref: requiredString(options.toolCall.arguments.ref, "ref"),
-          ...optionalField("path", optionalString(options.toolCall.arguments.path)),
-          ...optionalField(
-            "maxBytes",
-            optionalPositiveInteger(options.toolCall.arguments.maxBytes)
-          )
-        })
-      );
-    case "diff_summary": {
-      const path = optionalString(options.toolCall.arguments.path);
-      const requestedStaged = options.toolCall.arguments.staged === true;
-      const staged = taskGitDiffStaged(options.task) ?? requestedStaged;
-      const base =
-        taskGitDiffBase(options.task) ??
-        optionalString(options.toolCall.arguments.base);
-
-      return JSON.stringify(
-        await runGovernedDiffSummary({
-          ...options,
-          staged,
-          ...optionalField("path", path),
-          ...optionalField("base", base),
-          ...optionalField(
-            "maxFiles",
-            optionalPositiveInteger(options.toolCall.arguments.maxFiles)
-          )
-        })
-      );
-    }
     case "read_evidence":
       return JSON.stringify(
         await runGovernedReadEvidence({
