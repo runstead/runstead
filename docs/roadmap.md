@@ -889,6 +889,8 @@ The current implementation wave closed the highest-confidence product gaps:
   timeline aggregate module into `dashboard-governance-evidence-timeline`.
 - Dashboard startup timeline now imports concrete timeline modules directly
   without the former `dashboard-audit-timeline` re-export layer.
+- Dashboard static-file target selection and response handling moved out of the
+  dashboard server/router into `dashboard-static-server`.
 
 ## Remaining Backlog
 
