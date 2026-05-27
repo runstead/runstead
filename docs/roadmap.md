@@ -906,6 +906,8 @@ The current implementation wave closed the highest-confidence product gaps:
   top-level dashboard server/router into `dashboard-operator-api-server`.
 - Dashboard daemon HTML section rendering moved out of the dashboard page shell
   into `dashboard-render-daemon`.
+- Dashboard repository, goal, task, approval, and event table rendering moved
+  out of the dashboard page shell into `dashboard-render-core-tables`.
 
 ## Remaining Backlog
 
