@@ -121,6 +121,8 @@ The current implementation wave closed the highest-confidence product gaps:
   `github-auth-token`.
 - `webhook serve` command registration moved out of the CLI entrypoint into
   `commands/webhook`.
+- Webhook serve validation, RBAC, server creation, and workflow-run repair
+  orchestration moved out of `commands/webhook` into `commands/webhook-actions`.
 - `memory` command registration moved out of the CLI entrypoint into
   `commands/memory`.
 - `skill` command registration moved out of the CLI entrypoint into
