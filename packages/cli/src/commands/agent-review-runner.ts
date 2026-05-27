@@ -1,7 +1,10 @@
 import { parseCiRepairWorkerKind } from "../cli-parsers.js";
 import { requireRbacPermission } from "../cli-rbac.js";
 
-import { agentBudgetTaskOptions } from "./agent-budget-options.js";
+import {
+  agentBudgetTaskOptions,
+  runAndReportLocalAgentTask
+} from "./agent-budget-options.js";
 
 export interface AgentReviewCliOptions {
   cwd?: string;
@@ -52,12 +55,7 @@ export async function runAgentReviewCommand(
 
   assertSingleReviewScope(options);
 
-  const {
-    createLocalAgentTask,
-    formatLocalAgentRunReport,
-    localAgentRunExitCode,
-    runLocalAgentTask
-  } = await import("../local-agent.js");
+  const { createLocalAgentTask } = await import("../local-agent.js");
   const { resolveConfiguredLocalAgentPreset } =
     await import("../local-agent-presets.js");
   const focus = focusParts.join(" ").trim();
@@ -105,16 +103,10 @@ export async function runAgentReviewCommand(
       maxFailedToolCalls: resolvedPreset.preset.maxFailedToolCalls
     })
   });
-  const result = await runLocalAgentTask({
+  await runAndReportLocalAgentTask({
     ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
     taskId: created.task.id
   });
-  const exitCode = localAgentRunExitCode(result);
-
-  console.log(formatLocalAgentRunReport(result));
-  if (exitCode !== 0) {
-    process.exitCode = exitCode;
-  }
 }
 
 function assertSingleReviewScope(options: AgentReviewCliOptions): void {

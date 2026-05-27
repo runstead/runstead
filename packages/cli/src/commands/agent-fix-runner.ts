@@ -2,7 +2,10 @@ import { parseCiRepairWorkerKind } from "../cli-parsers.js";
 import { requireRbacPermission } from "../cli-rbac.js";
 import { resolveVerifierCommandOptions } from "../local-agent-verifier-options.js";
 
-import { agentBudgetTaskOptions } from "./agent-budget-options.js";
+import {
+  agentBudgetTaskOptions,
+  runAndReportLocalAgentTask
+} from "./agent-budget-options.js";
 
 export interface AgentFixCliOptions {
   cwd?: string;
@@ -53,13 +56,8 @@ export async function runAgentFixLikeCommand(input: {
     throw new Error("agent fix prompt is required");
   }
 
-  const {
-    attachLocalAgentVerifierEvidence,
-    createLocalAgentTask,
-    formatLocalAgentRunReport,
-    localAgentRunExitCode,
-    runLocalAgentTask
-  } = await import("../local-agent.js");
+  const { attachLocalAgentVerifierEvidence, createLocalAgentTask } =
+    await import("../local-agent.js");
   const { resolveConfiguredLocalAgentPreset } =
     await import("../local-agent-presets.js");
   let resolvedPreset = await resolveConfiguredLocalAgentPreset(
@@ -123,14 +121,8 @@ export async function runAgentFixLikeCommand(input: {
     });
   }
 
-  const result = await runLocalAgentTask({
+  await runAndReportLocalAgentTask({
     ...(input.options.cwd === undefined ? {} : { cwd: input.options.cwd }),
     taskId: created.task.id
   });
-  const exitCode = localAgentRunExitCode(result);
-
-  console.log(formatLocalAgentRunReport(result));
-  if (exitCode !== 0) {
-    process.exitCode = exitCode;
-  }
 }

@@ -19,6 +19,11 @@ export interface AgentBudgetDefaults {
   maxFailedToolCalls?: number;
 }
 
+export interface AgentRunReportOptions {
+  cwd?: string;
+  taskId: string;
+}
+
 export function agentBudgetTaskOptions(
   options: AgentBudgetCliOptions,
   defaults: AgentBudgetDefaults = {}
@@ -59,4 +64,21 @@ function agentBudgetValue<Key extends keyof AgentBudgetTaskOptions>(
   }
 
   return {} as Pick<AgentBudgetTaskOptions, Key>;
+}
+
+export async function runAndReportLocalAgentTask(
+  options: AgentRunReportOptions
+): Promise<void> {
+  const { formatLocalAgentRunReport, localAgentRunExitCode, runLocalAgentTask } =
+    await import("../local-agent.js");
+  const result = await runLocalAgentTask({
+    ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+    taskId: options.taskId
+  });
+  const exitCode = localAgentRunExitCode(result);
+
+  console.log(formatLocalAgentRunReport(result));
+  if (exitCode !== 0) {
+    process.exitCode = exitCode;
+  }
 }

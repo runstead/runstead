@@ -775,6 +775,8 @@ The current implementation wave closed the highest-confidence product gaps:
   `commands/team-control-plane` into `commands/team-control-plane-actions`.
 - Local agent runner budget option parsing moved out of individual agent
   command runners into `commands/agent-budget-options`.
+- Local agent runner execution report tail moved out of individual agent
+  command runners into `commands/agent-budget-options`.
 - Audit export/timeline/replay handlers moved out of `commands/audit` into
   `commands/audit-actions`.
 - Startup source record/verify/collect subcommand registration moved out of

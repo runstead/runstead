@@ -2,7 +2,10 @@ import { parseCiRepairWorkerKind } from "../cli-parsers.js";
 import { requireRbacPermission } from "../cli-rbac.js";
 import { resolveVerifierCommandOptions } from "../local-agent-verifier-options.js";
 
-import { agentBudgetTaskOptions } from "./agent-budget-options.js";
+import {
+  agentBudgetTaskOptions,
+  runAndReportLocalAgentTask
+} from "./agent-budget-options.js";
 
 export interface AgentTestCliOptions {
   cwd?: string;
@@ -43,13 +46,8 @@ export async function runAgentTestCommand(
     throw new Error("agent test currently supports --worker codex_direct only");
   }
 
-  const {
-    attachLocalAgentVerifierEvidence,
-    createLocalAgentTask,
-    formatLocalAgentRunReport,
-    localAgentRunExitCode,
-    runLocalAgentTask
-  } = await import("../local-agent.js");
+  const { attachLocalAgentVerifierEvidence, createLocalAgentTask } =
+    await import("../local-agent.js");
   const { resolveConfiguredLocalAgentPreset } =
     await import("../local-agent-presets.js");
   const focus = focusParts.join(" ").trim();
@@ -108,14 +106,8 @@ export async function runAgentTestCommand(
     taskId: created.task.id
   });
 
-  const result = await runLocalAgentTask({
+  await runAndReportLocalAgentTask({
     ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
     taskId: created.task.id
   });
-  const exitCode = localAgentRunExitCode(result);
-
-  console.log(formatLocalAgentRunReport(result));
-  if (exitCode !== 0) {
-    process.exitCode = exitCode;
-  }
 }
