@@ -87,6 +87,9 @@ along with:
   `openAiChatCompletionsToolCallAdapter`
 - UI smoke semantics: `classifyRuntimeStartupUiValidationFailure`
   (product_gap, selector_unstable, browser_runtime, network, unknown)
+- UI smoke config contract: `RuntimeStartupUiSmokeConfig` and
+  `normalizeRuntimeStartupUiSmokeConfig`, including legacy-shape normalization
+  and flow-step validation before any CLI host executes browser checks
 - readiness run snapshot: `RuntimeReadinessRunSnapshot`,
   `createReadinessRunSnapshotEvent`
 

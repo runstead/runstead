@@ -1,6 +1,8 @@
 import type {
   RuntimeStartupUiValidationExecutionEvidence,
   RuntimeStartupUiValidationFailureCategory,
+  RuntimeStartupUiFlowAction,
+  RuntimeStartupUiFlowActionResult,
   RuntimeStartupUiValidationStatus
 } from "@runstead/runtime";
 
@@ -74,55 +76,8 @@ export interface StartupUiValidationServerEvidence {
   port: number;
 }
 
-export type StartupUiFlowAction =
-  | {
-      type: "fill";
-      selector?: string;
-      selectors?: string[];
-      value: string;
-    }
-  | {
-      type: "select";
-      selector?: string;
-      selectors?: string[];
-      value: string;
-    }
-  | {
-      type: "click";
-      selector?: string;
-      selectors?: string[];
-    }
-  | {
-      type: "expectText";
-      text: string;
-    }
-  | {
-      type: "expectCount";
-      selector: string;
-      count: number;
-    }
-  | {
-      type: "reload";
-    }
-  | {
-      type: "expectPersisted";
-      text: string;
-      selector?: string;
-      selectors?: string[];
-    }
-  | {
-      type: "expectNoOverlap";
-      selectors: string[];
-    };
-
-export interface StartupUiFlowActionResult {
-  type: StartupUiFlowAction["type"];
-  status: StartupUiValidationStatus;
-  summary: string;
-  selector?: string;
-  expected?: string | number;
-  actual?: string | number;
-}
+export type StartupUiFlowAction = RuntimeStartupUiFlowAction;
+export type StartupUiFlowActionResult = RuntimeStartupUiFlowActionResult;
 
 export interface StartupUiValidationExecutionArtifacts {
   dom?: string;

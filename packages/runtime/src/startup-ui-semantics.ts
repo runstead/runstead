@@ -11,6 +11,47 @@ export interface RuntimeStartupUiValidationTextCheck {
   found: boolean;
 }
 
+export type RuntimeStartupUiFlowAction =
+  | {
+      type: "fill";
+      selector?: string;
+      selectors?: string[];
+      value: string;
+    }
+  | {
+      type: "select";
+      selector?: string;
+      selectors?: string[];
+      value: string;
+    }
+  | {
+      type: "click";
+      selector?: string;
+      selectors?: string[];
+    }
+  | {
+      type: "expectText";
+      text: string;
+    }
+  | {
+      type: "expectCount";
+      selector: string;
+      count: number;
+    }
+  | {
+      type: "reload";
+    }
+  | {
+      type: "expectPersisted";
+      text: string;
+      selector?: string;
+      selectors?: string[];
+    }
+  | {
+      type: "expectNoOverlap";
+      selectors: string[];
+    };
+
 export interface RuntimeStartupUiFlowActionResult {
   type: string;
   status: RuntimeStartupUiValidationStatus;

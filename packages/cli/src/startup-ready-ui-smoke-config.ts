@@ -1,33 +1,17 @@
 import { join } from "node:path";
 
+import type {
+  RuntimeStartupUiSmokeCheckConfig,
+  RuntimeStartupUiSmokeConfig,
+  RuntimeStartupUiSmokeServerConfig
+} from "@runstead/runtime";
 import { stringify as stringifyYaml } from "yaml";
-
-import type { StartupUiFlowAction } from "./startup-ui-validation-types.js";
 
 export { parseStartupReadyUiSmokeConfig } from "./startup-ready-ui-smoke-config-parser.js";
 
-export interface StartupReadyUiSmokeConfig {
-  schemaVersion: 1;
-  server: StartupReadyUiSmokeServerConfig;
-  checks: StartupReadyUiSmokeCheckConfig[];
-}
-
-export interface StartupReadyUiSmokeServerConfig {
-  command: string;
-  port: number;
-  url?: string;
-  timeoutMs?: number;
-}
-
-export interface StartupReadyUiSmokeCheckConfig {
-  name: string;
-  url?: string;
-  viewport?: string;
-  expectText: string[];
-  flow?: string;
-  steps?: StartupUiFlowAction[];
-  timeoutMs?: number;
-}
+export type StartupReadyUiSmokeConfig = RuntimeStartupUiSmokeConfig;
+export type StartupReadyUiSmokeServerConfig = RuntimeStartupUiSmokeServerConfig;
+export type StartupReadyUiSmokeCheckConfig = RuntimeStartupUiSmokeCheckConfig;
 
 export function stringifyStartupReadyUiSmokeConfig(
   config: StartupReadyUiSmokeConfig

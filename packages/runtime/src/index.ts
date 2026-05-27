@@ -9,5 +9,6 @@ export * from "./readiness-run.js";
 export * from "./readiness-source-evidence.js";
 export * from "./startup-ui-semantics.js";
 export * from "./source-provider.js";
+export * from "./startup-ui-smoke-config.js";
 export * from "./team-control-plane.js";
 export * from "./tool-call-adapter.js";
