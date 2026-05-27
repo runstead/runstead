@@ -2,15 +2,11 @@ import type { Task, WorkerRun } from "@runstead/core";
 import type { RunsteadDatabase } from "@runstead/state-sqlite";
 
 import type { CreateCiRepairTaskResult } from "./ci-repair.js";
-import {
-  gitCommitAction,
-  gitDiffAction,
-  gitStatusAction
-} from "./ci-repair-orchestrator-actions.js";
+import { gitCommitAction, gitStatusAction } from "./ci-repair-orchestrator-actions.js";
 import type { CiRepairOrchestratorStageContext } from "./ci-repair-orchestrator-context.js";
 import { stageAtLeast } from "./ci-repair-orchestrator-context.js";
+import { resolveCiRepairDiffScope } from "./ci-repair-orchestrator-diff-scope.js";
 import {
-  diffScopeOutput,
   gitChangedFilesOutput,
   gitCommitOutput
 } from "./ci-repair-orchestrator-output.js";
@@ -25,10 +21,7 @@ import {
   failCiRepairVerifier
 } from "./ci-repair-orchestrator-verification-failures.js";
 import { normalizeCiRepairVerifierResult } from "./ci-repair-orchestrator-verifier-result.js";
-import {
-  verifyGitDiffScope,
-  type GitDiffScopeVerification
-} from "./diff-scope-verifier.js";
+import type { GitDiffScopeVerification } from "./diff-scope-verifier.js";
 import {
   commitGitChanges,
   listGitChangedFiles,
@@ -156,45 +149,20 @@ export async function verifyCiRepairWorkerChanges(
     }));
   }
 
-  let diffScope = context.diffScope;
-
-  if (!stageAtLeast(context.stage, "verified") || diffScope === undefined) {
-    diffScope = await runGovernedToolAction({
-      cwd: input.cwd,
-      stateDb: input.stateDb,
-      database: input.database,
-      policy: input.policy,
-      task,
-      workerRun: input.workerRun,
-      action: gitDiffAction({
-        task,
-        cwd: input.cwd,
-        base: input.base,
-        head: "HEAD"
-      }),
-      requestedBy: "runstead:ci-repair",
-      ...(input.now === undefined ? {} : { now: input.now }),
-      run: async () => {
-        const value = await verifyGitDiffScope({
-          cwd: input.cwd,
-          baseRef: input.base,
-          headRef: "HEAD",
-          allowedPaths: input.allowedPaths ?? [],
-          deniedPaths: input.deniedPaths ?? [],
-          ...(input.gitRunner === undefined ? {} : { runner: input.gitRunner })
-        });
-
-        return {
-          value,
-          output: diffScopeOutput(value)
-        };
-      }
-    }).then((result) => result.value);
-  }
-
-  if (diffScope === undefined) {
-    throw new Error("CI repair diff scope context is missing");
-  }
+  const diffScope = await resolveCiRepairDiffScope({
+    cwd: input.cwd,
+    stateDb: input.stateDb,
+    database: input.database,
+    policy: input.policy,
+    task,
+    workerRun: input.workerRun,
+    context,
+    base: input.base,
+    ...(input.allowedPaths === undefined ? {} : { allowedPaths: input.allowedPaths }),
+    ...(input.deniedPaths === undefined ? {} : { deniedPaths: input.deniedPaths }),
+    ...(input.gitRunner === undefined ? {} : { gitRunner: input.gitRunner }),
+    ...(input.now === undefined ? {} : { now: input.now })
+  });
 
   if (diffScope.changedFiles.length === 0) {
     await failCiRepairNoDiff({
