@@ -26,9 +26,7 @@ export async function runStartupReadyUiSmokeCheck(input: {
       serverCommand: input.server.command,
       serverPort: input.server.port,
       timeoutMs:
-        input.check.timeoutMs ??
-        input.server.timeoutMs ??
-        DEFAULT_UI_SMOKE_TIMEOUT_MS,
+        input.check.timeoutMs ?? input.server.timeoutMs ?? DEFAULT_UI_SMOKE_TIMEOUT_MS,
       expectText: input.check.expectText,
       ...(input.check.steps === undefined ? {} : { flowActions: input.check.steps }),
       ...(url === undefined ? {} : { url }),
@@ -67,9 +65,7 @@ export async function runStartupReadyUiSmokeCheck(input: {
     return {
       name: input.check.name,
       status: "failed",
-      blockers: [
-        `UI smoke check failed: ${input.check.name}: ${errorMessage(error)}`
-      ]
+      blockers: [`UI smoke check failed: ${input.check.name}: ${errorMessage(error)}`]
     };
   }
 }
