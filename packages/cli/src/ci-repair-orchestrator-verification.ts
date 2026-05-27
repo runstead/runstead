@@ -24,6 +24,7 @@ import {
   failCiRepairNoDiff,
   failCiRepairVerifier
 } from "./ci-repair-orchestrator-verification-failures.js";
+import { normalizeCiRepairVerifierResult } from "./ci-repair-orchestrator-verifier-result.js";
 import {
   verifyGitDiffScope,
   type GitDiffScopeVerification
@@ -228,16 +229,10 @@ export async function verifyCiRepairWorkerChanges(
           mode: "evidence_only",
           ...(input.now === undefined ? {} : { now: input.now })
         });
-  const normalizedVerifierResult: RunTaskVerifiersResult = {
-    ...verifierResult,
-    task: {
-      ...verifierResult.task,
-      goalId: input.ciRepair.task.goalId,
-      input: input.ciRepair.task.input,
-      verifiers: input.ciRepair.task.verifiers,
-      createdAt: input.ciRepair.task.createdAt
-    }
-  };
+  const normalizedVerifierResult = normalizeCiRepairVerifierResult({
+    verifierResult,
+    ciRepairTask: input.ciRepair.task
+  });
 
   if (normalizedVerifierResult.task.status !== "completed") {
     await failCiRepairVerifier({
