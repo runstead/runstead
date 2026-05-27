@@ -6,7 +6,6 @@ import type { CodexDirectToolCall } from "./tool-types.js";
 import type { CodexDirectWorkerOptions } from "./worker-types.js";
 import {
   optionalField,
-  optionalPositiveInteger,
   optionalReplacementArray,
   optionalString,
   optionalTimeoutMs,
@@ -14,12 +13,11 @@ import {
 } from "./tool-arguments.js";
 import {
   runGovernedApplyPatch,
-  runGovernedReadEvidence,
   runGovernedShellCommand,
-  runGovernedVerifier,
-  runGovernedWorkspaceFacts
+  runGovernedVerifier
 } from "./governed-tools.js";
 import { governedToolOptions } from "./policy-actions.js";
+import { executeCodexDirectEvidenceTool } from "./tool-executor-evidence.js";
 import { executeCodexDirectGitTool } from "./tool-executor-git.js";
 import { executeCodexDirectWorkspaceReadTool } from "./tool-executor-workspace-read.js";
 
@@ -40,6 +38,12 @@ export async function executeCodexDirectTool(
 
   if (gitResult !== undefined) {
     return gitResult;
+  }
+
+  const evidenceResult = await executeCodexDirectEvidenceTool(options);
+
+  if (evidenceResult !== undefined) {
+    return evidenceResult;
   }
 
   switch (options.toolCall.name) {
@@ -77,24 +81,6 @@ export async function executeCodexDirectTool(
           ...options,
           command: requiredString(options.toolCall.arguments.command, "command"),
           ...optionalTimeoutMs(options.toolCall.arguments.timeoutMs)
-        })
-      );
-    case "read_evidence":
-      return JSON.stringify(
-        await runGovernedReadEvidence({
-          ...options,
-          id: requiredString(options.toolCall.arguments.id, "id"),
-          ...optionalField(
-            "maxBytes",
-            optionalPositiveInteger(options.toolCall.arguments.maxBytes)
-          )
-        })
-      );
-    case "workspace_facts":
-      return JSON.stringify(
-        await runGovernedWorkspaceFacts({
-          ...options,
-          refresh: options.toolCall.arguments.refresh === true
         })
       );
   }
