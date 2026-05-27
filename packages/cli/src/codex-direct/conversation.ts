@@ -5,22 +5,15 @@ import type {
   CodexResponsesInputItem,
   CodexResponsesRequest
 } from "../codex-responses-transport.js";
-import {
-  ToolActionApprovalRequiredError,
-  ToolActionDeniedError
-} from "../governed-action.js";
 
+import { codexDirectConversationErrorResult } from "./conversation-error-result.js";
 import {
   buildCodexDirectInstructions,
   codexDirectToolDefinitions,
   codexDirectVerificationStatus,
   codexDirectWarningOptions,
   completedWorkerResult,
-  CodexDirectModelRetryExhaustedError,
-  CodexDirectModelTimeoutError,
   finalizeBudgetExceededWorkerResult,
-  modelRetryExhaustedInterruption,
-  modelTimeoutInterruption,
   parseCodexDirectToolCall,
   recordCodexDirectVerifierResult,
   runCodexDirectTool,
@@ -160,82 +153,10 @@ export async function runCodexDirectConversation(input: {
       ...codexDirectWarningOptions(input.warnings)
     });
   } catch (error) {
-    if (error instanceof ToolActionApprovalRequiredError) {
-      return completedWorkerResult({
-        options: input.options,
-        workerRun: input.workerRun,
-        status: "waiting_approval",
-        exitCode: 2,
-        summary: error.message,
-        toolCalls: executedToolCalls,
-        failedToolCalls,
-        verification: verification(),
-        ...codexDirectWarningOptions(input.warnings),
-        approval: {
-          id: error.approval.id,
-          actionId: error.approval.actionId,
-          policyDecisionId: error.policyDecision.id,
-          reason: error.approval.reason
-        }
-      });
-    }
-
-    if (error instanceof ToolActionDeniedError) {
-      return completedWorkerResult({
-        options: input.options,
-        workerRun: input.workerRun,
-        status: "blocked",
-        exitCode: 3,
-        summary: error.message,
-        toolCalls: executedToolCalls,
-        failedToolCalls,
-        verification: verification(),
-        ...codexDirectWarningOptions(input.warnings)
-      });
-    }
-
-    if (error instanceof CodexDirectModelTimeoutError) {
-      return completedWorkerResult({
-        options: input.options,
-        workerRun: input.workerRun,
-        status: "interrupted",
-        exitCode: 124,
-        summary: error.message,
-        toolCalls: executedToolCalls,
-        failedToolCalls,
-        verification: verification(),
-        ...codexDirectWarningOptions([
-          ...(input.warnings ?? []),
-          "Codex Direct model request timed out; the task is recoverable with runstead resume."
-        ]),
-        interruption: modelTimeoutInterruption(input.options, error)
-      });
-    }
-
-    if (error instanceof CodexDirectModelRetryExhaustedError) {
-      return completedWorkerResult({
-        options: input.options,
-        workerRun: input.workerRun,
-        status: "failed",
-        exitCode: 1,
-        summary: error.message,
-        toolCalls: executedToolCalls,
-        failedToolCalls,
-        verification: verification(),
-        ...codexDirectWarningOptions([
-          ...(input.warnings ?? []),
-          "Codex Direct model request retry budget exhausted; the task is recoverable with runstead resume."
-        ]),
-        interruption: modelRetryExhaustedInterruption(input.options, error)
-      });
-    }
-
-    return completedWorkerResult({
+    return codexDirectConversationErrorResult({
+      error,
       options: input.options,
       workerRun: input.workerRun,
-      status: "failed",
-      exitCode: 1,
-      summary: error instanceof Error ? error.message : String(error),
       toolCalls: executedToolCalls,
       failedToolCalls,
       verification: verification(),
