@@ -6,10 +6,8 @@ import type { RunsteadDatabase } from "@runstead/state-sqlite";
 import { runGovernedToolAction } from "./governed-action.js";
 import type { PolicyProfile } from "./policy.js";
 import type { StartupGateStage } from "./startup-evidence.js";
-import {
-  recordExtensionCollectorEvidence,
-  runExtensionCollectorCommand
-} from "./startup-extension-collector-evidence.js";
+import { runExtensionCollectorCommand } from "./startup-extension-collector-command.js";
+import { recordExtensionCollectorEvidence } from "./startup-extension-collector-evidence.js";
 import { extensionCollectorAction } from "./startup-extension-collector-task.js";
 import type { StartupExtensionCollectorExecutionResult } from "./startup-extension-collector-types.js";
 import type { LoadedStartupReadinessExtension } from "./startup-extension-loader.js";
