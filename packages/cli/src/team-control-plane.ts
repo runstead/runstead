@@ -5,7 +5,6 @@ import {
   type RuntimeBackendConfigEnv,
   type RuntimeBackendSelection
 } from "@runstead/runtime";
-import { formatPostgresControlPlaneMigrationSql } from "@runstead/state-postgres";
 
 import { resolveRunsteadRoot } from "./runstead-root.js";
 import {
@@ -27,6 +26,10 @@ export {
   type BootstrapTeamControlPlaneResult
 } from "./team-control-plane-bootstrap.js";
 export { formatTeamControlPlaneCheck } from "./team-control-plane-format.js";
+export {
+  teamControlPlaneMigrationSql,
+  type TeamControlPlaneMigrationSqlOptions
+} from "./team-control-plane-migration.js";
 export {
   checkTeamControlPlaneLiveBackend,
   formatTeamControlPlaneRunnerHeartbeat,
@@ -82,10 +85,6 @@ export interface TeamControlPlaneCheckResult {
   warnings: string[];
   nextActions: string[];
   liveBackend?: TeamControlPlaneCheckLiveBackend;
-}
-
-export interface TeamControlPlaneMigrationSqlOptions {
-  schema?: string;
 }
 
 export async function checkTeamControlPlane(
@@ -167,14 +166,6 @@ export async function checkTeamControlPlane(
           )
         })
   };
-}
-
-export function teamControlPlaneMigrationSql(
-  options: TeamControlPlaneMigrationSqlOptions = {}
-): string {
-  return formatPostgresControlPlaneMigrationSql({
-    ...(options.schema === undefined ? {} : { schema: options.schema })
-  });
 }
 
 function errorMessage(error: unknown): string {
