@@ -2,8 +2,10 @@ import type { JsonObject } from "@runstead/core";
 
 import { DashboardOperatorApiHttpError } from "./dashboard-operator-api-http.js";
 import type { BuildDashboardResult } from "./dashboard-types.js";
-import { shellOptionValue } from "./dashboard-operator-action-command.js";
-import { resumeDashboardStartupRun } from "./dashboard-operator-api-run-resume.js";
+import {
+  dashboardStartupRunResumeOperatorRunId,
+  runDashboardStartupRunResumeOperatorAction
+} from "./dashboard-operator-api-run-resume.js";
 import {
   dashboardApprovalResumeOperatorApprovalId,
   runDashboardApprovalResumeOperatorAction
@@ -56,19 +58,15 @@ export async function runDashboardOperatorAction(input: {
     });
   }
 
-  const runId = shellOptionValue(action.command, "--resume");
+  const runId = dashboardStartupRunResumeOperatorRunId(action.command);
 
   if (runId !== undefined) {
-    const resumed = await resumeDashboardStartupRun({
+    return runDashboardStartupRunResumeOperatorAction({
       cwd: input.build.cwd,
       actor: input.actor,
+      actionId: action.id,
       runId
     });
-
-    return {
-      operatorActionId: action.id,
-      resumed
-    };
   }
 
   if (dashboardCompleteCheckOperatorCommand(action.command)) {
