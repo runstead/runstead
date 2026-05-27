@@ -3,7 +3,6 @@ import { join, resolve } from "node:path";
 import {
   createRunsteadId,
   type Evidence,
-  type JsonObject,
   type RunsteadEvent,
   type Task
 } from "@runstead/core";
@@ -12,10 +11,15 @@ import type { CommandVerifierInput } from "@runstead/verifiers";
 
 import { writeJsonArtifactFile } from "./artifact-store.js";
 import {
-  collectCommandVerifierCodeState,
-  type CommandVerifierCodeState
-} from "./verifier-code-state.js";
-import { runShellCommand, type ShellCommandResult } from "./shell-executor.js";
+  commandVerifierEvidenceEventPayload,
+  createCommandVerifierArtifact,
+  deniedCommandVerifierResult,
+  sanitizeVerifierArtifactName,
+  summarizeCommandResult,
+  type CommandVerifierArtifact
+} from "./verifier-evidence-artifact.js";
+import { collectCommandVerifierCodeState } from "./verifier-code-state.js";
+import { runShellCommand } from "./shell-executor.js";
 
 export type { CommandVerifierInput } from "@runstead/verifiers";
 export { collectCommandVerifierCodeState } from "./verifier-code-state.js";
@@ -23,6 +27,7 @@ export type {
   CommandVerifierChangedFile,
   CommandVerifierCodeState
 } from "./verifier-code-state.js";
+export type { CommandVerifierArtifact } from "./verifier-evidence-artifact.js";
 
 export interface StoreCommandVerifierEvidenceOptions {
   cwd?: string;
@@ -33,18 +38,6 @@ export interface StoreCommandVerifierEvidenceOptions {
   timeoutMs?: number;
   killGraceMs?: number;
   now?: Date;
-}
-
-export interface CommandVerifierArtifact {
-  schemaVersion: 1;
-  createdAt: string;
-  taskId: string;
-  goalId: string;
-  verifier: string;
-  command: string;
-  codeState: CommandVerifierCodeState;
-  result: ShellCommandResult;
-  policy?: JsonObject;
 }
 
 export interface StoreCommandVerifierEvidenceResult {
@@ -68,19 +61,16 @@ export async function storeCommandVerifierEvidence(
     ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
     ...(options.killGraceMs === undefined ? {} : { killGraceMs: options.killGraceMs })
   });
-  const artifact: CommandVerifierArtifact = {
-    schemaVersion: 1,
+  const artifact = createCommandVerifierArtifact({
     createdAt,
-    taskId: options.task.id,
-    goalId: options.task.goalId,
-    verifier: options.command.name,
-    command: result.command,
+    task: options.task,
+    command: options.command,
     codeState,
     result
-  };
+  });
   const evidenceId = createRunsteadId("ev");
   const evidenceDir = join(runsteadRoot, "evidence");
-  const artifactName = sanitizeArtifactName(options.command.name);
+  const artifactName = sanitizeVerifierArtifactName(options.command.name);
   const artifactPath = join(evidenceDir, `verifier-${artifactName}-${evidenceId}.json`);
   const artifactWrite = await writeJsonArtifactFile({
     artifactPath,
@@ -107,7 +97,11 @@ export async function storeCommandVerifierEvidence(
     type: "evidence.recorded",
     aggregateType: "evidence",
     aggregateId: evidence.id,
-    payload: evidenceEventPayload(evidence, options.command.name, result),
+    payload: commandVerifierEvidenceEventPayload(
+      evidence,
+      options.command.name,
+      result
+    ),
     createdAt
   };
 
@@ -148,26 +142,14 @@ export async function storeCommandVerifierPolicyEvidence(
   const runsteadRoot = resolve(options.runsteadRoot);
   const createdAt = (options.now ?? new Date()).toISOString();
   const codeState = await collectCommandVerifierCodeState(cwd);
-  const result: ShellCommandResult = {
-    command: options.command.command,
+  const result = deniedCommandVerifierResult({
     cwd,
-    exitCode: null,
-    signal: null,
-    durationMs: 0,
-    timedOut: false,
-    forceKilled: false,
-    stdout: "",
-    stderr: "",
-    stdoutTruncated: false,
-    stderrTruncated: false
-  };
-  const artifact: CommandVerifierArtifact = {
-    schemaVersion: 1,
+    command: options.command
+  });
+  const artifact = createCommandVerifierArtifact({
     createdAt,
-    taskId: options.task.id,
-    goalId: options.task.goalId,
-    verifier: options.command.name,
-    command: options.command.command,
+    task: options.task,
+    command: options.command,
     codeState,
     result,
     policy: {
@@ -176,10 +158,10 @@ export async function storeCommandVerifierPolicyEvidence(
       reason: options.reason,
       ...(options.approvalId === undefined ? {} : { approvalId: options.approvalId })
     }
-  };
+  });
   const evidenceId = createRunsteadId("ev");
   const evidenceDir = join(runsteadRoot, "evidence");
-  const artifactName = sanitizeArtifactName(options.command.name);
+  const artifactName = sanitizeVerifierArtifactName(options.command.name);
   const artifactPath = join(
     evidenceDir,
     `verifier-${artifactName}-${options.decision}-${evidenceId}.json`
@@ -210,7 +192,11 @@ export async function storeCommandVerifierPolicyEvidence(
     aggregateType: "evidence",
     aggregateId: evidence.id,
     payload: {
-      ...evidenceEventPayload(evidence, options.command.name, result),
+      ...commandVerifierEvidenceEventPayload(
+        evidence,
+        options.command.name,
+        result
+      ),
       policyDecisionId: options.policyDecisionId,
       decision: options.decision,
       ...(options.approvalId === undefined ? {} : { approvalId: options.approvalId })
@@ -233,44 +219,4 @@ export async function storeCommandVerifierPolicyEvidence(
     artifactPath,
     artifactManifestPath: artifactWrite.manifestPath
   };
-}
-
-function summarizeCommandResult(
-  verifierName: string,
-  result: ShellCommandResult
-): string {
-  const status =
-    result.exitCode === 0 && !result.timedOut
-      ? "passed"
-      : result.timedOut
-        ? "timed out"
-        : `failed with exit ${result.exitCode ?? "unknown"}`;
-
-  return `${verifierName}: ${status}`;
-}
-
-function evidenceEventPayload(
-  evidence: Evidence,
-  verifierName: string,
-  result: ShellCommandResult
-): JsonObject {
-  return {
-    evidenceId: evidence.id,
-    evidenceType: evidence.type,
-    taskId: evidence.subjectId,
-    verifier: verifierName,
-    uri: evidence.uri,
-    hash: evidence.hash,
-    summary: evidence.summary,
-    exitCode: result.exitCode,
-    timedOut: result.timedOut,
-    forceKilled: result.forceKilled,
-    durationMs: result.durationMs
-  };
-}
-
-function sanitizeArtifactName(value: string): string {
-  const sanitized = value.replace(/[^a-zA-Z0-9._-]+/g, "_");
-
-  return sanitized.length === 0 ? "unnamed" : sanitized;
 }
