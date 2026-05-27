@@ -10,6 +10,11 @@ import {
   waitForText
 } from "./startup-ui-browser-runner-utils.js";
 import { expectPlaywrightNoOverlap } from "./startup-ui-playwright-overlap.js";
+import type {
+  PlaywrightBrowser,
+  PlaywrightLocator,
+  PlaywrightPage
+} from "./startup-ui-playwright-types.js";
 
 export async function runPlaywrightBrowserFlow(
   input: StartupUiBrowserRunnerInput
@@ -241,48 +246,4 @@ async function firstLocator(
   }
 
   throw new Error(`No matching selector found: ${selectors.join(", ")}`);
-}
-
-interface PlaywrightBrowser {
-  newPage(options: {
-    viewport: { width: number; height: number };
-  }): Promise<PlaywrightPage>;
-  close(): Promise<void>;
-}
-
-interface PlaywrightPage {
-  on(event: "console", handler: (message: PlaywrightConsoleMessage) => void): void;
-  goto(
-    url: string,
-    options: { waitUntil: "domcontentloaded"; timeout: number }
-  ): Promise<PlaywrightResponse | null>;
-  locator(selector: string): PlaywrightLocator;
-  content(): Promise<string>;
-  screenshot(options: { fullPage: boolean }): Promise<Buffer>;
-  reload(options: { waitUntil: "domcontentloaded" }): Promise<void>;
-}
-
-interface PlaywrightLocator {
-  first(): PlaywrightLocator;
-  count(): Promise<number>;
-  fill(value: string): Promise<void>;
-  selectOption(value: string): Promise<void>;
-  click(): Promise<void>;
-  innerText(): Promise<string>;
-  boundingBox(): Promise<{
-    x: number;
-    y: number;
-    width: number;
-    height: number;
-  } | null>;
-}
-
-interface PlaywrightResponse {
-  status(): number;
-  ok(): boolean;
-}
-
-interface PlaywrightConsoleMessage {
-  type(): string;
-  text(): string;
 }
