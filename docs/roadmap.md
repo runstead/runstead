@@ -753,6 +753,8 @@ The current implementation wave closed the highest-confidence product gaps:
 - Goal list/show SQLite read paths moved out of `goals` into `goals-read`.
 - GitHub App config schema, config loading, default API URL, and config path
   resolution moved out of `github-app` into `github-app-config`.
+- GitHub App init, status, JWT, and installation-token command handlers moved
+  out of `commands/github-app` into `commands/github-app-actions`.
 - Startup scale institutional memory capture and retrieval moved out of
   `startup-scale-workflow` into `startup-scale-memory`.
 - Startup scale integration-depth map generation moved out of
