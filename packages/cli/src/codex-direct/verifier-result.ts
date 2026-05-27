@@ -1,7 +1,7 @@
 import type { Task } from "@runstead/core";
 import type { RuntimeVerificationStatus } from "@runstead/runtime";
 
-import { declaredVerifierCommands } from "./evidence-actions.js";
+import { declaredVerifierCommands } from "./verifier-command-resolution.js";
 import { isRecord } from "./tool-arguments.js";
 import type { CodexDirectToolCall } from "./tool-types.js";
 
