@@ -915,6 +915,9 @@ The current implementation wave closed the highest-confidence product gaps:
 - Dashboard startup run timeline, operator-command, and guided-flow table
   rendering moved out of the startup section aggregate into
   `dashboard-render-startup-run-tables`.
+- Dashboard startup gate summary, blocker board, and stale-evidence table
+  rendering moved out of the startup section aggregate into
+  `dashboard-render-startup-gates`.
 
 ## Remaining Backlog
 
