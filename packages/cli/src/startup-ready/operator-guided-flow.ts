@@ -9,6 +9,7 @@ import {
   startupReadinessDecision,
   startupReadinessTargetBoundary
 } from "./decision.js";
+import { startupReadyShellArg } from "./shared.js";
 
 export function buildStartupReadyGuidedFlow(
   run: StartupReadinessRun
@@ -73,7 +74,12 @@ export function startupReadyGuidedStepForPhase(
   phase: StartupReadinessRunPhase,
   index: number
 ): StartupReadyGuidedStep {
-  const blocker = phase.blockers[0] ?? `${phase.title} has not completed successfully`;
+  const blocker =
+    phase.blockers.find((item) =>
+      startupReadySourceConnectorBlocker(item.toLowerCase())
+    ) ??
+    phase.blockers[0] ??
+    `${phase.title} has not completed successfully`;
 
   return startupReadyGuidedStepForBlocker({
     id: `${phase.id}_${index + 1}`,
@@ -122,6 +128,10 @@ export function startupReadyGuidedResolution(
 ): StartupReadyGuidedResolution {
   const lower = blocker.toLowerCase();
 
+  if (startupReadySourceConnectorBlocker(lower)) {
+    return "runstead";
+  }
+
   if (
     lower.includes("deployment") ||
     lower.includes("analytics") ||
@@ -151,6 +161,10 @@ export function startupReadyGuidedResolution(
 
 export function startupReadyGuidedWhy(blocker: string): string {
   const lower = blocker.toLowerCase();
+
+  if (startupReadySourceConnectorBlocker(lower)) {
+    return "Runstead needs external source connector evidence or credentials before it can trust this target.";
+  }
 
   if (lower.includes("ui smoke")) {
     return "Runstead cannot prove the primary product flow works in a browser.";
@@ -193,6 +207,10 @@ export function startupReadyGuidedNextAction(input: {
   resolution: StartupReadyGuidedResolution;
   run: StartupReadinessRun;
 }): string {
+  if (startupReadySourceConnectorBlocker(input.blocker.toLowerCase())) {
+    return `inspect required ${input.run.target} source connector refresh commands and credential blockers`;
+  }
+
   if (input.resolution === "agent") {
     return `let ${input.run.worker} repair the repo, then resume this readiness run`;
   }
@@ -209,15 +227,30 @@ export function startupReadyGuidedCommand(input: {
   resolution: StartupReadyGuidedResolution;
   run: StartupReadinessRun;
 }): string | undefined {
-  if (input.resolution === "agent") {
-    return `runstead startup ready --cwd ${input.run.cwd} --resume ${input.run.id}`;
+  const lower = input.blocker.toLowerCase();
+  const cwd = startupReadyShellArg(input.run.cwd);
+
+  if (startupReadySourceConnectorBlocker(lower)) {
+    return `runstead startup source plan --cwd ${cwd} --target ${input.run.target}`;
   }
 
-  if (input.blocker.toLowerCase().includes("ci")) {
-    return `runstead startup ready --cwd ${input.run.cwd} --stage ${input.run.stage} --target ${input.run.target} --ci`;
+  if (input.resolution === "agent") {
+    return `runstead startup ready --cwd ${cwd} --resume ${input.run.id}`;
+  }
+
+  if (lower.includes("ci")) {
+    return `runstead startup ready --cwd ${cwd} --stage ${input.run.stage} --target ${input.run.target} --ci`;
   }
 
   return undefined;
+}
+
+function startupReadySourceConnectorBlocker(lowerBlocker: string): boolean {
+  return (
+    lowerBlocker.includes(" connector requires ") ||
+    lowerBlocker.includes("startup_source ") ||
+    lowerBlocker.includes("source connector")
+  );
 }
 
 export function formatStartupReadyGuidedFlowLines(

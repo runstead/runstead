@@ -242,6 +242,7 @@ export type StartupReadyOperatorCommandKind =
   | "recover"
   | "resume"
   | "rerun"
+  | "source_plan"
   | "ci"
   | "dashboard"
   | "complete_check";

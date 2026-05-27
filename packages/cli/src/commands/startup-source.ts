@@ -30,6 +30,7 @@ export function registerStartupSourceCommand(startup: Command): Command {
       "--target <target>",
       "Readiness target to refresh: local, staging, or production"
     )
+    .option("--cwd <path>", "Workspace path for operator command context")
     .option("--format <format>", "Output format: text or json", "text")
     .action((options: StartupSourcePlanCommandOptions) =>
       planStartupSourceCommand(options)

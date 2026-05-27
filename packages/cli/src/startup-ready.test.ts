@@ -105,6 +105,48 @@ describe("startup readiness run model", () => {
     }
   });
 
+  it("surfaces source connector refresh planning in production readiness guidance", async () => {
+    const workspace = join(
+      tmpdir(),
+      `runstead-startup-ready-source-guidance-${process.pid}`
+    );
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await mkdir(workspace, { recursive: true });
+
+      const { run } = await createStartupReadinessRun({
+        cwd: workspace,
+        stage: "launch",
+        target: "production",
+        worker: "codex_direct",
+        governanceProfile: "governed",
+        now: new Date("2026-05-22T01:02:00.000Z")
+      });
+      const sourcePlanCommand = `runstead startup source plan --cwd ${workspace} --target production`;
+
+      expect(run.operatorCommands).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            kind: "source_plan",
+            command: sourcePlanCommand
+          })
+        ])
+      );
+      expect(run.guidedFlow).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            command: sourcePlanCommand,
+            nextAction:
+              "inspect required production source connector refresh commands and credential blockers"
+          })
+        ])
+      );
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
   it("records unborn git state with a code fingerprint", async () => {
     const workspace = join(tmpdir(), `runstead-startup-ready-unborn-${process.pid}`);
 

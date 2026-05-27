@@ -70,6 +70,15 @@ export function buildStartupReadyOperatorCommands(
     });
   }
 
+  if (run.target !== "local" || startupReadyHasSourceConnectorBlocker(run)) {
+    commands.splice(2, 0, {
+      kind: "source_plan",
+      title: "Plan source connector refresh",
+      command: `runstead startup source plan --cwd ${cwd} --target ${run.target}`,
+      when: "Show required external source connector evidence, credential blockers, and refresh commands for this target."
+    });
+  }
+
   if (
     run.target !== "local" ||
     run.verdictBlockers.some((blocker) => blocker.toLowerCase().includes("ci"))
@@ -83,6 +92,18 @@ export function buildStartupReadyOperatorCommands(
   }
 
   return commands;
+}
+
+function startupReadyHasSourceConnectorBlocker(run: StartupReadinessRun): boolean {
+  return run.verdictBlockers.some((blocker) => {
+    const lower = blocker.toLowerCase();
+
+    return (
+      lower.includes(" connector requires ") ||
+      lower.includes("startup_source ") ||
+      lower.includes("source connector")
+    );
+  });
 }
 
 export function startupReadyVerifierOnlyRecoveryAvailable(

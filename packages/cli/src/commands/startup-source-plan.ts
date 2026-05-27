@@ -4,6 +4,7 @@ import {
 } from "../startup-source-refresh-plan.js";
 
 export interface StartupSourcePlanCommandOptions {
+  cwd?: string;
   target: string;
   format?: string;
 }

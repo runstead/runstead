@@ -395,7 +395,10 @@ redacted before evidence is persisted.
 `startup source plan --target staging|production` prints the required external
 source refresh commands, credential blockers, adapter providers, and freshness
 windows. Use it before launch runs and in scheduled CI/operator jobs so source
-evidence is refreshed before its freshness window expires.
+evidence is refreshed before its freshness window expires. Staging and
+production readiness runs also persist this command in the guided flow and
+operator action catalogue whenever external source connector evidence is part
+of the target gate.
 
 | Connector        | Credential Env      | Expected Provider Shape                                                                              |
 | ---------------- | ------------------- | ---------------------------------------------------------------------------------------------------- |
