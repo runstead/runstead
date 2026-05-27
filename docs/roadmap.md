@@ -645,6 +645,8 @@ The current implementation wave closed the highest-confidence product gaps:
   `commands/startup-measurement` into `commands/startup-measurement-snapshot`.
 - Startup measurement assess command registration moved out of
   `commands/startup-measurement` into `commands/startup-measurement-assess`.
+- Startup measurement generate command registration moved out of
+  `commands/startup-measurement` into `commands/startup-measurement-generate`.
 - Team control-plane runner heartbeat and list formatting moved out of
   `team-control-plane-runner` into `team-control-plane-runner-format`.
 - Team control-plane Postgres connection validation and client creation moved
