@@ -227,6 +227,8 @@ The current implementation wave closed the highest-confidence product gaps:
 - Startup source connector catalog data moved out of
   `startup-source-connector-definitions` into
   `startup-source-connector-catalog`.
+- Team policy default YAML, schema parsing, and loading moved out of
+  `team-policy` into `team-policy-config`.
 - Agent provider listing moved out of the agent command adapter into
   `commands/agent-providers`.
 - Agent inspect subcommand and depth-to-preset parsing moved out of the agent
