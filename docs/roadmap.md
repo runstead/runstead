@@ -655,6 +655,8 @@ The current implementation wave closed the highest-confidence product gaps:
   `commands/team-control-plane` into `commands/team-control-plane-runner`.
 - GitHub workflow-run command registration moved out of `commands/github` into
   `commands/github-run`.
+- GitHub workflow-run status, logs, and repair command handlers moved out of
+  `commands/github-run` into `commands/github-run-actions`.
 - GitHub pull-request command registration moved out of `commands/github` into
   `commands/github-pr`.
 - Approval list/show command registration moved out of `commands/approval` into
