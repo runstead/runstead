@@ -651,6 +651,7 @@ The current implementation wave closed the highest-confidence product gaps:
 - Task creation and shared task state/event helpers moved out of `tasks` into
   `task-create` and `task-state`.
 - Task list/show read paths moved out of `tasks` into `task-read`.
+- Task claim/block transitions moved out of `tasks` into `task-transitions`.
 
 ## Remaining Backlog
 
