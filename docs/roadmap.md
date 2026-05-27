@@ -222,6 +222,8 @@ The current implementation wave closed the highest-confidence product gaps:
   `dashboard-startup-timeline` into `dashboard-startup-run-comparison`.
 - RBAC default policy, schema parsing, and policy-file IO moved out of `rbac`
   into `rbac-policy`.
+- Approval command status parsing and action-display formatting moved out of
+  `commands/approval` into `commands/approval-format`.
 - Agent provider listing moved out of the agent command adapter into
   `commands/agent-providers`.
 - Agent inspect subcommand and depth-to-preset parsing moved out of the agent
