@@ -879,6 +879,8 @@ The current implementation wave closed the highest-confidence product gaps:
   `dashboard-render-startup` into `dashboard-render-startup-tables`.
 - Dashboard operator verifier and manual-evidence form actions moved out of the
   API action dispatcher into `dashboard-operator-api-forms`.
+- Dashboard operator command execution and startup-run resume handling moved out
+  of the API action dispatcher into dedicated action-runner modules.
 
 ## Remaining Backlog
 
