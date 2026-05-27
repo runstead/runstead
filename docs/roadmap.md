@@ -661,6 +661,8 @@ The current implementation wave closed the highest-confidence product gaps:
 - Startup structured customer-interview and competitor evidence command
   registration moved out of `commands/startup-evidence` into
   `commands/startup-evidence-structured`.
+- Startup generic evidence add command registration and write handler moved out
+  of `commands/startup-evidence` into `commands/startup-evidence-add`.
 
 ## Remaining Backlog
 
