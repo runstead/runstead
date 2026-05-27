@@ -6,7 +6,7 @@ import type {
   StartupGateEvidenceRow,
   StartupGatePreviousEvent,
   StartupGateTaskRow
-} from "./startup-gate-evaluation.js";
+} from "./startup-gate-types.js";
 
 interface StartupGatePreviousEventRow {
   event_id: string;

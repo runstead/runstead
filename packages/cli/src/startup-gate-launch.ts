@@ -8,7 +8,7 @@ import {
 import type {
   StartupGateEvidenceRow,
   StartupGateTaskRow
-} from "./startup-gate-evaluation.js";
+} from "./startup-gate-types.js";
 import { uiValidationBlockers } from "./startup-gate-ui.js";
 import { hasStructuredMetricEvidence } from "./startup-gate-validation.js";
 

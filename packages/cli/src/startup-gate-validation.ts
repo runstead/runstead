@@ -12,7 +12,7 @@ import {
   type StartupHypothesisKind,
   type StartupHypothesisStatus
 } from "./startup-evidence-types.js";
-import type { StartupGateEvidenceRow } from "./startup-gate-evaluation.js";
+import type { StartupGateEvidenceRow } from "./startup-gate-types.js";
 
 export function validationBlockers(
   evidence: StartupGateEvidenceRow[],

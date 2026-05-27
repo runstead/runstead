@@ -10,8 +10,7 @@ import {
   inferGateFindingSeverity,
   remediationTaskForBlocker,
   stableGateFindingId,
-  startupGateRuleForBlocker,
-  type StartupGateFindingSeverity
+  startupGateRuleForBlocker
 } from "./startup-gate-rules.js";
 import { type StartupGateStage } from "./startup-evidence-types.js";
 import { hasPassingCommandOutput, launchBlockers } from "./startup-gate-launch.js";
@@ -20,69 +19,21 @@ import {
   hasStructuredMetricEvidence,
   validationBlockers
 } from "./startup-gate-validation.js";
+import type {
+  StartupGateDiff,
+  StartupGateEvaluationContext,
+  StartupGateEvaluationInput,
+  StartupGateEvaluationResult,
+  StartupGateEvidenceRow,
+  StartupGateFinding,
+  StartupGatePreviousEvent,
+  StartupGateTaskRow,
+  StartupGateWaiver
+} from "./startup-gate-types.js";
 
-export interface StartupGateTaskRow {
-  id: string;
-  type: string;
-  status: string;
-}
-
-export interface StartupGateEvidenceRow {
-  id: string;
-  type: string;
-  subject_type: string;
-  subject_id: string;
-  uri: string;
-  summary: string | null;
-  created_at: string;
-}
-
-export interface StartupGatePreviousEvent {
-  eventId: string;
-  blockers: string[];
-}
-
-export interface StartupGateFinding {
-  id: string;
-  severity: StartupGateFindingSeverity;
-  message: string;
-  explanation: string;
-  remediationTask: string;
-  waived: boolean;
-  waiverEvidenceId?: string;
-}
-
-export interface StartupGateWaiver {
-  evidenceId: string;
-  blocker: string;
-  owner: string;
-  reason: string;
-  expiresAt: string;
-}
-
-export interface StartupGateDiff {
-  previousEventId?: string;
-  addedBlockers: string[];
-  resolvedBlockers: string[];
-}
-
-export interface StartupGateEvaluationResult {
-  passed: boolean;
-  blockers: string[];
-  warnings: string[];
-  findings: StartupGateFinding[];
-  waivedBlockers: StartupGateWaiver[];
-  diff: StartupGateDiff;
-}
-
-export function evaluateStartupGate(input: {
-  stage: StartupGateStage;
-  tasks: StartupGateTaskRow[];
-  evidence: StartupGateEvidenceRow[];
-  artifacts: Map<string, StartupGateEvidenceArtifact>;
-  checkedAt: string;
-  previousEvent?: StartupGatePreviousEvent;
-}): StartupGateEvaluationResult {
+export function evaluateStartupGate(
+  input: StartupGateEvaluationInput
+): StartupGateEvaluationResult {
   const rawBlockers = gateBlockers(input);
   const waivedBlockers = activeStartupGateWaivers(input);
   const findings = startupGateFindings(input.stage, rawBlockers, waivedBlockers);
@@ -107,13 +58,7 @@ export function evaluateStartupGate(input: {
   };
 }
 
-function gateBlockers(input: {
-  stage: StartupGateStage;
-  tasks: StartupGateTaskRow[];
-  evidence: StartupGateEvidenceRow[];
-  artifacts: Map<string, StartupGateEvidenceArtifact>;
-  checkedAt: string;
-}): string[] {
+function gateBlockers(input: StartupGateEvaluationContext): string[] {
   if (input.stage === "mvp") {
     return validationBlockers(input.evidence, input.artifacts);
   }
@@ -129,13 +74,7 @@ function gateBlockers(input: {
   return launchBlockers(input);
 }
 
-function gateWarnings(input: {
-  stage: StartupGateStage;
-  tasks: StartupGateTaskRow[];
-  evidence: StartupGateEvidenceRow[];
-  artifacts: Map<string, StartupGateEvidenceArtifact>;
-  checkedAt: string;
-}): string[] {
+function gateWarnings(input: StartupGateEvaluationContext): string[] {
   if (input.stage === "mvp") {
     return [
       ...(hasEvidenceType(input.evidence, "startup_competitor")
@@ -171,12 +110,9 @@ function gateWarnings(input: {
   ];
 }
 
-function activeStartupGateWaivers(input: {
-  stage: StartupGateStage;
-  evidence: StartupGateEvidenceRow[];
-  artifacts: Map<string, StartupGateEvidenceArtifact>;
-  checkedAt: string;
-}): StartupGateWaiver[] {
+function activeStartupGateWaivers(
+  input: StartupGateEvaluationContext
+): StartupGateWaiver[] {
   return input.evidence
     .filter((item) => item.type === "startup_decision")
     .flatMap((item) => {

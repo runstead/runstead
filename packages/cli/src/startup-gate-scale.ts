@@ -5,7 +5,7 @@ import {
   parsedArtifactContent,
   type StartupGateEvidenceArtifact
 } from "./startup-gate-artifacts.js";
-import type { StartupGateEvidenceRow } from "./startup-gate-evaluation.js";
+import type { StartupGateEvidenceRow } from "./startup-gate-types.js";
 
 export function scaleBlockers(
   evidence: StartupGateEvidenceRow[],

@@ -5,18 +5,18 @@ import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sql
 
 import { requireRunsteadStateDb } from "./runstead-root.js";
 import { readStartupGateEvidenceArtifacts } from "./startup-gate-artifact-store.js";
-import {
-  evaluateStartupGate,
-  type StartupGateDiff,
-  type StartupGateFinding,
-  type StartupGateWaiver
-} from "./startup-gate-evaluation.js";
+import { evaluateStartupGate } from "./startup-gate-evaluation.js";
 import {
   readPreviousStartupGateEvent,
   readStartupGateEvidence,
   readStartupGateTasks
 } from "./startup-gate-state.js";
 import type { StartupGateStage } from "./startup-evidence-types.js";
+import type {
+  StartupGateDiff,
+  StartupGateFinding,
+  StartupGateWaiver
+} from "./startup-gate-types.js";
 
 const STARTUP_DOMAIN = "ai-native-startup";
 

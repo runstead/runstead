@@ -35,7 +35,7 @@ export type {
   StartupGateDiff,
   StartupGateFinding,
   StartupGateWaiver
-} from "./startup-gate-evaluation.js";
+} from "./startup-gate-types.js";
 export { formatStartupGateCheckResult } from "./startup-gate-format.js";
 export { checkStartupGate } from "./startup-gate-check.js";
 export type {
