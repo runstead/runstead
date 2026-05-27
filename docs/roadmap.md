@@ -686,6 +686,8 @@ The current implementation wave closed the highest-confidence product gaps:
   `commands/memory-fact`.
 - Memory fact add, list, and search command handlers moved out of
   `commands/memory-fact` into `commands/memory-fact-actions`.
+- Memory fact list and search read handlers moved out of
+  `commands/memory-fact-actions` into `commands/memory-fact-read-actions`.
 - Agent fix shared execution moved out of `commands/agent-fix` into
   `commands/agent-fix-runner`.
 - Startup source connector contract listing moved out of
