@@ -871,6 +871,8 @@ The current implementation wave closed the highest-confidence product gaps:
   of the runner into `commands/agent-run-task-options`.
 - Dashboard CSS rendering moved out of the generic render-asset module into
   `dashboard-render-styles`.
+- Dashboard operator browser script moved out of the generic render-asset module
+  into `dashboard-render-operator-script`.
 
 ## Remaining Backlog
 
