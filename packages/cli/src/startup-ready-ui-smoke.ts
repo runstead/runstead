@@ -21,43 +21,24 @@ import {
   summarizeStartupUiValidationFailure,
   startupUiValidationRepairHint
 } from "./startup-ui-validation.js";
-import type { StartupUiValidationExecutionEvidence } from "./startup-ui-validation-types.js";
+import type {
+  StartupReadyUiSmokeCheckResult,
+  StartupReadyUiSmokeRunResult
+} from "./startup-ready-ui-smoke-types.js";
 
 export type {
   StartupReadyUiSmokeCheckConfig,
   StartupReadyUiSmokeConfig,
   StartupReadyUiSmokeServerConfig
 } from "./startup-ready-ui-smoke-config.js";
+export type {
+  StartupReadyUiSmokeCheckResult,
+  StartupReadyUiSmokeRunResult
+} from "./startup-ready-ui-smoke-types.js";
 export { inferStartupReadyUiSmokeFlowActions } from "./startup-ready-ui-smoke-flow.js";
 export { inferStartupReadyUiSmokeExpectText } from "./startup-ready-ui-smoke-expect-text.js";
 
 const DEFAULT_UI_SMOKE_TIMEOUT_MS = 20_000;
-
-export interface StartupReadyUiSmokeRunResult {
-  status: "passed" | "blocked";
-  configPath: string;
-  configStatus: "generated" | "loaded" | "blocked";
-  configWarnings: string[];
-  configRepairHints: string[];
-  checks: StartupReadyUiSmokeCheckResult[];
-  evidenceIds: string[];
-  artifacts: string[];
-  blockers: string[];
-}
-
-export interface StartupReadyUiSmokeCheckResult {
-  name: string;
-  status: "passed" | "failed";
-  evidenceId?: string;
-  artifact?: string;
-  failureCategory?: string;
-  failureSummary?: string;
-  repairHint?: string;
-  failedAction?: NonNullable<
-    StartupUiValidationExecutionEvidence["flowActions"]
-  >[number];
-  blockers: string[];
-}
 
 export async function executeStartupReadyUiSmoke(input: {
   cwd?: string;
