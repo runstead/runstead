@@ -918,6 +918,9 @@ The current implementation wave closed the highest-confidence product gaps:
 - Dashboard startup gate summary, blocker board, and stale-evidence table
   rendering moved out of the startup section aggregate into
   `dashboard-render-startup-gates`.
+- Dashboard operator action collection for daemon approvals, startup next
+  actions, run commands, and guided-flow commands moved out of the operator
+  console aggregate into `dashboard-operator-action-list`.
 
 ## Remaining Backlog
 
