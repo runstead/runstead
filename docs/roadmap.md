@@ -653,6 +653,8 @@ The current implementation wave closed the highest-confidence product gaps:
   `commands/github-run`.
 - GitHub pull-request command registration moved out of `commands/github` into
   `commands/github-pr`.
+- Approval list/show command registration moved out of `commands/approval` into
+  `commands/approval-read`.
 - Team control-plane runner heartbeat and list formatting moved out of
   `team-control-plane-runner` into `team-control-plane-runner-format`.
 - Team control-plane Postgres connection validation and client creation moved
