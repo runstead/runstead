@@ -19,6 +19,10 @@ import {
   findApprovedApprovalGrantForAction
 } from "./approvals.js";
 import {
+  approvalGrantAuditOutput,
+  approvalGrantLookupOptions
+} from "./governed-action-grants.js";
+import {
   fingerprintPolicyProfile,
   type ActionEnvelope,
   type PolicyProfile
@@ -124,8 +128,7 @@ export async function runGovernedToolAction<T>(
       ? findApprovedApprovalGrantForAction({
           database: options.database,
           actionId: preflight.action.actionId,
-          ...approvalGrantSignatureOption(preflight.action),
-          ...approvalGrantScopeOption(preflight.action),
+          ...approvalGrantLookupOptions(preflight.action),
           ...(options.now === undefined ? {} : { now: options.now })
         })
       : undefined;
@@ -162,22 +165,7 @@ export async function runGovernedToolAction<T>(
     );
   }
 
-  const approvalGrantOutput =
-    approvedGrant === undefined
-      ? {}
-      : {
-          approvalId: approvedGrant.approval.id,
-          approvalGrant: "used",
-          approvalGrantMatch: approvedGrant.match,
-          approvalGrantReuse: approvedGrant.reuse,
-          approvalGrantActionId: approvedGrant.approvedActionId,
-          ...(approvedGrant.canonicalSignature === undefined
-            ? {}
-            : { approvalGrantCanonicalSignature: approvedGrant.canonicalSignature }),
-          ...(approvedGrant.approvalGrantScope === undefined
-            ? {}
-            : { approvalGrantScope: approvedGrant.approvalGrantScope })
-        };
+  const approvalGrantOutput = approvalGrantAuditOutput(approvedGrant);
 
   const initialEntries: AppendEventAndProjectInput[] = [
     startedToolCall.entry,
@@ -230,24 +218,4 @@ export async function runGovernedToolAction<T>(
 
     throw error;
   }
-}
-
-function approvalGrantSignatureOption(
-  action: ActionEnvelope
-): { canonicalSignature: string } | object {
-  const signature = action.context?.canonicalSignature;
-
-  return typeof signature === "string" && signature.length > 0
-    ? { canonicalSignature: signature }
-    : {};
-}
-
-function approvalGrantScopeOption(
-  action: ActionEnvelope
-): { approvalGrantScope: string } | object {
-  const scope = action.context?.approvalGrant?.scope;
-
-  return typeof scope === "string" && scope.length > 0
-    ? { approvalGrantScope: scope }
-    : {};
 }
