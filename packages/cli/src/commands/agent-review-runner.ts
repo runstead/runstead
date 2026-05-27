@@ -1,6 +1,5 @@
 import { requireRbacPermission } from "../cli-rbac.js";
 
-import { agentBudgetTaskOptions } from "./agent-budget-options.js";
 import {
   assertSingleReviewScope,
   localAgentReviewGitDiffBase,
@@ -8,8 +7,8 @@ import {
   localAgentReviewScope
 } from "./agent-review-scope.js";
 import { localAgentReviewPrompt } from "./agent-review-prompt.js";
+import { agentPresetTaskOptions } from "./agent-preset-task-options.js";
 import { runCreatedLocalAgentTask } from "./agent-task-execution.js";
-import { agentTaskModelOptions } from "./agent-task-options.js";
 import {
   CODEX_DIRECT_AGENT_WORKERS,
   parseAgentWorkerOption
@@ -64,20 +63,11 @@ export async function runAgentReviewCommand(
   );
   const created = await createLocalAgentTask({
     ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-    prompt: resolvedPreset.prompt,
-    preset: resolvedPreset.preset.id,
+    ...agentPresetTaskOptions(options, resolvedPreset),
     title: `Local agent review ${scope.title}`,
     worker,
-    ...agentTaskModelOptions(options, resolvedPreset.model),
-    mode: resolvedPreset.preset.mode,
-    checkpoint: resolvedPreset.preset.checkpoint,
     gitDiffStaged: options.staged === true,
-    ...(gitDiffBase === undefined ? {} : { gitDiffBase }),
-    ...agentBudgetTaskOptions(options, {
-      maxTurns: resolvedPreset.preset.maxTurns,
-      maxToolCalls: resolvedPreset.preset.maxToolCalls,
-      maxFailedToolCalls: resolvedPreset.preset.maxFailedToolCalls
-    })
+    ...(gitDiffBase === undefined ? {} : { gitDiffBase })
   });
   await runCreatedLocalAgentTask({
     ...(options.cwd === undefined ? {} : { cwd: options.cwd }),

@@ -1,9 +1,8 @@
 import { requireRbacPermission } from "../cli-rbac.js";
 
-import { agentBudgetTaskOptions } from "./agent-budget-options.js";
 import { localAgentInspectPresetId } from "./agent-inspect-depth.js";
+import { agentPresetTaskOptions } from "./agent-preset-task-options.js";
 import { runCreatedLocalAgentTask } from "./agent-task-execution.js";
-import { agentTaskModelOptions } from "./agent-task-options.js";
 import {
   CODEX_DIRECT_AGENT_WORKERS,
   parseAgentWorkerOption
@@ -52,18 +51,9 @@ export async function runAgentInspectCommand(
   );
   const created = await createLocalAgentTask({
     ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-    prompt: resolvedPreset.prompt,
-    preset: resolvedPreset.preset.id,
+    ...agentPresetTaskOptions(options, resolvedPreset),
     title: `Local agent ${resolvedPreset.preset.id}`,
-    worker,
-    ...agentTaskModelOptions(options, resolvedPreset.model),
-    mode: resolvedPreset.preset.mode,
-    checkpoint: resolvedPreset.preset.checkpoint,
-    ...agentBudgetTaskOptions(options, {
-      maxTurns: resolvedPreset.preset.maxTurns,
-      maxToolCalls: resolvedPreset.preset.maxToolCalls,
-      maxFailedToolCalls: resolvedPreset.preset.maxFailedToolCalls
-    })
+    worker
   });
   await runCreatedLocalAgentTask({
     ...(options.cwd === undefined ? {} : { cwd: options.cwd }),

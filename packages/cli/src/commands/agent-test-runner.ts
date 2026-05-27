@@ -1,9 +1,8 @@
 import { requireRbacPermission } from "../cli-rbac.js";
 
-import { agentBudgetTaskOptions } from "./agent-budget-options.js";
 import { resolveAgentPresetVerifierOptions } from "./agent-preset-verifiers.js";
+import { agentPresetTaskOptions } from "./agent-preset-task-options.js";
 import { runCreatedLocalAgentTask } from "./agent-task-execution.js";
-import { agentTaskModelOptions } from "./agent-task-options.js";
 import {
   CODEX_DIRECT_AGENT_WORKERS,
   parseAgentWorkerOption
@@ -52,19 +51,10 @@ export async function runAgentTestCommand(
   });
   const created = await createLocalAgentTask({
     ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-    prompt: resolvedPreset.prompt,
-    preset: resolvedPreset.preset.id,
+    ...agentPresetTaskOptions(options, resolvedPreset),
     title: "Local agent test triage",
     worker,
-    ...agentTaskModelOptions(options, resolvedPreset.model),
-    mode: resolvedPreset.preset.mode,
-    checkpoint: resolvedPreset.preset.checkpoint,
-    verifierCommands,
-    ...agentBudgetTaskOptions(options, {
-      maxTurns: resolvedPreset.preset.maxTurns,
-      maxToolCalls: resolvedPreset.preset.maxToolCalls,
-      maxFailedToolCalls: resolvedPreset.preset.maxFailedToolCalls
-    })
+    verifierCommands
   });
 
   await runCreatedLocalAgentTask({

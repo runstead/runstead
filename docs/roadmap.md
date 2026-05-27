@@ -865,6 +865,8 @@ The current implementation wave closed the highest-confidence product gaps:
   `commands/agent-review-prompt`.
 - Agent task verifier-first execution and run-report handling moved out of
   budget parsing into `commands/agent-task-execution`.
+- Resolved local-agent preset to task-option mapping moved out of individual
+  agent runners into `commands/agent-preset-task-options`.
 
 ## Remaining Backlog
 

@@ -1,9 +1,8 @@
 import { requireRbacPermission } from "../cli-rbac.js";
 
-import { agentBudgetTaskOptions } from "./agent-budget-options.js";
 import { resolveAgentPresetVerifierOptions } from "./agent-preset-verifiers.js";
+import { agentPresetTaskOptions } from "./agent-preset-task-options.js";
 import { runCreatedLocalAgentTask } from "./agent-task-execution.js";
-import { agentTaskModelOptions } from "./agent-task-options.js";
 import {
   CODEX_DIRECT_AGENT_WORKERS,
   parseAgentWorkerOption
@@ -62,21 +61,12 @@ export async function runAgentFixLikeCommand(input: {
   });
   const created = await createLocalAgentTask({
     ...(input.options.cwd === undefined ? {} : { cwd: input.options.cwd }),
-    prompt: resolvedPreset.prompt,
-    preset: resolvedPreset.preset.id,
+    ...agentPresetTaskOptions(input.options, resolvedPreset),
     title: input.title,
     worker,
-    ...agentTaskModelOptions(input.options, resolvedPreset.model),
-    mode: resolvedPreset.preset.mode,
-    checkpoint: resolvedPreset.preset.checkpoint,
     allowedPaths: input.options.allowed,
     deniedPaths: input.options.denied,
-    verifierCommands,
-    ...agentBudgetTaskOptions(input.options, {
-      maxTurns: resolvedPreset.preset.maxTurns,
-      maxToolCalls: resolvedPreset.preset.maxToolCalls,
-      maxFailedToolCalls: resolvedPreset.preset.maxFailedToolCalls
-    })
+    verifierCommands
   });
 
   await runCreatedLocalAgentTask({
