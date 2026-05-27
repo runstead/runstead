@@ -904,6 +904,8 @@ The current implementation wave closed the highest-confidence product gaps:
   timeline aggregate into `dashboard-startup-agent-patch`.
 - Dashboard protected operator API request lifecycle handling moved out of the
   top-level dashboard server/router into `dashboard-operator-api-server`.
+- Dashboard daemon HTML section rendering moved out of the dashboard page shell
+  into `dashboard-render-daemon`.
 
 ## Remaining Backlog
 
