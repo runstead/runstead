@@ -642,6 +642,8 @@ The current implementation wave closed the highest-confidence product gaps:
   into `startup-source-verification`.
 - Startup source provider collection execution moved out of the connector facade
   into `startup-source-collection`.
+- Memory command option/result contracts moved out of `memory` into
+  `memory-types`.
 
 ## Remaining Backlog
 
