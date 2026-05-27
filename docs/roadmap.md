@@ -661,6 +661,8 @@ The current implementation wave closed the highest-confidence product gaps:
   `commands/agent-run`.
 - Domain bundle command registration moved out of `commands/domain` into
   `commands/domain-bundle`.
+- Domain catalog command registration moved out of `commands/domain` into
+  `commands/domain-catalog`.
 - Team control-plane runner heartbeat and list formatting moved out of
   `team-control-plane-runner` into `team-control-plane-runner-format`.
 - Team control-plane Postgres connection validation and client creation moved
