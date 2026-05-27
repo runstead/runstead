@@ -11,12 +11,8 @@ import {
   findExistingCiRepairTaskForWorkflowRun,
   loadExistingCiRepairTaskResult
 } from "./ci-repair-existing-task.js";
-import { writeCiRepairWorkflowRunEvidence } from "./ci-repair-evidence.js";
+import { completeCiRepairWorkflowRunIntake } from "./ci-repair-intake-completion.js";
 import { fetchCiRepairWorkflowRunIntake } from "./ci-repair-intake-fetch.js";
-import {
-  buildCiRepairIntakeTask,
-  createCiRepairIntakeTaskUpdatedEvent
-} from "./ci-repair-intake-task-update.js";
 import { createQueuedCiRepairTask } from "./ci-repair-task-create.js";
 import { errorMessage, markCiRepairTaskTerminal } from "./ci-repair-task-state.js";
 import { listGoals } from "./goals.js";
@@ -141,47 +137,17 @@ export async function createCiRepairTaskFromWorkflowRunUnlocked(
       fetchedLog = evidenceLog;
       assertRepairableWorkflowRun(workflowRun);
 
-      const finalTask = buildCiRepairIntakeTask({
+      const completed = await completeCiRepairWorkflowRunIntake({
+        database,
+        runsteadRoot: resolvedState.root,
         task,
         workflowRun,
         failureClassification,
         ...(options.verifierCommands === undefined
           ? {}
           : { verifierCommands: options.verifierCommands }),
-        updatedAt: createdAt
-      });
-      const {
-        evidence,
-        evidencePath,
-        event: evidenceEvent
-      } = await writeCiRepairWorkflowRunEvidence({
-        runsteadRoot: resolvedState.root,
-        task: finalTask,
-        workflowRun,
-        failureClassification,
         log: evidenceLog,
         createdAt
-      });
-
-      appendEventAndProject(database, {
-        event: evidenceEvent,
-        projection: {
-          type: "evidence",
-          value: evidence
-        }
-      });
-      appendEventAndProject(database, {
-        event: createCiRepairIntakeTaskUpdatedEvent({
-          task: finalTask,
-          workflowRun,
-          failureClassification,
-          evidenceId: evidence.id,
-          createdAt
-        }),
-        projection: {
-          type: "task",
-          value: finalTask
-        }
       });
       finishWorkerRun({
         database,
@@ -189,7 +155,7 @@ export async function createCiRepairTaskFromWorkflowRunUnlocked(
         status: "completed",
         output: {
           runId: workflowRun.runId,
-          evidenceId: evidence.id
+          evidenceId: completed.evidence.id
         },
         ...(options.now === undefined ? {} : { now: options.now })
       });
@@ -198,10 +164,10 @@ export async function createCiRepairTaskFromWorkflowRunUnlocked(
         status: "created",
         cwd,
         stateDb: resolvedState.stateDb,
-        task: finalTask,
+        task: completed.task,
         event: taskCreatedEvent,
-        evidence,
-        evidencePath,
+        evidence: completed.evidence,
+        evidencePath: completed.evidencePath,
         workflowRun,
         log: evidenceLog,
         created: true
