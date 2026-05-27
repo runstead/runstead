@@ -699,6 +699,9 @@ The current implementation wave closed the highest-confidence product gaps:
   `codex-direct/worker` into `codex-direct/pending-patch-resume`.
 - Startup readiness guided-flow blocker classification and formatting moved out
   of `startup-ready/operator-actions` into `startup-ready/operator-guided-flow`.
+- Startup ready command option translation, plan/run execution, and progress
+  output moved out of `commands/startup-ready` into
+  `commands/startup-ready-action`.
 - Codex Direct tool execution dispatch moved out of `codex-direct/tool-router`
   into `codex-direct/tool-executor`.
 - Codex Direct model heartbeat, retry, timeout, and transient-error loop moved
