@@ -1,5 +1,5 @@
 import type { CodexDirectPatchApprovalMetadata } from "./patch-approval-metadata.js";
-import { optionalParsedResumeContext } from "./patch-payload-parsers.js";
+import { optionalParsedResumeContext } from "./patch-resume-context-parser.js";
 import { replacementArray, stringArray } from "./patch-payload-value-parsers.js";
 import type { CodexDirectPendingPatchPayload } from "./patch-payload-types.js";
 import { isRecord } from "./tool-json.js";
