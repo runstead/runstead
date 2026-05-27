@@ -680,6 +680,8 @@ The current implementation wave closed the highest-confidence product gaps:
   resolution moved out of `github-app` into `github-app-config`.
 - Startup scale institutional memory capture and retrieval moved out of
   `startup-scale-workflow` into `startup-scale-memory`.
+- Startup scale integration-depth map generation moved out of
+  `startup-scale-workflow` into `startup-scale-integration`.
 
 ## Remaining Backlog
 
