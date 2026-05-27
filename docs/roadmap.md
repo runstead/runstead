@@ -895,6 +895,8 @@ The current implementation wave closed the highest-confidence product gaps:
   out of the generic HTTP helper module into `dashboard-operator-api-auth`.
 - Dashboard HTTP listen, bound-port, and display-host helpers moved out of the
   operator API JSON helper module into `dashboard-http-server`.
+- Dashboard JSON request parsing and response writing moved out of the operator
+  API error helper into `dashboard-http-json`.
 
 ## Remaining Backlog
 

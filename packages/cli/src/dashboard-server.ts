@@ -8,14 +8,11 @@ import {
   recordDashboardOperatorApiEvent
 } from "./dashboard-operator-api-actions.js";
 import {
-  dashboardOperatorApiError,
-  readJsonRequestBody,
-  respondJson
-} from "./dashboard-operator-api-http.js";
-import {
   dashboardOperatorApiAuthError,
   localBindHost
 } from "./dashboard-operator-api-auth.js";
+import { dashboardOperatorApiError } from "./dashboard-operator-api-http.js";
+import { readJsonRequestBody, respondJson } from "./dashboard-http-json.js";
 import { serveDashboardStaticRequest } from "./dashboard-static-server.js";
 import type {
   BuildDashboardResult,
