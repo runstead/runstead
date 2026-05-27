@@ -9,7 +9,6 @@ import { generateOpsDiagnosticsBundle } from "./ops-diagnostics.js";
 import { requireRunsteadStateDb } from "./runstead-root.js";
 import { generateStartupCiSummary } from "./startup-ci-integration.js";
 import {
-  startupCompleteProductArtifactCriterion,
   startupCompleteProductBaseCriteria,
   startupCompleteProductBlockers
 } from "./startup-complete-check-criteria.js";
@@ -19,10 +18,8 @@ import {
   readStartupCompleteProductEvidenceRows
 } from "./startup-complete-check-data.js";
 import {
-  completeProductScore,
   completeProductStatus,
-  formatStartupCompleteProductCheck,
-  startupCompleteProductEvent
+  formatStartupCompleteProductCheck
 } from "./startup-complete-check-output.js";
 import {
   startupCompleteProductEvidenceContent,
@@ -32,6 +29,7 @@ import {
   appendStartupCompleteProductCheckEvent,
   writeStartupCompleteProductCheckArtifacts
 } from "./startup-complete-check-persistence.js";
+import { buildStartupCompleteProductCheckResult } from "./startup-complete-check-result.js";
 import {
   startupCompleteProductEvidenceSourceRefs,
   startupCompleteProductExistingArtifactPaths,
@@ -162,41 +160,23 @@ export async function generateStartupCompleteProductCheck(
     evidenceId: evidence.evidence.id,
     eventId
   });
-  const criteria = [...baseCriteria, startupCompleteProductArtifactCriterion(surfaces)];
-  const finalStatus = completeProductStatus(criteria);
-  const score = completeProductScore(criteria);
-  const event = startupCompleteProductEvent({
-    eventId,
+  const result = buildStartupCompleteProductCheckResult({
+    root: state.root,
+    stateDb: state.stateDb,
     domain,
     generatedAt,
-    status: finalStatus,
-    score,
     markdownPath,
     jsonPath,
+    eventId,
     evidenceId: evidence.evidence.id,
-    criteria,
+    baseCriteria,
     blockers,
+    surfaces,
     launchReport,
     ci,
     remediation,
     diagnostics
   });
-  const result: StartupCompleteProductCheckResult = {
-    root: state.root,
-    stateDb: state.stateDb,
-    domain,
-    generatedAt,
-    status: finalStatus,
-    score,
-    markdownPath,
-    jsonPath,
-    markdown: "",
-    event,
-    evidenceId: evidence.evidence.id,
-    criteria,
-    blockers,
-    surfaces
-  };
   const markdown = formatStartupCompleteProductCheck(result);
 
   await writeStartupCompleteProductCheckArtifacts({
