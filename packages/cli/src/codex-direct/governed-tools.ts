@@ -37,11 +37,11 @@ export {
 export {
   runGovernedFileInfo,
   runGovernedListFiles,
-  runGovernedPackageScripts,
   runGovernedReadManyFiles,
   runGovernedSearchText,
   runGovernedTree
 } from "./workspace-read-tools.js";
+export { runGovernedPackageScripts } from "./workspace-metadata-tools.js";
 
 export async function runGovernedWorkspaceFacts(
   options: CodexDirectWorkerOptions & {
