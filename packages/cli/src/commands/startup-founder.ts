@@ -1,14 +1,15 @@
 import type { Command } from "commander";
 
+import { collectValues } from "../startup-command-parsers.js";
 import {
-  collectValues,
-  parseLocalAgentWorker,
-  parsePositiveInteger
-} from "../startup-command-parsers.js";
-import {
-  formatWorkerProcessProgress,
-  type WorkerProcessProgress
-} from "../wrapped-worker.js";
+  runStartupFounderBuildMvpCommand,
+  runStartupFounderLaunchCheckCommand,
+  runStartupFounderOnboardCommand,
+  runStartupFounderScaleCheckCommand,
+  type StartupFounderBuildMvpCommandOptions,
+  type StartupFounderCheckCommandOptions,
+  type StartupFounderOnboardCommandOptions
+} from "./startup-founder-actions.js";
 
 export function registerStartupFounderCommands(startup: Command): void {
   registerOnboardCommand(startup);
@@ -29,24 +30,8 @@ function registerOnboardCommand(startup: Command): void {
     )
     .option("--force", "Overwrite generated context and measurement artifacts")
     .option("--write-ci", "Generate a GitHub Actions verifier workflow")
-    .action(
-      async (options: {
-        cwd?: string;
-        profile: "default" | "trusted-local";
-        force?: boolean;
-        writeCi?: boolean;
-      }) => {
-        const { formatStartupOnboard, startupOnboard } =
-          await import("../startup-founder-flow.js");
-        const result = await startupOnboard({
-          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-          profile: options.profile,
-          force: options.force === true,
-          writeCi: options.writeCi === true
-        });
-
-        console.log(formatStartupOnboard(result));
-      }
+    .action(async (options: StartupFounderOnboardCommandOptions) =>
+      runStartupFounderOnboardCommand(options)
     );
 }
 
@@ -75,48 +60,8 @@ function registerBuildMvpCommand(startup: Command): void {
     )
     .option("--max-attempts <count>", "Maximum bounded MVP repair attempts", "2")
     .option("--max-turns <count>", "Maximum codex_direct turns per MVP attempt", "24")
-    .action(
-      async (options: {
-        cwd?: string;
-        worker: string;
-        model?: string;
-        prompt?: string;
-        dependencyPolicy: string;
-        allowDependency: string[];
-        maxAttempts: string;
-        maxTurns: string;
-      }) => {
-        const {
-          formatStartupDependencyApprovalBoundary,
-          formatStartupBuildMvp,
-          formatStartupWorkerGovernanceNotice,
-          resolveStartupDependencyApprovalBoundary,
-          startupBuildMvp
-        } = await import("../startup-founder-flow.js");
-        const worker = parseLocalAgentWorker(options.worker);
-        const dependencyApproval = resolveStartupDependencyApprovalBoundary({
-          policy: options.dependencyPolicy,
-          allowedDependencies: options.allowDependency
-        });
-
-        console.log(formatStartupWorkerGovernanceNotice(worker));
-        console.log(
-          `Dependency policy: ${formatStartupDependencyApprovalBoundary(dependencyApproval)}`
-        );
-        const result = await startupBuildMvp({
-          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-          worker,
-          ...(options.model === undefined ? {} : { model: options.model }),
-          ...(options.prompt === undefined ? {} : { prompt: options.prompt }),
-          dependencyPolicy: dependencyApproval.policy,
-          allowedDependencies: dependencyApproval.allowedDependencies,
-          maxAttempts: parsePositiveInteger(options.maxAttempts, "--max-attempts"),
-          maxTurns: parsePositiveInteger(options.maxTurns, "--max-turns"),
-          onWorkerProgress: logWrappedWorkerProgress
-        });
-
-        console.log(formatStartupBuildMvp(result));
-      }
+    .action(async (options: StartupFounderBuildMvpCommandOptions) =>
+      runStartupFounderBuildMvpCommand(options)
     );
 }
 
@@ -125,15 +70,9 @@ function registerLaunchCheckCommand(startup: Command): void {
     .command("launch-check")
     .description("Run the short founder launch readiness check path.")
     .option("--cwd <path>", "Workspace directory")
-    .action(async (options: { cwd?: string }) => {
-      const { formatStartupLaunchCheck, startupLaunchCheck } =
-        await import("../startup-founder-flow.js");
-      const result = await startupLaunchCheck({
-        ...(options.cwd === undefined ? {} : { cwd: options.cwd })
-      });
-
-      console.log(formatStartupLaunchCheck(result));
-    });
+    .action((options: StartupFounderCheckCommandOptions) =>
+      runStartupFounderLaunchCheckCommand(options)
+    );
 }
 
 function registerScaleCheckCommand(startup: Command): void {
@@ -141,17 +80,7 @@ function registerScaleCheckCommand(startup: Command): void {
     .command("scale-check")
     .description("Run the short founder scale readiness check path.")
     .option("--cwd <path>", "Workspace directory")
-    .action(async (options: { cwd?: string }) => {
-      const { formatStartupScaleCheck, startupScaleCheck } =
-        await import("../startup-founder-flow.js");
-      const result = await startupScaleCheck({
-        ...(options.cwd === undefined ? {} : { cwd: options.cwd })
-      });
-
-      console.log(formatStartupScaleCheck(result));
-    });
-}
-
-function logWrappedWorkerProgress(progress: WorkerProcessProgress): void {
-  console.error(formatWorkerProcessProgress(progress));
+    .action((options: StartupFounderCheckCommandOptions) =>
+      runStartupFounderScaleCheckCommand(options)
+    );
 }

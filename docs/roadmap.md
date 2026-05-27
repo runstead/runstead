@@ -708,6 +708,9 @@ The current implementation wave closed the highest-confidence product gaps:
   out of `codex-direct/model-request` into `codex-direct/model-request-heartbeat`.
 - Startup agent context evidence summary and context-file formatting moved out
   of `startup-automation-format` into `startup-context-format`.
+- Startup founder onboard, build-mvp, launch-check, and scale-check command
+  handlers moved out of `commands/startup-founder` into
+  `commands/startup-founder-actions`.
 - Startup ready local MVP and launch baseline evidence inputs moved out of
   `startup-ready/local-evidence-inputs` into focused local evidence modules.
 - Startup evidence record option/result contracts and convenience writers moved
