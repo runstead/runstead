@@ -1,7 +1,7 @@
 import { resolve } from "node:path";
 
 import type { Task } from "@runstead/core";
-import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sqlite";
+import { openRunsteadDatabase } from "@runstead/state-sqlite";
 import { commandVerifierResultsPassed } from "@runstead/verifiers";
 
 import { withRunsteadManagerLock } from "./manager-lock.js";
@@ -15,9 +15,10 @@ import {
   verifierCommandsFromTask
 } from "./verifier-runner-task-input.js";
 import {
-  finalizeVerifierTask,
-  verifierTaskEvent
-} from "./verifier-runner-task-state.js";
+  createVerifierExecutionAttemptStarter,
+  projectVerifierTaskStarted
+} from "./verifier-runner-task-lifecycle.js";
+import { finalizeVerifierTask } from "./verifier-runner-task-state.js";
 import { verifierOutput } from "./verifier-runner-output.js";
 import type {
   RunTaskVerifierCommandResult,
@@ -83,53 +84,20 @@ export async function runTaskVerifiersUnlocked(
   const database = openRunsteadDatabase(stateDb);
 
   try {
-    if (projectTaskState) {
-      appendEventAndProject(database, {
-        event: verifierTaskEvent(
-          "task.started",
-          runningTask,
-          { attempt: runningTask.attempt },
-          createdAt
-        ),
-        projection: {
-          type: "task",
-          value: runningTask
-        }
-      });
-    }
+    projectVerifierTaskStarted({
+      database,
+      task: runningTask,
+      createdAt,
+      projectTaskState
+    });
     let currentTask = runningTask;
-    let executionAttemptStarted = false;
-    const startExecutionAttempt = (): Task => {
-      if (executionAttemptStarted) {
-        return currentTask;
-      }
-
-      executionAttemptStarted = true;
-      currentTask = {
-        ...currentTask,
-        attempt: currentTask.attempt + 1,
-        updatedAt: createdAt
-      };
-      if (projectTaskState) {
-        appendEventAndProject(database, {
-          event: verifierTaskEvent(
-            "task.execution_started",
-            currentTask,
-            {
-              previousAttempt: task.attempt,
-              attempt: currentTask.attempt
-            },
-            createdAt
-          ),
-          projection: {
-            type: "task",
-            value: currentTask
-          }
-        });
-      }
-
-      return currentTask;
-    };
+    const startExecutionAttempt = createVerifierExecutionAttemptStarter({
+      database,
+      task: runningTask,
+      previousAttempt: task.attempt,
+      createdAt,
+      projectTaskState
+    });
     const workerRun = startWorkerRun({
       database,
       task: runningTask,
@@ -191,27 +159,14 @@ export async function runTaskVerifiersUnlocked(
 
     const passed = commandVerifierResultsPassed(commandResults);
     const output = verifierOutput(commandResults, passed);
-    const finalTask: Task = {
-      ...currentTask,
+    const finalTask = finalizeVerifierTask({
+      runningTask: currentTask,
       status: passed ? "completed" : "failed",
       output,
-      updatedAt: createdAt
-    };
-
-    if (projectTaskState) {
-      appendEventAndProject(database, {
-        event: verifierTaskEvent(
-          passed ? "task.completed" : "task.failed",
-          finalTask,
-          finalTask.output ?? {},
-          createdAt
-        ),
-        projection: {
-          type: "task",
-          value: finalTask
-        }
-      });
-    }
+      updatedAt: createdAt,
+      database,
+      projectTaskState
+    });
     finishWorkerRun({
       database,
       workerRun,
