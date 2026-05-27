@@ -861,6 +861,8 @@ The current implementation wave closed the highest-confidence product gaps:
   `commands/agent-undo-action`.
 - Agent report command handling moved from the former lifecycle actions module
   into `commands/agent-report-action`.
+- Agent review scope prompt construction moved out of the review runner into
+  `commands/agent-review-prompt`.
 
 ## Remaining Backlog
 

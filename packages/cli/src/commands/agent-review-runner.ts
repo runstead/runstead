@@ -10,6 +10,7 @@ import {
   localAgentReviewPresetId,
   localAgentReviewScope
 } from "./agent-review-scope.js";
+import { localAgentReviewPrompt } from "./agent-review-prompt.js";
 import { agentTaskModelOptions } from "./agent-task-options.js";
 import {
   CODEX_DIRECT_AGENT_WORKERS,
@@ -58,13 +59,7 @@ export async function runAgentReviewCommand(
   const gitDiffBase = localAgentReviewGitDiffBase(scope);
   const resolvedPreset = await resolveConfiguredLocalAgentPreset(
     localAgentReviewPresetId(scope),
-    {
-      prompt: [
-        scope.prompt,
-        scope.gitDiffInstruction,
-        ...(focus.length === 0 ? [] : [focus])
-      ].join("\n")
-    },
+    { prompt: localAgentReviewPrompt({ scope, focus }) },
     {
       ...(options.cwd === undefined ? {} : { cwd: options.cwd })
     }
