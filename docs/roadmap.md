@@ -655,6 +655,9 @@ The current implementation wave closed the highest-confidence product gaps:
 - CI repair pull-request audit-summary querying and policy-line formatting moved
   out of `ci-repair-orchestrator-report` into
   `ci-repair-orchestrator-pr-audit`.
+- CI repair pull-request body construction and task-output context parsing moved
+  out of `ci-repair-orchestrator-report` into
+  `ci-repair-orchestrator-pr-body`.
 
 ## Remaining Backlog
 
