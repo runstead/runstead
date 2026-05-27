@@ -1,27 +1,18 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
-import { installDomainPack, upgradeDomainPack } from "./domain-pack-install.js";
-import { createGoal } from "./goals.js";
 import { collectRepoInspection } from "./inspection-evidence.js";
 import {
   formatRepoReadinessAudit,
   formatSecurityBaseline
 } from "./startup-automation-format.js";
 import { requireRunsteadStateDb } from "./runstead-root.js";
-import {
-  ensureRunsteadInitialized,
-  findActiveStartupGoal,
-  STARTUP_DOMAIN,
-  templateForStage
-} from "./startup-automation-init.js";
 import { writeStartupStructuredArtifact } from "./startup-artifacts.js";
 import { addStartupEvidence } from "./startup-evidence.js";
 import { collectLaunchSecurityRiskScan } from "./startup-security-scan.js";
 import {
   changedProtectedPaths,
   existingDependencyFiles,
-  exists,
   findTopLevelEnvFiles
 } from "./startup-workspace-hygiene.js";
 import {
@@ -34,79 +25,13 @@ import type {
   GenerateRepoReadinessAuditOptions,
   GenerateRepoReadinessAuditResult,
   GenerateSecurityBaselineOptions,
-  GenerateSecurityBaselineResult,
-  StartupInitOptions,
-  StartupInitResult
+  GenerateSecurityBaselineResult
 } from "./startup-automation-types.js";
 
 export type * from "./startup-automation-types.js";
+export { initStartup } from "./startup-automation-init.js";
 export { generateStartupContext } from "./startup-automation-context.js";
 export { generateMeasurementFramework } from "./startup-measurement-framework.js";
-
-export async function initStartup(
-  options: StartupInitOptions = {}
-): Promise<StartupInitResult> {
-  const cwd = resolve(options.cwd ?? process.cwd());
-  const stage = options.stage ?? "mvp";
-  const initialized = await ensureRunsteadInitialized({
-    cwd,
-    profile: options.profile ?? "default",
-    force: options.force === true
-  });
-  const domainPath = join(initialized.root, "domains", STARTUP_DOMAIN, "domain.yaml");
-  const hadDomain = await exists(domainPath);
-  let domainUpgraded = false;
-
-  if (!hadDomain) {
-    await installDomainPack({
-      cwd,
-      ref: STARTUP_DOMAIN,
-      ...(options.now === undefined ? {} : { now: options.now })
-    });
-  } else if (options.force === true) {
-    await upgradeDomainPack({
-      cwd,
-      ref: STARTUP_DOMAIN,
-      force: true,
-      ...(options.now === undefined ? {} : { now: options.now })
-    });
-    domainUpgraded = true;
-  }
-
-  const template = templateForStage(stage);
-  const existingGoal = findActiveStartupGoal(cwd, template);
-
-  if (existingGoal !== undefined && options.force !== true) {
-    return {
-      root: initialized.root,
-      stateDb: initialized.stateDb,
-      stage,
-      domainInstalled: !hadDomain,
-      domainUpgraded,
-      goalCreated: false,
-      goal: existingGoal,
-      generatedTasks: []
-    };
-  }
-
-  const created = await createGoal({
-    cwd,
-    domain: STARTUP_DOMAIN,
-    template,
-    ...(options.now === undefined ? {} : { now: options.now })
-  });
-
-  return {
-    root: initialized.root,
-    stateDb: initialized.stateDb,
-    stage,
-    domainInstalled: !hadDomain,
-    domainUpgraded,
-    goalCreated: true,
-    goal: created.goal,
-    generatedTasks: created.generatedTasks
-  };
-}
 
 export async function generateRepoReadinessAudit(
   options: GenerateRepoReadinessAuditOptions = {}
