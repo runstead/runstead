@@ -27,10 +27,14 @@ import {
   startupCompleteProductEvent,
   startupCompleteProductJson
 } from "./startup-complete-check-output.js";
+import {
+  startupCompleteProductEvidenceSourceRefs,
+  startupCompleteProductExistingArtifactPaths,
+  startupCompleteProductSurfaces
+} from "./startup-complete-check-surfaces.js";
 import type {
   GenerateStartupCompleteProductCheckOptions,
-  StartupCompleteProductCheckResult,
-  StartupCompleteProductSurfaces
+  StartupCompleteProductCheckResult
 } from "./startup-complete-check-types.js";
 import { addStartupEvidence, checkStartupGate } from "./startup-evidence.js";
 import { generateStartupRemediationPlan } from "./startup-remediation.js";
@@ -95,17 +99,14 @@ export async function generateStartupCompleteProductCheck(
   });
   const evidenceRows = readStartupCompleteProductEvidenceRows(state.stateDb);
   const eventCount = readStartupCompleteProductEventCount(state.stateDb);
-  const pathState = await existingStartupCompleteProductPathState([
-    launchReport.reportPath,
-    launchReport.jsonPath,
-    ci.markdownPath,
-    ci.jsonPath,
-    dashboard.htmlPath,
-    dashboard.dataPath,
-    diagnostics.markdownPath,
-    diagnostics.jsonPath,
-    ...(diagnostics.stateBackupPath === undefined ? [] : [diagnostics.stateBackupPath])
-  ]);
+  const pathState = await existingStartupCompleteProductPathState(
+    startupCompleteProductExistingArtifactPaths({
+      launchReport,
+      ci,
+      dashboard,
+      diagnostics
+    })
+  );
   const blockers = startupCompleteProductBlockers({
     gate,
     launchReport,
@@ -131,18 +132,14 @@ export async function generateStartupCompleteProductCheck(
     cwd,
     type: "complete_product_check",
     summary: `Startup complete product check: ${baseStatus}`,
-    sourceRefs: [
+    sourceRefs: startupCompleteProductEvidenceSourceRefs({
       markdownPath,
       jsonPath,
-      launchReport.reportPath,
-      launchReport.jsonPath,
-      ci.markdownPath,
-      ci.jsonPath,
-      dashboard.htmlPath,
-      dashboard.dataPath,
-      diagnostics.markdownPath,
-      diagnostics.jsonPath
-    ],
+      launchReport,
+      ci,
+      dashboard,
+      diagnostics
+    }),
     content: JSON.stringify(
       {
         domain,
@@ -157,20 +154,16 @@ export async function generateStartupCompleteProductCheck(
     ),
     now
   });
-  const surfaces: StartupCompleteProductSurfaces = {
-    launchReportMarkdown: launchReport.reportPath,
-    launchReportJson: launchReport.jsonPath,
-    ciMarkdown: ci.markdownPath,
-    ciJson: ci.jsonPath,
-    dashboardHtml: dashboard.htmlPath,
-    dashboardJson: dashboard.dataPath,
-    diagnosticsMarkdown: diagnostics.markdownPath,
-    diagnosticsJson: diagnostics.jsonPath,
-    completeCheckMarkdown: markdownPath,
-    completeCheckJson: jsonPath,
+  const surfaces = startupCompleteProductSurfaces({
+    launchReport,
+    ci,
+    dashboard,
+    diagnostics,
+    markdownPath,
+    jsonPath,
     evidenceId: evidence.evidence.id,
     eventId
-  };
+  });
   const criteria = [...baseCriteria, startupCompleteProductArtifactCriterion(surfaces)];
   const finalStatus = completeProductStatus(criteria);
   const score = completeProductScore(criteria);
