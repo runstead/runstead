@@ -760,6 +760,8 @@ The current implementation wave closed the highest-confidence product gaps:
   `commands/startup-evidence-structured-actions`.
 - Agent report/resume/undo command handlers moved out of
   `commands/agent-lifecycle` into `commands/agent-lifecycle-actions`.
+- Domain pack install/uninstall/upgrade command handlers moved out of
+  `commands/domain-registry` into `commands/domain-registry-actions`.
 - Startup generic evidence add command registration and write handler moved out
   of `commands/startup-evidence` into `commands/startup-evidence-add`.
 - Startup manual-change evidence command registration and write handler moved
