@@ -13,7 +13,7 @@ import {
 } from "./git-actions.js";
 import { governedToolOptions } from "./policy-actions.js";
 import { gitReadAction } from "./policy-actions.js";
-import { shellCommandOutput } from "./tool-arguments.js";
+import { shellCommandOutput } from "./tool-output.js";
 import type { CodexDirectWorkerOptions } from "./worker.js";
 
 export async function runGovernedDiffSummary(

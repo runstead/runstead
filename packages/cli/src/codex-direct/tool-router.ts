@@ -7,7 +7,7 @@ import {
 import type { CodexDirectPendingToolResumeContext } from "./patch-actions.js";
 import type { CodexDirectToolCall } from "./tool-types.js";
 import type { CodexDirectWorkerOptions } from "./worker-types.js";
-import { toolExecutionErrorOutput } from "./tool-arguments.js";
+import { toolExecutionErrorOutput } from "./tool-output.js";
 import { executeCodexDirectTool } from "./tool-executor.js";
 
 export {

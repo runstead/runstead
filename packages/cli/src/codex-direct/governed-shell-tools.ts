@@ -3,7 +3,7 @@ import type { WorkerRun } from "@runstead/core";
 import { runGovernedToolAction } from "../governed-action.js";
 import { runShellCommand, type ShellCommandResult } from "../shell-executor.js";
 import { governedToolOptions, shellAction } from "./policy-actions.js";
-import { shellCommandOutput } from "./tool-arguments.js";
+import { shellCommandOutput } from "./tool-output.js";
 import type { CodexDirectWorkerOptions } from "./worker.js";
 
 export async function runGovernedShellCommand(

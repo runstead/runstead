@@ -4,7 +4,7 @@ import type { WorkerRun } from "@runstead/core";
 import { runGovernedToolAction } from "../governed-action.js";
 import { storeCommandVerifierEvidence } from "../verifier-evidence.js";
 import { governedToolOptions, verifierRunAction } from "./policy-actions.js";
-import { previewText } from "./tool-arguments.js";
+import { previewText } from "./tool-output.js";
 import { resolveVerifierCommand } from "./verifier-command-resolution.js";
 import type { CodexDirectWorkerOptions } from "./worker.js";
 
