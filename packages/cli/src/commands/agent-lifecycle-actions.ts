@@ -1,5 +1,10 @@
 import { requireRbacPermission } from "../cli-rbac.js";
 
+import {
+  agentReportOutputFormat,
+  formatAgentReportOutput
+} from "./agent-report-output.js";
+
 export interface AgentReportCliOptions {
   cwd?: string;
   actor: string;
@@ -22,9 +27,7 @@ export async function runAgentReportCommand(
   taskId: string,
   options: AgentReportCliOptions
 ): Promise<void> {
-  if (options.json === true && options.markdown === true) {
-    throw new Error("agent report accepts only one of --json or --markdown");
-  }
+  const outputFormat = agentReportOutputFormat(options);
 
   await requireRbacPermission({
     ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
@@ -45,11 +48,11 @@ export async function runAgentReportCommand(
   });
 
   console.log(
-    options.json === true
-      ? formatLocalAgentTaskReportJson(report).trimEnd()
-      : options.markdown === true
-        ? formatLocalAgentTaskReportMarkdown(report)
-        : formatLocalAgentTaskReport(report)
+    formatAgentReportOutput(outputFormat, {
+      text: () => formatLocalAgentTaskReport(report),
+      json: () => formatLocalAgentTaskReportJson(report),
+      markdown: () => formatLocalAgentTaskReportMarkdown(report)
+    })
   );
 }
 

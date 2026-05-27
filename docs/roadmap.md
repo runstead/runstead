@@ -853,6 +853,8 @@ The current implementation wave closed the highest-confidence product gaps:
   runners into `commands/agent-task-options`.
 - Agent inspect depth-to-preset parsing moved out of the inspect action into
   `commands/agent-inspect-depth`.
+- Agent report output-format validation and rendering selection moved out of
+  lifecycle actions into `commands/agent-report-output`.
 
 ## Remaining Backlog
 
