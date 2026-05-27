@@ -364,6 +364,7 @@ runstead startup evidence manual-change \
   --evidence ev_after_fix \
   --gate launch
 runstead startup source list
+runstead startup source plan --target production
 runstead startup source record --cwd /path/to/mvp --connector vercel --target staging --source-uri https://vercel.com/acme/todo/deployments/dpl_123 --summary "Staging deployment smoke passed" --status pass
 runstead startup source collect --cwd /path/to/mvp --connector github_actions --target staging --source-uri https://api.github.com/repos/acme/todo/actions/runs/123
 runstead startup source collect --cwd /path/to/mvp --connector posthog --target production --source-uri https://app.posthog.com/api/projects/1/insights/activation
@@ -390,6 +391,11 @@ crashing the run. Failed or unknown collected evidence does not grant target
 readiness tiers such as `staging_deployment` or `real_user_analytics`.
 Token-like response fields and the credential used for the request are
 redacted before evidence is persisted.
+
+`startup source plan --target staging|production` prints the required external
+source refresh commands, credential blockers, adapter providers, and freshness
+windows. Use it before launch runs and in scheduled CI/operator jobs so source
+evidence is refreshed before its freshness window expires.
 
 | Connector        | Credential Env      | Expected Provider Shape                                                                              |
 | ---------------- | ------------------- | ---------------------------------------------------------------------------------------------------- |

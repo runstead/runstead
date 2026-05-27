@@ -7,6 +7,10 @@ import { describe, expect, it } from "vitest";
 import { startupOnboard } from "./startup-founder-flow.js";
 import { collectRecordedStartupReadinessEvidence } from "./startup-ready/evidence.js";
 import {
+  createStartupSourceRefreshPlan,
+  formatStartupSourceRefreshPlan
+} from "./startup-source-refresh-plan.js";
+import {
   collectStartupSourceEvidence,
   getStartupSourceProviderAdapter,
   listStartupSourceConnectorDefinitions,
@@ -610,6 +614,52 @@ describe("startup source connectors", () => {
           ]
         })
       ])
+    );
+  });
+
+  it("plans target source connector refresh commands with freshness windows", () => {
+    const plan = createStartupSourceRefreshPlan({
+      target: "production",
+      env: {
+        GITHUB_TOKEN: "ghs_fixture",
+        RENDER_API_KEY: "rnd_fixture",
+        SENTRY_AUTH_TOKEN: "sentry_fixture"
+      }
+    });
+
+    expect(plan.blockers).toEqual([
+      "Real-user analytics provider connector requires POSTHOG_API_KEY for production readiness"
+    ]);
+    const deployment = plan.requirements.find(
+      (requirement) => requirement.id === "deployment-provider"
+    );
+    const renderConnector = deployment?.connectors.find(
+      (connector) => connector.connector === "render"
+    );
+    const analytics = plan.requirements.find(
+      (requirement) => requirement.id === "analytics-provider"
+    );
+    const posthogConnector = analytics?.connectors[0];
+
+    expect(renderConnector).toEqual({
+      connector: "render",
+      displayName: "Render Deployment",
+      adapterProvider: "render",
+      requiredTokenEnv: "RENDER_API_KEY",
+      defaultFreshnessDays: 7,
+      collectCommand:
+        "runstead startup source collect --connector render --target production --source-uri <provider-api-url>"
+    });
+    expect(posthogConnector).toEqual(
+      expect.objectContaining({
+        connector: "posthog",
+        adapterProvider: "posthog",
+        requiredTokenEnv: "POSTHOG_API_KEY",
+        defaultFreshnessDays: 14
+      })
+    );
+    expect(formatStartupSourceRefreshPlan(plan)).toContain(
+      "posthog: freshness=14d adapter=posthog"
     );
   });
 
