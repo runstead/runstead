@@ -1,7 +1,7 @@
 import { createServer } from "node:http";
 
 import { buildDashboard } from "./dashboard-build.js";
-import { listen, serverPort, urlHost } from "./dashboard-operator-api-http.js";
+import { listen, serverPort, urlHost } from "./dashboard-http-server.js";
 import {
   dashboardOperatorApiConfig,
   serveDashboardRequest

@@ -893,6 +893,8 @@ The current implementation wave closed the highest-confidence product gaps:
   dashboard server/router into `dashboard-static-server`.
 - Dashboard operator API local-origin, bearer-token, and CSRF auth helpers moved
   out of the generic HTTP helper module into `dashboard-operator-api-auth`.
+- Dashboard HTTP listen, bound-port, and display-host helpers moved out of the
+  operator API JSON helper module into `dashboard-http-server`.
 
 ## Remaining Backlog
 
