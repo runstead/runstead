@@ -18,7 +18,7 @@ import {
 import type {
   RecordStartupSourceEvidenceOptions,
   RecordStartupSourceEvidenceResult
-} from "./startup-source-connectors.js";
+} from "./startup-source-evidence-types.js";
 
 export async function recordStartupSourceEvidence(
   options: RecordStartupSourceEvidenceOptions

@@ -636,6 +636,8 @@ The current implementation wave closed the highest-confidence product gaps:
   var is set.
 - Extension collector `outputSchema` is enforced as a runtime evidence
   contract instead of remaining manifest metadata.
+- Startup source evidence option/result contracts moved out of the connector
+  execution facade into `startup-source-evidence-types`.
 
 ## Remaining Backlog
 
