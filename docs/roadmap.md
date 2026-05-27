@@ -627,6 +627,9 @@ The current implementation wave closed the highest-confidence product gaps:
   moved out of `dashboard` into `dashboard-build`.
 - Dashboard local HTTP serving moved out of `dashboard` into
   `dashboard-serve`, leaving `dashboard` as a compatibility export surface.
+- CI repair orchestration run and manager-lock flow moved out of
+  `ci-repair-orchestrator` into `ci-repair-orchestrator-run`, leaving the
+  public module as a compatibility export surface.
 - Team control-plane runner heartbeat and list formatting moved out of
   `team-control-plane-runner` into `team-control-plane-runner-format`.
 - Team control-plane Postgres connection validation and client creation moved
