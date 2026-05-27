@@ -883,6 +883,8 @@ The current implementation wave closed the highest-confidence product gaps:
   of the API action dispatcher into dedicated action-runner modules.
 - Dashboard model-request timeline querying and payload formatting moved out of
   the audit timeline aggregate module into `dashboard-model-request-timeline`.
+- Dashboard worker-run and tool-call timeline querying moved out of the audit
+  timeline aggregate module into `dashboard-execution-timeline`.
 
 ## Remaining Backlog
 
