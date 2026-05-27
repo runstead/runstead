@@ -912,6 +912,9 @@ The current implementation wave closed the highest-confidence product gaps:
   `dashboard-render-summary`.
 - Dashboard startup readiness overview table rendering moved out of the startup
   section aggregate into `dashboard-render-startup-overview`.
+- Dashboard startup run timeline, operator-command, and guided-flow table
+  rendering moved out of the startup section aggregate into
+  `dashboard-render-startup-run-tables`.
 
 ## Remaining Backlog
 
