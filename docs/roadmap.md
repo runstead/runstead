@@ -763,8 +763,8 @@ The current implementation wave closed the highest-confidence product gaps:
 - Startup structured customer-interview and competitor evidence write handlers
   moved out of `commands/startup-evidence-structured` into
   `commands/startup-evidence-structured-actions`.
-- Agent report/resume/undo command handlers moved out of
-  `commands/agent-lifecycle` into `commands/agent-lifecycle-actions`.
+- Agent lifecycle command handlers moved out of `commands/agent-lifecycle` into
+  dedicated report, resume, and undo action modules.
 - Domain pack install/uninstall/upgrade command handlers moved out of
   `commands/domain-registry` into `commands/domain-registry-actions`.
 - Agent inspect execution moved out of `commands/agent-inspect` into
@@ -859,6 +859,8 @@ The current implementation wave closed the highest-confidence product gaps:
   `commands/agent-resume-action`.
 - Agent undo command handling moved out of lifecycle actions into
   `commands/agent-undo-action`.
+- Agent report command handling moved from the former lifecycle actions module
+  into `commands/agent-report-action`.
 
 ## Remaining Backlog
 
