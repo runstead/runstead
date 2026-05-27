@@ -18,10 +18,9 @@ import { requireRunsteadStateDbSync } from "./runstead-root.js";
 import {
   findPolicyDecision,
   readPendingApprovalForDecision,
-  rowToApproval,
-  taskForApproval,
-  type ApprovalRow
+  taskForApproval
 } from "./approval-rows.js";
+import { listApprovalRequests, readApprovalDetails } from "./approval-queries.js";
 import {
   createApprovalDecisionTransition,
   createApprovalRequestTransition
@@ -102,34 +101,11 @@ export function listApprovals(options: ListApprovalsOptions = {}): ListApprovals
   const database = openRunsteadDatabase(stateDb);
 
   try {
-    const rows =
-      options.status === undefined
-        ? (database
-            .prepare(
-              `
-              SELECT id, policy_decision_id, action_id, status, risk, reason,
-                     requested_by, expires_at, decided_at, decided_by,
-                     created_at, updated_at
-              FROM approvals
-              ORDER BY created_at DESC, id ASC
-            `
-            )
-            .all() as unknown as ApprovalRow[])
-        : (database
-            .prepare(
-              `
-              SELECT id, policy_decision_id, action_id, status, risk, reason,
-                     requested_by, expires_at, decided_at, decided_by,
-                     created_at, updated_at
-              FROM approvals
-              WHERE status = ?
-              ORDER BY created_at DESC, id ASC
-            `
-            )
-            .all(options.status) as unknown as ApprovalRow[]);
-
     return {
-      approvals: rows.map(rowToApproval),
+      approvals: listApprovalRequests({
+        database,
+        ...(options.status === undefined ? {} : { status: options.status })
+      }),
       stateDb
     };
   } finally {
@@ -142,30 +118,10 @@ export function showApproval(options: ShowApprovalOptions): ShowApprovalResult {
   const database = openRunsteadDatabase(stateDb);
 
   try {
-    const row = database
-      .prepare(
-        `
-        SELECT id, policy_decision_id, action_id, status, risk, reason,
-               requested_by, expires_at, decided_at, decided_by,
-               created_at, updated_at
-        FROM approvals
-        WHERE id = ?
-      `
-      )
-      .get(options.id) as ApprovalRow | undefined;
-
-    if (row === undefined) {
-      throw new Error(`Approval not found: ${options.id}`);
-    }
-
-    const approval = rowToApproval(row);
-    const policyDecision = findPolicyDecision(database, approval.policyDecisionId);
-    const task = taskForApproval(database, approval);
+    const details = readApprovalDetails({ database, id: options.id });
 
     return {
-      approval,
-      ...(policyDecision === undefined ? {} : { policyDecision }),
-      ...(task === undefined ? {} : { task }),
+      ...details,
       stateDb
     };
   } finally {
