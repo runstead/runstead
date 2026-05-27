@@ -3,13 +3,13 @@ import type { Command } from "commander";
 import { collectValues } from "../startup-command-parsers.js";
 import {
   collectStartupSourceCommand,
-  listStartupSourceConnectorContracts,
   recordStartupSourceCommand,
   verifyStartupSourceCommand,
   type StartupSourceCollectCommandOptions,
   type StartupSourceRecordCommandOptions,
   type StartupSourceVerifyCommandOptions
 } from "./startup-source-actions.js";
+import { listStartupSourceConnectorContracts } from "./startup-source-contracts.js";
 
 export function registerStartupSourceCommand(startup: Command): Command {
   const startupSource = startup
