@@ -881,6 +881,8 @@ The current implementation wave closed the highest-confidence product gaps:
   API action dispatcher into `dashboard-operator-api-forms`.
 - Dashboard operator command execution and startup-run resume handling moved out
   of the API action dispatcher into dedicated action-runner modules.
+- Dashboard model-request timeline querying and payload formatting moved out of
+  the audit timeline aggregate module into `dashboard-model-request-timeline`.
 
 ## Remaining Backlog
 
