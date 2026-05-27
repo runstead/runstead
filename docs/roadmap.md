@@ -682,6 +682,9 @@ The current implementation wave closed the highest-confidence product gaps:
   `startup-scale-workflow` into `startup-scale-memory`.
 - Startup scale integration-depth map generation moved out of
   `startup-scale-workflow` into `startup-scale-integration`.
+- Startup scale workflow registry and delegation-policy generation moved out of
+  `startup-scale-workflow` into `startup-scale-workflow-registry`, leaving
+  `startup-scale-workflow` as a compatibility export surface.
 
 ## Remaining Backlog
 
