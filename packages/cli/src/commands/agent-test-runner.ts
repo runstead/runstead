@@ -1,10 +1,10 @@
 import { requireRbacPermission } from "../cli-rbac.js";
-import { resolveVerifierCommandOptions } from "../local-agent-verifier-options.js";
 
 import {
   agentBudgetTaskOptions,
   runAndReportLocalAgentTask
 } from "./agent-budget-options.js";
+import { resolveAgentPresetVerifierOptions } from "./agent-preset-verifiers.js";
 import {
   CODEX_DIRECT_AGENT_WORKERS,
   parseAgentWorkerOption
@@ -27,15 +27,6 @@ export async function runAgentTestCommand(
   focusParts: string[],
   options: AgentTestCliOptions
 ): Promise<void> {
-  let verifierCommands = await resolveVerifierCommandOptions(
-    options.verifier,
-    "agent test",
-    {
-      ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-      required: false
-    }
-  );
-
   await requireRbacPermission({
     ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
     actor: options.actor,
@@ -51,39 +42,16 @@ export async function runAgentTestCommand(
 
   const { attachLocalAgentVerifierEvidence, createLocalAgentTask } =
     await import("../local-agent.js");
-  const { resolveConfiguredLocalAgentPreset } =
-    await import("../local-agent-presets.js");
   const focus = focusParts.join(" ").trim();
-  let resolvedPreset = await resolveConfiguredLocalAgentPreset(
-    "test:triage",
-    {
-      ...(focus.length === 0 ? {} : { prompt: focus }),
-      verifierNames: verifierCommands.map((command) => command.name)
-    },
-    {
-      ...(options.cwd === undefined ? {} : { cwd: options.cwd })
-    }
-  );
-
-  if (verifierCommands.length === 0 && resolvedPreset.verifierCommands !== undefined) {
-    verifierCommands = resolvedPreset.verifierCommands;
-    resolvedPreset = await resolveConfiguredLocalAgentPreset(
-      "test:triage",
-      {
-        ...(focus.length === 0 ? {} : { prompt: focus }),
-        verifierNames: verifierCommands.map((command) => command.name)
-      },
-      {
-        ...(options.cwd === undefined ? {} : { cwd: options.cwd })
-      }
-    );
-  }
-
-  if (verifierCommands.length === 0) {
-    throw new Error(
+  const { resolvedPreset, verifierCommands } = await resolveAgentPresetVerifierOptions({
+    ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+    presetId: "test:triage",
+    prompt: focus,
+    verifier: options.verifier,
+    commandName: "agent test",
+    missingVerifierMessage:
       "agent test requires at least one --verifier name=command, --verifier auto, or preset verifier"
-    );
-  }
+  });
   const model = options.model ?? resolvedPreset.model;
   const created = await createLocalAgentTask({
     ...(options.cwd === undefined ? {} : { cwd: options.cwd }),

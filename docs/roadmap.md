@@ -847,6 +847,8 @@ The current implementation wave closed the highest-confidence product gaps:
   `commands/startup-scale-ops-actions`.
 - Startup gate check, fixture test, waiver, and decision command handlers moved
   out of `commands/startup-gate` into `commands/startup-gate-actions`.
+- Agent fix, repair-test, and test preset verifier setup moved out of the
+  command runners into `commands/agent-preset-verifiers`.
 
 ## Remaining Backlog
 
