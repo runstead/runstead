@@ -1,15 +1,15 @@
 import type { WorkerRun } from "@runstead/core";
 import type { RuntimeVerificationStatus } from "@runstead/runtime";
 
-import type {
-  CodexResponsesInputItem,
-  CodexResponsesRequest
-} from "../codex-responses-transport.js";
+import type { CodexResponsesInputItem } from "../codex-responses-transport.js";
 
 import { codexDirectConversationErrorResult } from "./conversation-error-result.js";
 import {
-  buildCodexDirectInstructions,
-  codexDirectToolDefinitions,
+  appendCodexDirectToolExchange,
+  codexDirectConversationRequest,
+  codexDirectFunctionCallInput
+} from "./conversation-messages.js";
+import {
   codexDirectVerificationStatus,
   codexDirectWarningOptions,
   completedWorkerResult,
@@ -38,17 +38,13 @@ export async function runCodexDirectConversation(input: {
 
   try {
     for (let turn = 0; turn < input.maxTurns; turn += 1) {
-      const request: CodexResponsesRequest = {
-        model: input.options.model,
-        instructions: buildCodexDirectInstructions(input.options),
-        input: input.messages,
-        tools: codexDirectToolDefinitions(),
-        sessionId: input.options.task.id
-      };
       const response = await runGovernedModelInference({
         ...input.options,
         workerRun: input.workerRun,
-        request
+        request: codexDirectConversationRequest({
+          options: input.options,
+          messages: input.messages
+        })
       });
 
       if (response.toolCalls.length === 0) {
@@ -86,18 +82,14 @@ export async function runCodexDirectConversation(input: {
         }
 
         const toolCall = parseCodexDirectToolCall(rawToolCall);
+        const rawFunctionCall = codexDirectFunctionCallInput(rawToolCall);
         const toolResult = await runCodexDirectTool({
           ...input.options,
           workerRun: input.workerRun,
           toolCall,
           resumeContext: {
             messages: input.messages,
-            toolCall: {
-              type: "function_call",
-              call_id: rawToolCall.id,
-              name: rawToolCall.name,
-              arguments: rawToolCall.arguments
-            }
+            toolCall: rawFunctionCall
           }
         });
 
@@ -110,15 +102,9 @@ export async function runCodexDirectConversation(input: {
           toolResult,
           verifierResults
         });
-        input.messages.push({
-          type: "function_call",
-          call_id: rawToolCall.id,
-          name: rawToolCall.name,
-          arguments: rawToolCall.arguments
-        });
-        input.messages.push({
-          type: "function_call_output",
-          call_id: rawToolCall.id,
+        appendCodexDirectToolExchange({
+          messages: input.messages,
+          toolCall: rawToolCall,
           output: toolResult.output
         });
 
