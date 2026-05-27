@@ -1,14 +1,13 @@
 import type { JsonObject } from "@runstead/core";
 
-import { approveDashboardApproval } from "./dashboard-operator-api-approvals.js";
 import { DashboardOperatorApiHttpError } from "./dashboard-operator-api-http.js";
 import type { BuildDashboardResult } from "./dashboard-types.js";
-import {
-  approvalIdFromOperatorAction,
-  shellOptionValue
-} from "./dashboard-operator-action-command.js";
-import { resumeInterruptedTasks } from "./resume.js";
+import { shellOptionValue } from "./dashboard-operator-action-command.js";
 import { resumeDashboardStartupRun } from "./dashboard-operator-api-run-resume.js";
+import {
+  dashboardApprovalResumeOperatorApprovalId,
+  runDashboardApprovalResumeOperatorAction
+} from "./dashboard-operator-api-approval-resume.js";
 import {
   dashboardBuildOperatorCommand,
   runDashboardBuildOperatorAction,
@@ -43,24 +42,18 @@ export async function runDashboardOperatorAction(input: {
     );
   }
 
-  const approvalId = approvalIdFromOperatorAction(action, input.build.snapshot);
+  const approvalId = dashboardApprovalResumeOperatorApprovalId(
+    action,
+    input.build.snapshot
+  );
 
   if (approvalId !== undefined) {
-    const approval = await approveDashboardApproval({
+    return runDashboardApprovalResumeOperatorAction({
       cwd: input.build.cwd,
       actor: input.actor,
+      actionId: action.id,
       approvalId
     });
-    const resumed = await resumeInterruptedTasks({
-      cwd: input.build.cwd
-    });
-
-    return {
-      operatorActionId: action.id,
-      approval,
-      requeuedTaskIds: resumed.requeuedTasks.map((item) => item.task.id),
-      failedTaskIds: resumed.failedTasks.map((item) => item.task.id)
-    };
   }
 
   const runId = shellOptionValue(action.command, "--resume");
