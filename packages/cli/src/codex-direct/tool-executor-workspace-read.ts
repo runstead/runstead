@@ -19,7 +19,7 @@ import {
   optionalStringArray,
   requiredString,
   requiredStringArray
-} from "./tool-arguments.js";
+} from "./tool-argument-values.js";
 import type { CodexDirectToolCall } from "./tool-types.js";
 import type { CodexDirectWorkerOptions } from "./worker-types.js";
 
