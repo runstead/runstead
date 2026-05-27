@@ -4,26 +4,22 @@ import type { RunsteadDatabase } from "@runstead/state-sqlite";
 import type { CreateCiRepairTaskResult } from "./ci-repair.js";
 import { resolveCiRepairCommit } from "./ci-repair-orchestrator-commit.js";
 import type { CiRepairOrchestratorStageContext } from "./ci-repair-orchestrator-context.js";
-import { stageAtLeast } from "./ci-repair-orchestrator-context.js";
 import { resolveCiRepairDiffScope } from "./ci-repair-orchestrator-diff-scope.js";
-import { writeCiRepairStage } from "./ci-repair-orchestrator-stage-persistence.js";
 import type {
   CiRepairGitRunner,
   CiRepairWorkerResult
 } from "./ci-repair-orchestrator-types.js";
 import {
   failCiRepairDiffScope,
-  failCiRepairNoDiff,
-  failCiRepairVerifier
+  failCiRepairNoDiff
 } from "./ci-repair-orchestrator-verification-failures.js";
-import { normalizeCiRepairVerifierResult } from "./ci-repair-orchestrator-verifier-result.js";
+import { resolveCiRepairVerifierStage } from "./ci-repair-orchestrator-verifier-stage.js";
 import type { GitDiffScopeVerification } from "./diff-scope-verifier.js";
 import type { CommitGitChangesResult } from "./git-branch.js";
 import type { PolicyProfile } from "./policy.js";
-import {
-  runTaskVerifiersUnlocked,
-  type RunTaskVerifiersOptions,
-  type RunTaskVerifiersResult
+import type {
+  RunTaskVerifiersOptions,
+  RunTaskVerifiersResult
 } from "./verifier-runner.js";
 
 export interface VerifyCiRepairWorkerChangesInput {
@@ -114,58 +110,21 @@ export async function verifyCiRepairWorkerChanges(
     });
   }
 
-  const verifierResult =
-    stageAtLeast(context.stage, "verified") &&
-    context.verifierTask !== undefined &&
-    context.verifierCommandResults !== undefined
-      ? {
-          task: context.verifierTask,
-          commandResults: context.verifierCommandResults
-        }
-      : await (input.verifierRunner ?? runTaskVerifiersUnlocked)({
-          cwd: input.cwd,
-          taskId: task.id,
-          claim: false,
-          mode: "evidence_only",
-          ...(input.now === undefined ? {} : { now: input.now })
-        });
-  const normalizedVerifierResult = normalizeCiRepairVerifierResult({
-    verifierResult,
-    ciRepairTask: input.ciRepair.task
+  const verifierStage = await resolveCiRepairVerifierStage({
+    run: input,
+    task,
+    context,
+    diffScope
   });
 
-  if (normalizedVerifierResult.task.status !== "completed") {
-    await failCiRepairVerifier({
-      run: input,
-      task,
-      context,
-      verifierResult: normalizedVerifierResult
-    });
-  }
-
-  if (!stageAtLeast(context.stage, "verified")) {
-    ({ task, context } = writeCiRepairStage({
-      database: input.database,
-      task,
-      context,
-      stage: "verified",
-      patch: {
-        diffScope,
-        verifierTask: normalizedVerifierResult.task,
-        verifierCommandResults: normalizedVerifierResult.commandResults
-      },
-      ...(input.onStagePersisted === undefined
-        ? {}
-        : { onStagePersisted: input.onStagePersisted }),
-      ...(input.now === undefined ? {} : { now: input.now })
-    }));
-  }
+  task = verifierStage.task;
+  context = verifierStage.context;
 
   return {
     task,
     context,
     ...(commit === undefined ? {} : { commit }),
     diffScope,
-    verifierResult: normalizedVerifierResult
+    verifierResult: verifierStage.verifierResult
   };
 }
