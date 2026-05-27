@@ -897,6 +897,9 @@ The current implementation wave closed the highest-confidence product gaps:
   operator API JSON helper module into `dashboard-http-server`.
 - Dashboard JSON request parsing and response writing moved out of the operator
   API error helper into `dashboard-http-json`.
+- Dashboard operator command quoting, approval resume command construction, and
+  startup-run context construction moved out of the operator console aggregate
+  into `dashboard-operator-commands`.
 
 ## Remaining Backlog
 

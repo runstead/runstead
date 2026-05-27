@@ -3,10 +3,12 @@ import type {
   DashboardDaemonStatus,
   DashboardOperatorAction,
   DashboardOperatorConsole,
-  DashboardOperatorRunContext,
-  DashboardStartupRun,
   DashboardStartupSnapshot
 } from "./dashboard-types.js";
+import {
+  dashboardApprovalApproveAndResumeCommand,
+  dashboardOperatorRunContext
+} from "./dashboard-operator-commands.js";
 
 export function buildDashboardOperatorConsole(input: {
   cwd: string;
@@ -31,7 +33,10 @@ export function buildDashboardOperatorConsole(input: {
     addAction({
       id: "daemon-approval-resume",
       title: "Approve and resume daemon task",
-      command: `runstead approval approve-and-resume ${shellQuote(input.daemon.approvalId)} --cwd ${shellQuote(input.cwd)}`,
+      command: dashboardApprovalApproveAndResumeCommand(
+        input.cwd,
+        input.daemon.approvalId
+      ),
       reason:
         input.daemon.ciRepairStatus === undefined
           ? "A daemon task is waiting on approval."
@@ -45,7 +50,7 @@ export function buildDashboardOperatorConsole(input: {
     addAction({
       id: `approval-${approval.id}`,
       title: `Approve ${approval.risk}-risk request`,
-      command: `runstead approval approve-and-resume ${shellQuote(approval.id)} --cwd ${shellQuote(input.cwd)}`,
+      command: dashboardApprovalApproveAndResumeCommand(input.cwd, approval.id),
       reason: approval.reason,
       source: "daemon_approval",
       status: "blocked"
@@ -115,7 +120,7 @@ export function buildDashboardOperatorConsole(input: {
       id: approval.id,
       risk: approval.risk,
       reason: approval.reason,
-      command: `runstead approval approve-and-resume ${shellQuote(approval.id)} --cwd ${shellQuote(input.cwd)}`
+      command: dashboardApprovalApproveAndResumeCommand(input.cwd, approval.id)
     }));
   const blockerCount =
     input.startup.status?.gates.reduce(
@@ -136,35 +141,4 @@ export function buildDashboardOperatorConsole(input: {
       ? {}
       : { recommendedCommand: recommendedAction.command })
   };
-}
-
-function dashboardOperatorRunContext(input: {
-  cwd: string;
-  run: DashboardStartupRun;
-}): DashboardOperatorRunContext {
-  const resumeCommand = input.run.operatorCommands.find(
-    (command) => command.kind === "resume"
-  )?.command;
-
-  return {
-    id: input.run.id,
-    stage: input.run.stage,
-    target: input.run.target,
-    status: input.run.status,
-    verdict: input.run.verdict,
-    blockers: input.run.blockers,
-    ...(resumeCommand === undefined
-      ? {
-          resumeCommand: `runstead startup ready --cwd ${shellQuote(input.cwd)} --resume ${shellQuote(input.run.id)}`
-        }
-      : { resumeCommand })
-  };
-}
-
-function shellQuote(value: string): string {
-  if (/^[A-Za-z0-9_/:=.,@+-]+$/.test(value)) {
-    return value;
-  }
-
-  return `'${value.replaceAll("'", "'\\''")}'`;
 }
