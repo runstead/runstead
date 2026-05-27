@@ -232,6 +232,8 @@ The current implementation wave closed the highest-confidence product gaps:
 - Codex Direct package-manager detection and verifier candidate command helpers
   moved out of `codex-direct-package-scripts` into
   `codex-direct-package-manager`.
+- Init policy profile-specific YAML rule fragments moved out of
+  `init-policy-yaml` into `init-policy-rule-yaml`.
 - Agent provider listing moved out of the agent command adapter into
   `commands/agent-providers`.
 - Agent inspect subcommand and depth-to-preset parsing moved out of the agent
