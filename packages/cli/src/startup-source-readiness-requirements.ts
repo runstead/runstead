@@ -1,155 +1,40 @@
-import type { ReadinessEvidenceRequirement } from "@runstead/runtime";
+import {
+  runtimeStartupSourceConnectorReadinessEvidenceRequirements,
+  runtimeStartupSourceConnectorRequirementBlockers,
+  runtimeStartupSourceConnectorRequirementsForTarget,
+  type ReadinessEvidenceRequirement,
+  type RuntimeStartupSourceConnectorReadinessRequirement
+} from "@runstead/runtime";
 
 import type {
   StartupSourceConnector,
   StartupSourceTarget
 } from "./startup-source-connector-definitions.js";
 
-export interface StartupSourceConnectorReadinessRequirement {
-  id: string;
-  title: string;
-  target: StartupSourceTarget;
-  connectors: StartupSourceConnector[];
-  evidenceTiers: string[];
-  evidenceTypes: string[];
-  requiredTokenEnv: string[];
-  missingTokenEnv: string[];
-  blockers: string[];
-  collectCommands: string[];
-}
+export type StartupSourceConnectorReadinessRequirement =
+  RuntimeStartupSourceConnectorReadinessRequirement & {
+    target: StartupSourceTarget;
+    connectors: StartupSourceConnector[];
+  };
 
 export function startupSourceConnectorRequirementsForTarget(options: {
   target: StartupSourceTarget;
   env?: Record<string, string | undefined>;
 }): StartupSourceConnectorReadinessRequirement[] {
-  if (options.target === "local") {
-    return [];
-  }
-
-  const env = options.env ?? process.env;
-  const requirements = [
-    sourceConnectorRequirement({
-      id: "remote-ci",
-      title: "Remote CI status",
-      target: options.target,
-      connectors: ["github_actions"],
-      evidenceTiers: ["ci_verified"],
-      evidenceTypes: ["startup_repo_readiness"],
-      requiredTokenEnv: ["GITHUB_TOKEN"],
-      env
-    }),
-    sourceConnectorRequirement({
-      id: "deployment-provider",
-      title: `${options.target} deployment provider`,
-      target: options.target,
-      connectors: ["vercel", "render"],
-      evidenceTiers: [
-        options.target === "staging" ? "staging_deployment" : "production_deployment"
-      ],
-      evidenceTypes: ["startup_release_plan"],
-      requiredTokenEnv: ["VERCEL_TOKEN", "RENDER_API_KEY"],
-      tokenMode: "any",
-      env
-    }),
-    sourceConnectorRequirement({
-      id: "monitoring-provider",
-      title: "Monitoring provider",
-      target: options.target,
-      connectors: ["sentry"],
-      evidenceTiers: [],
-      evidenceTypes: ["startup_monitoring_alerts"],
-      requiredTokenEnv: ["SENTRY_AUTH_TOKEN"],
-      env
-    }),
-    ...(options.target === "production"
-      ? [
-          sourceConnectorRequirement({
-            id: "analytics-provider",
-            title: "Real-user analytics provider",
-            target: options.target,
-            connectors: ["posthog"],
-            evidenceTiers: ["real_user_analytics"],
-            evidenceTypes: ["startup_metric_snapshot"],
-            requiredTokenEnv: ["POSTHOG_API_KEY"],
-            env
-          })
-        ]
-      : [])
-  ];
-
-  return requirements;
+  return runtimeStartupSourceConnectorRequirementsForTarget({
+    target: options.target,
+    env: options.env ?? process.env
+  }) as StartupSourceConnectorReadinessRequirement[];
 }
 
 export function startupSourceConnectorReadinessEvidenceRequirements(
   requirements: StartupSourceConnectorReadinessRequirement[]
 ): ReadinessEvidenceRequirement[] {
-  return requirements.map((requirement) => ({
-    source: "startup_source",
-    sourceId: requirement.id,
-    targets: [requirement.target],
-    evidenceTiers: [...requirement.evidenceTiers],
-    evidenceTypes: [...requirement.evidenceTypes],
-    ...(requirement.blockers.length === 0
-      ? {}
-      : { blockers: [...requirement.blockers] })
-  }));
+  return runtimeStartupSourceConnectorReadinessEvidenceRequirements(requirements);
 }
 
 export function startupSourceConnectorRequirementBlockers(
   requirements: StartupSourceConnectorReadinessRequirement[]
 ): string[] {
-  return requirements.flatMap((requirement) => requirement.blockers);
-}
-
-function sourceConnectorRequirement(input: {
-  id: string;
-  title: string;
-  target: StartupSourceTarget;
-  connectors: StartupSourceConnector[];
-  evidenceTiers: string[];
-  evidenceTypes: string[];
-  requiredTokenEnv: string[];
-  tokenMode?: "all" | "any";
-  env: Record<string, string | undefined>;
-}): StartupSourceConnectorReadinessRequirement {
-  const tokenMode = input.tokenMode ?? "all";
-  const missingTokenEnv =
-    tokenMode === "any"
-      ? input.requiredTokenEnv.some((name) => envValuePresent(input.env, name))
-        ? []
-        : [...input.requiredTokenEnv]
-      : input.requiredTokenEnv.filter((name) => !envValuePresent(input.env, name));
-  const tokenDescription =
-    tokenMode === "any"
-      ? `one of ${input.requiredTokenEnv.join(", ")}`
-      : input.requiredTokenEnv.join(", ");
-  const blockers =
-    missingTokenEnv.length === 0
-      ? []
-      : [
-          `${input.title} connector requires ${tokenDescription} for ${input.target} readiness`
-        ];
-
-  return {
-    id: input.id,
-    title: input.title,
-    target: input.target,
-    connectors: [...input.connectors],
-    evidenceTiers: [...input.evidenceTiers],
-    evidenceTypes: [...input.evidenceTypes],
-    requiredTokenEnv: [...input.requiredTokenEnv],
-    missingTokenEnv,
-    blockers,
-    collectCommands: input.connectors.map(
-      (connector) =>
-        `runstead startup source collect --connector ${connector} --target ${input.target} --source-uri <provider-api-url>`
-    )
-  };
-}
-
-function envValuePresent(
-  env: Record<string, string | undefined>,
-  name: string
-): boolean {
-  return env[name] !== undefined && env[name]?.trim() !== "";
+  return runtimeStartupSourceConnectorRequirementBlockers(requirements);
 }

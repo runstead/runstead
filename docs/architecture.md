@@ -79,7 +79,8 @@ along with:
   `assessTeamControlPlaneReadiness`
 - readiness contracts: `compileReadinessPlan`,
   `evaluateCompiledReadinessPlan`, `compileReadinessReleaseDecision`,
-  `ReadinessEvidenceRequirement`
+  `ReadinessEvidenceRequirement`, and startup source connector readiness
+  requirements for staging/production provider evidence
 - source provider contracts: `parseRuntimeSourceConnectorResponseJson`,
   `collectRuntimeSourceProviderPayload`, and
   `runtimeSourceProviderAuthHeaders`

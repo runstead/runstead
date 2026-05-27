@@ -5,6 +5,7 @@ export * from "./execution-semantics.js";
 export * from "./readiness-evidence.js";
 export * from "./readiness-guidance.js";
 export * from "./readiness-plan.js";
+export * from "./readiness-source-requirements.js";
 export * from "./readiness-run.js";
 export * from "./readiness-source-evidence.js";
 export * from "./startup-ui-semantics.js";
