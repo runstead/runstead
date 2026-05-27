@@ -855,6 +855,8 @@ The current implementation wave closed the highest-confidence product gaps:
   `commands/agent-inspect-depth`.
 - Agent report output-format validation and rendering selection moved out of
   lifecycle actions into `commands/agent-report-output`.
+- Agent resume command handling moved out of lifecycle actions into
+  `commands/agent-resume-action`.
 
 ## Remaining Backlog
 
