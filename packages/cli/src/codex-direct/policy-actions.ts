@@ -6,7 +6,7 @@ import type {
   CodexDirectPatchApprovalMetadata,
   CodexDirectPendingPatchPayload
 } from "./patch-actions.js";
-import { stableActionId } from "./tool-arguments.js";
+import { stableActionId } from "./tool-action-id.js";
 import type { CodexDirectWorkerOptions } from "./worker.js";
 
 export function governedToolOptions(

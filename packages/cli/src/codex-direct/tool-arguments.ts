@@ -1,5 +1,3 @@
-import { createHash } from "node:crypto";
-
 import type { CodexDirectToolCall, CodexDirectToolName } from "./tool-types.js";
 
 export function safeJsonObject(value: string): Record<string, unknown> | undefined {
@@ -63,15 +61,6 @@ export function isCodexDirectToolName(value: string): value is CodexDirectToolNa
     "read_evidence",
     "workspace_facts"
   ].includes(value);
-}
-
-export function stableActionId(prefix: string, parts: unknown[]): string {
-  const hash = createHash("sha256")
-    .update(JSON.stringify(parts))
-    .digest("hex")
-    .slice(0, 12);
-
-  return `act_${prefix.replaceAll(".", "_")}_${hash}`;
 }
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
