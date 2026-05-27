@@ -851,6 +851,8 @@ The current implementation wave closed the highest-confidence product gaps:
   command runners into `commands/agent-preset-verifiers`.
 - Agent task provider/model/base URL option construction moved out of command
   runners into `commands/agent-task-options`.
+- Agent inspect depth-to-preset parsing moved out of the inspect action into
+  `commands/agent-inspect-depth`.
 
 ## Remaining Backlog
 

@@ -4,6 +4,7 @@ import {
   agentBudgetTaskOptions,
   runAndReportLocalAgentTask
 } from "./agent-budget-options.js";
+import { localAgentInspectPresetId } from "./agent-inspect-depth.js";
 import { agentTaskModelOptions } from "./agent-task-options.js";
 import {
   CODEX_DIRECT_AGENT_WORKERS,
@@ -70,17 +71,4 @@ export async function runAgentInspectCommand(
     ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
     taskId: created.task.id
   });
-}
-
-function localAgentInspectPresetId(
-  value: string
-): "inspect:smoke" | "inspect:standard" {
-  if (value === "smoke") {
-    return "inspect:smoke";
-  }
-  if (value === "standard") {
-    return "inspect:standard";
-  }
-
-  throw new Error("--depth must be smoke or standard");
 }
