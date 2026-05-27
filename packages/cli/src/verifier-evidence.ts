@@ -1,23 +1,16 @@
-import { join, resolve } from "node:path";
+import { resolve } from "node:path";
 
-import {
-  createRunsteadId,
-  type Evidence,
-  type RunsteadEvent,
-  type Task
-} from "@runstead/core";
-import { appendEventAndProject, type RunsteadDatabase } from "@runstead/state-sqlite";
+import type { Evidence, RunsteadEvent, Task } from "@runstead/core";
+import type { RunsteadDatabase } from "@runstead/state-sqlite";
 import type { CommandVerifierInput } from "@runstead/verifiers";
 
-import { writeJsonArtifactFile } from "./artifact-store.js";
 import {
-  commandVerifierEvidenceEventPayload,
   createCommandVerifierArtifact,
   deniedCommandVerifierResult,
-  sanitizeVerifierArtifactName,
   summarizeCommandResult,
   type CommandVerifierArtifact
 } from "./verifier-evidence-artifact.js";
+import { persistCommandVerifierEvidence } from "./verifier-evidence-store.js";
 import { collectCommandVerifierCodeState } from "./verifier-code-state.js";
 import { runShellCommand } from "./shell-executor.js";
 
@@ -52,7 +45,6 @@ export async function storeCommandVerifierEvidence(
   options: StoreCommandVerifierEvidenceOptions
 ): Promise<StoreCommandVerifierEvidenceResult> {
   const cwd = resolve(options.cwd ?? process.cwd());
-  const runsteadRoot = resolve(options.runsteadRoot);
   const createdAt = (options.now ?? new Date()).toISOString();
   const codeState = await collectCommandVerifierCodeState(cwd);
   const result = await runShellCommand({
@@ -68,57 +60,25 @@ export async function storeCommandVerifierEvidence(
     codeState,
     result
   });
-  const evidenceId = createRunsteadId("ev");
-  const evidenceDir = join(runsteadRoot, "evidence");
-  const artifactName = sanitizeVerifierArtifactName(options.command.name);
-  const artifactPath = join(evidenceDir, `verifier-${artifactName}-${evidenceId}.json`);
-  const artifactWrite = await writeJsonArtifactFile({
-    artifactPath,
-    value: artifact,
+  const persisted = await persistCommandVerifierEvidence({
+    runsteadRoot: options.runsteadRoot,
+    database: options.database,
+    task: options.task,
+    command: options.command,
+    artifact,
+    result,
     createdAt,
-    metadata: {
-      evidenceId,
-      evidenceType: "command_output",
-      subject: "command_verifier"
-    }
-  });
-  const evidence: Evidence = {
-    id: evidenceId,
-    type: "command_output",
-    subjectType: "task",
-    subjectId: options.task.id,
-    uri: artifactWrite.artifactUri,
-    hash: artifactWrite.sha256,
     summary: summarizeCommandResult(options.command.name, result),
-    createdAt
-  };
-  const event: RunsteadEvent = {
-    eventId: createRunsteadId("evt"),
-    type: "evidence.recorded",
-    aggregateType: "evidence",
-    aggregateId: evidence.id,
-    payload: commandVerifierEvidenceEventPayload(
-      evidence,
-      options.command.name,
-      result
-    ),
-    createdAt
-  };
-
-  appendEventAndProject(options.database, {
-    event,
-    projection: {
-      type: "evidence",
-      value: evidence
-    }
+    evidenceType: "command_output",
+    artifactSubject: "command_verifier"
   });
 
   return {
-    evidence,
-    event,
+    evidence: persisted.evidence,
+    event: persisted.event,
     artifact,
-    artifactPath,
-    artifactManifestPath: artifactWrite.manifestPath
+    artifactPath: persisted.artifactPath,
+    artifactManifestPath: persisted.artifactManifestPath
   };
 }
 
@@ -139,7 +99,6 @@ export async function storeCommandVerifierPolicyEvidence(
   options: StoreCommandVerifierPolicyEvidenceOptions
 ): Promise<StoreCommandVerifierEvidenceResult> {
   const cwd = resolve(options.cwd ?? process.cwd());
-  const runsteadRoot = resolve(options.runsteadRoot);
   const createdAt = (options.now ?? new Date()).toISOString();
   const codeState = await collectCommandVerifierCodeState(cwd);
   const result = deniedCommandVerifierResult({
@@ -159,64 +118,30 @@ export async function storeCommandVerifierPolicyEvidence(
       ...(options.approvalId === undefined ? {} : { approvalId: options.approvalId })
     }
   });
-  const evidenceId = createRunsteadId("ev");
-  const evidenceDir = join(runsteadRoot, "evidence");
-  const artifactName = sanitizeVerifierArtifactName(options.command.name);
-  const artifactPath = join(
-    evidenceDir,
-    `verifier-${artifactName}-${options.decision}-${evidenceId}.json`
-  );
-  const artifactWrite = await writeJsonArtifactFile({
-    artifactPath,
-    value: artifact,
+  const persisted = await persistCommandVerifierEvidence({
+    runsteadRoot: options.runsteadRoot,
+    database: options.database,
+    task: options.task,
+    command: options.command,
+    artifact,
+    result,
     createdAt,
-    metadata: {
-      evidenceId,
-      evidenceType: "policy_decision",
-      subject: "command_verifier_policy"
-    }
-  });
-  const evidence: Evidence = {
-    id: evidenceId,
-    type: "policy_decision",
-    subjectType: "task",
-    subjectId: options.task.id,
-    uri: artifactWrite.artifactUri,
-    hash: artifactWrite.sha256,
     summary: `${options.command.name}: ${options.decision} by policy`,
-    createdAt
-  };
-  const event: RunsteadEvent = {
-    eventId: createRunsteadId("evt"),
-    type: "evidence.recorded",
-    aggregateType: "evidence",
-    aggregateId: evidence.id,
+    evidenceType: "policy_decision",
+    artifactSubject: "command_verifier_policy",
+    artifactSuffix: options.decision,
     payload: {
-      ...commandVerifierEvidenceEventPayload(
-        evidence,
-        options.command.name,
-        result
-      ),
       policyDecisionId: options.policyDecisionId,
       decision: options.decision,
       ...(options.approvalId === undefined ? {} : { approvalId: options.approvalId })
-    },
-    createdAt
-  };
-
-  appendEventAndProject(options.database, {
-    event,
-    projection: {
-      type: "evidence",
-      value: evidence
     }
   });
 
   return {
-    evidence,
-    event,
+    evidence: persisted.evidence,
+    event: persisted.event,
     artifact,
-    artifactPath,
-    artifactManifestPath: artifactWrite.manifestPath
+    artifactPath: persisted.artifactPath,
+    artifactManifestPath: persisted.artifactManifestPath
   };
 }
