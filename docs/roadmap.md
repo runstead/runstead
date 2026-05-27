@@ -683,6 +683,9 @@ The current implementation wave closed the highest-confidence product gaps:
   into `commands/startup-source-verify`.
 - Startup source collect action moved out of `commands/startup-source-actions`
   into `commands/startup-source-collect`, removing the old actions facade.
+- Startup launch audit, security, prepare, report, and Git summary action
+  handlers moved out of `commands/startup-launch` into
+  `commands/startup-launch-readiness`.
 - Team control-plane runner heartbeat and list formatting moved out of
   `team-control-plane-runner` into `team-control-plane-runner-format`.
 - Team control-plane Postgres connection validation and client creation moved
