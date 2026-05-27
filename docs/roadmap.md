@@ -877,6 +877,8 @@ The current implementation wave closed the highest-confidence product gaps:
   generic `dashboard-render-assets` re-export layer.
 - Dashboard startup run-comparison and timeline table rendering moved out of
   `dashboard-render-startup` into `dashboard-render-startup-tables`.
+- Dashboard operator verifier and manual-evidence form actions moved out of the
+  API action dispatcher into `dashboard-operator-api-forms`.
 
 ## Remaining Backlog
 
