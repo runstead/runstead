@@ -27,9 +27,9 @@ import type {
 export {
   codexDirectVerificationStatus,
   codexDirectWarningOptions,
-  recordCodexDirectVerifierResult,
-  safeJsonObject
+  recordCodexDirectVerifierResult
 } from "./verifier-result.js";
+export { safeJsonObject } from "./tool-json.js";
 
 export async function finalizeBudgetExceededWorkerResult(input: {
   options: CodexDirectWorkerOptions;

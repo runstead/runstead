@@ -1,4 +1,4 @@
-import { isRecord } from "./tool-arguments.js";
+import { isRecord } from "./tool-json.js";
 
 export function requiredString(value: unknown, field: string): string {
   if (typeof value !== "string" || value.length === 0) {

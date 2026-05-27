@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import type { Task } from "@runstead/core";
 import { matchesPolicyPathPattern } from "../policy.js";
 import { inferWorkspacePatchTouchedFiles } from "../codex-direct-native-tools.js";
-import { isRecord } from "./tool-arguments.js";
+import { isRecord } from "./tool-json.js";
 import { stringArray } from "./patch-payload.js";
 
 export {

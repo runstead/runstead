@@ -2,7 +2,7 @@ import type { Task } from "@runstead/core";
 import type { RuntimeVerificationStatus } from "@runstead/runtime";
 
 import { declaredVerifierCommands } from "./verifier-command-resolution.js";
-import { isRecord } from "./tool-arguments.js";
+import { safeJsonObject } from "./tool-json.js";
 import type { CodexDirectToolCall } from "./tool-types.js";
 
 export function codexDirectVerificationStatus(
@@ -48,16 +48,6 @@ export function recordCodexDirectVerifierResult(input: {
     verifier,
     parsed.exitCode === 0 && parsed.timedOut === false ? "passed" : "failed"
   );
-}
-
-export function safeJsonObject(value: string): Record<string, unknown> | undefined {
-  try {
-    const parsed = JSON.parse(value) as unknown;
-
-    return isRecord(parsed) ? parsed : undefined;
-  } catch {
-    return undefined;
-  }
 }
 
 export function codexDirectWarningOptions(

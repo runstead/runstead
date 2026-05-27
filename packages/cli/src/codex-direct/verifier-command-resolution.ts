@@ -2,7 +2,7 @@ import type { Task } from "@runstead/core";
 
 import { discoverVerifierCommands } from "../verifier-discovery.js";
 import type { CommandVerifierInput } from "../verifier-evidence.js";
-import { isRecord } from "./tool-arguments.js";
+import { isRecord } from "./tool-json.js";
 import type { CodexDirectWorkerOptions } from "./worker.js";
 
 export async function resolveVerifierCommand(

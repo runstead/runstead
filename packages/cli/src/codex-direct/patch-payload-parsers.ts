@@ -2,7 +2,7 @@ import type {
   CodexResponsesFunctionCallInputItem,
   CodexResponsesInputItem
 } from "../codex-responses-transport.js";
-import { isRecord } from "./tool-arguments.js";
+import { isRecord } from "./tool-json.js";
 import type {
   CodexDirectPendingPatchPayload,
   CodexDirectPendingToolResumeContext

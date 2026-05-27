@@ -3,7 +3,7 @@ import type { RunsteadDatabase } from "@runstead/state-sqlite";
 
 import type { CodexResponsesResult } from "../codex-responses-transport.js";
 import type { CodexDirectModelRequestPhase } from "./worker-types.js";
-import { errorMessage, isRecord } from "./tool-arguments.js";
+import { errorMessage, isRecord } from "./tool-json.js";
 import {
   CodexDirectModelRetryExhaustedError,
   CodexDirectModelTimeoutError

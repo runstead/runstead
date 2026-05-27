@@ -10,7 +10,7 @@ import {
   replacementArray,
   stringArray
 } from "./patch-payload-parsers.js";
-import { isRecord } from "./tool-arguments.js";
+import { isRecord } from "./tool-json.js";
 
 export {
   cloneCodexResponsesMessages,
