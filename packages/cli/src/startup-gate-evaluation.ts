@@ -1,11 +1,4 @@
-import {
-  explainGateBlocker,
-  inferGateFindingSeverity,
-  remediationTaskForBlocker,
-  stableGateFindingId,
-  startupGateRuleForBlocker
-} from "./startup-gate-rules.js";
-import { type StartupGateStage } from "./startup-evidence-types.js";
+import { startupGateFindings } from "./startup-gate-findings.js";
 import { launchBlockers } from "./startup-gate-launch.js";
 import { scaleBlockers } from "./startup-gate-scale.js";
 import { validationBlockers } from "./startup-gate-validation.js";
@@ -16,9 +9,7 @@ import type {
   StartupGateEvaluationContext,
   StartupGateEvaluationInput,
   StartupGateEvaluationResult,
-  StartupGateFinding,
-  StartupGatePreviousEvent,
-  StartupGateWaiver
+  StartupGatePreviousEvent
 } from "./startup-gate-types.js";
 
 export function evaluateStartupGate(
@@ -62,27 +53,6 @@ function gateBlockers(input: StartupGateEvaluationContext): string[] {
   }
 
   return launchBlockers(input);
-}
-
-function startupGateFindings(
-  stage: StartupGateStage,
-  blockers: string[],
-  waivers: StartupGateWaiver[]
-): StartupGateFinding[] {
-  return blockers.map((blocker) => {
-    const waiver = waivers.find((item) => item.blocker === blocker);
-    const rule = startupGateRuleForBlocker(stage, blocker);
-
-    return {
-      id: rule?.id ?? stableGateFindingId(stage, blocker),
-      severity: rule?.severity ?? inferGateFindingSeverity(blocker),
-      message: blocker,
-      explanation: rule?.explanation ?? explainGateBlocker(blocker),
-      remediationTask: rule?.remediationTask ?? remediationTaskForBlocker(blocker),
-      waived: waiver !== undefined,
-      ...(waiver === undefined ? {} : { waiverEvidenceId: waiver.evidenceId })
-    };
-  });
 }
 
 function startupGateDiff(
