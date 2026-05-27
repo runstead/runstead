@@ -659,6 +659,8 @@ The current implementation wave closed the highest-confidence product gaps:
   `commands/approval-decisions`.
 - Agent run command registration moved out of `commands/agent` into
   `commands/agent-run`.
+- Agent run task construction, preset handling, verifier attachment, and
+  execution moved out of `commands/agent-run` into `commands/agent-run-runner`.
 - Agent review task construction and execution moved out of
   `commands/agent-review` into `commands/agent-review-runner`.
 - Domain bundle command registration moved out of `commands/domain` into
