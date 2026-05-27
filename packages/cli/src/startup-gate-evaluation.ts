@@ -1,3 +1,4 @@
+import { startupGateDiff } from "./startup-gate-diff.js";
 import { startupGateFindings } from "./startup-gate-findings.js";
 import { launchBlockers } from "./startup-gate-launch.js";
 import { scaleBlockers } from "./startup-gate-scale.js";
@@ -5,11 +6,9 @@ import { validationBlockers } from "./startup-gate-validation.js";
 import { activeStartupGateWaivers } from "./startup-gate-waivers.js";
 import { gateWarnings } from "./startup-gate-warnings.js";
 import type {
-  StartupGateDiff,
   StartupGateEvaluationContext,
   StartupGateEvaluationInput,
-  StartupGateEvaluationResult,
-  StartupGatePreviousEvent
+  StartupGateEvaluationResult
 } from "./startup-gate-types.js";
 
 export function evaluateStartupGate(
@@ -53,20 +52,4 @@ function gateBlockers(input: StartupGateEvaluationContext): string[] {
   }
 
   return launchBlockers(input);
-}
-
-function startupGateDiff(
-  previous: StartupGatePreviousEvent | undefined,
-  blockers: string[]
-): StartupGateDiff {
-  const previousBlockers = new Set(previous?.blockers ?? []);
-  const currentBlockers = new Set(blockers);
-
-  return {
-    ...(previous === undefined ? {} : { previousEventId: previous.eventId }),
-    addedBlockers: blockers.filter((blocker) => !previousBlockers.has(blocker)),
-    resolvedBlockers: [...previousBlockers].filter(
-      (blocker) => !currentBlockers.has(blocker)
-    )
-  };
 }
