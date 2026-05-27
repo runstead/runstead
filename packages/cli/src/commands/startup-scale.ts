@@ -1,10 +1,16 @@
 import type { Command } from "commander";
 
-import { requireRbacPermission } from "../cli-rbac.js";
 import { collectValues } from "../startup-command-parsers.js";
+import {
+  runStartupScaleIntegrationMapCommand,
+  runStartupScaleStarterPackCommand,
+  runStartupScaleWorkflowRegistryCommand,
+  type StartupScaleIntegrationMapCommandOptions,
+  type StartupScaleStarterPackCommandOptions,
+  type StartupScaleWorkflowRegistryCommandOptions
+} from "./startup-scale-actions.js";
 import { registerStartupScaleMemoryCommands } from "./startup-scale-memory.js";
 import { registerStartupScaleOpsCommands } from "./startup-scale-ops.js";
-import { logStructuredFiles } from "./startup-scale-output.js";
 
 export function registerStartupScaleCommand(startup: Command): Command {
   const startupScale = startup
@@ -17,28 +23,9 @@ export function registerStartupScaleCommand(startup: Command): Command {
     .option("--cwd <path>", "Workspace directory")
     .option("--owner <id>", "Starter pack owner")
     .option("--actor <id>", "RBAC subject for scale starter generation", "local-admin")
-    .action(async (options: { cwd?: string; owner?: string; actor: string }) => {
-      await requireRbacPermission({
-        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-        actor: options.actor,
-        permission: "evidence.write",
-        action: "generate startup scale starter pack"
-      });
-
-      const { generateScaleStarterPack } = await import("../startup-automation.js");
-      const result = await generateScaleStarterPack({
-        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-        ...(options.owner === undefined ? {} : { owner: options.owner })
-      });
-
-      console.log(`Generated scale starter evidence: ${result.evidenceIds[0]}`);
-      console.log(`Scale-ready: ${result.scaleReady ? "yes" : "no"}`);
-      console.log(`Blockers: ${result.blockers.length}`);
-      for (const file of result.files) {
-        console.log(`Wrote scale starter file: ${file}`);
-      }
-      logStructuredFiles(result.structuredFiles);
-    });
+    .action(async (options: StartupScaleStarterPackCommandOptions) =>
+      runStartupScaleStarterPackCommand(options)
+    );
 
   startupScale
     .command("workflow-registry")
@@ -74,41 +61,8 @@ export function registerStartupScaleCommand(startup: Command): Command {
       "RBAC subject for workflow registry generation",
       "local-admin"
     )
-    .action(
-      async (options: {
-        cwd?: string;
-        workflow: string[];
-        delegationRule: string[];
-        approvalBoundary: string[];
-        allowedAgent: string[];
-        constrainedTask: string[];
-        actor: string;
-      }) => {
-        await requireRbacPermission({
-          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-          actor: options.actor,
-          permission: "evidence.write",
-          action: "generate startup workflow registry"
-        });
-
-        const { generateWorkflowRegistry } = await import("../startup-automation.js");
-        const result = await generateWorkflowRegistry({
-          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-          workflows: options.workflow,
-          delegationRules: options.delegationRule,
-          approvalBoundaries: options.approvalBoundary,
-          allowedAgents: options.allowedAgent,
-          constrainedTaskTypes: options.constrainedTask
-        });
-
-        console.log(`Generated workflow evidence: ${result.evidenceIds.join(", ")}`);
-        console.log(`Workflows: ${result.workflows.length}`);
-        console.log(`Delegation rules: ${result.delegationRules.length}`);
-        for (const file of result.files) {
-          console.log(`Wrote scale artifact: ${file}`);
-        }
-        logStructuredFiles(result.structuredFiles);
-      }
+    .action(async (options: StartupScaleWorkflowRegistryCommandOptions) =>
+      runStartupScaleWorkflowRegistryCommand(options)
     );
 
   registerStartupScaleMemoryCommands(startupScale);
@@ -132,40 +86,8 @@ export function registerStartupScaleCommand(startup: Command): Command {
       "RBAC subject for integration map generation",
       "local-admin"
     )
-    .action(
-      async (options: {
-        cwd?: string;
-        integration: string[];
-        lockInSignal: string[];
-        adoptionSignal: string[];
-        workflowSignal: string[];
-        automationCoverage: string[];
-        actor: string;
-      }) => {
-        await requireRbacPermission({
-          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-          actor: options.actor,
-          permission: "evidence.write",
-          action: "generate startup integration depth map"
-        });
-
-        const { generateIntegrationMap } = await import("../startup-automation.js");
-        const result = await generateIntegrationMap({
-          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-          integrations: options.integration,
-          lockInSignals: options.lockInSignal,
-          automationCoverage: options.automationCoverage,
-          adoptionSignals: options.adoptionSignal,
-          workflowSignals: options.workflowSignal
-        });
-
-        console.log(`Generated integration map evidence: ${result.evidenceId}`);
-        console.log(`Integrations: ${result.integrations.length}`);
-        for (const file of result.files) {
-          console.log(`Wrote integration map file: ${file}`);
-        }
-        logStructuredFiles(result.structuredFiles);
-      }
+    .action(async (options: StartupScaleIntegrationMapCommandOptions) =>
+      runStartupScaleIntegrationMapCommand(options)
     );
 
   registerStartupScaleOpsCommands(startupScale);

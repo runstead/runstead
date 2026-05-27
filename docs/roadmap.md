@@ -760,6 +760,9 @@ The current implementation wave closed the highest-confidence product gaps:
 - Startup scale workflow registry and delegation-policy generation moved out of
   `startup-scale-workflow` into `startup-scale-workflow-registry`, leaving
   `startup-scale-workflow` as a compatibility export surface.
+- Startup scale starter-pack, workflow-registry, and integration-map command
+  handlers moved out of `commands/startup-scale` into
+  `commands/startup-scale-actions`.
 
 ## Remaining Backlog
 
