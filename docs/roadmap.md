@@ -673,6 +673,8 @@ The current implementation wave closed the highest-confidence product gaps:
   `commands/agent-fix-runner`.
 - Startup source connector contract listing moved out of
   `commands/startup-source-actions` into `commands/startup-source-contracts`.
+- Startup source record action moved out of `commands/startup-source-actions`
+  into `commands/startup-source-record`.
 - Team control-plane runner heartbeat and list formatting moved out of
   `team-control-plane-runner` into `team-control-plane-runner-format`.
 - Team control-plane Postgres connection validation and client creation moved
