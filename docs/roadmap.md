@@ -619,6 +619,8 @@ The current implementation wave closed the highest-confidence product gaps:
   builders moved out of the generator into `startup-complete-check-surfaces`.
 - Startup complete-check Markdown/JSON artifact writing and event persistence
   moved out of the generator into `startup-complete-check-persistence`.
+- Startup complete-check evidence summary and structured content builders moved
+  out of the generator into `startup-complete-check-evidence`.
 - `email-followup` now has a mature draft-only lifecycle, fixtures, evals,
   gates, report sections, and docs.
 - Non-startup golden paths are covered by a combined runbook and CLI/domain

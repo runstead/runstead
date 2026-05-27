@@ -25,6 +25,10 @@ import {
   startupCompleteProductEvent
 } from "./startup-complete-check-output.js";
 import {
+  startupCompleteProductEvidenceContent,
+  startupCompleteProductEvidenceSummary
+} from "./startup-complete-check-evidence.js";
+import {
   appendStartupCompleteProductCheckEvent,
   writeStartupCompleteProductCheckArtifacts
 } from "./startup-complete-check-persistence.js";
@@ -132,7 +136,7 @@ export async function generateStartupCompleteProductCheck(
   const evidence = await addStartupEvidence({
     cwd,
     type: "complete_product_check",
-    summary: `Startup complete product check: ${baseStatus}`,
+    summary: startupCompleteProductEvidenceSummary(baseStatus),
     sourceRefs: startupCompleteProductEvidenceSourceRefs({
       markdownPath,
       jsonPath,
@@ -141,18 +145,11 @@ export async function generateStartupCompleteProductCheck(
       dashboard,
       diagnostics
     }),
-    content: JSON.stringify(
-      {
-        domain,
-        status: baseStatus,
-        criteria: baseCriteria.map((criterion) => ({
-          id: criterion.id,
-          status: criterion.status
-        }))
-      },
-      null,
-      2
-    ),
+    content: startupCompleteProductEvidenceContent({
+      domain,
+      status: baseStatus,
+      criteria: baseCriteria
+    }),
     now
   });
   const surfaces = startupCompleteProductSurfaces({
