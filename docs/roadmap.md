@@ -766,6 +766,8 @@ The current implementation wave closed the highest-confidence product gaps:
   `commands/agent-inspect-action`.
 - Approval approve/approve-and-resume/deny handlers moved out of
   `commands/approval-decisions` into `commands/approval-decision-actions`.
+- Approval list/show handlers moved out of `commands/approval-read` into
+  `commands/approval-read-actions`.
 - Startup generic evidence add command registration and write handler moved out
   of `commands/startup-evidence` into `commands/startup-evidence-add`.
 - Startup manual-change evidence command registration and write handler moved
