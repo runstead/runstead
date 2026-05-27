@@ -544,6 +544,8 @@ The current implementation wave closed the highest-confidence product gaps:
   out of `startup-scale-automation` into `startup-scale-ops`.
 - Startup scale ops report generation moved out of the aggregate scale-ops
   module into `startup-scale-ops-report`.
+- Startup scale report schedule generation moved out of the aggregate scale-ops
+  module into `startup-scale-ops-schedule`.
 - CI repair stage/context persistence helpers moved out of
   `ci-repair-orchestrator` into `ci-repair-orchestrator-stage-persistence`.
 - `packages/cli/src/startup-command.ts` no longer owns startup scale
