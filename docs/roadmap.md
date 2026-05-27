@@ -663,6 +663,9 @@ The current implementation wave closed the highest-confidence product gaps:
   execution moved out of `commands/agent-run` into `commands/agent-run-runner`.
 - Agent review task construction and execution moved out of
   `commands/agent-review` into `commands/agent-review-runner`.
+- Agent test verifier resolution, triage task construction, verifier evidence
+  attachment, and execution moved out of `commands/agent-test` into
+  `commands/agent-test-runner`.
 - Domain bundle command registration moved out of `commands/domain` into
   `commands/domain-bundle`.
 - Domain catalog command registration moved out of `commands/domain` into
