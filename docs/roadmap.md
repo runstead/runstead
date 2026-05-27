@@ -644,6 +644,7 @@ The current implementation wave closed the highest-confidence product gaps:
   into `startup-source-collection`.
 - Memory command option/result contracts moved out of `memory` into
   `memory-types`.
+- Memory write paths moved out of `memory` into `memory-writes`.
 
 ## Remaining Backlog
 
