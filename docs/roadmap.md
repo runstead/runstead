@@ -777,6 +777,8 @@ The current implementation wave closed the highest-confidence product gaps:
   command runners into `commands/agent-budget-options`.
 - Local agent runner execution report tail moved out of individual agent
   command runners into `commands/agent-budget-options`.
+- Local agent review scope selection moved out of `commands/agent-review-runner`
+  into `commands/agent-review-scope`.
 - Startup launch audit, security-baseline, and prepare actions moved out of
   `commands/startup-launch-readiness` into
   `commands/startup-launch-baseline-actions`.
