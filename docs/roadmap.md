@@ -220,6 +220,8 @@ The current implementation wave closed the highest-confidence product gaps:
   moved out of the CLI entrypoint into `commands/agent`.
 - Dashboard startup run comparison and recovery narrative helpers moved out of
   `dashboard-startup-timeline` into `dashboard-startup-run-comparison`.
+- RBAC default policy, schema parsing, and policy-file IO moved out of `rbac`
+  into `rbac-policy`.
 - Agent provider listing moved out of the agent command adapter into
   `commands/agent-providers`.
 - Agent inspect subcommand and depth-to-preset parsing moved out of the agent

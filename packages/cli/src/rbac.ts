@@ -1,17 +1,24 @@
-import { constants } from "node:fs";
-import { access, mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
+import { join, resolve } from "node:path";
 
 import { createRunsteadId, type RunsteadEvent } from "@runstead/core";
 import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sqlite";
-import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
-import { z } from "zod";
 
+import { requireRunsteadRoot, requireRunsteadStateDbSync } from "./runstead-root.js";
 import {
-  requireRunsteadRoot,
-  requireRunsteadRootSync,
-  requireRunsteadStateDbSync
-} from "./runstead-root.js";
+  assertKnownRbacRole,
+  createDefaultRbacPolicy,
+  loadRbacPolicy,
+  rbacPolicyExists,
+  writeRbacPolicy,
+  type RbacPolicy
+} from "./rbac-policy.js";
+
+export {
+  DEFAULT_RBAC_YAML,
+  createDefaultRbacPolicy,
+  loadRbacPolicy,
+  type RbacPolicy
+} from "./rbac-policy.js";
 
 export type RbacDecision = "allow" | "deny";
 
@@ -57,76 +64,12 @@ export interface CheckPermissionResult {
   reason: string;
 }
 
-export const DEFAULT_RBAC_YAML = `version: 1
-
-roles:
-  viewer:
-    - dashboard.read
-    - domain.read
-    - repo.read
-    - goal.read
-    - task.read
-    - evidence.read
-    - memory.read
-    - audit.read
-  operator:
-    - dashboard.read
-    - dashboard.manage
-    - domain.read
-    - domain.manage
-    - repo.read
-    - repo.manage
-    - goal.read
-    - goal.manage
-    - task.read
-    - task.run
-    - evidence.read
-    - evidence.write
-    - memory.read
-    - memory.write
-    - daemon.manage
-    - webhook.manage
-    - team_policy.read
-    - team_policy.manage
-    - github_app.read
-    - github_app.manage
-  approver:
-    - dashboard.read
-    - domain.read
-    - repo.read
-    - goal.read
-    - task.read
-    - evidence.read
-    - memory.read
-    - approval.read
-    - approval.decide
-  admin:
-    - "*"
-
-subjects:
-  local-admin:
-    roles:
-      - admin
-`;
-
-const RbacSubjectSchema = z.object({
-  roles: z.array(z.string().min(1))
-});
-
-const RbacPolicySchema = z.object({
-  version: z.literal(1),
-  roles: z.record(z.string(), z.array(z.string().min(1))),
-  subjects: z.record(z.string(), RbacSubjectSchema)
-});
-
-export type RbacPolicy = z.infer<typeof RbacPolicySchema>;
-
 export async function initRbac(options: InitRbacOptions = {}): Promise<InitRbacResult> {
   const root = await resolveInitializedRoot(options.cwd);
   const path = join(root, "rbac.yaml");
   const role = options.role ?? "admin";
   const subject = options.subject ?? "local-admin";
-  const existing = await exists(path);
+  const existing = await rbacPolicyExists(path);
 
   if (existing && options.force !== true) {
     return {
@@ -163,11 +106,11 @@ export async function grantRole(options: GrantRoleOptions): Promise<GrantRoleRes
 
   const root = await resolveInitializedRoot(options.cwd);
   const path = join(root, "rbac.yaml");
-  const policy = (await exists(path))
+  const policy = (await rbacPolicyExists(path))
     ? await loadRbacPolicy(options.cwd === undefined ? {} : { cwd: options.cwd })
     : createDefaultRbacPolicy();
 
-  assertKnownRole(policy, options.role);
+  assertKnownRbacRole(policy, options.role);
 
   const currentRoles = policy.subjects[options.subject]?.roles ?? [];
   policy.subjects[options.subject] = {
@@ -240,34 +183,6 @@ export async function checkPermission(
   };
 }
 
-export async function loadRbacPolicy(
-  options: { cwd?: string } = {}
-): Promise<RbacPolicy> {
-  const path = resolveRbacPath(options.cwd);
-
-  if (!(await exists(path))) {
-    return parseRbacPolicy(DEFAULT_RBAC_YAML);
-  }
-
-  return parseRbacPolicy(await readFile(path, "utf8"));
-}
-
-export function createDefaultRbacPolicy(
-  subject = "local-admin",
-  role = "admin"
-): RbacPolicy {
-  const policy = parseRbacPolicy(DEFAULT_RBAC_YAML);
-
-  assertKnownRole(policy, role);
-  policy.subjects = {
-    [subject]: {
-      roles: [role]
-    }
-  };
-
-  return policy;
-}
-
 export function formatRbacCheckResult(result: CheckPermissionResult): string {
   return [
     `Subject: ${result.subject}`,
@@ -278,38 +193,8 @@ export function formatRbacCheckResult(result: CheckPermissionResult): string {
   ].join("\n");
 }
 
-function parseRbacPolicy(raw: string): RbacPolicy {
-  return RbacPolicySchema.parse(parseYaml(raw));
-}
-
-async function writeRbacPolicy(path: string, policy: RbacPolicy): Promise<void> {
-  await mkdir(dirname(path), { recursive: true });
-  await writeFile(path, stringifyYaml(policy), "utf8");
-}
-
-function resolveRbacPath(cwd = process.cwd()): string {
-  const root = requireRunsteadRootSync(cwd);
-
-  return join(root.root, "rbac.yaml");
-}
-
 async function resolveInitializedRoot(cwd = process.cwd()): Promise<string> {
   const root = await requireRunsteadRoot(resolve(cwd));
 
   return root.root;
-}
-
-function assertKnownRole(policy: RbacPolicy, role: string): void {
-  if (policy.roles[role] === undefined) {
-    throw new Error(`Unknown RBAC role: ${role}`);
-  }
-}
-
-async function exists(path: string): Promise<boolean> {
-  try {
-    await access(path, constants.F_OK);
-    return true;
-  } catch {
-    return false;
-  }
 }
