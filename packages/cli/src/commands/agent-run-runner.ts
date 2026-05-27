@@ -1,13 +1,13 @@
 import { requireRbacPermission } from "../cli-rbac.js";
-import {
-  localAgentPresetRunsVerifiersFirst,
-  resolvePresetVerifierCommandOptions
-} from "../local-agent-verifier-options.js";
 
 import {
   agentBudgetTaskOptions,
   runAndReportLocalAgentTask
 } from "./agent-budget-options.js";
+import {
+  parseLocalAgentMode,
+  resolveAgentRunPresetOptions
+} from "./agent-run-options.js";
 import {
   ALL_LOCAL_AGENT_WORKERS,
   parseAgentWorkerOption
@@ -50,45 +50,14 @@ export async function runAgentRunCommand(
 
   const { attachLocalAgentVerifierEvidence, createLocalAgentTask } =
     await import("../local-agent.js");
-  const { resolveConfiguredLocalAgentPreset } =
-    await import("../local-agent-presets.js");
   const prompt = promptParts.join(" ").trim();
-  let resolvedPreset =
-    options.preset === undefined
-      ? undefined
-      : await resolveConfiguredLocalAgentPreset(
-          options.preset,
-          {
-            ...(prompt.length === 0 ? {} : { prompt })
-          },
-          {
-            ...(options.cwd === undefined ? {} : { cwd: options.cwd })
-          }
-        );
-
-  const verifierCommands = await resolvePresetVerifierCommandOptions({
-    values: options.verifier,
-    commandName: "agent run",
-    ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-    ...(resolvedPreset === undefined ? {} : { preset: resolvedPreset })
-  });
-
-  if (resolvedPreset !== undefined) {
-    resolvedPreset = await resolveConfiguredLocalAgentPreset(
-      resolvedPreset.preset.id,
-      {
-        ...(prompt.length === 0 ? {} : { prompt }),
-        verifierNames: verifierCommands.map((item) => item.name)
-      },
-      {
-        ...(options.cwd === undefined ? {} : { cwd: options.cwd })
-      }
-    );
-  }
-
-  if (resolvedPreset === undefined && prompt.length === 0) {
-    throw new Error("agent run prompt is required unless --preset is set");
-  }
+  const { resolvedPreset, verifierCommands, runPresetVerifiersFirst } =
+    await resolveAgentRunPresetOptions({
+      prompt,
+      verifier: options.verifier,
+      ...(options.preset === undefined ? {} : { preset: options.preset }),
+      ...(options.cwd === undefined ? {} : { cwd: options.cwd })
+    });
 
   const model = options.model ?? resolvedPreset?.model;
   const created = await createLocalAgentTask({
@@ -123,10 +92,7 @@ export async function runAgentRunCommand(
     )
   });
 
-  if (
-    resolvedPreset !== undefined &&
-    localAgentPresetRunsVerifiersFirst(resolvedPreset.preset.verifierPolicy)
-  ) {
+  if (runPresetVerifiersFirst) {
     await attachLocalAgentVerifierEvidence({
       ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
       taskId: created.task.id
@@ -137,12 +103,4 @@ export async function runAgentRunCommand(
     ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
     taskId: created.task.id
   });
-}
-
-function parseLocalAgentMode(value: string): "read-only" | "edit" | "repair" {
-  if (value === "read-only" || value === "edit" || value === "repair") {
-    return value;
-  }
-
-  throw new Error("--mode must be read-only, edit, or repair");
 }

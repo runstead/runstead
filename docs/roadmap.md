@@ -786,6 +786,8 @@ The current implementation wave closed the highest-confidence product gaps:
   into `commands/agent-review-scope`.
 - Local agent worker support parsing moved out of individual agent command
   runners into `commands/agent-worker-options`.
+- Local agent run preset, verifier, and mode option handling moved out of
+  `commands/agent-run-runner` into `commands/agent-run-options`.
 - Startup launch audit, security-baseline, and prepare actions moved out of
   `commands/startup-launch-readiness` into
   `commands/startup-launch-baseline-actions`.
