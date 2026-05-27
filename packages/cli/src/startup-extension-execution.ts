@@ -4,11 +4,9 @@ import type { ReadinessTarget } from "@runstead/runtime";
 
 import { type LocalAgentWorkerKind } from "./local-agent.js";
 import { type StartupGateStage } from "./startup-evidence.js";
-import {
-  runStartupExtensionCollectors,
-  startupExtensionCollectorsForTarget,
-  type StartupExtensionCollectorExecutionResult
-} from "./startup-extension-collector-runner.js";
+import { runStartupExtensionCollectors } from "./startup-extension-collector-runner.js";
+import { startupExtensionCollectorsForTarget } from "./startup-extension-collector-selection.js";
+import type { StartupExtensionCollectorExecutionResult } from "./startup-extension-collector-types.js";
 import {
   loadStartupReadinessExtensions,
   startupReadinessExtensionEvidenceRequirements,

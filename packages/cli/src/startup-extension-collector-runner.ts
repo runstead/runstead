@@ -1,7 +1,7 @@
 import { join } from "node:path";
 
-import type { ReadinessEvidenceRequirement, ReadinessTarget } from "@runstead/runtime";
-import { type RunsteadEvidenceCollector } from "@runstead/sdk";
+import type { ReadinessTarget } from "@runstead/runtime";
+import type { RunsteadEvidenceCollector } from "@runstead/sdk";
 import { openRunsteadDatabase } from "@runstead/state-sqlite";
 
 import { runGovernedToolAction } from "./governed-action.js";
@@ -11,7 +11,6 @@ import { requireRunsteadStateDb } from "./runstead-root.js";
 import { finishWorkerRun, startWorkerRun } from "./runtime-audit.js";
 import { type StartupGateStage } from "./startup-evidence.js";
 import {
-  normalizeStartupExtensionEvidenceType,
   recordExtensionCollectorEvidence,
   runExtensionCollectorCommand
 } from "./startup-extension-collector-evidence.js";
@@ -21,50 +20,13 @@ import {
   finishExtensionCollectorTask,
   startExtensionCollectorTask
 } from "./startup-extension-collector-task.js";
+import type {
+  StartupExtensionCollectorExecutionResult,
+  StartupExtensionCollectorInput
+} from "./startup-extension-collector-types.js";
 import type { LoadedStartupReadinessExtension } from "./startup-extension-loader.js";
 
 const EXTENSION_COLLECTOR_TIMEOUT_MS = 30_000;
-
-export interface StartupExtensionCollectorExecutionResult {
-  extensionId: string;
-  collectorId: string;
-  status: "passed" | "blocked" | "skipped";
-  command?: string;
-  evidenceIds: string[];
-  blockers: string[];
-  warnings: string[];
-}
-
-export interface StartupExtensionCollectorInput {
-  extension: LoadedStartupReadinessExtension;
-  collector: RunsteadEvidenceCollector;
-}
-
-export function startupExtensionCollectorsForTarget(input: {
-  extensions: LoadedStartupReadinessExtension[];
-  requirements: ReadinessEvidenceRequirement[];
-  target: ReadinessTarget;
-}): StartupExtensionCollectorInput[] {
-  const requiredTypes = new Set(
-    input.requirements
-      .filter((requirement) => requirement.targets.includes(input.target))
-      .flatMap((requirement) =>
-        requirement.evidenceTypes.map(normalizeStartupExtensionEvidenceType)
-      )
-  );
-
-  return input.extensions.flatMap((extension) =>
-    extension.contract.collectors
-      .filter(
-        (collector) =>
-          collector.targets.includes(input.target) &&
-          collector.producesEvidenceTypes
-            .map(normalizeStartupExtensionEvidenceType)
-            .some((type) => requiredTypes.has(type))
-      )
-      .map((collector) => ({ extension, collector }))
-  );
-}
 
 export async function runStartupExtensionCollectors(input: {
   cwd: string;
