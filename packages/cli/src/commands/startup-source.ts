@@ -4,7 +4,7 @@ import { collectValues } from "../startup-command-parsers.js";
 import {
   collectStartupSourceCommand,
   type StartupSourceCollectCommandOptions
-} from "./startup-source-actions.js";
+} from "./startup-source-collect.js";
 import { listStartupSourceConnectorContracts } from "./startup-source-contracts.js";
 import {
   recordStartupSourceCommand,
