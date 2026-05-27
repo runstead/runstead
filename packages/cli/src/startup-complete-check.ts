@@ -1,8 +1,6 @@
-import { writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
 import { createRunsteadId } from "@runstead/core";
-import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sqlite";
 
 import { buildDashboard } from "./dashboard.js";
 import { collectRepoInspection } from "./inspection-evidence.js";
@@ -24,9 +22,12 @@ import {
   completeProductScore,
   completeProductStatus,
   formatStartupCompleteProductCheck,
-  startupCompleteProductEvent,
-  startupCompleteProductJson
+  startupCompleteProductEvent
 } from "./startup-complete-check-output.js";
+import {
+  appendStartupCompleteProductCheckEvent,
+  writeStartupCompleteProductCheckArtifacts
+} from "./startup-complete-check-persistence.js";
 import {
   startupCompleteProductEvidenceSourceRefs,
   startupCompleteProductExistingArtifactPaths,
@@ -201,20 +202,15 @@ export async function generateStartupCompleteProductCheck(
   };
   const markdown = formatStartupCompleteProductCheck(result);
 
-  await writeFile(markdownPath, markdown, "utf8");
-  await writeFile(
-    jsonPath,
-    `${JSON.stringify(startupCompleteProductJson({ result, launchReport, ci, remediation, diagnostics }), null, 2)}\n`,
-    "utf8"
-  );
-
-  const database = openRunsteadDatabase(state.stateDb);
-
-  try {
-    appendEventAndProject(database, { event });
-  } finally {
-    database.close();
-  }
+  await writeStartupCompleteProductCheckArtifacts({
+    result,
+    markdown,
+    launchReport,
+    ci,
+    remediation,
+    diagnostics
+  });
+  appendStartupCompleteProductCheckEvent(result);
 
   return {
     ...result,

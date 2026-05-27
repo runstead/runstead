@@ -617,6 +617,8 @@ The current implementation wave closed the highest-confidence product gaps:
   contracts moved out of the generator into `startup-complete-check-types`.
 - Startup complete-check review surface, source-ref, and existing-artifact path
   builders moved out of the generator into `startup-complete-check-surfaces`.
+- Startup complete-check Markdown/JSON artifact writing and event persistence
+  moved out of the generator into `startup-complete-check-persistence`.
 - `email-followup` now has a mature draft-only lifecycle, fixtures, evals,
   gates, report sections, and docs.
 - Non-startup golden paths are covered by a combined runbook and CLI/domain
