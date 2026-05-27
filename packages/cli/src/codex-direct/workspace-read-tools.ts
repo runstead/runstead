@@ -4,7 +4,6 @@ import {
   inspectWorkspacePath,
   listWorkspaceFiles,
   readManyWorkspaceFiles,
-  searchWorkspaceText,
   workspaceTree
 } from "../codex-direct-native-tools.js";
 import { runGovernedToolAction } from "../governed-action.js";
@@ -136,64 +135,6 @@ export async function runGovernedReadManyFiles(
           bytes: value.bytes,
           returnedBytes: value.returnedBytes,
           truncated: value.truncated
-        }
-      };
-    }
-  }).then((result) => result.value);
-}
-
-export async function runGovernedSearchText(
-  options: CodexDirectWorkerOptions & {
-    workerRun: WorkerRun;
-    query: string;
-    regex: boolean;
-    glob?: string[];
-    caseSensitive: boolean;
-    contextLines?: number;
-    maxMatches?: number;
-    maxBytesPerFile?: number;
-  }
-) {
-  return runGovernedToolAction({
-    ...governedToolOptions(options),
-    action: filesystemReadAction({
-      cwd: options.cwd,
-      actionType: "filesystem.search",
-      path: ".",
-      stableParts: [
-        options.cwd,
-        options.query,
-        options.regex,
-        options.glob ?? [],
-        options.caseSensitive,
-        options.contextLines,
-        options.maxMatches,
-        options.maxBytesPerFile
-      ]
-    }),
-    run: async () => {
-      const value = await searchWorkspaceText(options.cwd, {
-        query: options.query,
-        regex: options.regex,
-        ...(options.glob === undefined ? {} : { glob: options.glob }),
-        caseSensitive: options.caseSensitive,
-        ...(options.contextLines === undefined
-          ? {}
-          : { contextLines: options.contextLines }),
-        ...(options.maxMatches === undefined ? {} : { maxMatches: options.maxMatches }),
-        ...(options.maxBytesPerFile === undefined
-          ? {}
-          : { maxBytesPerFile: options.maxBytesPerFile })
-      });
-
-      return {
-        value,
-        output: {
-          matches: value.matches.length,
-          truncated: value.truncated,
-          filesSearched: value.filesSearched,
-          filesTruncated: value.filesTruncated,
-          filesSkippedTooLarge: value.filesSkippedTooLarge
         }
       };
     }
