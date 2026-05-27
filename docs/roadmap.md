@@ -655,6 +655,8 @@ The current implementation wave closed the highest-confidence product gaps:
   `commands/github-pr`.
 - Approval list/show command registration moved out of `commands/approval` into
   `commands/approval-read`.
+- Approval decision command registration moved out of `commands/approval` into
+  `commands/approval-decisions`.
 - Team control-plane runner heartbeat and list formatting moved out of
   `team-control-plane-runner` into `team-control-plane-runner-format`.
 - Team control-plane Postgres connection validation and client creation moved
