@@ -20,7 +20,8 @@ import {
   codexDirectPendingPatchPayload,
   type CodexDirectPendingToolResumeContext
 } from "./patch-actions.js";
-import { readEvidenceArtifact, readWorkspaceFacts } from "./evidence-actions.js";
+import { readEvidenceArtifact } from "./evidence-artifact-reader.js";
+import { readWorkspaceFacts } from "./evidence-actions.js";
 import { resolveVerifierCommand } from "./verifier-command-resolution.js";
 import { storeCommandVerifierEvidence } from "../verifier-evidence.js";
 
