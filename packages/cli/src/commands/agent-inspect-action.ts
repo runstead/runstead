@@ -1,10 +1,8 @@
 import { requireRbacPermission } from "../cli-rbac.js";
 
-import {
-  agentBudgetTaskOptions,
-  runAndReportLocalAgentTask
-} from "./agent-budget-options.js";
+import { agentBudgetTaskOptions } from "./agent-budget-options.js";
 import { localAgentInspectPresetId } from "./agent-inspect-depth.js";
+import { runCreatedLocalAgentTask } from "./agent-task-execution.js";
 import { agentTaskModelOptions } from "./agent-task-options.js";
 import {
   CODEX_DIRECT_AGENT_WORKERS,
@@ -67,7 +65,7 @@ export async function runAgentInspectCommand(
       maxFailedToolCalls: resolvedPreset.preset.maxFailedToolCalls
     })
   });
-  await runAndReportLocalAgentTask({
+  await runCreatedLocalAgentTask({
     ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
     taskId: created.task.id
   });

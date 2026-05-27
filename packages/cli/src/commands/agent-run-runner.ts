@@ -1,13 +1,11 @@
 import { requireRbacPermission } from "../cli-rbac.js";
 
-import {
-  agentBudgetTaskOptions,
-  runAndReportLocalAgentTask
-} from "./agent-budget-options.js";
+import { agentBudgetTaskOptions } from "./agent-budget-options.js";
 import {
   parseLocalAgentMode,
   resolveAgentRunPresetOptions
 } from "./agent-run-options.js";
+import { runCreatedLocalAgentTask } from "./agent-task-execution.js";
 import { agentTaskModelOptions } from "./agent-task-options.js";
 import {
   ALL_LOCAL_AGENT_WORKERS,
@@ -49,8 +47,7 @@ export async function runAgentRunCommand(
       "agent run currently supports --worker codex_direct, codex_cli, or claude_code"
   });
 
-  const { attachLocalAgentVerifierEvidence, createLocalAgentTask } =
-    await import("../local-agent.js");
+  const { createLocalAgentTask } = await import("../local-agent.js");
   const prompt = promptParts.join(" ").trim();
   const { resolvedPreset, verifierCommands, runPresetVerifiersFirst } =
     await resolveAgentRunPresetOptions({
@@ -90,15 +87,9 @@ export async function runAgentRunCommand(
     )
   });
 
-  if (runPresetVerifiersFirst) {
-    await attachLocalAgentVerifierEvidence({
-      ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-      taskId: created.task.id
-    });
-  }
-
-  await runAndReportLocalAgentTask({
+  await runCreatedLocalAgentTask({
     ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-    taskId: created.task.id
+    taskId: created.task.id,
+    verifierFirst: runPresetVerifiersFirst
   });
 }

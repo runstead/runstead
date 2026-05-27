@@ -863,6 +863,8 @@ The current implementation wave closed the highest-confidence product gaps:
   into `commands/agent-report-action`.
 - Agent review scope prompt construction moved out of the review runner into
   `commands/agent-review-prompt`.
+- Agent task verifier-first execution and run-report handling moved out of
+  budget parsing into `commands/agent-task-execution`.
 
 ## Remaining Backlog
 

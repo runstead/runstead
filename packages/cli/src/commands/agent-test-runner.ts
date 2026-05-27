@@ -1,10 +1,8 @@
 import { requireRbacPermission } from "../cli-rbac.js";
 
-import {
-  agentBudgetTaskOptions,
-  runAndReportLocalAgentTask
-} from "./agent-budget-options.js";
+import { agentBudgetTaskOptions } from "./agent-budget-options.js";
 import { resolveAgentPresetVerifierOptions } from "./agent-preset-verifiers.js";
+import { runCreatedLocalAgentTask } from "./agent-task-execution.js";
 import { agentTaskModelOptions } from "./agent-task-options.js";
 import {
   CODEX_DIRECT_AGENT_WORKERS,
@@ -41,8 +39,7 @@ export async function runAgentTestCommand(
     unsupportedMessage: "agent test currently supports --worker codex_direct only"
   });
 
-  const { attachLocalAgentVerifierEvidence, createLocalAgentTask } =
-    await import("../local-agent.js");
+  const { createLocalAgentTask } = await import("../local-agent.js");
   const focus = focusParts.join(" ").trim();
   const { resolvedPreset, verifierCommands } = await resolveAgentPresetVerifierOptions({
     ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
@@ -70,13 +67,9 @@ export async function runAgentTestCommand(
     })
   });
 
-  await attachLocalAgentVerifierEvidence({
+  await runCreatedLocalAgentTask({
     ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-    taskId: created.task.id
-  });
-
-  await runAndReportLocalAgentTask({
-    ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-    taskId: created.task.id
+    taskId: created.task.id,
+    verifierFirst: true
   });
 }

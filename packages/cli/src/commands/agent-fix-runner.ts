@@ -1,10 +1,8 @@
 import { requireRbacPermission } from "../cli-rbac.js";
 
-import {
-  agentBudgetTaskOptions,
-  runAndReportLocalAgentTask
-} from "./agent-budget-options.js";
+import { agentBudgetTaskOptions } from "./agent-budget-options.js";
 import { resolveAgentPresetVerifierOptions } from "./agent-preset-verifiers.js";
+import { runCreatedLocalAgentTask } from "./agent-task-execution.js";
 import { agentTaskModelOptions } from "./agent-task-options.js";
 import {
   CODEX_DIRECT_AGENT_WORKERS,
@@ -51,8 +49,7 @@ export async function runAgentFixLikeCommand(input: {
     throw new Error("agent fix prompt is required");
   }
 
-  const { attachLocalAgentVerifierEvidence, createLocalAgentTask } =
-    await import("../local-agent.js");
+  const { createLocalAgentTask } = await import("../local-agent.js");
   const { resolvedPreset, verifierCommands } = await resolveAgentPresetVerifierOptions({
     ...(input.options.cwd === undefined ? {} : { cwd: input.options.cwd }),
     presetId: input.presetId,
@@ -82,15 +79,9 @@ export async function runAgentFixLikeCommand(input: {
     })
   });
 
-  if (input.verifierFirst) {
-    await attachLocalAgentVerifierEvidence({
-      ...(input.options.cwd === undefined ? {} : { cwd: input.options.cwd }),
-      taskId: created.task.id
-    });
-  }
-
-  await runAndReportLocalAgentTask({
+  await runCreatedLocalAgentTask({
     ...(input.options.cwd === undefined ? {} : { cwd: input.options.cwd }),
-    taskId: created.task.id
+    taskId: created.task.id,
+    verifierFirst: input.verifierFirst
   });
 }
