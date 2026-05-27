@@ -668,6 +668,8 @@ The current implementation wave closed the highest-confidence product gaps:
   `commands/startup-evidence-manual-change`.
 - Local-agent Codex Direct budget diagnostic cause/retry mapping moved out of
   `local-agent-diagnostics` into `local-agent-budget-diagnostics`.
+- Local-agent verifier-result and stored verifier-output diagnostics moved out
+  of `local-agent-diagnostics` into `local-agent-verifier-diagnostics`.
 
 ## Remaining Backlog
 
