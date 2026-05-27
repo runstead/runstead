@@ -658,6 +658,9 @@ The current implementation wave closed the highest-confidence product gaps:
 - CI repair pull-request body construction and task-output context parsing moved
   out of `ci-repair-orchestrator-report` into
   `ci-repair-orchestrator-pr-body`.
+- Startup structured customer-interview and competitor evidence command
+  registration moved out of `commands/startup-evidence` into
+  `commands/startup-evidence-structured`.
 
 ## Remaining Backlog
 
