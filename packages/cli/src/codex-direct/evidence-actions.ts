@@ -132,7 +132,3 @@ export async function readLatestWorkspaceFacts(database: RunsteadDatabase): Prom
     facts
   };
 }
-
-export function previewText(value: string): string {
-  return value.length <= 500 ? value : `${value.slice(0, 500)}...`;
-}
