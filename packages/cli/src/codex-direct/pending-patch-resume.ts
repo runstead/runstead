@@ -1,7 +1,3 @@
-import {
-  ToolActionApprovalRequiredError,
-  ToolActionDeniedError
-} from "../governed-action.js";
 import { startWorkerRun } from "../runtime-audit.js";
 import {
   CODEX_DIRECT_WORKER_KIND,
@@ -9,11 +5,8 @@ import {
 } from "./constants.js";
 import { runCodexDirectConversation } from "./conversation.js";
 import { applyCodexDirectPendingPatch } from "./pending-patch-apply.js";
-import {
-  completedWorkerResult,
-  CodexDirectModelTimeoutError,
-  modelTimeoutInterruption
-} from "./tool-router.js";
+import { codexDirectPendingPatchResumeErrorResult } from "./pending-patch-resume-error-result.js";
+import { completedWorkerResult } from "./tool-router.js";
 import type {
   CodexDirectPendingPatchResumeOptions,
   CodexDirectWorkerResult
@@ -91,61 +84,10 @@ export async function runCodexDirectPendingPatchResume(
       ]
     });
   } catch (error) {
-    if (error instanceof ToolActionApprovalRequiredError) {
-      return completedWorkerResult({
-        options,
-        workerRun,
-        status: "waiting_approval",
-        exitCode: 2,
-        summary: error.message,
-        toolCalls: 1,
-        failedToolCalls: 0,
-        approval: {
-          id: error.approval.id,
-          actionId: error.approval.actionId,
-          policyDecisionId: error.policyDecision.id,
-          reason: error.approval.reason
-        }
-      });
-    }
-
-    if (error instanceof ToolActionDeniedError) {
-      return completedWorkerResult({
-        options,
-        workerRun,
-        status: "blocked",
-        exitCode: 3,
-        summary: error.message,
-        toolCalls: 1,
-        failedToolCalls: 0
-      });
-    }
-
-    if (error instanceof CodexDirectModelTimeoutError) {
-      return completedWorkerResult({
-        options,
-        workerRun,
-        status: "interrupted",
-        exitCode: 124,
-        summary: error.message,
-        toolCalls: 1,
-        failedToolCalls: 0,
-        warnings: [
-          `Resumed from approved pending patch ${options.pendingPatch.approvalId}.`,
-          "Codex Direct model request timed out; the task is recoverable with runstead resume."
-        ],
-        interruption: modelTimeoutInterruption(options, error)
-      });
-    }
-
-    return completedWorkerResult({
+    return codexDirectPendingPatchResumeErrorResult({
+      error,
       options,
-      workerRun,
-      status: "failed",
-      exitCode: 1,
-      summary: error instanceof Error ? error.message : String(error),
-      toolCalls: 1,
-      failedToolCalls: 1
+      workerRun
     });
   }
 }
