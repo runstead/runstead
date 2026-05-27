@@ -4,11 +4,12 @@ import type {
   DashboardOperatorConsole,
   DashboardStartupSnapshot
 } from "./dashboard-types.js";
-import {
-  dashboardApprovalApproveAndResumeCommand,
-  dashboardOperatorRunContext
-} from "./dashboard-operator-commands.js";
+import { dashboardOperatorRunContext } from "./dashboard-operator-commands.js";
 import { dashboardOperatorActions } from "./dashboard-operator-action-list.js";
+import {
+  dashboardOperatorBlockerCount,
+  dashboardPendingApprovals
+} from "./dashboard-operator-summary.js";
 
 export function buildDashboardOperatorConsole(input: {
   cwd: string;
@@ -27,21 +28,8 @@ export function buildDashboardOperatorConsole(input: {
           cwd: input.cwd,
           run
         });
-  const pendingApprovals = input.approvals
-    .filter((item) => item.status === "pending")
-    .map((approval) => ({
-      id: approval.id,
-      risk: approval.risk,
-      reason: approval.reason,
-      command: dashboardApprovalApproveAndResumeCommand(input.cwd, approval.id)
-    }));
-  const blockerCount =
-    input.startup.status?.gates.reduce(
-      (count, gate) => count + gate.blockers.length,
-      0
-    ) ??
-    run?.blockers.length ??
-    0;
+  const pendingApprovals = dashboardPendingApprovals(input);
+  const blockerCount = dashboardOperatorBlockerCount(input.startup);
 
   return {
     actions,

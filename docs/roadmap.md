@@ -921,6 +921,8 @@ The current implementation wave closed the highest-confidence product gaps:
 - Dashboard operator action collection for daemon approvals, startup next
   actions, run commands, and guided-flow commands moved out of the operator
   console aggregate into `dashboard-operator-action-list`.
+- Dashboard operator pending-approval rows and blocker-count calculation moved
+  out of the operator console aggregate into `dashboard-operator-summary`.
 
 ## Remaining Backlog
 
