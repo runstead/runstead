@@ -885,6 +885,8 @@ The current implementation wave closed the highest-confidence product gaps:
   the audit timeline aggregate module into `dashboard-model-request-timeline`.
 - Dashboard worker-run and tool-call timeline querying moved out of the audit
   timeline aggregate module into `dashboard-execution-timeline`.
+- Dashboard approval and evidence timeline querying moved out of the audit
+  timeline aggregate module into `dashboard-governance-evidence-timeline`.
 
 ## Remaining Backlog
 
