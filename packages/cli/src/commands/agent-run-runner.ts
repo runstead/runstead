@@ -8,6 +8,7 @@ import {
   parseLocalAgentMode,
   resolveAgentRunPresetOptions
 } from "./agent-run-options.js";
+import { agentTaskModelOptions } from "./agent-task-options.js";
 import {
   ALL_LOCAL_AGENT_WORKERS,
   parseAgentWorkerOption
@@ -59,7 +60,6 @@ export async function runAgentRunCommand(
       ...(options.cwd === undefined ? {} : { cwd: options.cwd })
     });
 
-  const model = options.model ?? resolvedPreset?.model;
   const created = await createLocalAgentTask({
     ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
     prompt: resolvedPreset?.prompt ?? prompt,
@@ -70,9 +70,7 @@ export async function runAgentRunCommand(
           checkpoint: resolvedPreset.preset.checkpoint
         }),
     worker,
-    ...(options.provider === undefined ? {} : { provider: options.provider }),
-    ...(model === undefined ? {} : { model }),
-    ...(options.baseUrl === undefined ? {} : { baseUrl: options.baseUrl }),
+    ...agentTaskModelOptions(options, resolvedPreset?.model),
     mode:
       resolvedPreset === undefined
         ? parseLocalAgentMode(options.mode)

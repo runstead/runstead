@@ -5,6 +5,7 @@ import {
   runAndReportLocalAgentTask
 } from "./agent-budget-options.js";
 import { resolveAgentPresetVerifierOptions } from "./agent-preset-verifiers.js";
+import { agentTaskModelOptions } from "./agent-task-options.js";
 import {
   CODEX_DIRECT_AGENT_WORKERS,
   parseAgentWorkerOption
@@ -62,18 +63,13 @@ export async function runAgentFixLikeCommand(input: {
       input.presetId === "fix:small" ? "fix" : "repair-test"
     } requires at least one --verifier name=command, --verifier auto, or preset verifier`
   });
-  const model = input.options.model ?? resolvedPreset.model;
   const created = await createLocalAgentTask({
     ...(input.options.cwd === undefined ? {} : { cwd: input.options.cwd }),
     prompt: resolvedPreset.prompt,
     preset: resolvedPreset.preset.id,
     title: input.title,
     worker,
-    ...(input.options.provider === undefined
-      ? {}
-      : { provider: input.options.provider }),
-    ...(model === undefined ? {} : { model }),
-    ...(input.options.baseUrl === undefined ? {} : { baseUrl: input.options.baseUrl }),
+    ...agentTaskModelOptions(input.options, resolvedPreset.model),
     mode: resolvedPreset.preset.mode,
     checkpoint: resolvedPreset.preset.checkpoint,
     allowedPaths: input.options.allowed,

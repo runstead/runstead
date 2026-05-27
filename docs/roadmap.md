@@ -849,6 +849,8 @@ The current implementation wave closed the highest-confidence product gaps:
   out of `commands/startup-gate` into `commands/startup-gate-actions`.
 - Agent fix, repair-test, and test preset verifier setup moved out of the
   command runners into `commands/agent-preset-verifiers`.
+- Agent task provider/model/base URL option construction moved out of command
+  runners into `commands/agent-task-options`.
 
 ## Remaining Backlog
 
