@@ -2,10 +2,7 @@ import type { Task, WorkerRun } from "@runstead/core";
 import type { RunsteadDatabase } from "@runstead/state-sqlite";
 
 import type { CreateCiRepairTaskResult } from "./ci-repair.js";
-import {
-  gitCommitAction,
-  gitStatusAction
-} from "./ci-repair-orchestrator-actions.js";
+import { gitCommitAction, gitStatusAction } from "./ci-repair-orchestrator-actions.js";
 import type { CiRepairOrchestratorStageContext } from "./ci-repair-orchestrator-context.js";
 import { stageAtLeast } from "./ci-repair-orchestrator-context.js";
 import {
