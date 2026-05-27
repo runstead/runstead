@@ -234,6 +234,9 @@ The current implementation wave closed the highest-confidence product gaps:
   `codex-direct-package-manager`.
 - Init policy profile-specific YAML rule fragments moved out of
   `init-policy-yaml` into `init-policy-rule-yaml`.
+- CI repair publish covered-action policy/audit wrapper moved out of
+  `ci-repair-orchestrator-publish` into
+  `ci-repair-orchestrator-publish-covered-action`.
 - Agent provider listing moved out of the agent command adapter into
   `commands/agent-providers`.
 - Agent inspect subcommand and depth-to-preset parsing moved out of the agent
