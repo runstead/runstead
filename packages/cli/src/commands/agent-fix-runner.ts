@@ -1,9 +1,8 @@
-import {
-  parseCiRepairWorkerKind,
-  parseRequiredPositiveInteger
-} from "../cli-parsers.js";
+import { parseCiRepairWorkerKind } from "../cli-parsers.js";
 import { requireRbacPermission } from "../cli-rbac.js";
 import { resolveVerifierCommandOptions } from "../local-agent-verifier-options.js";
+
+import { agentBudgetTaskOptions } from "./agent-budget-options.js";
 
 export interface AgentFixCliOptions {
   cwd?: string;
@@ -110,27 +109,11 @@ export async function runAgentFixLikeCommand(input: {
     allowedPaths: input.options.allowed,
     deniedPaths: input.options.denied,
     verifierCommands,
-    ...(input.options.maxTurns === undefined
-      ? { maxTurns: resolvedPreset.preset.maxTurns }
-      : {
-          maxTurns: parseRequiredPositiveInteger(input.options.maxTurns, "--max-turns")
-        }),
-    ...(input.options.maxToolCalls === undefined
-      ? { maxToolCalls: resolvedPreset.preset.maxToolCalls }
-      : {
-          maxToolCalls: parseRequiredPositiveInteger(
-            input.options.maxToolCalls,
-            "--max-tool-calls"
-          )
-        }),
-    ...(input.options.maxFailedToolCalls === undefined
-      ? { maxFailedToolCalls: resolvedPreset.preset.maxFailedToolCalls }
-      : {
-          maxFailedToolCalls: parseRequiredPositiveInteger(
-            input.options.maxFailedToolCalls,
-            "--max-failed-tool-calls"
-          )
-        })
+    ...agentBudgetTaskOptions(input.options, {
+      maxTurns: resolvedPreset.preset.maxTurns,
+      maxToolCalls: resolvedPreset.preset.maxToolCalls,
+      maxFailedToolCalls: resolvedPreset.preset.maxFailedToolCalls
+    })
   });
 
   if (input.verifierFirst) {
