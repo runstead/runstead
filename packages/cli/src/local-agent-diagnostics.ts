@@ -4,6 +4,8 @@ import type {
   CodexDirectBudgetSummary,
   CodexDirectInterruptionSummary
 } from "./codex-direct-worker.js";
+import { budgetDiagnostic } from "./local-agent-budget-diagnostics.js";
+import type { LocalAgentDiagnostic } from "./local-agent-diagnostic-types.js";
 import {
   approvalFromOutput,
   budgetFromOutput,
@@ -15,11 +17,7 @@ import {
 } from "./local-agent-diagnostic-output.js";
 import type { RunTaskVerifierCommandResult } from "./verifier-runner.js";
 
-export interface LocalAgentDiagnostic {
-  cause: string;
-  likelyReason?: string;
-  retry?: string;
-}
+export type { LocalAgentDiagnostic } from "./local-agent-diagnostic-types.js";
 
 export interface LocalAgentRunDiagnosticInput {
   task: Task;
@@ -120,23 +118,6 @@ function interruptionDiagnostic(
     likelyReason:
       "The Codex Direct model request exceeded its configured response timeout while Runstead stayed alive.",
     retry: interruption.retryCommand
-  };
-}
-
-function budgetDiagnostic(
-  budget: CodexDirectBudgetSummary | undefined
-): LocalAgentDiagnostic | undefined {
-  if (budget === undefined) {
-    return undefined;
-  }
-
-  return {
-    cause: budgetCause(budget),
-    likelyReason:
-      budget.reason === "turns" || budget.reason === "tool_calls"
-        ? "The prompt or preset needed more exploration than its configured budget."
-        : "The worker encountered too many recoverable tool errors.",
-    retry: budgetRetry(budget)
   };
 }
 
@@ -251,28 +232,6 @@ function failedToolCallsDiagnostic(
           "At least one tool returned an error such as a missing file or invalid argument.",
         retry: "review the failed tool-call audit entries before trusting the summary"
       };
-}
-
-function budgetCause(budget: CodexDirectBudgetSummary): string {
-  switch (budget.reason) {
-    case "turns":
-      return `turn budget exhausted after ${budget.maxTurns} turns and ${budget.toolCalls} tool calls`;
-    case "tool_calls":
-      return `tool budget exhausted after ${budget.toolCalls} tool calls`;
-    case "failed_tool_calls":
-      return `failed-tool budget exhausted after ${budget.failedToolCalls} failed tool calls`;
-  }
-}
-
-function budgetRetry(budget: CodexDirectBudgetSummary): string {
-  switch (budget.reason) {
-    case "turns":
-      return "rerun with a narrower preset or a higher --max-turns budget";
-    case "tool_calls":
-      return "rerun with a narrower preset or a higher --max-tool-calls budget";
-    case "failed_tool_calls":
-      return "rerun with a narrower prompt after checking missing paths or invalid tool arguments";
-  }
 }
 
 function compactDiagnostics(

@@ -666,6 +666,8 @@ The current implementation wave closed the highest-confidence product gaps:
 - Startup manual-change evidence command registration and write handler moved
   out of `commands/startup-evidence` into
   `commands/startup-evidence-manual-change`.
+- Local-agent Codex Direct budget diagnostic cause/retry mapping moved out of
+  `local-agent-diagnostics` into `local-agent-budget-diagnostics`.
 
 ## Remaining Backlog
 
