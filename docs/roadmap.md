@@ -910,6 +910,8 @@ The current implementation wave closed the highest-confidence product gaps:
   out of the dashboard page shell into `dashboard-render-core-tables`.
 - Dashboard summary metric rendering moved out of the dashboard page shell into
   `dashboard-render-summary`.
+- Dashboard startup readiness overview table rendering moved out of the startup
+  section aggregate into `dashboard-render-startup-overview`.
 
 ## Remaining Backlog
 

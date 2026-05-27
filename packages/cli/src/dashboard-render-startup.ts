@@ -1,5 +1,6 @@
 import type { DashboardStartupSnapshot } from "./dashboard-types.js";
 import { escapeHtml, statusCell } from "./dashboard-render-html.js";
+import { startupOverviewTable } from "./dashboard-render-startup-overview.js";
 import {
   startupRunComparisonTable,
   startupTimelineGroupsTable
@@ -24,7 +25,6 @@ export function startupSection(startup: DashboardStartupSnapshot): string {
         `<tr><td>${escapeHtml(gate.stage)}</td><td>${escapeHtml(blocker)}</td></tr>`
     )
   );
-  const sources = status.evidence.sourceKinds.join(", ") || "none";
   const timelineRows =
     run === undefined
       ? ""
@@ -40,7 +40,6 @@ export function startupSection(startup: DashboardStartupSnapshot): string {
         `<tr><td><code>${escapeHtml(item.evidenceId)}</code></td><td>${escapeHtml(item.type)}</td><td>${item.ageDays}d / ${item.freshnessDays}d</td><td>${escapeHtml(item.uri)}</td></tr>`
     )
     .join("");
-  const uiArtifacts = run?.uiSmokeArtifacts ?? [];
   const guidedRows =
     run === undefined
       ? ""
@@ -63,30 +62,10 @@ export function startupSection(startup: DashboardStartupSnapshot): string {
               `<tr><td>${escapeHtml(item.title)}</td><td><code>${escapeHtml(item.command)}</code></td><td>${escapeHtml(item.when)}</td></tr>`
           )
           .join("");
-  const agentPatch = startup.agentPatch;
 
   return `<section>
     <header><h2>Startup Readiness</h2><span class="muted">${escapeHtml(status.currentStage)}</span></header>
-    <table><tbody>
-      <tr><th>Latest run</th><td>${
-        run === undefined
-          ? "none"
-          : `<code>${escapeHtml(run.id)}</code> ${statusCell(run.status)} verdict=${escapeHtml(run.verdict)} target=${escapeHtml(run.target)}`
-      }</td></tr>
-      <tr><th>Next action</th><td><code>${escapeHtml(status.nextAction.command)}</code><br>${escapeHtml(status.nextAction.reason)}</td></tr>
-      <tr><th>Evidence</th><td>${status.evidence.total} records; sources: ${escapeHtml(sources)}; stale: ${status.evidence.staleSources.length}</td></tr>
-      <tr><th>Latest report</th><td><code>${escapeHtml(startup.latestReportPath ?? "none")}</code></td></tr>
-      <tr><th>UI smoke artifacts</th><td>${uiArtifacts.length === 0 ? "none" : uiArtifacts.map((artifact) => `<code>${escapeHtml(artifact)}</code>`).join("<br>")}</td></tr>
-      <tr><th>Agent patch</th><td>${
-        agentPatch === undefined
-          ? "none"
-          : `${statusCell(agentPatch.status)} task=<code>${escapeHtml(agentPatch.taskId)}</code><br>${escapeHtml(agentPatch.summary)}${
-              agentPatch.filesTouched.length === 0
-                ? ""
-                : `<br>${agentPatch.filesTouched.map((file) => `<code>${escapeHtml(file)}</code>`).join("<br>")}`
-            }`
-      }</td></tr>
-    </tbody></table>
+    ${startupOverviewTable(startup)}
     ${startupRunComparisonTable(startup.runComparison)}
     ${startupTimelineGroupsTable(startup.timelineGroups)}
     ${
