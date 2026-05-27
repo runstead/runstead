@@ -1,4 +1,3 @@
-import { parseCiRepairWorkerKind } from "../cli-parsers.js";
 import { requireRbacPermission } from "../cli-rbac.js";
 import { resolveVerifierCommandOptions } from "../local-agent-verifier-options.js";
 
@@ -6,6 +5,10 @@ import {
   agentBudgetTaskOptions,
   runAndReportLocalAgentTask
 } from "./agent-budget-options.js";
+import {
+  CODEX_DIRECT_AGENT_WORKERS,
+  parseAgentWorkerOption
+} from "./agent-worker-options.js";
 
 export interface AgentTestCliOptions {
   cwd?: string;
@@ -40,11 +43,11 @@ export async function runAgentTestCommand(
     action: "run local agent test triage"
   });
 
-  const worker = parseCiRepairWorkerKind(options.worker);
-
-  if (worker !== "codex_direct") {
-    throw new Error("agent test currently supports --worker codex_direct only");
-  }
+  const worker = parseAgentWorkerOption({
+    worker: options.worker,
+    supported: CODEX_DIRECT_AGENT_WORKERS,
+    unsupportedMessage: "agent test currently supports --worker codex_direct only"
+  });
 
   const { attachLocalAgentVerifierEvidence, createLocalAgentTask } =
     await import("../local-agent.js");

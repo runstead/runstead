@@ -1,4 +1,3 @@
-import { parseCiRepairWorkerKind } from "../cli-parsers.js";
 import { requireRbacPermission } from "../cli-rbac.js";
 
 import {
@@ -11,6 +10,10 @@ import {
   localAgentReviewPresetId,
   localAgentReviewScope
 } from "./agent-review-scope.js";
+import {
+  CODEX_DIRECT_AGENT_WORKERS,
+  parseAgentWorkerOption
+} from "./agent-worker-options.js";
 
 export interface AgentReviewCliOptions {
   cwd?: string;
@@ -38,11 +41,11 @@ export async function runAgentReviewCommand(
     action: "run local agent review"
   });
 
-  const worker = parseCiRepairWorkerKind(options.worker);
-
-  if (worker !== "codex_direct") {
-    throw new Error("agent review currently supports --worker codex_direct only");
-  }
+  const worker = parseAgentWorkerOption({
+    worker: options.worker,
+    supported: CODEX_DIRECT_AGENT_WORKERS,
+    unsupportedMessage: "agent review currently supports --worker codex_direct only"
+  });
 
   assertSingleReviewScope(options);
 

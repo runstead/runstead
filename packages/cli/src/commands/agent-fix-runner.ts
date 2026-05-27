@@ -1,4 +1,3 @@
-import { parseCiRepairWorkerKind } from "../cli-parsers.js";
 import { requireRbacPermission } from "../cli-rbac.js";
 import { resolveVerifierCommandOptions } from "../local-agent-verifier-options.js";
 
@@ -6,6 +5,10 @@ import {
   agentBudgetTaskOptions,
   runAndReportLocalAgentTask
 } from "./agent-budget-options.js";
+import {
+  CODEX_DIRECT_AGENT_WORKERS,
+  parseAgentWorkerOption
+} from "./agent-worker-options.js";
 
 export interface AgentFixCliOptions {
   cwd?: string;
@@ -46,11 +49,11 @@ export async function runAgentFixLikeCommand(input: {
     action: input.action
   });
 
-  const worker = parseCiRepairWorkerKind(input.options.worker);
-
-  if (worker !== "codex_direct") {
-    throw new Error(`${input.presetId} currently supports --worker codex_direct only`);
-  }
+  const worker = parseAgentWorkerOption({
+    worker: input.options.worker,
+    supported: CODEX_DIRECT_AGENT_WORKERS,
+    unsupportedMessage: `${input.presetId} currently supports --worker codex_direct only`
+  });
 
   if (input.presetId === "fix:small" && input.prompt.length === 0) {
     throw new Error("agent fix prompt is required");
