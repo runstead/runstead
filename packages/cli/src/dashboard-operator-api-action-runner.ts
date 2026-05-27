@@ -2,7 +2,6 @@ import type { JsonObject } from "@runstead/core";
 
 import { approveDashboardApproval } from "./dashboard-operator-api-approvals.js";
 import { DashboardOperatorApiHttpError } from "./dashboard-operator-api-http.js";
-import { requireDashboardOperatorPermission } from "./dashboard-operator-api-permissions.js";
 import type { BuildDashboardResult } from "./dashboard-types.js";
 import {
   approvalIdFromOperatorAction,
@@ -10,6 +9,11 @@ import {
 } from "./dashboard-operator-action-command.js";
 import { resumeInterruptedTasks } from "./resume.js";
 import { resumeDashboardStartupRun } from "./dashboard-operator-api-run-resume.js";
+import {
+  dashboardBuildOperatorCommand,
+  runDashboardBuildOperatorAction,
+  type DashboardOperatorApiRebuild
+} from "./dashboard-operator-api-dashboard-build.js";
 import {
   dashboardCompleteCheckOperatorCommand,
   runDashboardCompleteCheckOperatorAction
@@ -19,10 +23,7 @@ import {
   runDashboardSourcePlanOperatorAction
 } from "./dashboard-operator-api-source-plan.js";
 
-export type DashboardOperatorApiRebuild = (options: {
-  cwd: string;
-  outputDir: string;
-}) => Promise<Pick<BuildDashboardResult, "event" | "htmlPath" | "dataPath">>;
+export type { DashboardOperatorApiRebuild };
 
 export async function runDashboardOperatorAction(input: {
   build: BuildDashboardResult;
@@ -95,25 +96,14 @@ export async function runDashboardOperatorAction(input: {
     });
   }
 
-  if (/\brunstead\s+dashboard\s+build\b/.test(action.command)) {
-    await requireDashboardOperatorPermission({
+  if (dashboardBuildOperatorCommand(action.command)) {
+    return runDashboardBuildOperatorAction({
       cwd: input.build.cwd,
       actor: input.actor,
-      permission: "dashboard.manage",
-      action: "rebuild dashboard"
+      outputDir: input.build.outputDir,
+      actionId: action.id,
+      rebuildDashboard: input.rebuildDashboard
     });
-
-    const rebuilt = await input.rebuildDashboard({
-      cwd: input.build.cwd,
-      outputDir: input.build.outputDir
-    });
-
-    return {
-      operatorActionId: action.id,
-      dashboardEventId: rebuilt.event.eventId,
-      htmlPath: rebuilt.htmlPath,
-      dataPath: rebuilt.dataPath
-    };
   }
 
   throw new DashboardOperatorApiHttpError(
