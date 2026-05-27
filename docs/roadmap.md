@@ -773,6 +773,8 @@ The current implementation wave closed the highest-confidence product gaps:
   `commands/team-control-plane-runner-actions`.
 - Audit export/timeline/replay handlers moved out of `commands/audit` into
   `commands/audit-actions`.
+- Startup source record/verify/collect subcommand registration moved out of
+  `commands/startup-source` into `commands/startup-source-subcommands`.
 - Startup generic evidence add command registration and write handler moved out
   of `commands/startup-evidence` into `commands/startup-evidence-add`.
 - Startup manual-change evidence command registration and write handler moved
