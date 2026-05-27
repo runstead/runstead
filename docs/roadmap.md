@@ -229,6 +229,9 @@ The current implementation wave closed the highest-confidence product gaps:
   `startup-source-connector-catalog`.
 - Team policy default YAML, schema parsing, and loading moved out of
   `team-policy` into `team-policy-config`.
+- Codex Direct package-manager detection and verifier candidate command helpers
+  moved out of `codex-direct-package-scripts` into
+  `codex-direct-package-manager`.
 - Agent provider listing moved out of the agent command adapter into
   `commands/agent-providers`.
 - Agent inspect subcommand and depth-to-preset parsing moved out of the agent
