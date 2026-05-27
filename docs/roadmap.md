@@ -224,6 +224,9 @@ The current implementation wave closed the highest-confidence product gaps:
   into `rbac-policy`.
 - Approval command status parsing and action-display formatting moved out of
   `commands/approval` into `commands/approval-format`.
+- Startup source connector catalog data moved out of
+  `startup-source-connector-definitions` into
+  `startup-source-connector-catalog`.
 - Agent provider listing moved out of the agent command adapter into
   `commands/agent-providers`.
 - Agent inspect subcommand and depth-to-preset parsing moved out of the agent
