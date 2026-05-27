@@ -623,6 +623,8 @@ The current implementation wave closed the highest-confidence product gaps:
   into `team-control-plane-types`.
 - Team control-plane check execution moved out of `team-control-plane` into
   `team-control-plane-check`, leaving the public module as a re-export surface.
+- Dashboard static build snapshot, artifact writing, and audit event generation
+  moved out of `dashboard` into `dashboard-build`.
 - Team control-plane runner heartbeat and list formatting moved out of
   `team-control-plane-runner` into `team-control-plane-runner-format`.
 - Team control-plane Postgres connection validation and client creation moved
