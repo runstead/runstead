@@ -1,15 +1,13 @@
 import type { ActionEnvelope } from "../policy.js";
 import type { CodexDirectPatchApprovalMetadata } from "./patch-approval-metadata.js";
 import {
-  cloneCodexResponsesMessages,
   optionalParsedResumeContext,
   replacementArray,
   stringArray
 } from "./patch-payload-parsers.js";
 import type {
   ActionEnvelopeWithPendingPatch,
-  CodexDirectPendingPatchPayload,
-  CodexDirectPendingToolResumeContext
+  CodexDirectPendingPatchPayload
 } from "./patch-payload-types.js";
 import { isRecord } from "./tool-json.js";
 
@@ -27,39 +25,7 @@ export type {
   CodexDirectPendingPatchPayload,
   CodexDirectPendingToolResumeContext
 } from "./patch-payload-types.js";
-
-export function codexDirectPendingPatchPayload(input: {
-  filesTouched: string[];
-  approvalMetadata: CodexDirectPatchApprovalMetadata;
-  resumeContext?: CodexDirectPendingToolResumeContext;
-  patch?: string;
-  replacements?: {
-    path: string;
-    search: string;
-    replace: string;
-    replaceAll?: boolean;
-  }[];
-}): CodexDirectPendingPatchPayload {
-  return {
-    mode: input.patch === undefined ? "replacements" : "unified_diff",
-    filesTouched: input.filesTouched,
-    diffHash: input.approvalMetadata.diffHash,
-    riskClass: input.approvalMetadata.riskClass,
-    dependencyImpact: input.approvalMetadata.dependencyImpact,
-    riskSummary: input.approvalMetadata.riskSummary,
-    canonicalSignature: input.approvalMetadata.canonicalSignature,
-    ...(input.resumeContext === undefined
-      ? {}
-      : {
-          resumeContext: {
-            messages: cloneCodexResponsesMessages(input.resumeContext.messages),
-            toolCall: input.resumeContext.toolCall
-          }
-        }),
-    ...(input.patch === undefined ? {} : { patch: input.patch }),
-    ...(input.replacements === undefined ? {} : { replacements: input.replacements })
-  };
-}
+export { codexDirectPendingPatchPayload } from "./patch-payload-builder.js";
 
 export function parsePendingPatchAction(
   actionJson: string
