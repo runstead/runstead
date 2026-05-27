@@ -1,5 +1,5 @@
 import type { CodexDirectPatchApprovalMetadata } from "./patch-approval-metadata.js";
-import { cloneCodexResponsesMessages } from "./patch-payload-parsers.js";
+import { cloneCodexResponsesMessages } from "./codex-responses-input-items.js";
 import type {
   CodexDirectPendingPatchPayload,
   CodexDirectPendingToolResumeContext
