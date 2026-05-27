@@ -867,6 +867,8 @@ The current implementation wave closed the highest-confidence product gaps:
   budget parsing into `commands/agent-task-execution`.
 - Resolved local-agent preset to task-option mapping moved out of individual
   agent runners into `commands/agent-preset-task-options`.
+- Agent run task-option construction for preset and non-preset runs moved out
+  of the runner into `commands/agent-run-task-options`.
 
 ## Remaining Backlog
 

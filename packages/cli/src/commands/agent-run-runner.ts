@@ -1,12 +1,8 @@
 import { requireRbacPermission } from "../cli-rbac.js";
 
-import { agentBudgetTaskOptions } from "./agent-budget-options.js";
-import {
-  parseLocalAgentMode,
-  resolveAgentRunPresetOptions
-} from "./agent-run-options.js";
+import { resolveAgentRunPresetOptions } from "./agent-run-options.js";
+import { agentRunTaskOptions } from "./agent-run-task-options.js";
 import { runCreatedLocalAgentTask } from "./agent-task-execution.js";
-import { agentTaskModelOptions } from "./agent-task-options.js";
 import {
   ALL_LOCAL_AGENT_WORKERS,
   parseAgentWorkerOption
@@ -59,32 +55,13 @@ export async function runAgentRunCommand(
 
   const created = await createLocalAgentTask({
     ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-    prompt: resolvedPreset?.prompt ?? prompt,
-    ...(resolvedPreset === undefined
-      ? {}
-      : {
-          preset: resolvedPreset.preset.id,
-          checkpoint: resolvedPreset.preset.checkpoint
-        }),
-    worker,
-    ...agentTaskModelOptions(options, resolvedPreset?.model),
-    mode:
-      resolvedPreset === undefined
-        ? parseLocalAgentMode(options.mode)
-        : resolvedPreset.preset.mode,
-    allowedPaths: options.allowed,
-    deniedPaths: options.denied,
-    verifierCommands,
-    ...agentBudgetTaskOptions(
+    ...agentRunTaskOptions({
       options,
-      resolvedPreset === undefined
-        ? {}
-        : {
-            maxTurns: resolvedPreset.preset.maxTurns,
-            maxToolCalls: resolvedPreset.preset.maxToolCalls,
-            maxFailedToolCalls: resolvedPreset.preset.maxFailedToolCalls
-          }
-    )
+      prompt,
+      ...(resolvedPreset === undefined ? {} : { resolvedPreset }),
+      verifierCommands
+    }),
+    worker
   });
 
   await runCreatedLocalAgentTask({
