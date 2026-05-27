@@ -14,6 +14,7 @@ import {
   recordExtensionCollectorEvidence,
   runExtensionCollectorCommand
 } from "./startup-extension-collector-evidence.js";
+import { startupExtensionCollectorPreflight } from "./startup-extension-collector-preflight.js";
 import {
   createExtensionCollectorTask,
   extensionCollectorAction,
@@ -60,36 +61,10 @@ export async function runStartupExtensionCollectors(input: {
 
     for (const collectorInput of input.collectorInputs) {
       const { extension, collector } = collectorInput;
-      const missingSecrets = collector.requiredSecrets.filter(
-        (secret) => process.env[secret] === undefined || process.env[secret] === ""
-      );
+      const preflight = startupExtensionCollectorPreflight(collectorInput);
 
-      if (missingSecrets.length > 0) {
-        collectorResults.push({
-          extensionId: extension.contract.extensionId,
-          collectorId: collector.id,
-          status: "blocked",
-          ...(collector.command === undefined ? {} : { command: collector.command }),
-          evidenceIds: [],
-          blockers: [
-            `extension ${extension.contract.extensionId}/${collector.id} requires secrets: ${missingSecrets.join(", ")}`
-          ],
-          warnings: []
-        });
-        continue;
-      }
-
-      if (collector.command === undefined) {
-        collectorResults.push({
-          extensionId: extension.contract.extensionId,
-          collectorId: collector.id,
-          status: "skipped",
-          evidenceIds: [],
-          blockers: [],
-          warnings: [
-            `extension ${extension.contract.extensionId}/${collector.id} has no command execution contract`
-          ]
-        });
+      if (preflight !== undefined) {
+        collectorResults.push(preflight);
         continue;
       }
 
