@@ -621,6 +621,8 @@ The current implementation wave closed the highest-confidence product gaps:
   into `team-control-plane-migration`.
 - Team control-plane check type contracts moved out of `team-control-plane`
   into `team-control-plane-types`.
+- Team control-plane check execution moved out of `team-control-plane` into
+  `team-control-plane-check`, leaving the public module as a re-export surface.
 - Team control-plane runner heartbeat and list formatting moved out of
   `team-control-plane-runner` into `team-control-plane-runner-format`.
 - Team control-plane Postgres connection validation and client creation moved
