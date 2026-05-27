@@ -613,6 +613,8 @@ The current implementation wave closed the highest-confidence product gaps:
   maturity regression tests for `research-monitor` and `email-followup`.
 - `runstead team control-plane bootstrap/check` gives operators a dedicated
   team backend assertion surface.
+- Team control-plane env template bootstrap moved out of `team-control-plane`
+  into `team-control-plane-bootstrap`.
 - Team control-plane runner heartbeat and list formatting moved out of
   `team-control-plane-runner` into `team-control-plane-runner-format`.
 - Team control-plane Postgres connection validation and client creation moved
