@@ -1,31 +1,13 @@
 import type { CodexResponsesTool } from "../codex-responses-transport.js";
 
 import { codexDirectPatchToolDefinitions } from "./patch-tool-catalog.js";
+import { codexDirectVerifierToolDefinitions } from "./verifier-tool-catalog.js";
 import { objectSchema } from "./tool-schema.js";
 
 export function codexDirectMutationToolDefinitions(): CodexResponsesTool[] {
   return [
     ...codexDirectPatchToolDefinitions(),
-    {
-      type: "function",
-      name: "run_verifier",
-      description:
-        "Run one declared or auto-discovered verifier command and record evidence.",
-      strict: false,
-      parameters: objectSchema(
-        {
-          name: {
-            type: "string",
-            description: "Verifier name, such as test, lint, or typecheck."
-          },
-          timeoutMs: {
-            type: "number",
-            description: "Optional verifier timeout in milliseconds."
-          }
-        },
-        ["name"]
-      )
-    },
+    ...codexDirectVerifierToolDefinitions(),
     {
       type: "function",
       name: "write_file",
