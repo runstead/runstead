@@ -4,10 +4,7 @@ import type { RunsteadDatabase } from "@runstead/state-sqlite";
 import type { CodexResponsesResult } from "../codex-responses-transport.js";
 import type { CodexDirectModelRequestPhase } from "./worker-types.js";
 import { errorMessage } from "./tool-json.js";
-import {
-  CodexDirectModelRetryExhaustedError,
-  CodexDirectModelTimeoutError
-} from "./model-request-interruptions.js";
+import { CodexDirectModelRetryExhaustedError } from "./model-request-interruptions.js";
 import {
   recordModelRequestHeartbeat,
   recordModelRequestRetry
@@ -17,12 +14,14 @@ import {
   modelRequestRetryDelayMs,
   sleep
 } from "./model-request-retry.js";
+import { runSingleModelRequestWithHeartbeat } from "./model-request-single.js";
 
 export {
   isTransientModelRequestError,
   modelRequestRetryDelayMs,
   sleep
 } from "./model-request-retry.js";
+export { runSingleModelRequestWithHeartbeat } from "./model-request-single.js";
 
 export async function runModelRequestWithHeartbeat(input: {
   database: RunsteadDatabase;
@@ -117,51 +116,6 @@ export async function runModelRequestWithHeartbeat(input: {
         elapsedMs: Date.now() - startedAt
       });
       await sleep(delayMs);
-    }
-  }
-}
-
-export async function runSingleModelRequestWithHeartbeat(input: {
-  timeoutMs: number;
-  heartbeatMs: number;
-  request: () => Promise<CodexResponsesResult>;
-  recordHeartbeat: (stage: "started" | "waiting") => void;
-  currentElapsedMs: () => number;
-  heartbeatCount: () => number;
-}): Promise<CodexResponsesResult> {
-  let timeout: ReturnType<typeof setTimeout> | undefined;
-  let heartbeat: ReturnType<typeof setInterval> | undefined;
-
-  input.recordHeartbeat("started");
-
-  const timeoutPromise = new Promise<never>((_resolve, reject) => {
-    timeout = setTimeout(() => {
-      reject(
-        new CodexDirectModelTimeoutError({
-          timeoutMs: input.timeoutMs,
-          elapsedMs: input.currentElapsedMs(),
-          heartbeatCount: input.heartbeatCount()
-        })
-      );
-    }, input.timeoutMs);
-    timeout.unref?.();
-  });
-
-  if (input.heartbeatMs > 0) {
-    heartbeat = setInterval(() => {
-      input.recordHeartbeat("waiting");
-    }, input.heartbeatMs);
-    heartbeat.unref?.();
-  }
-
-  try {
-    return await Promise.race([input.request(), timeoutPromise]);
-  } finally {
-    if (timeout !== undefined) {
-      clearTimeout(timeout);
-    }
-    if (heartbeat !== undefined) {
-      clearInterval(heartbeat);
     }
   }
 }
