@@ -7,6 +7,7 @@ import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sql
 import { describe, expect, it } from "vitest";
 
 import { buildDashboard, serveDashboard } from "./dashboard.js";
+import { startupOnboard } from "./startup-founder-flow.js";
 
 describe("buildDashboard", () => {
   it("writes a static dashboard and records an audit event", async () => {
@@ -960,7 +961,7 @@ describe("buildDashboard", () => {
           };
         };
 
-        expect(response.status).toBe(200);
+        expect(response.status, JSON.stringify(body)).toBe(200);
         expect(body).toMatchObject({
           ok: true,
           result: {
@@ -982,6 +983,134 @@ describe("buildDashboard", () => {
         ]);
         expect(body.result.requirements[0]?.connectors[0]?.collectCommand).toContain(
           `--cwd ${workspace}`
+        );
+      } finally {
+        await closeServer(served.server);
+      }
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("runs complete-check operator actions through the operator API", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-dashboard-complete-api-"));
+    const root = join(workspace, ".runstead");
+
+    try {
+      await writeFile(
+        join(workspace, "package.json"),
+        `${JSON.stringify(
+          {
+            name: "dashboard-complete-check-fixture",
+            private: true,
+            scripts: {
+              test: 'node -e "process.exit(0)"',
+              lint: 'node -e "process.exit(0)"',
+              typecheck: 'node -e "process.exit(0)"',
+              build: 'node -e "process.exit(0)"'
+            }
+          },
+          null,
+          2
+        )}\n`,
+        "utf8"
+      );
+      await startupOnboard({
+        cwd: workspace,
+        force: true,
+        now: new Date("2026-05-23T02:16:45.000Z")
+      });
+      await mkdir(join(root, "startup", "readiness-runs"), { recursive: true });
+      await writeFile(
+        join(root, "startup", "readiness-runs", "run_complete_check.json"),
+        `${JSON.stringify(
+          {
+            schemaVersion: 1,
+            id: "run_complete_check",
+            cwd: workspace,
+            stage: "launch",
+            target: "local",
+            worker: "codex_direct",
+            governanceProfile: "governed",
+            status: "blocked",
+            verdict: "local_launch_blocked",
+            verdictBlockers: ["complete product check has not completed"],
+            evidenceIds: [],
+            evidenceTiers: [],
+            evidenceTypes: [],
+            evidenceRequirements: [],
+            staleEvidenceRefs: [],
+            supersededEvidenceRefs: [],
+            reportPaths: [],
+            guidedFlow: [],
+            operatorCommands: [
+              {
+                kind: "complete_check",
+                title: "Run complete-product audit",
+                command: `runstead startup complete-check --cwd ${workspace} --target local`,
+                when: "Verify launch report, CI gate, dashboard, diagnostics, remediation, evidence, and events."
+              }
+            ],
+            startedAt: "2026-05-23T02:17:00.000Z",
+            dirtyState: "clean",
+            phases: []
+          },
+          null,
+          2
+        )}\n`,
+        "utf8"
+      );
+
+      const served = await serveDashboard({
+        cwd: workspace,
+        host: "127.0.0.1",
+        port: 0,
+        enableOperatorApi: true,
+        sessionToken: "session-complete",
+        csrfToken: "csrf-complete",
+        actor: "local-admin",
+        now: new Date("2026-05-23T02:17:30.000Z")
+      });
+
+      try {
+        const response = await fetch(
+          `${served.url}/operator-actions/startup-run-command-1/run`,
+          {
+            method: "POST",
+            headers: {
+              authorization: "Bearer session-complete",
+              "x-runstead-csrf-token": "csrf-complete"
+            },
+            body: "{}"
+          }
+        );
+        const body = (await response.json()) as {
+          ok: boolean;
+          result: {
+            operatorActionId: string;
+            status: string;
+            score: number;
+            evidenceId: string;
+            markdownPath: string;
+            jsonPath: string;
+          };
+        };
+
+        expect(response.status, JSON.stringify(body)).toBe(200);
+        expect(body).toMatchObject({
+          ok: true,
+          result: {
+            operatorActionId: "startup-run-command-1"
+          }
+        });
+        expect(body.result.status).toMatch(/complete|incomplete/u);
+        expect(body.result.score).toBeGreaterThanOrEqual(0);
+        expect(body.result.evidenceId).toMatch(/^ev_/u);
+        await expect(readFile(body.result.markdownPath, "utf8")).resolves.toContain(
+          "# Runstead Startup Complete Product Check"
+        );
+        await expect(readFile(body.result.jsonPath, "utf8")).resolves.toContain(
+          "startup_complete_product_check"
         );
       } finally {
         await closeServer(served.server);

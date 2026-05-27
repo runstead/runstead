@@ -184,9 +184,9 @@ rejects cross-origin requests. Mutating endpoints:
 - `POST /evidence/manual`
 
 `POST /operator-actions/<id>/run` supports the persisted resume, approval,
-dashboard rebuild, and source refresh planning actions shown in the operator
-queue. Every mutation still goes through Runstead policy, RBAC, and audit; the
-API is a transport, not a bypass.
+complete-product audit, dashboard rebuild, and source refresh planning actions
+shown in the operator queue. Every mutation still goes through Runstead policy,
+RBAC, and audit; the API is a transport, not a bypass.
 
 ## UI Smoke
 

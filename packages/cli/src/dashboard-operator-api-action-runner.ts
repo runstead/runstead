@@ -11,6 +11,10 @@ import {
 import { resumeInterruptedTasks } from "./resume.js";
 import { resumeDashboardStartupRun } from "./dashboard-operator-api-run-resume.js";
 import {
+  dashboardCompleteCheckOperatorCommand,
+  runDashboardCompleteCheckOperatorAction
+} from "./dashboard-operator-api-complete-check.js";
+import {
   dashboardSourcePlanOperatorCommand,
   runDashboardSourcePlanOperatorAction
 } from "./dashboard-operator-api-source-plan.js";
@@ -71,6 +75,15 @@ export async function runDashboardOperatorAction(input: {
       operatorActionId: action.id,
       resumed
     };
+  }
+
+  if (dashboardCompleteCheckOperatorCommand(action.command)) {
+    return runDashboardCompleteCheckOperatorAction({
+      cwd: input.build.cwd,
+      actor: input.actor,
+      actionId: action.id,
+      command: action.command
+    });
   }
 
   if (dashboardSourcePlanOperatorCommand(action.command)) {
