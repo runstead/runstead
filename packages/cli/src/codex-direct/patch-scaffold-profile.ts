@@ -1,7 +1,7 @@
 import type { Task } from "@runstead/core";
 
 import { matchesPolicyPathPattern } from "../policy.js";
-import { stringArray } from "./patch-payload-parsers.js";
+import { stringArray } from "./patch-payload-value-parsers.js";
 import { isRecord } from "./tool-json.js";
 
 export interface CodexDirectTaskScaffoldProfile {
