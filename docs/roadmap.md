@@ -787,6 +787,8 @@ The current implementation wave closed the highest-confidence product gaps:
 - Startup scale schedule-report and report actions moved out of
   `commands/startup-scale-ops-actions` into
   `commands/startup-scale-report-actions`.
+- Startup gate waiver and decision write handlers moved out of
+  `commands/startup-gate-actions` into `commands/startup-gate-decision-actions`.
 - Audit export/timeline/replay handlers moved out of `commands/audit` into
   `commands/audit-actions`.
 - Startup source record/verify/collect subcommand registration moved out of
