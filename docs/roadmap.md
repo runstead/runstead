@@ -632,6 +632,8 @@ The current implementation wave closed the highest-confidence product gaps:
   public module as a compatibility export surface.
 - Startup initialization and startup-goal creation moved out of
   `startup-automation` into `startup-automation-init`.
+- Startup repository readiness audit generation moved out of
+  `startup-automation` into `startup-repo-readiness-audit`.
 - Team control-plane runner heartbeat and list formatting moved out of
   `team-control-plane-runner` into `team-control-plane-runner-format`.
 - Team control-plane Postgres connection validation and client creation moved
