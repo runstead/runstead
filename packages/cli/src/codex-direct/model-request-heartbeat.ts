@@ -3,7 +3,7 @@ import type { RunsteadDatabase } from "@runstead/state-sqlite";
 
 import type { CodexResponsesResult } from "../codex-responses-transport.js";
 import type { CodexDirectModelRequestPhase } from "./worker-types.js";
-import { errorMessage, isRecord } from "./tool-json.js";
+import { errorMessage } from "./tool-json.js";
 import {
   CodexDirectModelRetryExhaustedError,
   CodexDirectModelTimeoutError
@@ -12,6 +12,17 @@ import {
   recordModelRequestHeartbeat,
   recordModelRequestRetry
 } from "./model-request-audit.js";
+import {
+  isTransientModelRequestError,
+  modelRequestRetryDelayMs,
+  sleep
+} from "./model-request-retry.js";
+
+export {
+  isTransientModelRequestError,
+  modelRequestRetryDelayMs,
+  sleep
+} from "./model-request-retry.js";
 
 export async function runModelRequestWithHeartbeat(input: {
   database: RunsteadDatabase;
@@ -153,56 +164,4 @@ export async function runSingleModelRequestWithHeartbeat(input: {
       clearInterval(heartbeat);
     }
   }
-}
-
-export function modelRequestRetryDelayMs(input: {
-  retryCount: number;
-  baseDelayMs: number;
-  maxDelayMs: number;
-  jitterMs: number;
-}): number {
-  const exponential = input.baseDelayMs * 2 ** Math.max(0, input.retryCount - 1);
-  const capped = Math.min(exponential, input.maxDelayMs);
-  const jitter =
-    input.jitterMs <= 0 ? 0 : Math.floor(Math.random() * (input.jitterMs + 1));
-
-  return Math.max(0, capped + jitter);
-}
-
-export function isTransientModelRequestError(error: unknown): boolean {
-  if (error instanceof CodexDirectModelTimeoutError) {
-    return false;
-  }
-
-  const message = errorMessage(error).toLowerCase();
-  const code = isRecord(error) && typeof error.code === "string" ? error.code : "";
-  const transientNeedles = [
-    "fetch failed",
-    "network",
-    "socket hang up",
-    "connection reset",
-    "temporarily unavailable",
-    "timeout",
-    "timed out",
-    "econnreset",
-    "etimedout",
-    "econnrefused",
-    "enotfound",
-    "eai_again",
-    "503",
-    "502",
-    "504",
-    "429"
-  ];
-
-  return transientNeedles.some((needle) =>
-    `${message} ${code.toLowerCase()}`.includes(needle)
-  );
-}
-
-export function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => {
-    const timeout = setTimeout(resolve, ms);
-    timeout.unref?.();
-  });
 }
