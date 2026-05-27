@@ -887,6 +887,8 @@ The current implementation wave closed the highest-confidence product gaps:
   timeline aggregate module into `dashboard-execution-timeline`.
 - Dashboard approval and evidence timeline querying moved out of the audit
   timeline aggregate module into `dashboard-governance-evidence-timeline`.
+- Dashboard startup timeline now imports concrete timeline modules directly
+  without the former `dashboard-audit-timeline` re-export layer.
 
 ## Remaining Backlog
 

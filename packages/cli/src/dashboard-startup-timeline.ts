@@ -7,12 +7,14 @@ import type {
   DashboardStartupTimelineGroup
 } from "./dashboard-types.js";
 import {
-  dashboardApprovalTimelineGroup,
-  dashboardEvidenceTimelineGroup,
-  dashboardModelRequestTimelineGroup,
   dashboardToolCallTimelineGroup,
   dashboardWorkerRunTimelineGroup
-} from "./dashboard-audit-timeline.js";
+} from "./dashboard-execution-timeline.js";
+import {
+  dashboardApprovalTimelineGroup,
+  dashboardEvidenceTimelineGroup
+} from "./dashboard-governance-evidence-timeline.js";
+import { dashboardModelRequestTimelineGroup } from "./dashboard-model-request-timeline.js";
 
 export { dashboardStartupRunComparison } from "./dashboard-startup-run-comparison.js";
 
