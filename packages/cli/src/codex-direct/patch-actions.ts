@@ -1,8 +1,7 @@
-import { createHash } from "node:crypto";
-
 import type { Task } from "@runstead/core";
 import { inferWorkspacePatchTouchedFiles } from "../codex-direct-native-tools.js";
 import { isDependencyFilePath } from "./patch-dependency-files.js";
+import { sha256 } from "./patch-hash.js";
 import {
   codexDirectTaskScaffoldProfile,
   isScaffoldAppOwnedPatchPath
@@ -30,6 +29,7 @@ export {
   type CodexDirectTaskScaffoldProfile
 } from "./patch-scaffold-profile.js";
 export { isDependencyFilePath } from "./patch-dependency-files.js";
+export { sha256 } from "./patch-hash.js";
 
 export function codexDirectPatchFilesTouched(input: {
   patch?: string;
@@ -128,8 +128,4 @@ export function codexDirectPatchApprovalMetadata(input: {
     canonicalSignature,
     ...(approvalGrant === undefined ? {} : { approvalGrant })
   };
-}
-
-export function sha256(value: unknown): string {
-  return createHash("sha256").update(JSON.stringify(value)).digest("hex");
 }
