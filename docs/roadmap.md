@@ -784,6 +784,9 @@ The current implementation wave closed the highest-confidence product gaps:
 - Startup launch audit, security-baseline, and prepare actions moved out of
   `commands/startup-launch-readiness` into
   `commands/startup-launch-baseline-actions`.
+- Startup scale schedule-report and report actions moved out of
+  `commands/startup-scale-ops-actions` into
+  `commands/startup-scale-report-actions`.
 - Audit export/timeline/replay handlers moved out of `commands/audit` into
   `commands/audit-actions`.
 - Startup source record/verify/collect subcommand registration moved out of
