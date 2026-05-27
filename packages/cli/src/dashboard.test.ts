@@ -866,6 +866,122 @@ describe("buildDashboard", () => {
     }
   });
 
+  it("runs source refresh planning operator actions through the operator API", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-dashboard-source-api-"));
+    const root = join(workspace, ".runstead");
+    const stateDb = join(root, "state.db");
+
+    try {
+      await mkdir(join(root, "startup", "readiness-runs"), { recursive: true });
+      await writeFile(
+        join(root, "config.yaml"),
+        "version: 1\ndomain: repo-maintenance\n",
+        "utf8"
+      );
+      openRunsteadDatabase(stateDb).close();
+      await writeFile(
+        join(root, "startup", "readiness-runs", "run_source_plan.json"),
+        `${JSON.stringify(
+          {
+            schemaVersion: 1,
+            id: "run_source_plan",
+            cwd: workspace,
+            stage: "launch",
+            target: "production",
+            worker: "codex_direct",
+            governanceProfile: "governed",
+            status: "blocked",
+            verdict: "public_launch_blocked",
+            verdictBlockers: [
+              "Remote CI status connector requires GITHUB_TOKEN for production readiness"
+            ],
+            evidenceIds: [],
+            evidenceTiers: [],
+            evidenceTypes: [],
+            evidenceRequirements: [],
+            staleEvidenceRefs: [],
+            supersededEvidenceRefs: [],
+            reportPaths: [],
+            guidedFlow: [],
+            operatorCommands: [
+              {
+                kind: "source_plan",
+                title: "Plan source connector refresh",
+                command: `runstead startup source plan --cwd ${workspace} --target production`,
+                when: "Show required external source connector evidence."
+              }
+            ],
+            startedAt: "2026-05-23T02:16:00.000Z",
+            dirtyState: "clean",
+            phases: []
+          },
+          null,
+          2
+        )}\n`,
+        "utf8"
+      );
+
+      const served = await serveDashboard({
+        cwd: workspace,
+        host: "127.0.0.1",
+        port: 0,
+        enableOperatorApi: true,
+        sessionToken: "session-source",
+        csrfToken: "csrf-source",
+        actor: "local-admin",
+        now: new Date("2026-05-23T02:16:30.000Z")
+      });
+
+      try {
+        const response = await fetch(
+          `${served.url}/operator-actions/startup-run-command-1/run`,
+          {
+            method: "POST",
+            headers: {
+              authorization: "Bearer session-source",
+              "x-runstead-csrf-token": "csrf-source"
+            },
+            body: "{}"
+          }
+        );
+        const body = (await response.json()) as {
+          ok: boolean;
+          result: {
+            operatorActionId: string;
+            target: string;
+            blockers: string[];
+            requirements: { id: string }[];
+          };
+        };
+
+        expect(response.status).toBe(200);
+        expect(body).toMatchObject({
+          ok: true,
+          result: {
+            operatorActionId: "startup-run-command-1",
+            target: "production"
+          }
+        });
+        expect(body.result.blockers).toEqual(
+          expect.arrayContaining([
+            "Remote CI status connector requires GITHUB_TOKEN for production readiness",
+            "Real-user analytics provider connector requires POSTHOG_API_KEY for production readiness"
+          ])
+        );
+        expect(body.result.requirements.map((requirement) => requirement.id)).toEqual([
+          "remote-ci",
+          "deployment-provider",
+          "monitoring-provider",
+          "analytics-provider"
+        ]);
+      } finally {
+        await closeServer(served.server);
+      }
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
   it("records manual evidence through the operator API", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "runstead-dashboard-api-evidence-"));
     const root = join(workspace, ".runstead");

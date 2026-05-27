@@ -10,6 +10,7 @@ import {
 } from "./dashboard-operator-action-command.js";
 import { resumeInterruptedTasks } from "./resume.js";
 import { resumeDashboardStartupRun } from "./dashboard-operator-api-run-resume.js";
+import { createStartupSourceRefreshPlan } from "./startup-source-refresh-plan.js";
 
 export type DashboardOperatorApiRebuild = (options: {
   cwd: string;
@@ -66,6 +67,34 @@ export async function runDashboardOperatorAction(input: {
     return {
       operatorActionId: action.id,
       resumed
+    };
+  }
+
+  if (/\brunstead\s+startup\s+source\s+plan\b/.test(action.command)) {
+    await requireDashboardOperatorPermission({
+      cwd: input.build.cwd,
+      actor: input.actor,
+      permission: "dashboard.manage",
+      action: "plan startup source refresh"
+    });
+
+    const target = shellOptionValue(action.command, "--target");
+
+    if (target === undefined) {
+      throw new DashboardOperatorApiHttpError(
+        422,
+        "invalid_operator_action",
+        `Operator action ${action.id} is missing --target.`
+      );
+    }
+
+    const plan = createStartupSourceRefreshPlan({ target });
+
+    return {
+      operatorActionId: action.id,
+      target: plan.target,
+      blockers: plan.blockers,
+      requirements: plan.requirements
     };
   }
 
