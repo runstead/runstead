@@ -9,6 +9,7 @@ import type {
   CodexDirectWorkerOptions,
   CodexDirectWorkerResult
 } from "./worker-types.js";
+import { codexDirectWorkerOutput } from "./worker-output.js";
 import { workerRunStatus } from "./worker-run-status.js";
 
 export { codexDirectExecutionSemantics } from "./execution-semantics.js";
@@ -39,19 +40,18 @@ export function completedWorkerResult(input: {
     ...(input.budget === undefined ? {} : { budget: input.budget }),
     verification: input.verification ?? "skipped"
   });
-  const output = {
-    worker: CODEX_DIRECT_WORKER_KIND,
+  const output = codexDirectWorkerOutput({
     model: input.options.model,
     modelProvider,
     summary: input.summary,
     execution,
     toolCalls: input.toolCalls,
     failedToolCalls: input.failedToolCalls,
+    warnings,
     ...(input.interruption === undefined ? {} : { interruption: input.interruption }),
-    ...(warnings.length === 0 ? {} : { warnings }),
     ...(input.budget === undefined ? {} : { budget: input.budget }),
     ...(input.approval === undefined ? {} : { approval: input.approval })
-  };
+  });
   const workerRun = finishWorkerRun({
     database: input.options.database,
     workerRun: input.workerRun,
