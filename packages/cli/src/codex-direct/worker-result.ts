@@ -1,13 +1,9 @@
 import type { WorkerRun } from "@runstead/core";
-import {
-  runtimeExecutionSemantics,
-  type RuntimeExecutionSemantics,
-  type RuntimeVerificationStatus,
-  type RuntimeWorkerOutcome
-} from "@runstead/runtime";
+import type { RuntimeVerificationStatus } from "@runstead/runtime";
 
 import { finishWorkerRun, type FinishWorkerRunOptions } from "../runtime-audit.js";
 import { CODEX_DIRECT_WORKER_KIND } from "./constants.js";
+import { codexDirectExecutionSemantics } from "./execution-semantics.js";
 import type {
   CodexDirectBudgetSummary,
   CodexDirectWorkerOptions,
@@ -15,6 +11,7 @@ import type {
 } from "./worker-types.js";
 import { workerRunStatus } from "./worker-run-status.js";
 
+export { codexDirectExecutionSemantics } from "./execution-semantics.js";
 export { workerRunStatus } from "./worker-run-status.js";
 
 export function completedWorkerResult(input: {
@@ -79,24 +76,4 @@ export function completedWorkerResult(input: {
     ...(input.budget === undefined ? {} : { budget: input.budget }),
     ...(input.approval === undefined ? {} : { approval: input.approval })
   };
-}
-
-export function codexDirectExecutionSemantics(input: {
-  status: CodexDirectWorkerResult["status"];
-  toolCalls: number;
-  budget?: CodexDirectBudgetSummary;
-  verification: RuntimeVerificationStatus;
-}): RuntimeExecutionSemantics {
-  const worker: RuntimeWorkerOutcome = {
-    kind: "governed",
-    status: input.status,
-    toolCalls: input.toolCalls,
-    ...(input.budget === undefined ? {} : { budgetExhausted: true })
-  };
-  const verifier =
-    input.verification === "skipped" ? undefined : { status: input.verification };
-
-  return verifier === undefined
-    ? runtimeExecutionSemantics({ worker })
-    : runtimeExecutionSemantics({ worker, verifier });
 }
