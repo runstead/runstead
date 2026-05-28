@@ -5,15 +5,13 @@ import type { CodexResponsesResult } from "../codex-responses-transport.js";
 import type { CodexDirectModelRequestPhase } from "./worker-types.js";
 import { errorMessage } from "./tool-json.js";
 import { CodexDirectModelRetryExhaustedError } from "./model-request-interruptions.js";
-import {
-  recordModelRequestHeartbeat,
-  recordModelRequestRetry
-} from "./model-request-audit.js";
+import { recordModelRequestRetry } from "./model-request-audit.js";
 import {
   isTransientModelRequestError,
   modelRequestRetryDelayMs,
   sleep
 } from "./model-request-retry.js";
+import { createModelRequestHeartbeatRecorder } from "./model-request-heartbeat-recorder.js";
 import { runSingleModelRequestWithHeartbeat } from "./model-request-single.js";
 
 export {
@@ -45,21 +43,14 @@ export async function runModelRequestWithHeartbeat(input: {
   const startedAt = Date.now();
   let attempts = 0;
   let retryCount = 0;
-  let heartbeatCount = 0;
-
-  const recordHeartbeat = (stage: "started" | "waiting"): void => {
-    heartbeatCount += 1;
-    recordModelRequestHeartbeat({
-      database: input.database,
-      task: input.task,
-      workerRun: input.workerRun,
-      sequence: heartbeatCount,
-      stage,
-      phase: input.phase,
-      elapsedMs: Date.now() - startedAt,
-      timeoutMs: input.timeoutMs
-    });
-  };
+  const heartbeat = createModelRequestHeartbeatRecorder({
+    database: input.database,
+    task: input.task,
+    workerRun: input.workerRun,
+    phase: input.phase,
+    timeoutMs: input.timeoutMs,
+    startedAt
+  });
 
   while (true) {
     attempts += 1;
@@ -69,15 +60,15 @@ export async function runModelRequestWithHeartbeat(input: {
         timeoutMs: input.timeoutMs,
         heartbeatMs: input.heartbeatMs,
         request: input.request,
-        recordHeartbeat,
+        recordHeartbeat: heartbeat.record,
         currentElapsedMs: () => Date.now() - startedAt,
-        heartbeatCount: () => heartbeatCount
+        heartbeatCount: heartbeat.count
       });
 
       return {
         value,
         elapsedMs: Date.now() - startedAt,
-        heartbeatCount,
+        heartbeatCount: heartbeat.count(),
         attempts,
         retryCount
       };
