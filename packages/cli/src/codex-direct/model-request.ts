@@ -11,6 +11,7 @@ import type {
 } from "./worker-types.js";
 import { governedToolOptions, modelInferenceAction } from "./policy-actions.js";
 import { runModelRequestWithHeartbeat } from "./model-request-heartbeat.js";
+import { codexDirectModelRequestOutput } from "./model-request-output.js";
 import { codexDirectModelRequestSettings } from "./model-request-settings.js";
 import { modelRequestTimeoutMs } from "./model-request-timeout.js";
 
@@ -32,6 +33,7 @@ export {
   runSingleModelRequestWithHeartbeat,
   sleep
 } from "./model-request-heartbeat.js";
+export { codexDirectModelRequestOutput } from "./model-request-output.js";
 export { codexDirectModelRequestSettings } from "./model-request-settings.js";
 export { modelRequestTimeoutMs } from "./model-request-timeout.js";
 
@@ -71,18 +73,15 @@ export async function runGovernedModelInference(
 
       return {
         value,
-        output: {
+        output: codexDirectModelRequestOutput({
           model: options.model,
-          status: value.status ?? "unknown",
-          finishReason: value.finishReason,
           phase,
+          value,
           elapsedMs: modelRequest.elapsedMs,
           heartbeatCount: modelRequest.heartbeatCount,
           attempts: modelRequest.attempts,
-          retryCount: modelRequest.retryCount,
-          toolCalls: value.toolCalls.length,
-          outputTextBytes: Buffer.byteLength(value.outputText, "utf8")
-        }
+          retryCount: modelRequest.retryCount
+        })
       };
     }
   }).then((result) => result.value);
