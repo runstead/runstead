@@ -1,5 +1,3 @@
-import { readFile } from "node:fs/promises";
-import { fileURLToPath } from "node:url";
 import {
   parsedStartupReadinessArtifactContent,
   stagingDeploymentText,
@@ -17,6 +15,15 @@ import {
   type StartupReadinessEvidenceTier
 } from "./types.js";
 import { isRecord, unique, uniqueEvidenceTiers } from "./shared.js";
+import {
+  readStartupReadinessEvidenceArtifact,
+  type StartupReadinessEvidenceRow
+} from "./evidence-artifacts.js";
+
+export {
+  readStartupReadinessEvidenceArtifact,
+  type StartupReadinessEvidenceRow
+} from "./evidence-artifacts.js";
 
 export async function collectRecordedStartupReadinessEvidence(
   cwd: string,
@@ -85,14 +92,6 @@ export async function collectRecordedStartupReadinessEvidence(
       supersededEvidenceRefs: []
     };
   }
-}
-
-export interface StartupReadinessEvidenceRow {
-  id: string;
-  type: string;
-  uri: string;
-  summary?: string | null;
-  createdAt: string;
 }
 
 export function inferRecordedEvidenceTiers(
@@ -191,18 +190,6 @@ function isStartupReadinessEvidenceTier(
     typeof value === "string" &&
     (STARTUP_READINESS_EVIDENCE_TIERS as readonly string[]).includes(value)
   );
-}
-
-export async function readStartupReadinessEvidenceArtifact(
-  uri: string
-): Promise<unknown> {
-  try {
-    const path = uri.startsWith("file:") ? fileURLToPath(uri) : uri;
-
-    return JSON.parse(await readFile(path, "utf8")) as unknown;
-  } catch {
-    return undefined;
-  }
 }
 
 export function evidenceSearchText(
