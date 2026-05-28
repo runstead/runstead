@@ -423,6 +423,9 @@ runner heartbeat command writes the same liveness signal into Postgres for
 team deployments. `runstead doctor` includes the same backend assessment as
 part of the broader local health check.
 
+For a copyable local Postgres reference stack, see
+[examples/team-control-plane](examples/team-control-plane).
+
 ## Setup For This Monorepo
 
 This repository is a pnpm workspace targeting Node.js 24 LTS.

@@ -1,0 +1,23 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: runstead-team-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-runstead}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-runstead-dev}
+      POSTGRES_DB: ${POSTGRES_DB:-runstead}
+    ports:
+      - "${POSTGRES_PORT:-55432}:5432"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    volumes:
+      - runstead-team-postgres:/var/lib/postgresql/data
+
+volumes:
+  runstead-team-postgres:
