@@ -1,7 +1,4 @@
-import type { WorkerRun } from "@runstead/core";
-
 import { governedToolOptions } from "./policy-actions.js";
-import type { CodexDirectPendingToolResumeContext } from "./patch-actions.js";
 import {
   optionalField,
   optionalNonNegativeInteger,
@@ -11,14 +8,7 @@ import {
   requiredString,
   requiredStringArray
 } from "./tool-argument-values.js";
-import type { CodexDirectToolCall } from "./tool-types.js";
-import type { CodexDirectWorkerOptions } from "./worker-types.js";
-
-type WorkspaceReadToolOptions = CodexDirectWorkerOptions & {
-  workerRun: WorkerRun;
-  toolCall: CodexDirectToolCall;
-  resumeContext?: CodexDirectPendingToolResumeContext;
-};
+import type { WorkspaceReadToolOptions } from "./workspace-read-tool-option-types.js";
 
 export function workspaceListFilesToolOptions(options: WorkspaceReadToolOptions) {
   return {
