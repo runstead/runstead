@@ -6,13 +6,11 @@ import type {
 } from "../codex-responses-transport.js";
 import { runGovernedToolAction } from "../governed-action.js";
 import {
-  DEFAULT_CODEX_DIRECT_FINAL_SUMMARY_REQUEST_TIMEOUT_MS,
   DEFAULT_CODEX_DIRECT_MODEL_REQUEST_HEARTBEAT_MS,
   DEFAULT_CODEX_DIRECT_MODEL_REQUEST_MAX_RETRIES,
   DEFAULT_CODEX_DIRECT_MODEL_REQUEST_RETRY_BASE_DELAY_MS,
   DEFAULT_CODEX_DIRECT_MODEL_REQUEST_RETRY_JITTER_MS,
-  DEFAULT_CODEX_DIRECT_MODEL_REQUEST_RETRY_MAX_DELAY_MS,
-  DEFAULT_CODEX_DIRECT_MODEL_REQUEST_TIMEOUT_MS
+  DEFAULT_CODEX_DIRECT_MODEL_REQUEST_RETRY_MAX_DELAY_MS
 } from "./constants.js";
 import type {
   CodexDirectModelRequestPhase,
@@ -20,6 +18,7 @@ import type {
 } from "./worker-types.js";
 import { governedToolOptions, modelInferenceAction } from "./policy-actions.js";
 import { runModelRequestWithHeartbeat } from "./model-request-heartbeat.js";
+import { modelRequestTimeoutMs } from "./model-request-timeout.js";
 
 export {
   recordModelRequestHeartbeat,
@@ -39,6 +38,7 @@ export {
   runSingleModelRequestWithHeartbeat,
   sleep
 } from "./model-request-heartbeat.js";
+export { modelRequestTimeoutMs } from "./model-request-timeout.js";
 
 export async function runGovernedModelInference(
   options: CodexDirectWorkerOptions & {
@@ -104,20 +104,4 @@ export async function runGovernedModelInference(
       };
     }
   }).then((result) => result.value);
-}
-
-export function modelRequestTimeoutMs(
-  options: CodexDirectWorkerOptions,
-  phase: CodexDirectModelRequestPhase
-): number {
-  const defaultTimeout =
-    phase === "final_summary"
-      ? DEFAULT_CODEX_DIRECT_FINAL_SUMMARY_REQUEST_TIMEOUT_MS
-      : DEFAULT_CODEX_DIRECT_MODEL_REQUEST_TIMEOUT_MS;
-  const configured =
-    phase === "final_summary"
-      ? (options.modelFinalSummaryRequestTimeoutMs ?? options.modelRequestTimeoutMs)
-      : options.modelRequestTimeoutMs;
-
-  return configured ?? defaultTimeout;
 }
