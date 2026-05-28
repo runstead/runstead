@@ -45,3 +45,16 @@ The final check should prove the shared Postgres backend, runner registry,
 fresh heartbeat, database leases, and backend identity. Production deployments
 still need real artifact storage, external append-only audit, IdP/RBAC,
 runner credentials, network isolation, and central secret management.
+
+## CI Coverage
+
+The repository CI runs the same core live path against its Postgres service:
+
+- initialize a temporary Runstead workspace
+- apply the Postgres runtime schema
+- record a runner heartbeat
+- run `team control-plane check --live`
+- run `startup ready --plan --live-runtime-backend`
+
+That smoke test proves the checked-in CLI can exercise the team backend before
+release; this example remains the copyable local operator stack.

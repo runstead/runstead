@@ -104,3 +104,51 @@ jobs:
           node packages/cli/dist/index.js agent run --help
           node packages/cli/dist/index.js team control-plane runner --help
           node packages/cli/dist/index.js team control-plane runner heartbeat --help
+
+      - name: Team control-plane live smoke
+        env:
+          RUNSTEAD_RUNTIME_BACKEND: postgres
+          RUNSTEAD_POSTGRES_URL: ${{ env.RUNSTEAD_PG_TEST_URL }}
+          RUNSTEAD_ARTIFACT_BASE_URI: file:///tmp/runstead-team-ci-artifacts
+          RUNSTEAD_TEAM_ORG_ID: org_ci
+          RUNSTEAD_TEAM_WORKSPACE_ID: workspace_ci
+          RUNSTEAD_RUNNER_ID: runner_ci
+          RUNSTEAD_AUDIT_SINK_URI: file:///tmp/runstead-team-ci-audit
+          RUNSTEAD_REQUIRE_RUNNER_HEARTBEAT: "true"
+        run: |
+          TEAM_SMOKE_DIR="$(mktemp -d)"
+          TEAM_SCHEMA="runstead_ci_${GITHUB_RUN_ID}_${GITHUB_RUN_ATTEMPT}"
+          TEAM_SCHEMA="${TEAM_SCHEMA//[^A-Za-z0-9_]/_}"
+
+          node packages/cli/dist/index.js init --cwd "$TEAM_SMOKE_DIR" --profile trusted-local
+          node packages/cli/dist/index.js team control-plane runner heartbeat \
+            --cwd "$TEAM_SMOKE_DIR" \
+            --schema "$TEAM_SCHEMA" \
+            --runner-id "$RUNSTEAD_RUNNER_ID" \
+            --organization-id "$RUNSTEAD_TEAM_ORG_ID" \
+            --workspace-id "$RUNSTEAD_TEAM_WORKSPACE_ID" \
+            --labels ci,runstead \
+            --migrate \
+            --json > "$TEAM_SMOKE_DIR/heartbeat.json"
+          node packages/cli/dist/index.js team control-plane runner list \
+            --cwd "$TEAM_SMOKE_DIR" \
+            --schema "$TEAM_SCHEMA" \
+            --organization-id "$RUNSTEAD_TEAM_ORG_ID" \
+            --workspace-id "$RUNSTEAD_TEAM_WORKSPACE_ID" \
+            --json > "$TEAM_SMOKE_DIR/runners.json"
+          node packages/cli/dist/index.js team control-plane check \
+            --cwd "$TEAM_SMOKE_DIR" \
+            --schema "$TEAM_SCHEMA" \
+            --live \
+            --json > "$TEAM_SMOKE_DIR/team-check.json"
+          node -e 'const fs=require("node:fs"); const result=JSON.parse(fs.readFileSync(process.argv[1], "utf8")); if (!result.passed || result.liveBackend?.connected !== true || result.liveBackend?.freshRunnerHeartbeats < 1) { console.error(JSON.stringify(result, null, 2)); process.exit(1); }' "$TEAM_SMOKE_DIR/team-check.json"
+          node packages/cli/dist/index.js startup ready \
+            --cwd "$TEAM_SMOKE_DIR" \
+            --stage launch \
+            --target local \
+            --plan \
+            --live-runtime-backend \
+            --migrate-runtime-backend \
+            --runtime-backend-schema "$TEAM_SCHEMA" > "$TEAM_SMOKE_DIR/startup-ready-plan.txt"
+          grep -F "Runtime backend: postgres ready" "$TEAM_SMOKE_DIR/startup-ready-plan.txt"
+          grep -F "live=connected runners=1 fresh=1" "$TEAM_SMOKE_DIR/startup-ready-plan.txt"
