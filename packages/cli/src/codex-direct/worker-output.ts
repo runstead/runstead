@@ -1,7 +1,10 @@
 import type { RuntimeExecutionSemantics } from "@runstead/runtime";
 
 import { CODEX_DIRECT_WORKER_KIND } from "./constants.js";
-import type { CodexDirectBudgetSummary, CodexDirectWorkerResult } from "./worker-types.js";
+import type {
+  CodexDirectBudgetSummary,
+  CodexDirectWorkerResult
+} from "./worker-types.js";
 
 export function codexDirectWorkerOutput(input: {
   model: string;

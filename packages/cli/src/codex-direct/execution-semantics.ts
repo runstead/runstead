@@ -5,7 +5,10 @@ import {
   type RuntimeWorkerOutcome
 } from "@runstead/runtime";
 
-import type { CodexDirectBudgetSummary, CodexDirectWorkerResult } from "./worker-types.js";
+import type {
+  CodexDirectBudgetSummary,
+  CodexDirectWorkerResult
+} from "./worker-types.js";
 
 export function codexDirectExecutionSemantics(input: {
   status: CodexDirectWorkerResult["status"];

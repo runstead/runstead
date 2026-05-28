@@ -9,7 +9,7 @@ export function modelRequestRetryStopError(input: {
   maxRetries: number;
   retryCount: number;
   phase: CodexDirectModelRequestPhase;
-}): unknown | undefined {
+}): Error | undefined {
   const transient = isTransientModelRequestError(input.error);
 
   if (input.attempts <= input.maxRetries && transient) {
@@ -25,5 +25,7 @@ export function modelRequestRetryStopError(input: {
     });
   }
 
-  return input.error;
+  return input.error instanceof Error
+    ? input.error
+    : new Error(errorMessage(input.error));
 }
