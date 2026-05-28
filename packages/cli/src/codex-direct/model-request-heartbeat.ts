@@ -1,8 +1,3 @@
-import type { Task, WorkerRun } from "@runstead/core";
-import type { RunsteadDatabase } from "@runstead/state-sqlite";
-
-import type { CodexResponsesResult } from "../codex-responses-transport.js";
-import type { CodexDirectModelRequestPhase } from "./worker-types.js";
 import { errorMessage } from "./tool-json.js";
 import { CodexDirectModelRetryExhaustedError } from "./model-request-interruptions.js";
 import { recordModelRequestRetry } from "./model-request-audit.js";
@@ -12,6 +7,10 @@ import {
   sleep
 } from "./model-request-retry.js";
 import { createModelRequestHeartbeatRecorder } from "./model-request-heartbeat-recorder.js";
+import type {
+  CodexDirectModelRequestWithHeartbeatInput,
+  CodexDirectModelRequestWithHeartbeatResult
+} from "./model-request-heartbeat-types.js";
 import { runSingleModelRequestWithHeartbeat } from "./model-request-single.js";
 
 export {
@@ -20,26 +19,14 @@ export {
   sleep
 } from "./model-request-retry.js";
 export { runSingleModelRequestWithHeartbeat } from "./model-request-single.js";
+export type {
+  CodexDirectModelRequestWithHeartbeatInput,
+  CodexDirectModelRequestWithHeartbeatResult
+} from "./model-request-heartbeat-types.js";
 
-export async function runModelRequestWithHeartbeat(input: {
-  database: RunsteadDatabase;
-  task: Task;
-  workerRun: WorkerRun;
-  phase: CodexDirectModelRequestPhase;
-  timeoutMs: number;
-  heartbeatMs: number;
-  maxRetries: number;
-  retryBaseDelayMs: number;
-  retryMaxDelayMs: number;
-  retryJitterMs: number;
-  request: () => Promise<CodexResponsesResult>;
-}): Promise<{
-  value: CodexResponsesResult;
-  elapsedMs: number;
-  heartbeatCount: number;
-  attempts: number;
-  retryCount: number;
-}> {
+export async function runModelRequestWithHeartbeat(
+  input: CodexDirectModelRequestWithHeartbeatInput
+): Promise<CodexDirectModelRequestWithHeartbeatResult> {
   const startedAt = Date.now();
   let attempts = 0;
   let retryCount = 0;
