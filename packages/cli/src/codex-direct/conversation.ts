@@ -1,5 +1,4 @@
 import type { WorkerRun } from "@runstead/core";
-import type { RuntimeVerificationStatus } from "@runstead/runtime";
 
 import type { CodexResponsesInputItem } from "../codex-responses-transport.js";
 
@@ -9,13 +8,12 @@ import {
   codexDirectConversationRequest,
   codexDirectFunctionCallInput
 } from "./conversation-messages.js";
+import { createCodexDirectConversationVerifierTracker } from "./conversation-verifier-tracker.js";
 import {
-  codexDirectVerificationStatus,
   codexDirectWarningOptions,
   completedWorkerResult,
   finalizeBudgetExceededWorkerResult,
   parseCodexDirectToolCall,
-  recordCodexDirectVerifierResult,
   runCodexDirectTool,
   runGovernedModelInference
 } from "./tool-router.js";
@@ -32,9 +30,9 @@ export async function runCodexDirectConversation(input: {
 }): Promise<CodexDirectWorkerResult> {
   let executedToolCalls = input.executedToolCalls;
   let failedToolCalls = input.failedToolCalls;
-  const verifierResults = new Map<string, RuntimeVerificationStatus>();
-  const verification = (): RuntimeVerificationStatus =>
-    codexDirectVerificationStatus(input.options.task, verifierResults);
+  const verifierTracker = createCodexDirectConversationVerifierTracker(
+    input.options.task
+  );
 
   try {
     for (let turn = 0; turn < input.maxTurns; turn += 1) {
@@ -58,7 +56,7 @@ export async function runCodexDirectConversation(input: {
           summary,
           toolCalls: executedToolCalls,
           failedToolCalls,
-          verification: verification(),
+          verification: verifierTracker.verification(),
           ...codexDirectWarningOptions(input.warnings)
         });
       }
@@ -76,7 +74,7 @@ export async function runCodexDirectConversation(input: {
             maxTurns: input.maxTurns,
             toolCalls: executedToolCalls,
             failedToolCalls,
-            verification: verification(),
+            verification: verifierTracker.verification(),
             ...codexDirectWarningOptions(input.warnings)
           });
         }
@@ -97,10 +95,9 @@ export async function runCodexDirectConversation(input: {
         if (toolResult.failed) {
           failedToolCalls += 1;
         }
-        recordCodexDirectVerifierResult({
+        verifierTracker.record({
           toolCall,
-          toolResult,
-          verifierResults
+          toolResult
         });
         appendCodexDirectToolExchange({
           messages: input.messages,
@@ -120,7 +117,7 @@ export async function runCodexDirectConversation(input: {
             maxTurns: input.maxTurns,
             toolCalls: executedToolCalls,
             failedToolCalls,
-            verification: verification(),
+            verification: verifierTracker.verification(),
             ...codexDirectWarningOptions(input.warnings)
           });
         }
@@ -135,7 +132,7 @@ export async function runCodexDirectConversation(input: {
       maxTurns: input.maxTurns,
       toolCalls: executedToolCalls,
       failedToolCalls,
-      verification: verification(),
+      verification: verifierTracker.verification(),
       ...codexDirectWarningOptions(input.warnings)
     });
   } catch (error) {
@@ -145,7 +142,7 @@ export async function runCodexDirectConversation(input: {
       workerRun: input.workerRun,
       toolCalls: executedToolCalls,
       failedToolCalls,
-      verification: verification(),
+      verification: verifierTracker.verification(),
       ...codexDirectWarningOptions(input.warnings)
     });
   }
