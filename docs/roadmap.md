@@ -54,6 +54,9 @@ just an agent wrapper. The current product surface includes:
   Gemini generateContent
 - copyable package-shaped extension examples with executable collector
   regression coverage
+- split fast/integration test scripts so normal regression checks avoid the
+  slow CLI startup, dogfood, Codex Direct, and CI repair fixture suite while CI
+  still runs both groups
 - richer `ai-native-startup`, `research-monitor`, and `email-followup` domain
   packs
 
@@ -965,6 +968,8 @@ The current implementation wave closed the highest-confidence product gaps:
   `startup-gate-findings`.
 - Startup gate blocker diff calculation moved out of `startup-gate-evaluation`
   into `startup-gate-diff`.
+- Fast and integration test entrypoints now split the slow CLI fixture suite
+  out of the normal regression path while CI still runs both groups.
 
 ## Remaining Backlog
 

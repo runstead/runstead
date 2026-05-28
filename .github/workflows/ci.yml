@@ -70,8 +70,11 @@ jobs:
       - name: Typecheck
         run: pnpm run typecheck
 
-      - name: Test
-        run: pnpm run test
+      - name: Fast tests
+        run: pnpm run test:fast
+
+      - name: Integration tests
+        run: pnpm run test:integration
 
       - name: Build
         run: pnpm run build
