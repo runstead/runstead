@@ -1,9 +1,10 @@
+import { extractOpenAiChatCompletionsToolCalls } from "@runstead/runtime";
+
 import type {
   CodexResponsesInputItem,
   CodexResponsesRequest,
   CodexResponsesResult,
-  CodexResponsesTool,
-  CodexResponsesToolCall
+  CodexResponsesTool
 } from "./codex-responses-transport.js";
 
 export interface OpenAiChatCompletionsTransportOptions {
@@ -90,7 +91,11 @@ export function normalizeOpenAiChatCompletionsPayload(
 
   const message = choice.message;
   const outputText = openAiContentText(message.content);
-  const toolCalls = openAiToolCalls(message.tool_calls);
+  const toolCalls = extractOpenAiChatCompletionsToolCalls(payload).map((call) => ({
+    id: call.id,
+    name: call.name,
+    arguments: call.rawArguments
+  }));
 
   return {
     ...(typeof payload.id === "string" ? { id: payload.id } : {}),
@@ -163,35 +168,6 @@ function openAiTool(tool: CodexResponsesTool): Record<string, unknown> {
   };
 }
 
-function openAiToolCalls(value: unknown): CodexResponsesToolCall[] {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-
-  return value.flatMap((item, index) => {
-    if (!isRecord(item) || !isRecord(item.function)) {
-      return [];
-    }
-
-    const name = item.function.name;
-
-    if (typeof name !== "string" || name.trim().length === 0) {
-      return [];
-    }
-
-    return [
-      {
-        id: stringValue(item.id) ?? `call_${index + 1}`,
-        name: name.trim(),
-        arguments:
-          typeof item.function.arguments === "string"
-            ? item.function.arguments
-            : JSON.stringify(item.function.arguments ?? {})
-      }
-    ];
-  });
-}
-
 function openAiContentText(content: unknown): string {
   if (typeof content === "string") {
     return content.trim();
@@ -211,12 +187,6 @@ function openAiContentText(content: unknown): string {
     })
     .join("")
     .trim();
-}
-
-function stringValue(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim().length > 0
-    ? value.trim()
-    : undefined;
 }
 
 function normalizeString(value: string | undefined): string | undefined {

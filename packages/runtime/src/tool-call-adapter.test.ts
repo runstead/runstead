@@ -1,9 +1,13 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  anthropicMessagesToolCallAdapter,
   codexResponsesToolCallAdapter,
+  extractAnthropicMessagesToolCalls,
   extractCodexResponsesToolCalls,
+  extractGeminiGenerateContentToolCalls,
   extractOpenAiChatCompletionsToolCalls,
+  geminiGenerateContentToolCallAdapter,
   openAiChatCompletionsToolCallAdapter,
   runtimeToolArguments
 } from "./index.js";
@@ -110,6 +114,110 @@ describe("@runstead/runtime tool-call adapter", () => {
       role: "tool",
       tool_call_id: "tool_1",
       content: "done"
+    });
+  });
+
+  it("normalizes Anthropic Messages tool calls", () => {
+    expect(
+      extractAnthropicMessagesToolCalls({
+        content: [
+          {
+            type: "text",
+            text: "Inspecting files"
+          },
+          {
+            type: "tool_use",
+            id: "toolu_1",
+            name: "read_file",
+            input: {
+              path: "package.json"
+            }
+          }
+        ]
+      })
+    ).toEqual([
+      {
+        id: "toolu_1",
+        name: "read_file",
+        arguments: {
+          path: "package.json"
+        },
+        rawArguments: '{"path":"package.json"}',
+        provider: "anthropic_messages",
+        responseItemId: "toolu_1"
+      }
+    ]);
+    expect(
+      anthropicMessagesToolCallAdapter.toolResultMessage({
+        callId: "toolu_1",
+        output: "done"
+      })
+    ).toEqual({
+      role: "user",
+      content: [
+        {
+          type: "tool_result",
+          tool_use_id: "toolu_1",
+          content: "done"
+        }
+      ]
+    });
+  });
+
+  it("normalizes Gemini generateContent tool calls", () => {
+    expect(
+      extractGeminiGenerateContentToolCalls({
+        candidates: [
+          {
+            content: {
+              parts: [
+                {
+                  text: "Inspecting files"
+                },
+                {
+                  functionCall: {
+                    name: "read_file",
+                    args: {
+                      path: "package.json"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      })
+    ).toEqual([
+      {
+        id: "call_1",
+        name: "read_file",
+        arguments: {
+          path: "package.json"
+        },
+        rawArguments: '{"path":"package.json"}',
+        provider: "gemini_generate_content"
+      }
+    ]);
+    expect(
+      geminiGenerateContentToolCallAdapter.toolResultMessage({
+        callId: "call_1",
+        name: "read_file",
+        output: {
+          ok: true
+        }
+      })
+    ).toEqual({
+      role: "user",
+      parts: [
+        {
+          functionResponse: {
+            name: "read_file",
+            response: {
+              ok: true
+            }
+          }
+        }
+      ]
     });
   });
 

@@ -16,8 +16,8 @@ Contract packages (stable, side-effect free, no Node-specific hosting):
   storage/lock/artifact backend contracts, team-control-plane contracts,
   readiness run snapshot helpers, source-provider response normalization and
   secret redaction, provider-neutral tool-call adapter primitives (Codex
-  Responses, OpenAI-compatible chat completions), and startup UI smoke failure
-  classification
+  Responses, OpenAI-compatible chat completions, Anthropic Messages, Gemini
+  generateContent), and startup UI smoke failure classification
 - `@runstead/governance`: policy DSL parser, deterministic evaluator with
   deny > approval > allow precedence, action risk scorer, reusable policy
   factories (protected paths, dangerous shell, dependency change, verifier
@@ -85,7 +85,9 @@ along with:
   `collectRuntimeSourceProviderPayload`, and
   `runtimeSourceProviderAuthHeaders`
 - tool-call adapters: `codexResponsesToolCallAdapter`,
-  `openAiChatCompletionsToolCallAdapter`
+  `openAiChatCompletionsToolCallAdapter`,
+  `anthropicMessagesToolCallAdapter`, and
+  `geminiGenerateContentToolCallAdapter`
 - UI smoke semantics: `classifyRuntimeStartupUiValidationFailure`
   (product_gap, selector_unstable, browser_runtime, network, unknown)
 - UI smoke config contract: `RuntimeStartupUiSmokeConfig` and

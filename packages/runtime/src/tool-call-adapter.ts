@@ -40,6 +40,24 @@ export const openAiChatCompletionsToolCallAdapter: RuntimeToolCallAdapter<
   toolResultMessage: openAiChatCompletionsToolResultMessage
 };
 
+export const anthropicMessagesToolCallAdapter: RuntimeToolCallAdapter<
+  unknown,
+  JsonObject
+> = {
+  provider: "anthropic_messages",
+  extractToolCalls: extractAnthropicMessagesToolCalls,
+  toolResultMessage: anthropicMessagesToolResultMessage
+};
+
+export const geminiGenerateContentToolCallAdapter: RuntimeToolCallAdapter<
+  unknown,
+  JsonObject
+> = {
+  provider: "gemini_generate_content",
+  extractToolCalls: extractGeminiGenerateContentToolCalls,
+  toolResultMessage: geminiGenerateContentToolResultMessage
+};
+
 export function extractCodexResponsesToolCalls(response: unknown): RuntimeToolCall[] {
   const outputItems = Array.isArray(response)
     ? response
@@ -112,6 +130,70 @@ export function extractOpenAiChatCompletionsToolCalls(
   return calls;
 }
 
+export function extractAnthropicMessagesToolCalls(
+  response: unknown
+): RuntimeToolCall[] {
+  const content =
+    isRecord(response) && Array.isArray(response.content) ? response.content : [];
+  const calls: RuntimeToolCall[] = [];
+
+  for (const item of content) {
+    if (!isRecord(item) || item.type !== "tool_use") {
+      continue;
+    }
+
+    const name = stringValue(item.name);
+
+    if (name === undefined) {
+      continue;
+    }
+
+    const id = stringValue(item.id) ?? `call_${calls.length + 1}`;
+
+    calls.push({
+      id,
+      name,
+      ...runtimeToolArguments(item.input),
+      provider: "anthropic_messages",
+      responseItemId: id
+    });
+  }
+
+  return calls;
+}
+
+export function extractGeminiGenerateContentToolCalls(
+  response: unknown
+): RuntimeToolCall[] {
+  const candidates =
+    isRecord(response) && Array.isArray(response.candidates) ? response.candidates : [];
+  const candidate = isRecord(candidates[0]) ? candidates[0] : undefined;
+  const content = isRecord(candidate?.content) ? candidate.content : undefined;
+  const parts = Array.isArray(content?.parts) ? content.parts : [];
+  const calls: RuntimeToolCall[] = [];
+
+  for (const part of parts) {
+    if (!isRecord(part) || !isRecord(part.functionCall)) {
+      continue;
+    }
+
+    const name = stringValue(part.functionCall.name);
+
+    if (name === undefined) {
+      continue;
+    }
+
+    calls.push({
+      id: stringValue(part.functionCall.id) ?? `call_${calls.length + 1}`,
+      name,
+      ...runtimeToolArguments(part.functionCall.args),
+      provider: "gemini_generate_content"
+    });
+  }
+
+  return calls;
+}
+
 export function codexResponsesToolResultMessage(result: RuntimeToolResult): JsonObject {
   return {
     type: "function_call_output",
@@ -127,6 +209,37 @@ export function openAiChatCompletionsToolResultMessage(
     role: "tool",
     tool_call_id: result.callId,
     content: runtimeToolResultText(result)
+  };
+}
+
+export function anthropicMessagesToolResultMessage(
+  result: RuntimeToolResult
+): JsonObject {
+  return {
+    role: "user",
+    content: [
+      {
+        type: "tool_result",
+        tool_use_id: result.callId,
+        content: runtimeToolResultText(result)
+      }
+    ]
+  };
+}
+
+export function geminiGenerateContentToolResultMessage(
+  result: RuntimeToolResult
+): JsonObject {
+  return {
+    role: "user",
+    parts: [
+      {
+        functionResponse: {
+          name: result.name ?? "tool_result",
+          response: runtimeToolResultObject(result)
+        }
+      }
+    ]
   };
 }
 
@@ -165,6 +278,27 @@ function runtimeToolResultText(result: RuntimeToolResult): string {
         error: output
       })
     : output;
+}
+
+function runtimeToolResultObject(result: RuntimeToolResult): JsonObject {
+  const output =
+    typeof result.output === "string" ? parseJsonObject(result.output) : result.output;
+
+  if (result.isError === true) {
+    return {
+      error: output
+    };
+  }
+
+  return isRecord(output) ? output : { output };
+}
+
+function parseJsonObject(value: string): unknown {
+  try {
+    return JSON.parse(value) as unknown;
+  } catch {
+    return value;
+  }
 }
 
 function stringValue(value: unknown): string | undefined {

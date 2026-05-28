@@ -1,9 +1,10 @@
+import { extractGeminiGenerateContentToolCalls } from "@runstead/runtime";
+
 import type {
   CodexResponsesInputItem,
   CodexResponsesRequest,
   CodexResponsesResult,
-  CodexResponsesTool,
-  CodexResponsesToolCall
+  CodexResponsesTool
 } from "./codex-responses-transport.js";
 
 export interface GeminiGenerateContentTransportOptions {
@@ -96,7 +97,11 @@ export function normalizeGeminiGenerateContentPayload(
 
   const parts = Array.isArray(candidate.content.parts) ? candidate.content.parts : [];
   const textParts: string[] = [];
-  const toolCalls: CodexResponsesToolCall[] = [];
+  const toolCalls = extractGeminiGenerateContentToolCalls(payload).map((call) => ({
+    id: call.id,
+    name: call.name,
+    arguments: call.rawArguments
+  }));
 
   for (const part of parts) {
     if (!isRecord(part)) {
@@ -105,18 +110,6 @@ export function normalizeGeminiGenerateContentPayload(
 
     if (typeof part.text === "string") {
       textParts.push(part.text);
-      continue;
-    }
-
-    if (isRecord(part.functionCall) && typeof part.functionCall.name === "string") {
-      toolCalls.push({
-        id: `call_${toolCalls.length + 1}`,
-        name: part.functionCall.name,
-        arguments:
-          typeof part.functionCall.args === "string"
-            ? part.functionCall.args
-            : JSON.stringify(part.functionCall.args ?? {})
-      });
     }
   }
 

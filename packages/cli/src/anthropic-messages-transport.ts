@@ -1,9 +1,10 @@
+import { extractAnthropicMessagesToolCalls } from "@runstead/runtime";
+
 import type {
   CodexResponsesInputItem,
   CodexResponsesRequest,
   CodexResponsesResult,
-  CodexResponsesTool,
-  CodexResponsesToolCall
+  CodexResponsesTool
 } from "./codex-responses-transport.js";
 
 export interface AnthropicMessagesTransportOptions {
@@ -73,7 +74,11 @@ export function normalizeAnthropicMessagesPayload(
 
   const content = Array.isArray(payload.content) ? payload.content : [];
   const textParts: string[] = [];
-  const toolCalls: CodexResponsesToolCall[] = [];
+  const toolCalls = extractAnthropicMessagesToolCalls(payload).map((call) => ({
+    id: call.id,
+    name: call.name,
+    arguments: call.rawArguments
+  }));
 
   for (const item of content) {
     if (!isRecord(item)) {
@@ -83,15 +88,6 @@ export function normalizeAnthropicMessagesPayload(
     if (item.type === "text" && typeof item.text === "string") {
       textParts.push(item.text);
       continue;
-    }
-
-    if (item.type === "tool_use" && typeof item.name === "string") {
-      toolCalls.push({
-        id: stringValue(item.id) ?? `call_${toolCalls.length + 1}`,
-        name: item.name,
-        arguments:
-          typeof item.input === "string" ? item.input : JSON.stringify(item.input ?? {})
-      });
     }
   }
 
@@ -162,12 +158,6 @@ function parseJsonObject(value: string): unknown {
   } catch {
     return {};
   }
-}
-
-function stringValue(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim().length > 0
-    ? value.trim()
-    : undefined;
 }
 
 function trimTrailingSlash(value: string): string {
