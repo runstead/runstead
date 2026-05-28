@@ -1,16 +1,12 @@
 import { errorMessage } from "./tool-json.js";
-import { CodexDirectModelRetryExhaustedError } from "./model-request-interruptions.js";
 import { recordModelRequestRetry } from "./model-request-audit.js";
-import {
-  isTransientModelRequestError,
-  modelRequestRetryDelayMs,
-  sleep
-} from "./model-request-retry.js";
+import { modelRequestRetryDelayMs, sleep } from "./model-request-retry.js";
 import { createModelRequestHeartbeatRecorder } from "./model-request-heartbeat-recorder.js";
 import type {
   CodexDirectModelRequestWithHeartbeatInput,
   CodexDirectModelRequestWithHeartbeatResult
 } from "./model-request-heartbeat-types.js";
+import { modelRequestRetryStopError } from "./model-request-retry-stop.js";
 import { runSingleModelRequestWithHeartbeat } from "./model-request-single.js";
 
 export {
@@ -60,17 +56,16 @@ export async function runModelRequestWithHeartbeat(
         retryCount
       };
     } catch (error) {
-      if (attempts > input.maxRetries || !isTransientModelRequestError(error)) {
-        if (retryCount > 0 && isTransientModelRequestError(error)) {
-          throw new CodexDirectModelRetryExhaustedError({
-            phase: input.phase,
-            attempts,
-            maxRetries: input.maxRetries,
-            lastError: errorMessage(error)
-          });
-        }
+      const stopError = modelRequestRetryStopError({
+        error,
+        attempts,
+        maxRetries: input.maxRetries,
+        retryCount,
+        phase: input.phase
+      });
 
-        throw error;
+      if (stopError !== undefined) {
+        throw stopError;
       }
 
       retryCount += 1;
