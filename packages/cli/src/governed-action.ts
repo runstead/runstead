@@ -1,16 +1,7 @@
-import type {
-  ApprovalRequest,
-  JsonObject,
-  PolicyDecisionRecord,
-  Task,
-  ToolCall,
-  WorkerRun
-} from "@runstead/core";
 import {
   assertRunsteadDatabasePath,
   appendEventsAndProjects,
-  type AppendEventAndProjectInput,
-  type RunsteadDatabase
+  type AppendEventAndProjectInput
 } from "@runstead/state-sqlite";
 
 import {
@@ -22,11 +13,7 @@ import {
   approvalGrantAuditOutput,
   approvalGrantLookupOptions
 } from "./governed-action-grants.js";
-import {
-  fingerprintPolicyProfile,
-  type ActionEnvelope,
-  type PolicyProfile
-} from "./policy.js";
+import { fingerprintPolicyProfile } from "./policy.js";
 import { createPolicyDecisionTransition } from "./policy-log.js";
 import {
   createFinishToolCallTransition,
@@ -34,47 +21,19 @@ import {
   finishToolCall
 } from "./runtime-audit.js";
 import { preflightToolAction } from "./tool-proxy.js";
+import {
+  ToolActionApprovalRequiredError,
+  ToolActionDeniedError,
+  type RunGovernedToolActionOptions,
+  type RunGovernedToolActionResult
+} from "./governed-action-types.js";
 
-export interface RunGovernedToolActionOptions<T> {
-  cwd: string;
-  stateDb: string;
-  database: RunsteadDatabase;
-  policy: PolicyProfile;
-  task: Task;
-  workerRun: WorkerRun;
-  action: ActionEnvelope;
-  requestedBy: string;
-  now?: Date;
-  run: () => Promise<{ value: T; output?: JsonObject }>;
-}
-
-export interface RunGovernedToolActionResult<T> {
-  value: T;
-  toolCall: ToolCall;
-  policyDecision: PolicyDecisionRecord;
-  approval?: ApprovalRequest;
-}
-
-export class ToolActionDeniedError extends Error {
-  constructor(
-    message: string,
-    readonly toolCall: ToolCall,
-    readonly policyDecision: PolicyDecisionRecord
-  ) {
-    super(message);
-  }
-}
-
-export class ToolActionApprovalRequiredError extends Error {
-  constructor(
-    message: string,
-    readonly toolCall: ToolCall,
-    readonly policyDecision: PolicyDecisionRecord,
-    readonly approval: ApprovalRequest
-  ) {
-    super(message);
-  }
-}
+export {
+  ToolActionApprovalRequiredError,
+  ToolActionDeniedError,
+  type RunGovernedToolActionOptions,
+  type RunGovernedToolActionResult
+} from "./governed-action-types.js";
 
 export async function runGovernedToolAction<T>(
   options: RunGovernedToolActionOptions<T>
