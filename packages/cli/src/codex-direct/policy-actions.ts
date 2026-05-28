@@ -2,10 +2,6 @@ import type { Task, WorkerRun } from "@runstead/core";
 
 import type { ActionEnvelope } from "../policy.js";
 import type { CommandVerifierInput } from "../verifier-evidence.js";
-import type {
-  CodexDirectPatchApprovalMetadata,
-  CodexDirectPendingPatchPayload
-} from "./patch-actions.js";
 import { stableActionId } from "./tool-action-id.js";
 import type { CodexDirectWorkerOptions } from "./worker.js";
 
@@ -17,6 +13,7 @@ export {
   workspaceFactsReadAction
 } from "./read-policy-actions.js";
 export { modelInferenceAction } from "./model-policy-actions.js";
+export { filesystemPatchAction } from "./patch-policy-actions.js";
 export { shellAction } from "./shell-policy-actions.js";
 
 export function governedToolOptions(
@@ -34,37 +31,6 @@ export function governedToolOptions(
     workerRun: options.workerRun,
     requestedBy: "runstead:codex-direct",
     ...(options.now === undefined ? {} : { now: options.now })
-  };
-}
-
-export function filesystemPatchAction(input: {
-  cwd: string;
-  filesTouched: string[];
-  approvalMetadata: CodexDirectPatchApprovalMetadata;
-  pendingPatch: CodexDirectPendingPatchPayload;
-  stableParts: unknown[];
-}): ActionEnvelope {
-  return {
-    actionId: stableActionId("filesystem.patch", input.stableParts),
-    actionType: "filesystem.patch",
-    resource: {
-      type: "file",
-      path: input.filesTouched[0] ?? "."
-    },
-    context: {
-      cwd: input.cwd,
-      filesTouched: input.filesTouched,
-      diffHash: input.approvalMetadata.diffHash,
-      riskClass: input.approvalMetadata.riskClass,
-      dependencyImpact: input.approvalMetadata.dependencyImpact,
-      riskSummary: input.approvalMetadata.riskSummary,
-      canonicalSignature: input.approvalMetadata.canonicalSignature,
-      ...(input.approvalMetadata.approvalGrant === undefined
-        ? {}
-        : { approvalGrant: input.approvalMetadata.approvalGrant }),
-      pendingPatch: input.pendingPatch,
-      sideEffects: ["write_workspace"]
-    }
   };
 }
 
