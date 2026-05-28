@@ -1,52 +1,12 @@
 import type { CodexResponsesTool } from "../codex-responses-transport.js";
 
 import { objectSchema } from "./tool-schema.js";
+import { codexDirectWorkspaceFileListToolDefinitions } from "./workspace-file-list-tool-catalog.js";
 import { codexDirectWorkspaceSearchToolDefinitions } from "./workspace-search-tool-catalog.js";
 
 export function codexDirectWorkspaceFileToolDefinitions(): CodexResponsesTool[] {
   return [
-    {
-      type: "function",
-      name: "list_files",
-      description:
-        "List workspace files with stable relative paths, glob filters, default repository ignores, and bounded output.",
-      strict: false,
-      parameters: objectSchema(
-        {
-          glob: {
-            oneOf: [
-              {
-                type: "string"
-              },
-              {
-                type: "array",
-                items: {
-                  type: "string"
-                }
-              }
-            ],
-            description:
-              "Optional glob pattern or patterns. Defaults to all non-ignored files."
-          },
-          exclude: {
-            type: "array",
-            items: {
-              type: "string"
-            },
-            description: "Optional glob patterns to exclude."
-          },
-          maxResults: {
-            type: "number",
-            description: "Optional maximum number of entries to return."
-          },
-          includeDirs: {
-            type: "boolean",
-            description: "Include directory entries when true."
-          }
-        },
-        []
-      )
-    },
+    ...codexDirectWorkspaceFileListToolDefinitions(),
     ...codexDirectWorkspaceSearchToolDefinitions(),
     {
       type: "function",
