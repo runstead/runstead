@@ -17,6 +17,7 @@ export {
   workspaceFactsReadAction
 } from "./read-policy-actions.js";
 export { modelInferenceAction } from "./model-policy-actions.js";
+export { shellAction } from "./shell-policy-actions.js";
 
 export function governedToolOptions(
   options: Pick<
@@ -33,22 +34,6 @@ export function governedToolOptions(
     workerRun: options.workerRun,
     requestedBy: "runstead:codex-direct",
     ...(options.now === undefined ? {} : { now: options.now })
-  };
-}
-
-export function shellAction(input: { cwd: string; command: string }): ActionEnvelope {
-  return {
-    actionId: stableActionId("shell.exec", [input.cwd, input.command]),
-    actionType: "shell.exec",
-    resource: {
-      type: "process",
-      id: "workspace-shell"
-    },
-    context: {
-      cwd: input.cwd,
-      command: input.command,
-      sideEffects: ["execute_process"]
-    }
   };
 }
 
