@@ -1,4 +1,4 @@
-import { cp, mkdir, rm } from "node:fs/promises";
+import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 import { initRunstead } from "./init.js";
+import { executeStartupReadinessExtensions } from "./startup-extension-execution.js";
 import { planStartupReady } from "./startup-ready.js";
 
 const examplesRoot = resolve(
@@ -65,6 +66,97 @@ describe("startup extension examples", () => {
           "extension vercel-deployment-readiness/deployment-status requires startup_release_plan evidence"
         ])
       );
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("executes a package-shaped extension collector", async () => {
+    const workspace = join(
+      tmpdir(),
+      `runstead-extension-package-example-${process.pid}`
+    );
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await mkdir(workspace, { recursive: true });
+      const initialized = await initRunstead({
+        cwd: workspace,
+        profile: "trusted-local"
+      });
+
+      await mkdir(join(initialized.root, "extensions"), { recursive: true });
+      await cp(
+        join(examplesRoot, "growth-readiness-package"),
+        join(initialized.root, "extensions", "growth-readiness-package"),
+        { recursive: true }
+      );
+      await writeFile(
+        join(workspace, "package.json"),
+        `${JSON.stringify(
+          {
+            private: true,
+            scripts: {
+              test: "node .runstead/extensions/growth-readiness-package/collector.mjs"
+            }
+          },
+          null,
+          2
+        )}\n`,
+        "utf8"
+      );
+
+      const result = await executeStartupReadinessExtensions({
+        cwd: workspace,
+        target: "local",
+        stage: "launch",
+        worker: "codex_cli",
+        governanceProfile: "readiness",
+        now: new Date("2026-05-24T01:40:00.000Z")
+      });
+      const evidenceId = result.evidenceIds[0];
+
+      if (evidenceId === undefined) {
+        throw new Error("Expected package-shaped extension evidence");
+      }
+
+      const artifact = JSON.parse(
+        await readFile(
+          join(
+            workspace,
+            ".runstead",
+            "evidence",
+            `startup-metric_snapshot-${evidenceId}.json`
+          ),
+          "utf8"
+        )
+      ) as { content: string };
+      const content = JSON.parse(artifact.content) as {
+        metric: string;
+        sampleSize: number;
+        runsteadExtension: {
+          extensionId: string;
+          collectorId: string;
+        };
+      };
+
+      expect(result.status).toBe("passed");
+      expect(result.loaded).toEqual(["growth-package-readiness"]);
+      expect(result.collectorResults).toEqual([
+        expect.objectContaining({
+          extensionId: "growth-package-readiness",
+          collectorId: "package-activation",
+          status: "passed"
+        })
+      ]);
+      expect(content).toMatchObject({
+        metric: "activation",
+        sampleSize: 120,
+        runsteadExtension: {
+          extensionId: "growth-package-readiness",
+          collectorId: "package-activation"
+        }
+      });
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }

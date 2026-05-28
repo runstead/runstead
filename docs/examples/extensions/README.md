@@ -12,9 +12,17 @@ cp docs/examples/extensions/posthog-activation.yaml .runstead/extensions/
 runstead startup ready --cwd . --stage launch --target production --plan
 ```
 
+Package-shaped extensions are supported too:
+
+```bash
+cp -R docs/examples/extensions/growth-readiness-package .runstead/extensions/
+runstead startup ready --cwd . --stage launch --target local --plan
+```
+
 The fixture commands point at `fixtures/runstead-extension-fixture.mjs` and
-produce deterministic JSON evidence. Replace those commands with real
-integration adapters when connecting PostHog, Vercel, Sentry, or GitHub.
+produce deterministic JSON evidence. The package-shaped example ships its own
+`collector.mjs`. Replace those commands with real integration adapters when
+connecting PostHog, Vercel, Sentry, GitHub, or a private extension package.
 
 Executable collectors print either a single evidence object or:
 

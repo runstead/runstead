@@ -1,0 +1,10 @@
+{
+  "name": "@example/runstead-growth-readiness-extension",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Package-shaped Runstead readiness extension example.",
+  "type": "module",
+  "runstead": {
+    "extension": "runstead-extension.yaml"
+  }
+}

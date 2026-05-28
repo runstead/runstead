@@ -1,0 +1,71 @@
+schemaVersion: 1
+id: growth-package-readiness
+version: 0.1.0
+name: Growth package readiness
+description: Package-shaped extension that proves directory discovery and collector execution.
+domains:
+  - ai-native-startup
+facets:
+  - name: activation-metric
+    title: Activation metric
+    description: Activation metric evidence required by the packaged extension.
+    appliesToTargets:
+      - local
+      - staging
+      - production
+    requiredEvidenceTypes:
+      - startup_metric_snapshot
+collectors:
+  - id: package-activation
+    title: Package activation collector
+    description: Collect activation evidence from this extension package.
+    command: npm test -- --collector growth-readiness-package
+    targets:
+      - local
+      - staging
+      - production
+    outputSchema:
+      type: object
+      required:
+        - type
+        - content
+      properties:
+        type:
+          const: metric_snapshot
+        content:
+          type: object
+          required:
+            - metric
+            - current
+          properties:
+            metric:
+              type: string
+              minLength: 1
+            current:
+              type: number
+              minimum: 0
+    producesEvidenceTypes:
+      - startup_metric_snapshot
+    safeForWrappedWorkers: true
+    qualityTier: external_observed
+    defaultFreshnessDays: 7
+verifiers:
+  - id: package-metric-contract
+    command: npm test -- --verify growth-readiness-package
+    description: Verify packaged metric collector contract.
+    evidenceTier: local_command
+    producesEvidenceTypes:
+      - command_output
+gates:
+  - id: local-package-growth
+    stage: launch
+    target: local
+    requiredFacets:
+      - activation-metric
+  - id: production-package-growth
+    stage: launch
+    target: production
+    requiredFacets:
+      - activation-metric
+    requiredEvidenceTiers:
+      - real_user_analytics
