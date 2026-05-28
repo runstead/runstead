@@ -5,19 +5,13 @@ import type {
   CodexResponsesResult
 } from "../codex-responses-transport.js";
 import { runGovernedToolAction } from "../governed-action.js";
-import {
-  DEFAULT_CODEX_DIRECT_MODEL_REQUEST_HEARTBEAT_MS,
-  DEFAULT_CODEX_DIRECT_MODEL_REQUEST_MAX_RETRIES,
-  DEFAULT_CODEX_DIRECT_MODEL_REQUEST_RETRY_BASE_DELAY_MS,
-  DEFAULT_CODEX_DIRECT_MODEL_REQUEST_RETRY_JITTER_MS,
-  DEFAULT_CODEX_DIRECT_MODEL_REQUEST_RETRY_MAX_DELAY_MS
-} from "./constants.js";
 import type {
   CodexDirectModelRequestPhase,
   CodexDirectWorkerOptions
 } from "./worker-types.js";
 import { governedToolOptions, modelInferenceAction } from "./policy-actions.js";
 import { runModelRequestWithHeartbeat } from "./model-request-heartbeat.js";
+import { codexDirectModelRequestSettings } from "./model-request-settings.js";
 import { modelRequestTimeoutMs } from "./model-request-timeout.js";
 
 export {
@@ -38,6 +32,7 @@ export {
   runSingleModelRequestWithHeartbeat,
   sleep
 } from "./model-request-heartbeat.js";
+export { codexDirectModelRequestSettings } from "./model-request-settings.js";
 export { modelRequestTimeoutMs } from "./model-request-timeout.js";
 
 export async function runGovernedModelInference(
@@ -62,27 +57,14 @@ export async function runGovernedModelInference(
         : { networkDomains: options.modelProviderNetworkDomains })
     }),
     run: async () => {
+      const settings = codexDirectModelRequestSettings(options);
       const modelRequest = await runModelRequestWithHeartbeat({
         database: options.database,
         task: options.task,
         workerRun: options.workerRun,
         phase,
         timeoutMs: modelRequestTimeoutMs(options, phase),
-        heartbeatMs:
-          options.modelRequestHeartbeatMs ??
-          DEFAULT_CODEX_DIRECT_MODEL_REQUEST_HEARTBEAT_MS,
-        maxRetries:
-          options.modelRequestMaxRetries ??
-          DEFAULT_CODEX_DIRECT_MODEL_REQUEST_MAX_RETRIES,
-        retryBaseDelayMs:
-          options.modelRequestRetryBaseDelayMs ??
-          DEFAULT_CODEX_DIRECT_MODEL_REQUEST_RETRY_BASE_DELAY_MS,
-        retryMaxDelayMs:
-          options.modelRequestRetryMaxDelayMs ??
-          DEFAULT_CODEX_DIRECT_MODEL_REQUEST_RETRY_MAX_DELAY_MS,
-        retryJitterMs:
-          options.modelRequestRetryJitterMs ??
-          DEFAULT_CODEX_DIRECT_MODEL_REQUEST_RETRY_JITTER_MS,
+        ...settings,
         request: () => options.transport.createResponse(options.request)
       });
       const value = modelRequest.value;
