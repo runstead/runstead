@@ -1,11 +1,10 @@
-import { errorMessage } from "./tool-json.js";
-import { recordModelRequestRetry } from "./model-request-audit.js";
-import { modelRequestRetryDelayMs, sleep } from "./model-request-retry.js";
+import { sleep } from "./model-request-retry.js";
 import { createModelRequestHeartbeatRecorder } from "./model-request-heartbeat-recorder.js";
 import type {
   CodexDirectModelRequestWithHeartbeatInput,
   CodexDirectModelRequestWithHeartbeatResult
 } from "./model-request-heartbeat-types.js";
+import { recordCodexDirectModelRequestRetryAttempt } from "./model-request-retry-record.js";
 import { modelRequestRetryStopError } from "./model-request-retry-stop.js";
 import { runSingleModelRequestWithHeartbeat } from "./model-request-single.js";
 
@@ -69,23 +68,18 @@ export async function runModelRequestWithHeartbeat(
       }
 
       retryCount += 1;
-      const delayMs = modelRequestRetryDelayMs({
-        retryCount,
-        baseDelayMs: input.retryBaseDelayMs,
-        maxDelayMs: input.retryMaxDelayMs,
-        jitterMs: input.retryJitterMs
-      });
-
-      recordModelRequestRetry({
+      const delayMs = recordCodexDirectModelRequestRetryAttempt({
         database: input.database,
         task: input.task,
         workerRun: input.workerRun,
         phase: input.phase,
         attempt: attempts,
-        nextAttempt: attempts + 1,
+        retryCount,
         maxRetries: input.maxRetries,
-        reason: errorMessage(error),
-        delayMs,
+        retryBaseDelayMs: input.retryBaseDelayMs,
+        retryMaxDelayMs: input.retryMaxDelayMs,
+        retryJitterMs: input.retryJitterMs,
+        error,
         elapsedMs: Date.now() - startedAt
       });
       await sleep(delayMs);
