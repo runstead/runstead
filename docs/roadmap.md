@@ -1,6 +1,6 @@
 # Runstead Roadmap
 
-Updated: 2026-05-26
+Updated: 2026-05-28
 
 This roadmap tracks the current implementation backlog after the latest
 architecture, readiness, SDK, operator-console, Postgres, and dogfood work. It
@@ -34,6 +34,8 @@ just an agent wrapper. The current product surface includes:
 - `RuntimeControlPlaneBackend` contracts plus SQLite and Postgres backend
   implementations/conformance coverage
 - CI-backed real Postgres integration validation for `@runstead/state-postgres`
+- CI live smoke for `team control-plane` migration, runner heartbeat, live
+  backend check, and `startup ready --plan --live-runtime-backend`
 - CI package smoke coverage for publishable packages including
   `@runstead/state-postgres`
 - runtime backend selection diagnostics for local SQLite and explicit Postgres
@@ -47,6 +49,11 @@ just an agent wrapper. The current product surface includes:
   `possibly_stuck` diagnostics
 - dashboard operator UI controls for action execution and approval decisions
 - command registration extracted for dashboard, doctor, and startup source
+- provider-neutral tool-call adapters in `@runstead/runtime` for Codex
+  Responses, OpenAI-compatible chat completions, Anthropic Messages, and
+  Gemini generateContent
+- copyable package-shaped extension examples with executable collector
+  regression coverage
 - richer `ai-native-startup`, `research-monitor`, and `email-followup` domain
   packs
 
