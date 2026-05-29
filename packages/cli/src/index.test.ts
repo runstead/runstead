@@ -167,6 +167,27 @@ describe("cli entrypoint", () => {
     ).toContain("--cwd");
   });
 
+  it("exposes learning proposal commands", () => {
+    const learning = createProgram().commands.find(
+      (command) => command.name() === "learning"
+    );
+    const proposals = learning?.commands.find(
+      (command) => command.name() === "proposals"
+    );
+
+    expect(learning?.commands.map((command) => command.name())).toContain("proposals");
+    expect(proposals?.options.map((option) => option.long)).toEqual(
+      expect.arrayContaining([
+        "--cwd",
+        "--scope",
+        "--type",
+        "--limit",
+        "--json",
+        "--actor"
+      ])
+    );
+  });
+
   it("exposes run once model routing options", () => {
     const run = createProgram().commands.find((command) => command.name() === "run");
 

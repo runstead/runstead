@@ -19,6 +19,7 @@ import { registerDomainCommand } from "./commands/domain.js";
 import { registerGitCommand } from "./commands/git.js";
 import { registerGitHubCommand } from "./commands/github.js";
 import { registerGoalCommand } from "./commands/goal.js";
+import { registerLearningCommand } from "./commands/learning.js";
 import { registerMemoryCommand } from "./commands/memory.js";
 import { registerMigrateCommand } from "./commands/migrate.js";
 import { registerOpsCommand } from "./commands/ops.js";
@@ -108,6 +109,7 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
   registerAuditCommand(program);
   registerReportCommand(program);
   registerWebhookCommand(program);
+  registerLearningCommand(program);
   registerMemoryCommand(program);
   registerSkillCommand(program);
   registerRepoCommand(program);

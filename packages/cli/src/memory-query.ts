@@ -1,5 +1,60 @@
-import { MemoryRecordSchema, type JsonObject, type MemoryRecord } from "@runstead/core";
+import {
+  MemoryRecordSchema,
+  type JsonObject,
+  type MemoryRecord,
+  type MemoryStatus,
+  type MemoryType
+} from "@runstead/core";
 import type { RunsteadDatabase } from "@runstead/state-sqlite";
+
+export interface ReadMemoryRecordsOptions {
+  status?: MemoryStatus;
+  scope?: string;
+  type?: MemoryType;
+  limit?: number;
+}
+
+export function readMemoryRecords(
+  database: RunsteadDatabase,
+  options: ReadMemoryRecordsOptions = {}
+): MemoryRecord[] {
+  const filters: string[] = [];
+  const args: (number | string)[] = [];
+
+  if (options.status !== undefined) {
+    filters.push("status = ?");
+    args.push(options.status);
+  }
+
+  if (options.scope !== undefined) {
+    filters.push("scope = ?");
+    args.push(options.scope);
+  }
+
+  if (options.type !== undefined) {
+    filters.push("type = ?");
+    args.push(options.type);
+  }
+
+  const rows = database
+    .prepare(
+      `
+      SELECT id, scope, type, status, confidence, content,
+             source_refs_json, provenance_json, created_at, updated_at,
+             expires_at, conflicts_with_json
+      FROM memory_records
+      ${filters.length === 0 ? "" : `WHERE ${filters.join(" AND ")}`}
+      ORDER BY created_at DESC, id ASC
+      ${options.limit === undefined ? "" : "LIMIT ?"}
+    `
+    )
+    .all(
+      ...args,
+      ...(options.limit === undefined ? [] : [options.limit])
+    ) as unknown as MemoryRow[];
+
+  return rows.map(rowToMemory);
+}
 
 export function readProjectFacts(
   database: RunsteadDatabase,
