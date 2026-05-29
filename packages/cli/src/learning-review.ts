@@ -3,12 +3,15 @@ import { basename } from "node:path";
 
 import {
   createRunsteadId,
+  MemoryRecordSchema,
+  MemoryTypeSchema,
   type Goal,
   type JsonObject,
+  type MemoryRecord,
   type RunsteadEvent,
   type Task
 } from "@runstead/core";
-import { appendEventAndProject, type RunsteadDatabase } from "@runstead/state-sqlite";
+import { appendEventsAndProjects, type RunsteadDatabase } from "@runstead/state-sqlite";
 
 import type { LocalAgentWorkerResult } from "./local-agent-result.js";
 import {
@@ -19,6 +22,11 @@ import {
   localAgentTaskMode,
   verifierCommandsFromLocalAgentTask
 } from "./local-agent-task-input.js";
+import {
+  memoryEventPayload,
+  memoryProvenance,
+  quarantinedMemoryConfidence
+} from "./memory-record-builders.js";
 import type { RunTaskVerifiersResult } from "./verifier-runner.js";
 
 export type LearningCandidateType =
@@ -52,6 +60,7 @@ export interface ReviewLocalAgentLearningOptions {
 export interface ReviewLocalAgentLearningResult {
   event: RunsteadEvent;
   candidates: LearningCandidateProposal[];
+  quarantinedMemories: MemoryRecord[];
 }
 
 interface LearningAuditRows {
@@ -105,6 +114,13 @@ export function reviewLocalAgentLearning(
     ...options,
     audit
   });
+  const quarantined = candidates.map((candidate) =>
+    quarantinedLearningMemory({
+      candidate,
+      taskId: options.finalTask.id,
+      createdAt: reviewedAt
+    })
+  );
   const event: RunsteadEvent = {
     eventId: createRunsteadId("evt"),
     type: "learning.review_completed",
@@ -115,8 +131,10 @@ export function reviewLocalAgentLearning(
       goalId: options.goal.id,
       repositoryPath: options.cwd,
       candidateCount: candidates.length,
-      candidates: candidates.map((candidate) => ({
+      quarantinedMemoryIds: quarantined.map((candidate) => candidate.memory.id),
+      candidates: candidates.map((candidate, index) => ({
         candidateKey: candidate.candidateKey,
+        memoryId: quarantined[index]?.memory.id ?? null,
         type: candidate.type,
         scope: candidate.scope,
         confidence: candidate.confidence,
@@ -127,11 +145,21 @@ export function reviewLocalAgentLearning(
     createdAt: reviewedAt
   };
 
-  appendEventAndProject(options.database, { event });
+  appendEventsAndProjects(options.database, [
+    ...quarantined.map((candidate) => ({
+      event: candidate.event,
+      projection: {
+        type: "memory" as const,
+        value: candidate.memory
+      }
+    })),
+    { event }
+  ]);
 
   return {
     event,
-    candidates
+    candidates,
+    quarantinedMemories: quarantined.map((candidate) => candidate.memory)
   };
 }
 
@@ -290,6 +318,44 @@ function learningCandidate(input: {
     confidence: input.confidence,
     sourceRefs: [...new Set(input.sourceRefs)],
     proposal: input.proposal
+  };
+}
+
+function quarantinedLearningMemory(input: {
+  candidate: LearningCandidateProposal;
+  taskId: string;
+  createdAt: string;
+}): { memory: MemoryRecord; event: RunsteadEvent } {
+  const memory = MemoryRecordSchema.parse({
+    id: createRunsteadId("mem"),
+    scope: input.candidate.scope,
+    type: MemoryTypeSchema.parse(input.candidate.type),
+    status: "quarantined",
+    confidence: quarantinedMemoryConfidence(input.candidate.confidence),
+    content: input.candidate.content,
+    sourceRefs: input.candidate.sourceRefs,
+    provenance: memoryProvenance({
+      createdBy: "runstead:learning-review",
+      taskId: input.taskId,
+      candidateKey: input.candidate.candidateKey,
+      proposal: input.candidate.proposal
+    }),
+    createdAt: input.createdAt,
+    updatedAt: input.createdAt,
+    conflictsWith: []
+  });
+  const event: RunsteadEvent = {
+    eventId: createRunsteadId("evt"),
+    type: "memory.candidate_quarantined",
+    aggregateType: "memory",
+    aggregateId: memory.id,
+    payload: memoryEventPayload(memory),
+    createdAt: input.createdAt
+  };
+
+  return {
+    memory,
+    event
   };
 }
 

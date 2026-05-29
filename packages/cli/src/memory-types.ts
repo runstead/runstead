@@ -1,4 +1,4 @@
-import type { MemoryRecord, RunsteadEvent } from "@runstead/core";
+import type { JsonObject, MemoryRecord, RunsteadEvent } from "@runstead/core";
 
 export interface QuarantineMemoryCandidateOptions {
   cwd?: string;
@@ -10,6 +10,8 @@ export interface QuarantineMemoryCandidateOptions {
   expiresAt?: string;
   createdBy?: string;
   taskId?: string;
+  candidateKey?: string;
+  proposal?: JsonObject;
   now?: Date;
 }
 

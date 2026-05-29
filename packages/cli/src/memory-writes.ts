@@ -49,7 +49,11 @@ export function quarantineMemoryCandidate(
     sourceRefs: options.sourceRefs ?? [],
     provenance: memoryProvenance({
       ...(options.createdBy === undefined ? {} : { createdBy: options.createdBy }),
-      ...(options.taskId === undefined ? {} : { taskId: options.taskId })
+      ...(options.taskId === undefined ? {} : { taskId: options.taskId }),
+      ...(options.candidateKey === undefined
+        ? {}
+        : { candidateKey: options.candidateKey }),
+      ...(options.proposal === undefined ? {} : { proposal: options.proposal })
     }),
     createdAt,
     updatedAt: createdAt,

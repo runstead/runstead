@@ -153,6 +153,30 @@ describe("MemoryRecordSchema", () => {
 
     expect(record.status).toBe("quarantined");
   });
+
+  it("accepts learning review memory candidate types", () => {
+    expect(
+      ["tooling_observation", "policy_lesson", "skill_candidate"].map(
+        (type) =>
+          MemoryRecordSchema.parse({
+            id: `mem_${type}`,
+            scope: "repo:acme/app",
+            type,
+            status: "quarantined",
+            confidence: 0.5,
+            content: `Learning candidate: ${type}`,
+            sourceRefs: ["task:task_001"],
+            provenance: {
+              createdBy: "runstead:learning-review",
+              createdFromTask: "task_001"
+            },
+            createdAt: "2026-05-14T05:00:00.000Z",
+            updatedAt: "2026-05-14T05:00:00.000Z",
+            conflictsWith: []
+          }).type
+      )
+    ).toEqual(["tooling_observation", "policy_lesson", "skill_candidate"]);
+  });
 });
 
 describe("RepositoryRecordSchema", () => {

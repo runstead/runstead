@@ -222,6 +222,25 @@ describe("local agent task primitives", () => {
           aggregate_id: string;
           payload_json: string;
         };
+        const memoryRows = database
+          .prepare(
+            `
+            SELECT type, status, provenance_json
+            FROM memory_records
+            ORDER BY CASE type
+              WHEN 'project_fact' THEN 1
+              WHEN 'tooling_observation' THEN 2
+              WHEN 'policy_lesson' THEN 3
+              WHEN 'skill_candidate' THEN 4
+              ELSE 5
+            END, id
+          `
+          )
+          .all() as {
+          type: string;
+          status: string;
+          provenance_json: string;
+        }[];
 
         expect(toolCalls).toHaveLength(2);
         expect(toolCalls).toEqual(
@@ -257,12 +276,42 @@ describe("local agent task primitives", () => {
         expect(JSON.parse(learningEvent.payload_json)).toMatchObject({
           taskId: created.task.id,
           candidateCount: 4,
+          quarantinedMemoryIds: expect.arrayContaining([
+            expect.stringMatching(/^mem_/)
+          ]),
           candidates: expect.arrayContaining([
-            expect.objectContaining({ type: "project_fact" }),
-            expect.objectContaining({ type: "tooling_observation" }),
-            expect.objectContaining({ type: "policy_lesson" }),
-            expect.objectContaining({ type: "skill_candidate" })
+            expect.objectContaining({
+              type: "project_fact",
+              memoryId: expect.stringMatching(/^mem_/)
+            }),
+            expect.objectContaining({
+              type: "tooling_observation",
+              memoryId: expect.stringMatching(/^mem_/)
+            }),
+            expect.objectContaining({
+              type: "policy_lesson",
+              memoryId: expect.stringMatching(/^mem_/)
+            }),
+            expect.objectContaining({
+              type: "skill_candidate",
+              memoryId: expect.stringMatching(/^mem_/)
+            })
           ])
+        });
+        expect(memoryRows).toHaveLength(4);
+        expect(memoryRows.map((row) => [row.type, row.status])).toEqual([
+          ["project_fact", "quarantined"],
+          ["tooling_observation", "quarantined"],
+          ["policy_lesson", "quarantined"],
+          ["skill_candidate", "quarantined"]
+        ]);
+        expect(JSON.parse(memoryRows[0]?.provenance_json ?? "{}")).toMatchObject({
+          createdBy: "runstead:learning-review",
+          createdFromTask: created.task.id,
+          candidateKey: expect.stringMatching(/^learning:/),
+          proposal: {
+            suggestedPromotionAction: "promote-memory"
+          }
         });
       } finally {
         database.close();
@@ -320,6 +369,7 @@ describe("local agent task primitives", () => {
         "policy_lesson",
         "skill_candidate"
       ]);
+      expect(result.learningReview?.quarantinedMemories).toHaveLength(4);
       expect(storedTask.status).toBe("completed");
       expect(storedTask.output).toMatchObject({
         summary: "Inspected package metadata; no immediate risks found.",

@@ -60,7 +60,10 @@ export const MemoryTypeSchema = z.enum([
   "user_preference",
   "task_observation",
   "external_claim",
-  "policy_fact"
+  "policy_fact",
+  "tooling_observation",
+  "policy_lesson",
+  "skill_candidate"
 ]);
 
 export const MemoryStatusSchema = z.enum([

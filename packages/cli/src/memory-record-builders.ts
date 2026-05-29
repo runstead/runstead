@@ -5,10 +5,14 @@ const MAX_QUARANTINED_MEMORY_CONFIDENCE = 0.8;
 export function memoryProvenance(input: {
   createdBy?: string;
   taskId?: string;
+  candidateKey?: string;
+  proposal?: JsonObject;
 }): JsonObject {
   return {
     createdBy: input.createdBy ?? "runstead",
-    ...(input.taskId === undefined ? {} : { createdFromTask: input.taskId })
+    ...(input.taskId === undefined ? {} : { createdFromTask: input.taskId }),
+    ...(input.candidateKey === undefined ? {} : { candidateKey: input.candidateKey }),
+    ...(input.proposal === undefined ? {} : { proposal: input.proposal })
   };
 }
 
