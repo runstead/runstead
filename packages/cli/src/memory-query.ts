@@ -56,6 +56,25 @@ export function readMemoryRecords(
   return rows.map(rowToMemory);
 }
 
+export function readMemoryRecord(
+  database: RunsteadDatabase,
+  id: string
+): MemoryRecord | undefined {
+  const row = database
+    .prepare(
+      `
+      SELECT id, scope, type, status, confidence, content,
+             source_refs_json, provenance_json, created_at, updated_at,
+             expires_at, conflicts_with_json
+      FROM memory_records
+      WHERE id = ?
+    `
+    )
+    .get(id) as MemoryRow | undefined;
+
+  return row === undefined ? undefined : rowToMemory(row);
+}
+
 export function readProjectFacts(
   database: RunsteadDatabase,
   scope: string | undefined

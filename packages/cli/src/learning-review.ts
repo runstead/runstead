@@ -110,10 +110,11 @@ export function reviewLocalAgentLearning(
 ): ReviewLocalAgentLearningResult {
   const reviewedAt = (options.now ?? new Date()).toISOString();
   const audit = readLearningAuditRows(options.database, options.finalTask.id);
+  const existingCandidateKeys = readExistingLearningCandidateKeys(options.database);
   const candidates = learningCandidatesForLocalAgentRun({
     ...options,
     audit
-  });
+  }).filter((candidate) => !existingCandidateKeys.has(candidate.candidateKey));
   const quarantined = candidates.map((candidate) =>
     quarantinedLearningMemory({
       candidate,
@@ -161,6 +162,30 @@ export function reviewLocalAgentLearning(
     candidates,
     quarantinedMemories: quarantined.map((candidate) => candidate.memory)
   };
+}
+
+function readExistingLearningCandidateKeys(database: RunsteadDatabase): Set<string> {
+  const rows = database
+    .prepare(
+      `
+      SELECT provenance_json
+      FROM memory_records
+      WHERE provenance_json LIKE '%"candidateKey"%'
+    `
+    )
+    .all() as unknown as { provenance_json: string }[];
+  const keys = new Set<string>();
+
+  for (const row of rows) {
+    const provenance = JSON.parse(row.provenance_json) as Record<string, unknown>;
+    const candidateKey = provenance.candidateKey;
+
+    if (typeof candidateKey === "string") {
+      keys.add(candidateKey);
+    }
+  }
+
+  return keys;
 }
 
 function learningCandidatesForLocalAgentRun(

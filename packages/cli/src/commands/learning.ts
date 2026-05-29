@@ -1,6 +1,6 @@
 import type { Command } from "commander";
 
-import { parseOptionalInteger } from "../cli-parsers.js";
+import { collectValues, parseOptionalInteger } from "../cli-parsers.js";
 import { requireRbacPermission } from "../cli-rbac.js";
 
 export interface LearningProposalsCommandOptions {
@@ -12,10 +12,45 @@ export interface LearningProposalsCommandOptions {
   actor: string;
 }
 
+export interface LearningReviewCommandOptions {
+  cwd?: string;
+  actor: string;
+}
+
+export interface LearningPromoteMemoryCommandOptions {
+  cwd?: string;
+  promotedBy: string;
+  actor: string;
+}
+
+export interface LearningCreateSkillCommandOptions {
+  cwd?: string;
+  name?: string;
+  dir?: string;
+  domain?: string;
+  trigger: string[];
+  allowedTool: string[];
+  deniedTool: string[];
+  verifierCommand: string[];
+  author?: string;
+  scopeRepo: string[];
+  actor: string;
+}
+
 export function registerLearningCommand(program: Command): Command {
   const learning = program
     .command("learning")
     .description("Review and promote governed learning proposals. Experimental.");
+
+  learning
+    .command("review")
+    .description("Run post-run learning review for an existing task.")
+    .argument("<task-id>", "Task id to review")
+    .option("--cwd <path>", "Workspace directory")
+    .option("--actor <id>", "RBAC subject for learning review", "local-admin")
+    .action((taskId: string, options: LearningReviewCommandOptions) =>
+      runLearningReviewCommand(taskId, options)
+    );
 
   learning
     .command("proposals")
@@ -30,7 +65,58 @@ export function registerLearningCommand(program: Command): Command {
       runLearningProposalsCommand(options)
     );
 
+  learning
+    .command("promote-memory")
+    .description("Promote a quarantined learning proposal to verified memory.")
+    .argument("<candidate-id>", "Quarantined memory candidate id")
+    .option("--cwd <path>", "Workspace directory")
+    .option("--promoted-by <id>", "Promoter identity", "local-admin")
+    .option("--actor <id>", "RBAC subject for learning promotion", "local-admin")
+    .action((candidateId: string, options: LearningPromoteMemoryCommandOptions) =>
+      runLearningPromoteMemoryCommand(candidateId, options)
+    );
+
+  learning
+    .command("create-skill")
+    .description("Create a skill candidate package from a learning proposal.")
+    .argument("<candidate-id>", "Quarantined skill_candidate memory id")
+    .option("--cwd <path>", "Workspace directory")
+    .option("--name <name>", "Skill package name in lowercase kebab-case")
+    .option("--dir <path>", "Skill package root directory")
+    .option("--domain <domain>", "Skill domain")
+    .option("--trigger <trigger>", "Skill trigger", collectValues, [])
+    .option("--allowed-tool <tool>", "Allowed tool contract", collectValues, [])
+    .option("--denied-tool <tool>", "Denied tool contract", collectValues, [])
+    .option("--verifier-command <command>", "Verifier command", collectValues, [])
+    .option("--author <id>", "Skill candidate author")
+    .option("--scope-repo <repo>", "Scoped repository", collectValues, [])
+    .option("--actor <id>", "RBAC subject for learning promotion", "local-admin")
+    .action((candidateId: string, options: LearningCreateSkillCommandOptions) =>
+      runLearningCreateSkillCommand(candidateId, options)
+    );
+
   return learning;
+}
+
+export async function runLearningReviewCommand(
+  taskId: string,
+  options: LearningReviewCommandOptions
+): Promise<void> {
+  await requireRbacPermission({
+    ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+    actor: options.actor,
+    permission: "memory.write",
+    action: "review task learning"
+  });
+
+  const { reviewLearningForTask } = await import("../learning-actions.js");
+  const result = reviewLearningForTask({
+    ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+    taskId
+  });
+
+  console.log(`Learning review: ${result.review.event.eventId}`);
+  console.log(`Candidates quarantined: ${result.review.quarantinedMemories.length}`);
 }
 
 export async function runLearningProposalsCommand(
@@ -59,4 +145,59 @@ export async function runLearningProposalsCommand(
   }
 
   console.log(formatLearningProposals(result.proposals));
+}
+
+export async function runLearningPromoteMemoryCommand(
+  candidateId: string,
+  options: LearningPromoteMemoryCommandOptions
+): Promise<void> {
+  await requireRbacPermission({
+    ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+    actor: options.actor,
+    permission: "memory.write",
+    action: "promote learning memory"
+  });
+
+  const { promoteLearningMemoryCandidate } = await import("../learning-actions.js");
+  const result = promoteLearningMemoryCandidate({
+    ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+    candidateId,
+    promotedBy: options.promotedBy
+  });
+
+  console.log(`Promoted learning memory: ${result.memory.id}`);
+  console.log(`Previous status: ${result.previousStatus}`);
+  console.log(`Confidence: ${result.memory.confidence}`);
+}
+
+export async function runLearningCreateSkillCommand(
+  candidateId: string,
+  options: LearningCreateSkillCommandOptions
+): Promise<void> {
+  await requireRbacPermission({
+    ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+    actor: options.actor,
+    permission: "memory.read",
+    action: "create skill from learning proposal"
+  });
+
+  const { createSkillFromLearningCandidate } = await import("../learning-actions.js");
+  const result = await createSkillFromLearningCandidate({
+    ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+    candidateId,
+    ...(options.name === undefined ? {} : { name: options.name }),
+    ...(options.dir === undefined ? {} : { dir: options.dir }),
+    ...(options.domain === undefined ? {} : { domain: options.domain }),
+    ...(options.trigger.length === 0 ? {} : { triggers: options.trigger }),
+    ...(options.allowedTool.length === 0 ? {} : { allowedTools: options.allowedTool }),
+    ...(options.deniedTool.length === 0 ? {} : { deniedTools: options.deniedTool }),
+    ...(options.verifierCommand.length === 0
+      ? {}
+      : { verifierCommands: options.verifierCommand }),
+    ...(options.author === undefined ? {} : { author: options.author }),
+    ...(options.scopeRepo.length === 0 ? {} : { scopeRepos: options.scopeRepo })
+  });
+
+  console.log(`Created skill candidate: ${result.skill.root}`);
+  console.log(`Source memory: ${result.memory.id}`);
 }

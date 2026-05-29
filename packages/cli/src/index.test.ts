@@ -171,11 +171,23 @@ describe("cli entrypoint", () => {
     const learning = createProgram().commands.find(
       (command) => command.name() === "learning"
     );
+    const review = learning?.commands.find((command) => command.name() === "review");
     const proposals = learning?.commands.find(
       (command) => command.name() === "proposals"
     );
+    const promoteMemory = learning?.commands.find(
+      (command) => command.name() === "promote-memory"
+    );
+    const createSkill = learning?.commands.find(
+      (command) => command.name() === "create-skill"
+    );
 
-    expect(learning?.commands.map((command) => command.name())).toContain("proposals");
+    expect(learning?.commands.map((command) => command.name())).toEqual(
+      expect.arrayContaining(["review", "proposals", "promote-memory", "create-skill"])
+    );
+    expect(review?.options.map((option) => option.long)).toEqual(
+      expect.arrayContaining(["--cwd", "--actor"])
+    );
     expect(proposals?.options.map((option) => option.long)).toEqual(
       expect.arrayContaining([
         "--cwd",
@@ -183,6 +195,24 @@ describe("cli entrypoint", () => {
         "--type",
         "--limit",
         "--json",
+        "--actor"
+      ])
+    );
+    expect(promoteMemory?.options.map((option) => option.long)).toEqual(
+      expect.arrayContaining(["--cwd", "--promoted-by", "--actor"])
+    );
+    expect(createSkill?.options.map((option) => option.long)).toEqual(
+      expect.arrayContaining([
+        "--cwd",
+        "--name",
+        "--dir",
+        "--domain",
+        "--trigger",
+        "--allowed-tool",
+        "--denied-tool",
+        "--verifier-command",
+        "--author",
+        "--scope-repo",
         "--actor"
       ])
     );
