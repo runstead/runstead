@@ -27,7 +27,10 @@ describe("readiness source connector requirements", () => {
       "deployment-provider",
       "monitoring-provider"
     ]);
-    expect(requirements[0]?.blockers).toEqual([]);
+    expect(requirements[0]).toMatchObject({
+      connectors: ["github_actions", "gitlab_ci"],
+      missingTokenEnv: []
+    });
     expect(requirements[1]).toMatchObject({
       evidenceTiers: ["staging_deployment"],
       missingTokenEnv: []
@@ -35,6 +38,21 @@ describe("readiness source connector requirements", () => {
     expect(requirements[2]?.blockers).toEqual([
       "Monitoring provider connector requires SENTRY_AUTH_TOKEN for staging readiness"
     ]);
+  });
+
+  it("accepts GitLab as the remote CI readiness source", () => {
+    const requirements = runtimeStartupSourceConnectorRequirementsForTarget({
+      target: "staging",
+      env: {
+        GITLAB_TOKEN: "gl"
+      }
+    });
+
+    expect(requirements[0]).toMatchObject({
+      id: "remote-ci",
+      missingTokenEnv: [],
+      blockers: []
+    });
   });
 
   it("adds production analytics and maps requirements into readiness evidence", () => {

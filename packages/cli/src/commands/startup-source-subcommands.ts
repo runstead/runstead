@@ -14,6 +14,11 @@ import {
   type StartupSourceVerifyCommandOptions
 } from "./startup-source-verify.js";
 
+const STARTUP_SOURCE_CONNECTOR_HELP =
+  "Connector: github_actions, gitlab_ci, ci, github_pr, gitlab_merge_request, github_issue, linear, jira, slack, docs, vercel, fly, render, deployment, sentry, observability, posthog, analytics, billing, support, dependency";
+const STARTUP_SOURCE_EXECUTABLE_CONNECTOR_HELP =
+  "Executable connector: github_actions, gitlab_ci, gitlab_merge_request, linear, jira, slack, docs, vercel, render, sentry, or posthog";
+
 export function addStartupSourceRecordCommand(startupSource: Command): void {
   startupSource
     .command("record")
@@ -21,10 +26,7 @@ export function addStartupSourceRecordCommand(startupSource: Command): void {
       "Record GitHub, deployment, analytics, support, billing, or security source evidence."
     )
     .option("--cwd <path>", "Workspace directory")
-    .requiredOption(
-      "--connector <kind>",
-      "Connector: github_actions, github_pr, github_issue, vercel, fly, render, deployment, sentry, observability, posthog, analytics, billing, support, dependency"
-    )
+    .requiredOption("--connector <kind>", STARTUP_SOURCE_CONNECTOR_HELP)
     .requiredOption("--source-uri <uri>", "Canonical source URI")
     .requiredOption("--summary <text>", "Evidence summary")
     .option("--status <status>", "Source status or outcome")
@@ -55,10 +57,7 @@ export function addStartupSourceVerifyCommand(startupSource: Command): void {
       "Verify a live GitHub, deployment, analytics, support, billing, or security source before recording evidence."
     )
     .option("--cwd <path>", "Workspace directory")
-    .requiredOption(
-      "--connector <kind>",
-      "Connector: github_actions, github_pr, github_issue, vercel, fly, render, deployment, sentry, observability, posthog, analytics, billing, support, dependency"
-    )
+    .requiredOption("--connector <kind>", STARTUP_SOURCE_CONNECTOR_HELP)
     .requiredOption("--source-uri <uri>", "Canonical source URI to verify")
     .option("--summary <text>", "Evidence summary")
     .option("--method <method>", "HTTP method to use for verification", "GET")
@@ -91,10 +90,7 @@ export function addStartupSourceCollectCommand(startupSource: Command): void {
       "Collect structured evidence from an executable provider adapter before recording it."
     )
     .option("--cwd <path>", "Workspace directory")
-    .requiredOption(
-      "--connector <kind>",
-      "Executable connector: github_actions, vercel, render, sentry, or posthog"
-    )
+    .requiredOption("--connector <kind>", STARTUP_SOURCE_EXECUTABLE_CONNECTOR_HELP)
     .requiredOption("--source-uri <uri>", "Provider API URI to collect")
     .option(
       "--target <target>",

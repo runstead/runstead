@@ -904,7 +904,7 @@ describe("buildDashboard", () => {
             status: "blocked",
             verdict: "public_launch_blocked",
             verdictBlockers: [
-              "Remote CI status connector requires GITHUB_TOKEN for production readiness"
+              "Remote CI status connector requires one of GITHUB_TOKEN, GITLAB_TOKEN for production readiness"
             ],
             evidenceIds: [],
             evidenceTiers: [],
@@ -981,7 +981,7 @@ describe("buildDashboard", () => {
         });
         expect(body.result.blockers).toEqual(
           expect.arrayContaining([
-            "Remote CI status connector requires GITHUB_TOKEN for production readiness",
+            "Remote CI status connector requires one of GITHUB_TOKEN, GITLAB_TOKEN for production readiness",
             "Real-user analytics provider connector requires POSTHOG_API_KEY for production readiness"
           ])
         );

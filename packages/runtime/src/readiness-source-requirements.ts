@@ -32,10 +32,11 @@ export function runtimeStartupSourceConnectorRequirementsForTarget(options: {
       id: "remote-ci",
       title: "Remote CI status",
       target: options.target,
-      connectors: ["github_actions"],
+      connectors: ["github_actions", "gitlab_ci"],
       evidenceTiers: ["ci_verified"],
       evidenceTypes: ["startup_repo_readiness"],
-      requiredTokenEnv: ["GITHUB_TOKEN"],
+      requiredTokenEnv: ["GITHUB_TOKEN", "GITLAB_TOKEN"],
+      tokenMode: "any",
       env
     }),
     runtimeSourceConnectorRequirement({

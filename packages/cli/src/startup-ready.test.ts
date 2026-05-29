@@ -857,7 +857,7 @@ describe("startup readiness run model", () => {
           "migration-validation evidence is missing",
           "real-user traffic-gate evidence is missing",
           "post-launch watch evidence is missing",
-          "Remote CI status connector requires GITHUB_TOKEN for production readiness",
+          "Remote CI status connector requires one of GITHUB_TOKEN, GITLAB_TOKEN for production readiness",
           "production deployment provider connector requires one of VERCEL_TOKEN, RENDER_API_KEY for production readiness",
           "Monitoring provider connector requires SENTRY_AUTH_TOKEN for production readiness",
           "Real-user analytics provider connector requires POSTHOG_API_KEY for production readiness"
@@ -873,7 +873,7 @@ describe("startup readiness run model", () => {
       ]);
       expect(plan.sourceConnectors.blockers).toEqual(
         expect.arrayContaining([
-          "Remote CI status connector requires GITHUB_TOKEN for production readiness",
+          "Remote CI status connector requires one of GITHUB_TOKEN, GITLAB_TOKEN for production readiness",
           "Real-user analytics provider connector requires POSTHOG_API_KEY for production readiness"
         ])
       );

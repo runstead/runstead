@@ -190,6 +190,10 @@ describe("startup source connectors", () => {
         provider: "github",
         requiredTokenEnv: "GITHUB_TOKEN"
       });
+      expect(getStartupSourceProviderAdapter("gitlab_ci")).toMatchObject({
+        provider: "gitlab",
+        requiredTokenEnv: "GITLAB_TOKEN"
+      });
       expect(fetchCalls).toEqual([
         {
           input: "https://api.github.com/repos/acme/todo/actions/runs/123",
@@ -514,6 +518,31 @@ describe("startup source connectors", () => {
     expect(definitions).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
+          connector: "gitlab_ci",
+          evidenceType: "repo_readiness",
+          sourceKind: "gitlab_ci"
+        }),
+        expect.objectContaining({
+          connector: "linear",
+          evidenceType: "team_collaboration",
+          sourceKind: "linear_issue"
+        }),
+        expect.objectContaining({
+          connector: "jira",
+          evidenceType: "team_collaboration",
+          sourceKind: "jira_issue"
+        }),
+        expect.objectContaining({
+          connector: "slack",
+          evidenceType: "team_collaboration",
+          sourceKind: "slack_thread"
+        }),
+        expect.objectContaining({
+          connector: "docs",
+          evidenceType: "institutional_memory",
+          sourceKind: "workspace_doc"
+        }),
+        expect.objectContaining({
           connector: "vercel",
           evidenceType: "release_plan",
           sourceKind: "vercel_deployment"
@@ -579,7 +608,7 @@ describe("startup source connectors", () => {
     ]);
     expect(startupSourceConnectorRequirementBlockers(staging)).toEqual(
       expect.arrayContaining([
-        "Remote CI status connector requires GITHUB_TOKEN for staging readiness",
+        "Remote CI status connector requires one of GITHUB_TOKEN, GITLAB_TOKEN for staging readiness",
         "staging deployment provider connector requires one of VERCEL_TOKEN, RENDER_API_KEY for staging readiness",
         "Monitoring provider connector requires SENTRY_AUTH_TOKEN for staging readiness"
       ])
@@ -600,7 +629,7 @@ describe("startup source connectors", () => {
           evidenceTiers: ["ci_verified"],
           evidenceTypes: ["startup_repo_readiness"],
           blockers: [
-            "Remote CI status connector requires GITHUB_TOKEN for production readiness"
+            "Remote CI status connector requires one of GITHUB_TOKEN, GITLAB_TOKEN for production readiness"
           ]
         }),
         expect.objectContaining({

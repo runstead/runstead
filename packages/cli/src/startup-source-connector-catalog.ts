@@ -1,11 +1,19 @@
 import type { EvidenceQualityTier, EvidenceSourceTrust } from "@runstead/evidence";
+import type { RuntimeSourceProviderKind } from "@runstead/runtime";
 
 import type { StartupEvidenceType } from "./startup-evidence-types.js";
 
 export const STARTUP_SOURCE_CONNECTORS = [
   "github_actions",
+  "gitlab_ci",
+  "ci",
   "github_pr",
+  "gitlab_merge_request",
   "github_issue",
+  "linear",
+  "jira",
+  "slack",
+  "docs",
   "vercel",
   "fly",
   "render",
@@ -36,7 +44,7 @@ export interface StartupSourceConnectorDefinition {
 
 export interface StartupSourceProviderAdapter {
   connector: StartupSourceConnector;
-  provider: "github" | "vercel" | "render" | "sentry" | "posthog";
+  provider: RuntimeSourceProviderKind;
   requiredTokenEnv?: string;
 }
 
@@ -45,6 +53,36 @@ export const STARTUP_SOURCE_PROVIDER_ADAPTERS: StartupSourceProviderAdapter[] = 
     connector: "github_actions",
     provider: "github",
     requiredTokenEnv: "GITHUB_TOKEN"
+  },
+  {
+    connector: "gitlab_ci",
+    provider: "gitlab",
+    requiredTokenEnv: "GITLAB_TOKEN"
+  },
+  {
+    connector: "gitlab_merge_request",
+    provider: "gitlab",
+    requiredTokenEnv: "GITLAB_TOKEN"
+  },
+  {
+    connector: "linear",
+    provider: "linear",
+    requiredTokenEnv: "LINEAR_API_KEY"
+  },
+  {
+    connector: "jira",
+    provider: "jira",
+    requiredTokenEnv: "JIRA_API_TOKEN"
+  },
+  {
+    connector: "slack",
+    provider: "slack",
+    requiredTokenEnv: "SLACK_BOT_TOKEN"
+  },
+  {
+    connector: "docs",
+    provider: "docs",
+    requiredTokenEnv: "DOCS_API_TOKEN"
   },
   {
     connector: "vercel",
@@ -82,6 +120,28 @@ export const STARTUP_SOURCE_CONNECTOR_DEFINITIONS: StartupSourceConnectorDefinit
       readinessUse: "CI and remote verifier evidence"
     }),
     connectorDefinition({
+      connector: "gitlab_ci",
+      displayName: "GitLab CI",
+      evidenceType: "repo_readiness",
+      sourceKind: "gitlab_ci",
+      qualityTier: "external_observed",
+      defaultTrustLevel: "authoritative",
+      defaultFreshnessDays: 7,
+      recommendedPayloadFields: ["pipeline", "status", "ref", "sha"],
+      readinessUse: "GitLab CI and remote verifier evidence"
+    }),
+    connectorDefinition({
+      connector: "ci",
+      displayName: "CI Run",
+      evidenceType: "repo_readiness",
+      sourceKind: "ci_run",
+      qualityTier: "external_observed",
+      defaultTrustLevel: "high",
+      defaultFreshnessDays: 7,
+      recommendedPayloadFields: ["system", "status", "conclusion", "sha"],
+      readinessUse: "Generic remote CI evidence"
+    }),
+    connectorDefinition({
       connector: "github_pr",
       displayName: "GitHub Pull Request",
       evidenceType: "decision",
@@ -90,6 +150,17 @@ export const STARTUP_SOURCE_CONNECTOR_DEFINITIONS: StartupSourceConnectorDefinit
       defaultTrustLevel: "high",
       defaultFreshnessDays: 14,
       recommendedPayloadFields: ["number", "state", "merged"],
+      readinessUse: "review, approval, and launch decision evidence"
+    }),
+    connectorDefinition({
+      connector: "gitlab_merge_request",
+      displayName: "GitLab Merge Request",
+      evidenceType: "decision",
+      sourceKind: "gitlab_merge_request",
+      qualityTier: "external_observed",
+      defaultTrustLevel: "high",
+      defaultFreshnessDays: 14,
+      recommendedPayloadFields: ["iid", "state", "merged", "approvedBy"],
       readinessUse: "review, approval, and launch decision evidence"
     }),
     connectorDefinition({
@@ -102,6 +173,50 @@ export const STARTUP_SOURCE_CONNECTOR_DEFINITIONS: StartupSourceConnectorDefinit
       defaultFreshnessDays: 30,
       recommendedPayloadFields: ["number", "state", "labels"],
       readinessUse: "support, feedback, or incident triage evidence"
+    }),
+    connectorDefinition({
+      connector: "linear",
+      displayName: "Linear",
+      evidenceType: "team_collaboration",
+      sourceKind: "linear_issue",
+      qualityTier: "external_observed",
+      defaultTrustLevel: "medium",
+      defaultFreshnessDays: 14,
+      recommendedPayloadFields: ["issueId", "state", "team", "labels"],
+      readinessUse: "planning, triage, and workflow evidence"
+    }),
+    connectorDefinition({
+      connector: "jira",
+      displayName: "Jira",
+      evidenceType: "team_collaboration",
+      sourceKind: "jira_issue",
+      qualityTier: "external_observed",
+      defaultTrustLevel: "medium",
+      defaultFreshnessDays: 14,
+      recommendedPayloadFields: ["issueKey", "status", "project", "labels"],
+      readinessUse: "planning, triage, and workflow evidence"
+    }),
+    connectorDefinition({
+      connector: "slack",
+      displayName: "Slack",
+      evidenceType: "team_collaboration",
+      sourceKind: "slack_thread",
+      qualityTier: "external_observed",
+      defaultTrustLevel: "medium",
+      defaultFreshnessDays: 14,
+      recommendedPayloadFields: ["channel", "threadTs", "participants", "decision"],
+      readinessUse: "team discussion, decision, and handoff evidence"
+    }),
+    connectorDefinition({
+      connector: "docs",
+      displayName: "Workspace Docs",
+      evidenceType: "institutional_memory",
+      sourceKind: "workspace_doc",
+      qualityTier: "external_observed",
+      defaultTrustLevel: "medium",
+      defaultFreshnessDays: 30,
+      recommendedPayloadFields: ["document", "title", "updatedAt", "url"],
+      readinessUse: "workspace documentation and institutional memory evidence"
     }),
     connectorDefinition({
       connector: "vercel",

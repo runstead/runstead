@@ -407,6 +407,11 @@ of the target gate.
 | Connector        | Credential Env      | Expected Provider Shape                                                                              |
 | ---------------- | ------------------- | ---------------------------------------------------------------------------------------------------- |
 | `github_actions` | `GITHUB_TOKEN`      | workflow run JSON with `workflow`/`name`, `status`, `conclusion`, and commit/run id fields           |
+| `gitlab_ci`      | `GITLAB_TOKEN`      | pipeline JSON with `pipeline`/`id`, `status`, `ref`, and commit SHA                                  |
+| `linear`         | `LINEAR_API_KEY`    | issue JSON with `issueId`, `state`, `team`, and labels                                               |
+| `jira`           | `JIRA_API_TOKEN`    | issue JSON with `issueKey`, `status`, `project`, and labels                                          |
+| `slack`          | `SLACK_BOT_TOKEN`   | thread JSON with `channel`, `threadTs`, participants, and decision summary                           |
+| `docs`           | `DOCS_API_TOKEN`    | document JSON with `document`, `title`, `updatedAt`, and URL                                         |
 | `vercel`         | `VERCEL_TOKEN`      | deployment JSON with `readyState` or `status`, deployment URL, and commit SHA                        |
 | `render`         | `RENDER_API_KEY`    | deploy JSON with `status`/`state`, service URL, and commit id                                        |
 | `sentry`         | `SENTRY_AUTH_TOKEN` | release or issue JSON with `openReleaseBlockers`, `issueCount`, or `issues`                          |
@@ -414,11 +419,12 @@ of the target gate.
 
 For `--target staging` and `--target production`, `startup ready --plan`
 promotes these connector contracts into readiness requirements. Missing
-`GITHUB_TOKEN`, deployment provider credentials (`VERCEL_TOKEN` or
-`RENDER_API_KEY`), `SENTRY_AUTH_TOKEN`, or production analytics credentials
-such as `POSTHOG_API_KEY` appear as explicit setup blockers instead of local
-warnings. Final readiness evaluation consumes the same requirements, so a
-staging or production verdict cannot silently ignore missing external proof.
+remote CI credentials (`GITHUB_TOKEN` or `GITLAB_TOKEN`), deployment provider
+credentials (`VERCEL_TOKEN` or `RENDER_API_KEY`), `SENTRY_AUTH_TOKEN`, or
+production analytics credentials such as `POSTHOG_API_KEY` appear as explicit
+setup blockers instead of local warnings. Final readiness evaluation consumes
+the same requirements, so a staging or production verdict cannot silently
+ignore missing external proof.
 
 After stronger evidence is recorded, rerun the same gate:
 

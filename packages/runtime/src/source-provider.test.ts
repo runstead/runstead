@@ -56,6 +56,14 @@ describe("source provider runtime", () => {
     ).toEqual({
       Authorization: "Bearer ph_token"
     });
+    expect(
+      runtimeSourceProviderAuthHeaders(
+        { connector: "gitlab_ci", provider: "gitlab" },
+        "gl_token"
+      )
+    ).toEqual({
+      "PRIVATE-TOKEN": "gl_token"
+    });
   });
 
   it("classifies external provider payloads into readiness collection states", () => {
@@ -75,6 +83,37 @@ describe("source provider runtime", () => {
     ).toMatchObject({
       status: "passed",
       summary: "GitHub Actions workflow CI success"
+    });
+    expect(
+      collectRuntimeSourceProviderPayload({
+        adapter: { connector: "gitlab_ci", provider: "gitlab" },
+        definition: { displayName: "GitLab CI" },
+        responseStatus: 200,
+        responseOk: true,
+        responsePayload: {
+          id: 42,
+          status: "success",
+          sha: "abc123"
+        }
+      })
+    ).toMatchObject({
+      status: "passed",
+      summary: "GitLab CI 42 status success"
+    });
+    expect(
+      collectRuntimeSourceProviderPayload({
+        adapter: { connector: "slack", provider: "slack" },
+        definition: { displayName: "Slack" },
+        responseStatus: 200,
+        responseOk: true,
+        responsePayload: {
+          channel: "eng",
+          threadTs: "123.456"
+        }
+      })
+    ).toMatchObject({
+      status: "unknown",
+      summary: "Slack adapter has no parser"
     });
     expect(
       collectRuntimeSourceProviderPayload({

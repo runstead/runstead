@@ -2,6 +2,11 @@ import type { JsonObject } from "@runstead/core";
 
 export type RuntimeSourceProviderKind =
   | "github"
+  | "gitlab"
+  | "linear"
+  | "jira"
+  | "slack"
+  | "docs"
   | "vercel"
   | "render"
   | "sentry"
@@ -78,6 +83,14 @@ export function runtimeSourceProviderAuthHeaders(
         Authorization: `Bearer ${token}`,
         Accept: "application/vnd.github+json"
       };
+    case "gitlab":
+      return {
+        "PRIVATE-TOKEN": token
+      };
+    case "linear":
+    case "jira":
+    case "slack":
+    case "docs":
     case "sentry":
     case "posthog":
     case "vercel":
@@ -129,6 +142,8 @@ export function collectRuntimeSourceProviderPayload(input: {
   switch (input.adapter.connector) {
     case "github_actions":
       return collectGithubActionsPayload(input.responsePayload);
+    case "gitlab_ci":
+      return collectGitlabCiPayload(input.responsePayload);
     case "vercel":
       return collectDeploymentPayload({
         connector: "vercel",
@@ -154,6 +169,34 @@ export function collectRuntimeSourceProviderPayload(input: {
         payload: input.responsePayload
       };
   }
+}
+
+function collectGitlabCiPayload(payload: JsonObject): RuntimeSourceProviderCollection {
+  const status = stringPayloadValue(payload, "status");
+  const pipeline =
+    stringPayloadValue(payload, "pipeline") ??
+    stringPayloadValue(payload, "name") ??
+    stringPayloadValue(payload, "id") ??
+    numberPayloadValue(payload, "id")?.toString();
+  const normalizedStatus = normalizeProviderState(status);
+  const passed = normalizedStatus === "success" || normalizedStatus === "passed";
+  const failed =
+    normalizedStatus === "failed" ||
+    normalizedStatus === "failure" ||
+    normalizedStatus === "canceled" ||
+    normalizedStatus === "cancelled" ||
+    normalizedStatus === "skipped";
+  const collectionStatus: RuntimeSourceProviderCollection["status"] = passed
+    ? "passed"
+    : failed
+      ? "failed"
+      : "unknown";
+
+  return {
+    status: collectionStatus,
+    summary: `GitLab CI ${pipeline ?? "pipeline"} status ${status ?? "unknown"}`,
+    payload
+  };
 }
 
 function collectGithubActionsPayload(
