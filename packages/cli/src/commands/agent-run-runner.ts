@@ -22,6 +22,7 @@ export interface AgentRunCliOptions {
   maxTurns?: string;
   maxToolCalls?: string;
   maxFailedToolCalls?: string;
+  learningReview?: boolean;
   actor: string;
 }
 

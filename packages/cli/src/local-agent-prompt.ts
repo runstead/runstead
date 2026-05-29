@@ -81,7 +81,10 @@ export function localAgentTaskInput(input: {
     ...(input.options.checkpoint === undefined
       ? {}
       : { checkpoint: input.options.checkpoint }),
-    ...(input.options.commit === undefined ? {} : { commit: input.options.commit })
+    ...(input.options.commit === undefined ? {} : { commit: input.options.commit }),
+    ...(input.options.learningReview === undefined
+      ? {}
+      : { learningReview: input.options.learningReview })
   };
 }
 

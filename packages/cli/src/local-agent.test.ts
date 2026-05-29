@@ -212,6 +212,16 @@ describe("local agent task primitives", () => {
             "SELECT worker_type, status FROM worker_runs ORDER BY started_at, id"
           )
           .all() as { worker_type: string; status: string }[];
+        const learningEvent = database
+          .prepare(
+            "SELECT type, aggregate_type, aggregate_id, payload_json FROM events WHERE type = 'learning.review_completed'"
+          )
+          .get() as {
+          type: string;
+          aggregate_type: string;
+          aggregate_id: string;
+          payload_json: string;
+        };
 
         expect(toolCalls).toHaveLength(2);
         expect(toolCalls).toEqual(
@@ -239,6 +249,21 @@ describe("local agent task primitives", () => {
             }
           ])
         );
+        expect(learningEvent).toMatchObject({
+          type: "learning.review_completed",
+          aggregate_type: "task",
+          aggregate_id: created.task.id
+        });
+        expect(JSON.parse(learningEvent.payload_json)).toMatchObject({
+          taskId: created.task.id,
+          candidateCount: 4,
+          candidates: expect.arrayContaining([
+            expect.objectContaining({ type: "project_fact" }),
+            expect.objectContaining({ type: "tooling_observation" }),
+            expect.objectContaining({ type: "policy_lesson" }),
+            expect.objectContaining({ type: "skill_candidate" })
+          ])
+        });
       } finally {
         database.close();
       }
@@ -286,6 +311,14 @@ describe("local agent task primitives", () => {
           risk: "medium",
           count: 2
         }
+      ]);
+      expect(
+        result.learningReview?.candidates.map((candidate) => candidate.type)
+      ).toEqual([
+        "project_fact",
+        "tooling_observation",
+        "policy_lesson",
+        "skill_candidate"
       ]);
       expect(storedTask.status).toBe("completed");
       expect(storedTask.output).toMatchObject({
@@ -367,6 +400,56 @@ describe("local agent task primitives", () => {
       expect(formatLocalAgentTaskReportMarkdown(report)).toContain(
         "## Policy And Approval"
       );
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("allows local agent tasks to disable post-run learning review", async () => {
+    const workspace = await mkdtemp(
+      join(tmpdir(), "runstead-local-agent-no-learning-")
+    );
+    const transport: CodexDirectTransport = {
+      createResponse() {
+        return Promise.resolve({
+          id: "resp_local_agent_no_learning",
+          status: "completed",
+          outputText: "Inspected without learning review.",
+          toolCalls: [],
+          finishReason: "stop",
+          outputItems: []
+        });
+      }
+    };
+
+    try {
+      await initRunstead({ cwd: workspace, profile: "trusted-local" });
+      const created = await createLocalAgentTask({
+        cwd: workspace,
+        prompt: "Inspect this repo without learning review.",
+        worker: "codex_direct",
+        model: "gpt-5.3-codex",
+        mode: "read-only",
+        learningReview: false
+      });
+      const result = await runLocalAgentTask({
+        cwd: workspace,
+        taskId: created.task.id,
+        transport
+      });
+      const database = openRunsteadDatabase(created.stateDb);
+
+      try {
+        const learningEvents = database
+          .prepare("SELECT COUNT(*) AS count FROM events WHERE type LIKE 'learning.%'")
+          .get() as { count: number };
+
+        expect(learningEvents.count).toBe(0);
+      } finally {
+        database.close();
+      }
+
+      expect(result.learningReview).toBeUndefined();
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }

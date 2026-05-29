@@ -23,7 +23,9 @@ import {
   localAgentWorkerOutput,
   localAgentWorkerRunStatus
 } from "./local-agent-result.js";
+import { reviewLocalAgentLearning } from "./learning-review.js";
 import { summarizeLocalAgentAudit } from "./local-agent-report.js";
+import { localAgentTaskLearningReviewEnabled } from "./local-agent-task-input.js";
 import { runLocalAgentVerifiersIfNeeded } from "./local-agent-verifier-run.js";
 import { runLocalAgentWorker } from "./local-agent-worker-run.js";
 import type { RunLocalAgentTaskResult } from "./local-agent-types.js";
@@ -130,6 +132,18 @@ export async function runLocalAgentTaskWithDatabase(
       }),
       ...(options.now === undefined ? {} : { now: options.now })
     });
+    const learningReview = localAgentTaskLearningReviewEnabled(finalTask)
+      ? reviewLocalAgentLearning({
+          cwd: options.cwd,
+          database: options.database,
+          goal: options.goal,
+          task: options.task,
+          finalTask,
+          workerResult,
+          ...(verifierResult === undefined ? {} : { verifierResult }),
+          ...(options.now === undefined ? {} : { now: options.now })
+        })
+      : undefined;
 
     return {
       cwd: options.cwd,
@@ -144,6 +158,7 @@ export async function runLocalAgentTaskWithDatabase(
       ...(verifierResult === undefined
         ? {}
         : { verifierResults: verifierResult.commandResults }),
+      ...(learningReview === undefined ? {} : { learningReview }),
       ...(!isCodexDirectLocalAgentWorkerResult(workerResult) ||
       workerResult.approval === undefined
         ? {}
@@ -166,6 +181,16 @@ export async function runLocalAgentTaskWithDatabase(
       output: failure.output,
       ...(options.now === undefined ? {} : { now: options.now })
     });
+    const learningReview = localAgentTaskLearningReviewEnabled(finalTask)
+      ? reviewLocalAgentLearning({
+          cwd: options.cwd,
+          database: options.database,
+          goal: options.goal,
+          task: options.task,
+          finalTask,
+          ...(options.now === undefined ? {} : { now: options.now })
+        })
+      : undefined;
 
     return {
       cwd: options.cwd,
@@ -176,7 +201,8 @@ export async function runLocalAgentTaskWithDatabase(
       execution: failure.execution,
       audit: summarizeLocalAgentAudit(options.database, finalTask.id),
       ...(checkpoint === undefined ? {} : { checkpoint }),
-      ...(failure.approval === undefined ? {} : { approval: failure.approval })
+      ...(failure.approval === undefined ? {} : { approval: failure.approval }),
+      ...(learningReview === undefined ? {} : { learningReview })
     };
   }
 }

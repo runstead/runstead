@@ -226,6 +226,7 @@ describe("cli entrypoint", () => {
         "--max-turns",
         "--max-tool-calls",
         "--max-failed-tool-calls",
+        "--no-learning-review",
         "--actor"
       ])
     );

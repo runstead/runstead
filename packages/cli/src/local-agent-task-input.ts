@@ -110,6 +110,10 @@ export function localAgentTaskFinalizeOnBudget(task: Task): boolean {
   return typeof value === "boolean" ? value : localAgentTaskMode(task) === "read-only";
 }
 
+export function localAgentTaskLearningReviewEnabled(task: Task): boolean {
+  return task.input.learningReview !== false;
+}
+
 export function verifierCommandsFromLocalAgentTask(task: Task): CommandVerifierInput[] {
   const commands = task.input.commands;
 

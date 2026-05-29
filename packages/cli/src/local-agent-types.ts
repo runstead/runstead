@@ -13,6 +13,7 @@ import type {
 import type { LocalAgentAuditSummary } from "./local-agent-report.js";
 import type { LocalAgentMode, LocalAgentWorkerKind } from "./local-agent-task-input.js";
 import type { LocalAgentWorkerResult } from "./local-agent-result.js";
+import type { ReviewLocalAgentLearningResult } from "./learning-review.js";
 import type { StartupScaffoldProfile } from "./startup-scaffold-profile.js";
 import type { CommandVerifierInput } from "./verifier-evidence.js";
 import type { RunTaskVerifierCommandResult } from "./verifier-runner.js";
@@ -45,6 +46,7 @@ export interface CreateLocalAgentTaskOptions {
   gitDiffBase?: string;
   checkpoint?: boolean;
   commit?: boolean;
+  learningReview?: boolean;
   now?: Date;
 }
 
@@ -98,6 +100,7 @@ export interface RunLocalAgentTaskResult {
   checkpoint?: WorkspaceCheckpoint;
   verifierResults?: RunTaskVerifierCommandResult[];
   approval?: CodexDirectWorkerResult["approval"];
+  learningReview?: ReviewLocalAgentLearningResult;
 }
 
 export interface ResolveLocalAgentResumeTargetResult {

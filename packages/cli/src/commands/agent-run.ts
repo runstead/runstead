@@ -36,6 +36,7 @@ export function registerAgentRunCommand(command: Command): void {
       "--max-failed-tool-calls <number>",
       "Maximum recoverable Codex Direct tool failures"
     )
+    .option("--no-learning-review", "Disable post-run learning review")
     .option("--actor <id>", "RBAC subject for local agent execution", "local-admin")
     .action(async (promptParts: string[], options: AgentRunCliOptions) =>
       runAgentRunCommand(promptParts, options)

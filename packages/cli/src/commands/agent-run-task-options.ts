@@ -17,6 +17,7 @@ export interface AgentRunTaskCliOptions
   mode: string;
   allowed: string[];
   denied: string[];
+  learningReview?: boolean;
 }
 
 export function agentRunTaskOptions(input: {
@@ -39,6 +40,7 @@ export function agentRunTaskOptions(input: {
   | "maxTurns"
   | "maxToolCalls"
   | "maxFailedToolCalls"
+  | "learningReview"
 > {
   const preset = input.resolvedPreset?.preset;
 
@@ -55,6 +57,9 @@ export function agentRunTaskOptions(input: {
     allowedPaths: input.options.allowed,
     deniedPaths: input.options.denied,
     verifierCommands: input.verifierCommands,
+    ...(input.options.learningReview === undefined
+      ? {}
+      : { learningReview: input.options.learningReview }),
     ...agentBudgetTaskOptions(
       input.options,
       preset === undefined
