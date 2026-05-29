@@ -26,6 +26,8 @@ import {
   runLocalAgentTask,
   undoLocalAgentTask
 } from "./local-agent.js";
+import { quarantineMemoryCandidate, recordProjectFact } from "./memory.js";
+import { registerRepository } from "./repositories.js";
 import { showTask } from "./tasks.js";
 import { showGoal } from "./goals.js";
 
@@ -953,6 +955,99 @@ describe("local agent task primitives", () => {
       });
 
       expect(requests[0]?.model).toBe("configured-codex");
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("injects verified memory context into local agent prompts with retrieval audit", async () => {
+    const workspace = await mkdtemp(
+      join(tmpdir(), "runstead-local-agent-memory-context-")
+    );
+    const requests: CodexResponsesRequest[] = [];
+    const transport: CodexDirectTransport = {
+      createResponse(request) {
+        requests.push(request);
+
+        return Promise.resolve({
+          id: "resp_local_agent_memory_context",
+          status: "completed",
+          outputText: "Used verified memory context.",
+          toolCalls: [],
+          finishReason: "stop",
+          outputItems: []
+        });
+      }
+    };
+
+    try {
+      await initRunstead({ cwd: workspace, profile: "trusted-local" });
+      await writeFile(
+        join(workspace, "package.json"),
+        `${JSON.stringify({ packageManager: "pnpm@11.1.1" })}\n`,
+        "utf8"
+      );
+      await registerRepository({
+        cwd: workspace,
+        path: workspace,
+        alias: "acme/app"
+      });
+      const verified = recordProjectFact({
+        cwd: workspace,
+        scope: "repo:acme/app",
+        content: "Use pnpm for verifier commands in this repo.",
+        sourceRefs: ["file:package.json"],
+        now: new Date("2026-05-16T08:03:00.000Z")
+      }).memory;
+      quarantineMemoryCandidate({
+        cwd: workspace,
+        scope: "repo:acme/app",
+        type: "project_fact",
+        content: "Unverified memory must not enter the task prompt.",
+        sourceRefs: ["task:untrusted"],
+        now: new Date("2026-05-16T08:04:00.000Z")
+      });
+      const created = await createLocalAgentTask({
+        cwd: workspace,
+        prompt: "Inspect this repo with memory.",
+        worker: "codex_direct",
+        model: "gpt-5.3-codex",
+        mode: "read-only"
+      });
+
+      await runLocalAgentTask({
+        cwd: workspace,
+        taskId: created.task.id,
+        transport,
+        now: new Date("2026-05-16T08:05:00.000Z")
+      });
+
+      const firstInput = requests[0]?.input[0];
+      const prompt =
+        firstInput !== undefined && "role" in firstInput && firstInput.role === "user"
+          ? firstInput.content
+          : "";
+      const database = openRunsteadDatabase(created.stateDb);
+
+      try {
+        const event = database
+          .prepare(
+            "SELECT type, payload_json FROM events WHERE type = 'memory.context_pack_built'"
+          )
+          .get() as { type: string; payload_json: string };
+
+        expect(prompt).toContain("Runstead verified memory context:");
+        expect(prompt).toContain("Use pnpm for verifier commands in this repo.");
+        expect(prompt).not.toContain("Unverified memory must not enter");
+        expect(JSON.parse(event.payload_json)).toMatchObject({
+          taskId: created.task.id,
+          resultCount: 1,
+          resultIds: [verified.id],
+          scopes: expect.arrayContaining(["repo:acme/app"])
+        });
+      } finally {
+        database.close();
+      }
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }

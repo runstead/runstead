@@ -7,6 +7,10 @@ import {
   type LocalAgentWorkerKind
 } from "./local-agent-task-input.js";
 import type { CreateLocalAgentTaskOptions } from "./local-agent-types.js";
+import {
+  formatTaskContextPackPrompt,
+  type TaskContextPack
+} from "./task-context-pack.js";
 import type { RunTaskVerifierCommandResult } from "./verifier-runner.js";
 
 export function localAgentTaskInput(input: {
@@ -88,13 +92,17 @@ export function localAgentTaskInput(input: {
   };
 }
 
-export function buildLocalAgentPrompt(task: Task): string {
+export function buildLocalAgentPrompt(
+  task: Task,
+  options: { contextPack?: TaskContextPack | undefined } = {}
+): string {
   const prompt = requiredTaskString(task, "prompt");
   const mode = localAgentTaskMode(task);
 
   return [
     prompt,
     "",
+    ...formatTaskContextPackPrompt(options.contextPack),
     "Runstead local-agent mode:",
     `- mode: ${mode}`,
     ...localAgentModePromptRules(task),
