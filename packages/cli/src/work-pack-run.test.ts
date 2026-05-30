@@ -40,7 +40,35 @@ describe("work pack run surface", () => {
     expect(report).toContain("Runstead work pack run");
     expect(report).toContain("Capability approvals: 4");
     expect(report).toContain("Completion criteria: 4");
+    expect(report).toContain("Connectors:");
     expect(report).toContain("runstead startup ready --cwd /tmp/runstead-mvp");
+  });
+
+  it("reports connector readiness for external-system work packs", async () => {
+    const result = await resolveWorkPackWorkflowRun({
+      pack: "research-monitor",
+      workflow: "weekly-research-digest",
+      cwd: "/tmp/research",
+      connectorEnv: {
+        DOCS_API_TOKEN: "docs-token"
+      }
+    });
+    const report = formatWorkPackWorkflowRunPlan(result);
+
+    expect(result.connectorReadiness).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          connector: "web",
+          status: "catalog_only"
+        }),
+        expect.objectContaining({
+          connector: "docs",
+          status: "ready"
+        })
+      ])
+    );
+    expect(report).toContain("web:catalog_only");
+    expect(report).toContain("docs:ready");
   });
 
   it("rejects workflows that are not declared by the pack", async () => {

@@ -36,7 +36,13 @@ const RUNSTEAD_CONNECTOR_CATALOG: RunsteadConnectorDefinition[] = [
     credentialEnv: ["GITHUB_TOKEN"],
     reads: ["repository", "branch", "pull_request", "issue", "workflow_run"],
     writes: ["pull_request_comment", "issue_comment"],
-    evidenceTypes: ["repo_readiness", "decision", "support_triage"],
+    evidenceTypes: [
+      "repo_readiness",
+      "repo_inspection",
+      "github_workflow_run",
+      "decision",
+      "support_triage"
+    ],
     supportedDomains: ["repo-maintenance", "ai-native-startup"],
     startupSourceConnectors: ["github_actions", "github_pr", "github_issue"],
     maturity: "executable"

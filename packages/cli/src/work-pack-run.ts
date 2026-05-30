@@ -26,6 +26,10 @@ import { runQueuedTaskUnlocked } from "./run.js";
 import type { RunOnceOptions, RunOnceResult } from "./run-types.js";
 import { requireRunsteadStateDb, resolveRunsteadRootSync } from "./runstead-root.js";
 import {
+  evaluateWorkPackConnectorReadiness,
+  type WorkPackConnectorReadiness
+} from "./work-pack-connector-readiness.js";
+import {
   evaluateWorkPackEvidenceContract,
   type WorkPackEvidenceContractVerdict
 } from "./work-pack-evidence-contract.js";
@@ -36,6 +40,7 @@ export interface ResolveWorkPackWorkflowRunOptions {
   cwd?: string;
   roots?: string[];
   includeBuiltIns?: boolean;
+  connectorEnv?: Record<string, string | undefined>;
 }
 
 export interface WorkPackWorkflowRunPlan {
@@ -56,6 +61,7 @@ export interface WorkPackWorkflowRunPlan {
       match: "any" | "all";
     }[];
   };
+  connectorReadiness: WorkPackConnectorReadiness[];
   suggestedCommands: string[];
 }
 
@@ -149,6 +155,11 @@ export async function resolveWorkPackWorkflowRun(
               : { evaluators: evidenceContractEvaluators })
           }
         }),
+    connectorReadiness: evaluateWorkPackConnectorReadiness({
+      domain: entry.id,
+      evidenceRequirements: evidenceContractRequirements(evidenceContract),
+      ...(options.connectorEnv === undefined ? {} : { env: options.connectorEnv })
+    }),
     suggestedCommands: suggestedCommandsForWorkflow({
       pack: entry.id,
       workflow: options.workflow,
@@ -302,6 +313,7 @@ export function formatWorkPackWorkflowRunPlan(
     `Capability denied: ${formatList(capabilityPolicy?.denied ?? [])}`,
     `Evidence outputs: ${formatList(plan.evidenceContract?.outputs ?? [])}`,
     `Completion criteria: ${formatList(plan.evidenceContract?.completionCriteria ?? [])}`,
+    `Connectors: ${formatConnectorReadiness(plan.connectorReadiness)}`,
     `Suggested commands: ${formatList(plan.suggestedCommands)}`
   ].join("\n");
 }
@@ -323,6 +335,7 @@ export function formatExecutedWorkPackWorkflowRun(
     `Completion criteria: ${formatList(contract?.completionCriteria ?? [])}`,
     `Satisfied outputs: ${satisfiedCount(result.evidenceVerdict.outputs)}/${result.evidenceVerdict.outputs.length}`,
     `Satisfied criteria: ${satisfiedCount(result.evidenceVerdict.completionCriteria)}/${result.evidenceVerdict.completionCriteria.length}`,
+    `Connectors: ${formatConnectorReadiness(result.queued.plan.connectorReadiness)}`,
     "Executed tasks:"
   ];
 
@@ -520,6 +533,16 @@ function formatList(values: string[]): string {
   }
 
   return `${values.length} (${values.join(", ")})`;
+}
+
+function formatConnectorReadiness(readiness: WorkPackConnectorReadiness[]): string {
+  if (readiness.length === 0) {
+    return "0";
+  }
+
+  return `${readiness.length} (${readiness
+    .map((connector) => `${connector.connector}:${connector.status}`)
+    .join(", ")})`;
 }
 
 function workPackWorkflowExecutionStatus(input: {
