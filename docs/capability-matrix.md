@@ -32,6 +32,7 @@ business evidence status.
 | Interaction surface          | Approval, evidence, scheduled-check, and webhook-intake routes for a Work Pack    | `runstead run <pack> <workflow> --plan`                                 |
 | Domain pack                  | Business contract for goals, tasks, policy, evidence, evaluators, fixtures, evals | `packages/domain-packs/packs/*`, `runstead domain *`                    |
 | Connector catalog            | Canonical provider/workspace connector names and maturity                         | `runstead connector list`, `runstead connector show <id>`               |
+| Connector sync state         | Auto-fetch mode, cursor, freshness, and credential readiness per connector        | `evaluateRunsteadConnectorSyncState`                                    |
 | Startup source connectors    | Target-aware external evidence contracts for launch readiness                     | `runstead startup source record/collect/verify`, `startup ready --plan` |
 | Provider adapters            | HTTP collection, auth header shaping, response parsing, secret redaction          | `@runstead/runtime` source-provider helpers plus CLI collection         |
 | Extensions                   | Workspace or package-provided facets, collectors, verifiers, gates                | `.runstead/extensions/*`, `@runstead/sdk`                               |

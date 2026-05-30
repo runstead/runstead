@@ -17,6 +17,17 @@ export type RunsteadConnectorSurface =
   | "evidence_source"
   | "profile_signal"
   | "trigger_source";
+export type RunsteadConnectorSyncMode =
+  | "manual"
+  | "scheduled"
+  | "webhook"
+  | "auto_fetch";
+
+export interface RunsteadConnectorSyncContract {
+  defaultMode: RunsteadConnectorSyncMode;
+  cursorKinds: string[];
+  defaultFreshnessMs?: number;
+}
 
 export interface RunsteadConnectorDefinition {
   id: RunsteadConnectorId;
@@ -30,6 +41,7 @@ export interface RunsteadConnectorDefinition {
   supportedDomains: string[];
   startupSourceConnectors: StartupSourceConnector[];
   surfaces: RunsteadConnectorSurface[];
+  sync: RunsteadConnectorSyncContract;
   maturity: RunsteadConnectorMaturity;
 }
 
@@ -52,6 +64,11 @@ const RUNSTEAD_CONNECTOR_CATALOG: RunsteadConnectorDefinition[] = [
     supportedDomains: ["repo-maintenance", "ai-native-startup"],
     startupSourceConnectors: ["github_actions", "github_pr", "github_issue"],
     surfaces: ["tool", "evidence_source", "profile_signal", "trigger_source"],
+    sync: {
+      defaultMode: "webhook",
+      cursorKinds: ["workflow_run_id", "pull_request_updated_at"],
+      defaultFreshnessMs: 60 * 60 * 1000
+    },
     maturity: "executable"
   },
   {
@@ -66,6 +83,11 @@ const RUNSTEAD_CONNECTOR_CATALOG: RunsteadConnectorDefinition[] = [
     supportedDomains: ["ai-native-startup"],
     startupSourceConnectors: ["vercel"],
     surfaces: ["evidence_source", "trigger_source"],
+    sync: {
+      defaultMode: "scheduled",
+      cursorKinds: ["deployment_id", "project_updated_at"],
+      defaultFreshnessMs: 60 * 60 * 1000
+    },
     maturity: "executable"
   },
   {
@@ -80,6 +102,11 @@ const RUNSTEAD_CONNECTOR_CATALOG: RunsteadConnectorDefinition[] = [
     supportedDomains: ["ai-native-startup"],
     startupSourceConnectors: ["sentry"],
     surfaces: ["evidence_source", "trigger_source"],
+    sync: {
+      defaultMode: "scheduled",
+      cursorKinds: ["project_release", "issue_updated_at"],
+      defaultFreshnessMs: 30 * 60 * 1000
+    },
     maturity: "executable"
   },
   {
@@ -94,6 +121,11 @@ const RUNSTEAD_CONNECTOR_CATALOG: RunsteadConnectorDefinition[] = [
     supportedDomains: ["ai-native-startup"],
     startupSourceConnectors: ["posthog"],
     surfaces: ["evidence_source", "profile_signal"],
+    sync: {
+      defaultMode: "scheduled",
+      cursorKinds: ["insight_id", "event_timestamp"],
+      defaultFreshnessMs: 24 * 60 * 60 * 1000
+    },
     maturity: "executable"
   },
   {
@@ -109,6 +141,11 @@ const RUNSTEAD_CONNECTOR_CATALOG: RunsteadConnectorDefinition[] = [
     supportedDomains: ["email-followup"],
     startupSourceConnectors: [],
     surfaces: ["tool", "evidence_source", "profile_signal", "trigger_source"],
+    sync: {
+      defaultMode: "scheduled",
+      cursorKinds: ["mailbox_thread", "message_received_at"],
+      defaultFreshnessMs: 15 * 60 * 1000
+    },
     maturity: "catalog"
   },
   {
@@ -123,6 +160,11 @@ const RUNSTEAD_CONNECTOR_CATALOG: RunsteadConnectorDefinition[] = [
     supportedDomains: ["research-monitor"],
     startupSourceConnectors: [],
     surfaces: ["tool", "evidence_source", "profile_signal", "trigger_source"],
+    sync: {
+      defaultMode: "scheduled",
+      cursorKinds: ["source_uri", "retrieved_at"],
+      defaultFreshnessMs: 24 * 60 * 60 * 1000
+    },
     maturity: "catalog"
   },
   {
@@ -137,6 +179,11 @@ const RUNSTEAD_CONNECTOR_CATALOG: RunsteadConnectorDefinition[] = [
     supportedDomains: ["ai-native-startup", "research-monitor"],
     startupSourceConnectors: ["docs"],
     surfaces: ["tool", "evidence_source", "profile_signal"],
+    sync: {
+      defaultMode: "scheduled",
+      cursorKinds: ["document_id", "document_revision"],
+      defaultFreshnessMs: 24 * 60 * 60 * 1000
+    },
     maturity: "executable"
   }
 ];
@@ -192,7 +239,8 @@ export function formatRunsteadConnector(
     `Evidence types: ${formatList(connector.evidenceTypes)}`,
     `Supported domains: ${formatList(connector.supportedDomains)}`,
     `Startup source connectors: ${formatList(connector.startupSourceConnectors)}`,
-    `Surfaces: ${formatList(connector.surfaces)}`
+    `Surfaces: ${formatList(connector.surfaces)}`,
+    `Sync: ${connector.sync.defaultMode} cursors=${formatList(connector.sync.cursorKinds)}`
   ].join("\n");
 }
 
@@ -207,7 +255,11 @@ function cloneRunsteadConnector(
     evidenceTypes: [...connector.evidenceTypes],
     supportedDomains: [...connector.supportedDomains],
     startupSourceConnectors: [...connector.startupSourceConnectors],
-    surfaces: [...connector.surfaces]
+    surfaces: [...connector.surfaces],
+    sync: {
+      ...connector.sync,
+      cursorKinds: [...connector.sync.cursorKinds]
+    }
   };
 }
 

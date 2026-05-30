@@ -243,8 +243,10 @@ GitHub, Vercel, Sentry, PostHog, Email, Web, and Docs. Use `runstead connector
 list` or `runstead connector show <connector>` to inspect each connector's
 credentials, read/write surface, lifecycle role (`tool`, `evidence_source`,
 `profile_signal`, `trigger_source`), evidence types, and existing startup
-source adapter mappings. See [docs/connectors.md](docs/connectors.md) for the
-catalog and [docs/capability-matrix.md](docs/capability-matrix.md) for the full
+source adapter mappings. Connectors also expose sync contracts for auto-fetch
+mode, cursor, and freshness planning. See
+[docs/connectors.md](docs/connectors.md) for the catalog and
+[docs/capability-matrix.md](docs/capability-matrix.md) for the full
 connector/source-adapter/domain map.
 
 ## Readiness Extensions

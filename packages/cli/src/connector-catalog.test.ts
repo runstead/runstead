@@ -69,6 +69,18 @@ describe("connector catalog", () => {
     ]);
   });
 
+  it("declares default sync mode, cursors, and freshness windows", () => {
+    expect(getRunsteadConnector("github")?.sync).toMatchObject({
+      defaultMode: "webhook",
+      cursorKinds: ["workflow_run_id", "pull_request_updated_at"]
+    });
+    expect(getRunsteadConnector("docs")?.sync).toMatchObject({
+      defaultMode: "scheduled",
+      cursorKinds: ["document_id", "document_revision"],
+      defaultFreshnessMs: 86400000
+    });
+  });
+
   it("formats connector reports for the CLI", () => {
     expect(formatRunsteadConnectorList()).toContain("github   code_hosting");
     expect(formatRunsteadConnector(requireRunsteadConnector("posthog"))).toContain(
@@ -76,6 +88,9 @@ describe("connector catalog", () => {
     );
     expect(formatRunsteadConnector(requireRunsteadConnector("github"))).toContain(
       "Surfaces: 4 (tool, evidence_source, profile_signal, trigger_source)"
+    );
+    expect(formatRunsteadConnector(requireRunsteadConnector("docs"))).toContain(
+      "Sync: scheduled cursors=2 (document_id, document_revision)"
     );
     expect(() => requireRunsteadConnector("unknown")).toThrow(
       "Connector not found: unknown"

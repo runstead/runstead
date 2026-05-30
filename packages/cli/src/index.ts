@@ -61,8 +61,20 @@ export type {
   RunsteadConnectorDefinition,
   RunsteadConnectorId,
   RunsteadConnectorMaturity,
-  RunsteadConnectorSurface
+  RunsteadConnectorSurface,
+  RunsteadConnectorSyncContract,
+  RunsteadConnectorSyncMode
 } from "./connector-catalog.js";
+export {
+  evaluateRunsteadConnectorSyncState,
+  formatRunsteadConnectorSyncVerdict
+} from "./connector-sync-state.js";
+export type {
+  RunsteadConnectorSyncCursor,
+  RunsteadConnectorSyncState,
+  RunsteadConnectorSyncStatus,
+  RunsteadConnectorSyncVerdict
+} from "./connector-sync-state.js";
 export {
   collectValues,
   parseCiRepairWorkerKind,

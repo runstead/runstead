@@ -42,6 +42,8 @@ The connector report declares:
 - evidence types produced by the connector
 - lifecycle surfaces: `tool`, `evidence_source`, `profile_signal`, and
   `trigger_source`
+- sync contract: default mode, cursor kinds, and freshness window for
+  auto-fetch planning
 - domain packs that currently use the connector
 - existing startup source connectors, when the connector is executable
 
@@ -64,6 +66,31 @@ These surfaces are independent of maturity. For example, `email` and `web`
 already declare draft/research lifecycle surfaces even though they are still
 catalog-only; `github` declares all four surfaces and already has executable
 startup source mappings.
+
+## Sync State
+
+Each connector also declares a sync contract:
+
+- `defaultMode`: `manual`, `scheduled`, `webhook`, or `auto_fetch`
+- `cursorKinds`: durable cursor dimensions such as `workflow_run_id`,
+  `document_revision`, `source_uri`, or `message_received_at`
+- `defaultFreshnessMs`: the default freshness window before the connector is
+  due for refresh
+
+`evaluateRunsteadConnectorSyncState` turns that contract plus runtime state into
+an operator verdict:
+
+- `due`: credentials are present and the connector should fetch now
+- `fresh`: the latest completed sync is still inside its freshness window
+- `blocked_credentials`: executable sync is blocked by missing env vars
+- `contract_only`: the catalog declares sync shape but no executable adapter is
+  registered yet
+- `running`, `failed`, and `disabled`: current runtime state takes precedence
+  over freshness checks
+
+This is the auto-fetch boundary: Runstead can now reason about when a connector
+should fetch and which cursor it should resume from, without pretending every
+connector already has a production adapter.
 
 ## Relationship To Startup Sources
 
