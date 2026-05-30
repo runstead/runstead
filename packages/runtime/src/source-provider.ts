@@ -1,5 +1,10 @@
 import type { JsonObject } from "@runstead/core";
 
+import {
+  compressRuntimeOutput,
+  redactRuntimeOutputJson
+} from "./output-compression.js";
+
 export type RuntimeSourceProviderKind =
   | "github"
   | "gitlab"
@@ -51,24 +56,35 @@ export function parseRuntimeSourceConnectorResponseJson(
       return {
         payload: {},
         parseError: "connector response must be a JSON object",
-        responseExcerpt: redactSecrets(
-          boundedProviderText(value, 2_000),
-          options?.secrets ?? []
-        )
+        responseExcerpt: compressRuntimeOutput({
+          value,
+          useCase: "connector_payload",
+          secrets: options?.secrets ?? [],
+          rule: {
+            maxChars: 2_000
+          }
+        }).text
       };
     }
 
     return {
-      payload: redactJsonObject(parsed as JsonObject, options?.secrets ?? [])
+      payload: redactRuntimeOutputJson({
+        value: parsed as JsonObject,
+        secrets: options?.secrets ?? []
+      })
     };
   } catch (error) {
     return {
       payload: {},
       parseError: error instanceof Error ? error.message : "invalid JSON response",
-      responseExcerpt: redactSecrets(
-        boundedProviderText(value, 2_000),
-        options?.secrets ?? []
-      )
+      responseExcerpt: compressRuntimeOutput({
+        value,
+        useCase: "connector_payload",
+        secrets: options?.secrets ?? [],
+        rule: {
+          maxChars: 2_000
+        }
+      }).text
     };
   }
 }
@@ -445,49 +461,4 @@ function arrayPayloadLength(payload: JsonObject, field: string): number | undefi
   const value = payload[field];
 
   return Array.isArray(value) ? value.length : undefined;
-}
-
-function redactJsonObject(payload: JsonObject, secrets: string[]): JsonObject {
-  return redactJsonValue(payload, secrets) as JsonObject;
-}
-
-function redactJsonValue(value: unknown, secrets: string[]): unknown {
-  if (typeof value === "string") {
-    return redactSecrets(value, secrets);
-  }
-
-  if (Array.isArray(value)) {
-    return value.map((item) => redactJsonValue(item, secrets));
-  }
-
-  if (typeof value === "object" && value !== null) {
-    return Object.fromEntries(
-      Object.entries(value).map(([key, entry]) => [
-        key,
-        sensitiveProviderField(key) ? "[redacted]" : redactJsonValue(entry, secrets)
-      ])
-    );
-  }
-
-  return value;
-}
-
-function sensitiveProviderField(key: string): boolean {
-  return /(?:authorization|api[_-]?key|access[_-]?token|refresh[_-]?token|token|secret|password|bearer)/iu.test(
-    key
-  );
-}
-
-function redactSecrets(value: string, secrets: string[]): string {
-  return secrets
-    .filter((secret) => secret.trim().length > 0)
-    .reduce((redacted, secret) => redacted.split(secret).join("[redacted]"), value);
-}
-
-function boundedProviderText(value: string, maxLength: number): string {
-  if (value.length <= maxLength) {
-    return value;
-  }
-
-  return `${value.slice(0, maxLength)}...`;
 }

@@ -2,6 +2,7 @@ export * from "./backend-config.js";
 export * from "./complete-product.js";
 export * from "./control-plane.js";
 export * from "./execution-semantics.js";
+export * from "./output-compression.js";
 export * from "./readiness-evidence.js";
 export * from "./readiness-guidance.js";
 export * from "./readiness-plan.js";

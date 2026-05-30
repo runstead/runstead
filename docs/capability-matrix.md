@@ -35,6 +35,7 @@ business evidence status.
 | Connector sync state         | Auto-fetch mode, cursor, freshness, and credential readiness per connector        | `evaluateRunsteadConnectorSyncState`                                    |
 | Startup source connectors    | Target-aware external evidence contracts for launch readiness                     | `runstead startup source record/collect/verify`, `startup ready --plan` |
 | Provider adapters            | HTTP collection, auth header shaping, response parsing, secret redaction          | `@runstead/runtime` source-provider helpers plus CLI collection         |
+| Output compression           | Use-case limits, token redaction, and bounded excerpts for adapter/worker output  | `@runstead/runtime` output compression helpers                          |
 | Extensions                   | Workspace or package-provided facets, collectors, verifiers, gates                | `.runstead/extensions/*`, `@runstead/sdk`                               |
 | Skill readiness              | Activated worker guidance dependency, fallback, platform, and worker fit          | `skill.yaml readiness`, `runstead run --plan`                           |
 | Evidence Memory Tree         | Wiki-style domain/connector/type/profile organization for recorded evidence       | `@runstead/evidence` `buildEvidenceMemoryTree`                          |

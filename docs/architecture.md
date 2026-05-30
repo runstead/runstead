@@ -17,7 +17,8 @@ Contract packages (stable, side-effect free, no Node-specific hosting):
   readiness run snapshot helpers, source-provider response normalization and
   secret redaction, provider-neutral tool-call adapter primitives (Codex
   Responses, OpenAI-compatible chat completions, Anthropic Messages, Gemini
-  generateContent), and startup UI smoke failure classification
+  generateContent), output compression/redaction rules, and startup UI smoke
+  failure classification
 - `@runstead/governance`: policy DSL parser, deterministic evaluator with
   deny > approval > allow precedence, action risk scorer, reusable policy
   factories (protected paths, dangerous shell, dependency change, verifier
@@ -89,6 +90,9 @@ along with:
 - source provider contracts: `parseRuntimeSourceConnectorResponseJson`,
   `collectRuntimeSourceProviderPayload`, and
   `runtimeSourceProviderAuthHeaders`
+- output compression contracts: `compressRuntimeOutput`,
+  `redactRuntimeOutputJson`, `redactRuntimeOutputText`, and
+  `runtimeOutputCompressionRule`
 - tool-call adapters: `codexResponsesToolCallAdapter`,
   `openAiChatCompletionsToolCallAdapter`,
   `anthropicMessagesToolCallAdapter`, and

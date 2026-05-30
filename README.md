@@ -555,8 +555,9 @@ Contract packages (stable surface for extensions and external runtimes):
 
 - `@runstead/core`: shared schemas, IDs, and control-plane contracts
 - `@runstead/runtime`: execution semantics, readiness plan/verdict engine,
-  storage/lock/artifact backend contracts, team-control-plane contracts, and
-  provider-neutral tool-call adapter primitives
+  storage/lock/artifact backend contracts, team-control-plane contracts,
+  source-provider helpers, output compression, and provider-neutral tool-call
+  adapter primitives
 - `@runstead/governance`: policy evaluation, action risk scoring, reusable
   governance primitives
 - `@runstead/tools`: governed tool action contract registry
@@ -594,6 +595,8 @@ Product and lifecycle:
   provider and workspace data access
 - [docs/evidence-memory.md](docs/evidence-memory.md): Evidence Memory Tree model
   for wiki-like evidence organization
+- [docs/output-compression.md](docs/output-compression.md): shared output
+  compression and redaction rules for adapters and workers
 - [docs/product-positioning.md](docs/product-positioning.md): product stance
   and boundaries
 - [docs/startup-lifecycle.md](docs/startup-lifecycle.md): stage model and
