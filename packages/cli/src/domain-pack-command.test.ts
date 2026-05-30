@@ -22,6 +22,7 @@ describe("domain pack command helpers", () => {
     expect(report).toContain(
       "Capability denied: 2 (secret_read, production_infra_write)"
     );
+    expect(report).toContain("Evidence contracts: 1 (keep-ci-green)");
     expect(report).toContain("Fixtures: 1 (js-test-failure)");
     expect(report).toContain("Evals: 1 (js-test-failure-smoke)");
     expect(report).toContain("Manifest files:");

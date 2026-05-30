@@ -76,6 +76,43 @@ capability_policy:
     - billing_mutation
     - compliance_claim_without_review
 
+evidence_contracts:
+  - workflow: validate-problem
+    outputs:
+      - startup_hypothesis
+      - customer_evidence
+      - disconfirming_evidence
+      - mvp_build_gate
+    completion_criteria:
+      - problem_hypothesis_recorded
+      - customer_evidence_attached
+      - disconfirming_review_complete
+      - build_gate_decision_recorded
+  - workflow: build-mvp
+    outputs:
+      - startup_agent_context
+      - startup_measurement_framework
+      - startup_repo_readiness
+      - command_output
+      - launch_readiness_report
+    completion_criteria:
+      - agent_context_current
+      - measurement_framework_defined
+      - verifier_evidence_fresh
+      - launch_readiness_report_ready
+  - workflow: scale-ops
+    outputs:
+      - founder_bottleneck_map
+      - workflow_automation_registry
+      - ops_sop
+      - support_triage
+      - gtm_artifact_review
+    completion_criteria:
+      - bottlenecks_mapped
+      - automations_registered
+      - support_and_gtm_verified
+      - scale_gate_passed
+
 security:
   untrusted_inputs:
     - customer_interview

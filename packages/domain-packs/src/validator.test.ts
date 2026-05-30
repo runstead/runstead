@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -966,6 +966,39 @@ describe("validateDomainPackDir", () => {
           expect.objectContaining({
             severity: "error",
             code: "goal_template_recurring_task_unknown"
+          })
+        ])
+      );
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("rejects evidence contracts that reference unknown workflows", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-domain-pack-"));
+
+    try {
+      const result = await createDomainPackTemplate({
+        id: "customer-ops",
+        outputDir: join(workspace, "customer-ops")
+      });
+      const domainPath = join(result.root, "domain.yaml");
+      const domainYaml = await readFile(domainPath, "utf8");
+
+      await writeFile(
+        domainPath,
+        domainYaml.replace("workflow: default-goal", "workflow: missing-workflow"),
+        "utf8"
+      );
+
+      const validation = await validateDomainPackDir(result.root);
+
+      expect(validation.valid).toBe(false);
+      expect(validation.issues).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            severity: "error",
+            code: "evidence_contract_unknown_workflow"
           })
         ])
       );

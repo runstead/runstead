@@ -109,6 +109,23 @@ const DomainPackBundleArtifactSchema: z.ZodType<DomainPackBundleArtifact> = z.ob
         })
       )
       .default([]),
+    capabilityPolicy: z
+      .object({
+        reads: z.array(z.string().min(1)),
+        writes: z.array(z.string().min(1)),
+        approvalsRequired: z.array(z.string().min(1)),
+        denied: z.array(z.string().min(1))
+      })
+      .optional(),
+    evidenceContracts: z
+      .array(
+        z.object({
+          workflow: z.string().min(1),
+          outputs: z.array(z.string().min(1)),
+          completionCriteria: z.array(z.string().min(1))
+        })
+      )
+      .default([]),
     evalQuality: z
       .object({
         minimumScore: z.number().min(0).max(1),

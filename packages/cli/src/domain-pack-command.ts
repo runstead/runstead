@@ -86,6 +86,7 @@ export function formatDomainPackShowResult(result: ShowDomainPackResult): string
     `Capability writes: ${formatCountedList(domain.capabilityPolicy?.writes ?? [])}`,
     `Capability approvals: ${formatCountedList(domain.capabilityPolicy?.approvalsRequired ?? [])}`,
     `Capability denied: ${formatCountedList(domain.capabilityPolicy?.denied ?? [])}`,
+    `Evidence contracts: ${formatCountedList(domain.evidenceContracts?.map((contract) => contract.workflow) ?? [])}`,
     `Migrations: ${formatCountedList(domain.migrations?.map((migration) => `${migration.fromVersion}->${migration.toVersion}`) ?? [])}`,
     `Required tools: ${formatCountedList(domain.requiredTools)}`,
     `Supported workers: ${formatCountedList(domain.supportedWorkers)}`,

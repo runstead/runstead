@@ -69,6 +69,23 @@ capability_policy:
     - send_message_external
     - secret_read
 
+evidence_contracts:
+  - workflow: draft-pending-followups
+    outputs:
+      - thread_inventory
+      - followup_reason
+      - recipient_review
+      - draft_preview
+      - tone_review
+      - send_block
+      - followup_memory
+    completion_criteria:
+      - followup_reason_recorded
+      - recipients_checked
+      - draft_preview_attached
+      - send_not_performed
+      - memory_updated
+
 security:
   untrusted_inputs:
     - email_body

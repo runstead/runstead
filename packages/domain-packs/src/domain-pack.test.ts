@@ -58,5 +58,23 @@ describe("repo-maintenance pack", () => {
       ],
       denied: ["secret_read", "production_infra_write"]
     });
+    expect(pack.evidenceContracts).toEqual([
+      {
+        workflow: "keep-ci-green",
+        outputs: [
+          "repo_readiness",
+          "command_output",
+          "verifier_report",
+          "git_diff_scope",
+          "ci_repair_summary"
+        ],
+        completionCriteria: [
+          "verifiers_pass_or_blockers_recorded",
+          "diff_scope_reviewed",
+          "protected_paths_untouched",
+          "audit_event_recorded"
+        ]
+      }
+    ]);
   });
 });

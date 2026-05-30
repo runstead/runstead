@@ -175,6 +175,15 @@ capability_policy:
   denied:
     - secret_read
 
+evidence_contracts:
+  - workflow: default-goal
+    outputs:
+      - manual_review
+      - runstead.evidence
+    completion_criteria:
+      - manual_review_complete
+      - evidence_attached
+
 security:
   untrusted_inputs:
     - external_content

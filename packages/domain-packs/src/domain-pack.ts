@@ -27,6 +27,12 @@ export const DomainPackCapabilityPolicySchema = z.object({
   denied: z.array(z.string().min(1))
 });
 
+export const DomainPackEvidenceContractSchema = z.object({
+  workflow: z.string().min(1),
+  outputs: z.array(z.string().min(1)).min(1),
+  completionCriteria: z.array(z.string().min(1)).min(1)
+});
+
 export const DomainPackMigrationSchema = z.object({
   fromVersion: z.string().regex(SEMVER_PATTERN),
   toVersion: z.string().regex(SEMVER_PATTERN),
@@ -76,6 +82,7 @@ export const DomainPackSchema = z.object({
   supportedWorkers: z.array(z.string().min(1)),
   security: DomainPackSecuritySchema.optional(),
   capabilityPolicy: DomainPackCapabilityPolicySchema.optional(),
+  evidenceContracts: z.array(DomainPackEvidenceContractSchema).optional(),
   migrations: z.array(DomainPackMigrationSchema).optional(),
   repoTemplates: z.array(DomainPackRepoTemplateSchema).optional(),
   gateThresholds: z.record(z.string(), DomainPackGateThresholdSchema).optional(),
@@ -119,6 +126,11 @@ const DomainPackCapabilityPolicyYamlSchema = z.object({
   approvals_required: z.array(z.string().min(1)).default([]),
   denied: z.array(z.string().min(1)).default([])
 });
+const DomainPackEvidenceContractYamlSchema = z.object({
+  workflow: z.string().min(1),
+  outputs: z.array(z.string().min(1)).min(1),
+  completion_criteria: z.array(z.string().min(1)).min(1)
+});
 
 const DomainPackYamlSchema = z.object({
   id: z.string().regex(DOMAIN_PACK_ID_PATTERN),
@@ -148,6 +160,7 @@ const DomainPackYamlSchema = z.object({
     })
     .optional(),
   capability_policy: DomainPackCapabilityPolicyYamlSchema.optional(),
+  evidence_contracts: z.array(DomainPackEvidenceContractYamlSchema).optional(),
   migrations: z.array(DomainPackMigrationYamlSchema).optional(),
   repo_templates: z.array(DomainPackRepoTemplateYamlSchema).optional(),
   gate_thresholds: z.record(z.string(), DomainPackGateThresholdYamlSchema).optional(),
@@ -204,6 +217,15 @@ export function parseDomainPackYaml(input: unknown): DomainPack {
             approvalsRequired: parsed.capability_policy.approvals_required,
             denied: parsed.capability_policy.denied
           }
+        }),
+    ...(parsed.evidence_contracts === undefined
+      ? {}
+      : {
+          evidenceContracts: parsed.evidence_contracts.map((contract) => ({
+            workflow: contract.workflow,
+            outputs: contract.outputs,
+            completionCriteria: contract.completion_criteria
+          }))
         }),
     ...(parsed.migrations === undefined
       ? {}

@@ -107,6 +107,30 @@ The detailed `policies/*.yaml` file remains the executable decision policy.
 `capability_policy` is the pack-level contract surfaced by catalog, show, and
 run commands so users can see the boundary before work starts.
 
+## Evidence Contracts
+
+Every built-in pack also declares `evidence_contracts` for its high-level
+workflows. Each contract names what evidence the workflow must output and what
+completion criteria have to be satisfied before the workflow can be treated as
+done:
+
+```yaml
+evidence_contracts:
+  - workflow: default-goal
+    outputs:
+      - manual_review
+      - runstead.evidence
+    completion_criteria:
+      - manual_review_complete
+      - evidence_attached
+```
+
+The validator rejects evidence contracts that reference unknown workflows. A
+workflow can be a `goal_templates` id or a `task_types` id, but built-in packs
+use the goal-template ids as the user-facing scenarios. Runtime commands can
+surface these contracts before execution so an operator can see the expected
+proof and completion semantics up front.
+
 Installing, uninstalling, or upgrading a pack mutates the local
 `.runstead/domains` registry and requires the actor to have `domain.manage`.
 Read-only SDK commands such as `domain validate`, `domain manifest`, and

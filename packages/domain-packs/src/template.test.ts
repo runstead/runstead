@@ -37,6 +37,13 @@ describe("createDomainPackTemplate", () => {
       expect(validation.domain?.capabilityPolicy?.approvalsRequired).toEqual([
         "external_write"
       ]);
+      expect(validation.domain?.evidenceContracts).toEqual([
+        {
+          workflow: "default-goal",
+          outputs: ["manual_review", "runstead.evidence"],
+          completionCriteria: ["manual_review_complete", "evidence_attached"]
+        }
+      ]);
       expect(validation.goalTemplates[0]?.domain).toBe("customer-ops");
       expect(validation.taskTypes[0]?.domain).toBe("customer-ops");
       expect(validation.fixtures.map((fixture) => fixture.id)).toEqual([

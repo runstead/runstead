@@ -67,6 +67,23 @@ capability_policy:
     - external_send_without_approval
     - uncited_claim_publish
 
+evidence_contracts:
+  - workflow: weekly-research-digest
+    outputs:
+      - source_inventory
+      - source_reliability_assessment
+      - citation_ledger
+      - contradiction_review
+      - digest_draft
+      - publish_approval
+      - archive_record
+    completion_criteria:
+      - sources_fresh
+      - claims_cited
+      - contradictions_reviewed
+      - publish_gate_recorded
+      - archive_record_created
+
 security:
   untrusted_inputs:
     - webpage_content

@@ -118,6 +118,7 @@ export async function validateDomainPackDir(
   if (domain !== undefined) {
     collectDuplicateReferences("goal_template", domain.goalTemplates, issues);
     collectDuplicateReferences("task_type", domain.taskTypes, issues);
+    assertEvidenceContractsReferenceWorkflows({ domain, issues });
 
     for (const templateId of domain.goalTemplates) {
       const templatePath = referencePath({
@@ -524,6 +525,29 @@ function collectDuplicateReferences(
     }
 
     seen.add(reference);
+  }
+}
+
+function assertEvidenceContractsReferenceWorkflows(input: {
+  domain: DomainPack;
+  issues: DomainPackValidationIssue[];
+}): void {
+  const workflows = new Set([
+    ...input.domain.goalTemplates,
+    ...input.domain.taskTypes
+  ]);
+
+  for (const contract of input.domain.evidenceContracts ?? []) {
+    if (workflows.has(contract.workflow)) {
+      continue;
+    }
+
+    input.issues.push({
+      severity: "error",
+      code: "evidence_contract_unknown_workflow",
+      message: `Evidence contract references unknown workflow: ${contract.workflow}`,
+      path: "domain.yaml"
+    });
   }
 }
 
