@@ -277,31 +277,31 @@ describe("local agent task primitives", () => {
           aggregate_type: "task",
           aggregate_id: created.task.id
         });
-        expect(JSON.parse(learningEvent.payload_json)).toMatchObject({
+        const learningPayload = JSON.parse(learningEvent.payload_json) as {
+          taskId: string;
+          candidateCount: number;
+          quarantinedMemoryIds: string[];
+          candidates: { type: string; memoryId: string }[];
+        };
+
+        expect(learningPayload).toMatchObject({
           taskId: created.task.id,
-          candidateCount: 4,
-          quarantinedMemoryIds: expect.arrayContaining([
-            expect.stringMatching(/^mem_/)
-          ]),
-          candidates: expect.arrayContaining([
-            expect.objectContaining({
-              type: "project_fact",
-              memoryId: expect.stringMatching(/^mem_/)
-            }),
-            expect.objectContaining({
-              type: "tooling_observation",
-              memoryId: expect.stringMatching(/^mem_/)
-            }),
-            expect.objectContaining({
-              type: "policy_lesson",
-              memoryId: expect.stringMatching(/^mem_/)
-            }),
-            expect.objectContaining({
-              type: "skill_candidate",
-              memoryId: expect.stringMatching(/^mem_/)
-            })
-          ])
+          candidateCount: 4
         });
+        expect(learningPayload.quarantinedMemoryIds).toHaveLength(4);
+        expect(learningPayload.quarantinedMemoryIds).toEqual(
+          expect.arrayContaining([expect.stringMatching(/^mem_/)])
+        );
+        expect(learningPayload.candidates).toHaveLength(4);
+        expect(learningPayload.candidates.map((candidate) => candidate.type)).toEqual([
+          "project_fact",
+          "tooling_observation",
+          "policy_lesson",
+          "skill_candidate"
+        ]);
+        for (const candidate of learningPayload.candidates) {
+          expect(candidate.memoryId).toMatch(/^mem_/);
+        }
         expect(memoryRows).toHaveLength(4);
         expect(memoryRows.map((row) => [row.type, row.status])).toEqual([
           ["project_fact", "quarantined"],
@@ -309,14 +309,23 @@ describe("local agent task primitives", () => {
           ["policy_lesson", "quarantined"],
           ["skill_candidate", "quarantined"]
         ]);
-        expect(JSON.parse(memoryRows[0]?.provenance_json ?? "{}")).toMatchObject({
+        const provenance = JSON.parse(memoryRows[0]?.provenance_json ?? "{}") as {
+          createdBy: string;
+          createdFromTask: string;
+          candidateKey: string;
+          proposal: {
+            suggestedPromotionAction: string;
+          };
+        };
+
+        expect(provenance).toMatchObject({
           createdBy: "runstead:learning-review",
           createdFromTask: created.task.id,
-          candidateKey: expect.stringMatching(/^learning:/),
           proposal: {
             suggestedPromotionAction: "promote-memory"
           }
         });
+        expect(provenance.candidateKey).toMatch(/^learning:/);
       } finally {
         database.close();
       }
@@ -1041,12 +1050,19 @@ describe("local agent task primitives", () => {
         expect(prompt).toContain("Runstead verified memory context:");
         expect(prompt).toContain("Use pnpm for verifier commands in this repo.");
         expect(prompt).not.toContain("Unverified memory must not enter");
-        expect(JSON.parse(event.payload_json)).toMatchObject({
+        const eventPayload = JSON.parse(event.payload_json) as {
+          taskId: string;
+          resultCount: number;
+          resultIds: string[];
+          scopes: string[];
+        };
+
+        expect(eventPayload).toMatchObject({
           taskId: created.task.id,
           resultCount: 1,
-          resultIds: [verified.id],
-          scopes: expect.arrayContaining(["repo:acme/app"])
+          resultIds: [verified.id]
         });
+        expect(eventPayload.scopes).toContain("repo:acme/app");
       } finally {
         database.close();
       }

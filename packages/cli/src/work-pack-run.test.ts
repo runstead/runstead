@@ -325,8 +325,8 @@ describe("work pack run surface", () => {
         join(workspace, "package.json"),
         `${JSON.stringify({
           scripts: {
-            test: "node -e \"process.exit(0)\"",
-            lint: "node -e \"process.exit(0)\""
+            test: 'node -e "process.exit(0)"',
+            lint: 'node -e "process.exit(0)"'
           }
         })}\n`,
         "utf8"

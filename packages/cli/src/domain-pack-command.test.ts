@@ -13,9 +13,7 @@ describe("domain pack command helpers", () => {
     expect(report).toContain(
       "Workflows: 4 (keep-ci-green:goal_template, repo_inspect:task_type, run_local_verifiers:task_type, ci_repair:task_type)"
     );
-    expect(report).toContain(
-      "Work pack components: 1 (repo-maintenance:domain_pack)"
-    );
+    expect(report).toContain("Work pack components: 1 (repo-maintenance:domain_pack)");
     expect(report).toContain(
       "Capability reads: 4 (filesystem.repo, git.status, git.diff, github.workflow_run)"
     );

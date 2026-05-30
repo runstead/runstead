@@ -88,9 +88,7 @@ export function evaluateWorkPackEvidenceContract(input: {
       tasks: input.tasks
     })
   );
-  const complete = [...outputs, ...completionCriteria].every(
-    (item) => item.satisfied
-  );
+  const complete = [...outputs, ...completionCriteria].every((item) => item.satisfied);
 
   return {
     status: complete ? "complete" : "incomplete",
@@ -237,7 +235,9 @@ function evaluateDomainSpecificRequirement(input: {
 
   if (input.evaluator.eventTypes.length > 0) {
     const eventCount =
-      input.stateDb === undefined || input.goal === undefined || input.tasks === undefined
+      input.stateDb === undefined ||
+      input.goal === undefined ||
+      input.tasks === undefined
         ? 0
         : countWorkflowAuditEvents({
             stateDb: input.stateDb,
@@ -299,7 +299,9 @@ function specialCompletionCriterionVerdict(input: {
 
   if (input.id === "audit_event_recorded") {
     const eventCount =
-      input.stateDb === undefined || input.goal === undefined || input.tasks === undefined
+      input.stateDb === undefined ||
+      input.goal === undefined ||
+      input.tasks === undefined
         ? 0
         : countWorkflowAuditEvents({
             stateDb: input.stateDb,
@@ -425,7 +427,10 @@ function evidenceTypesForContractKey(key: string): string[] {
 }
 
 function normalizeContractKey(key: string): string {
-  return key.trim().toLowerCase().replaceAll(/[^a-z0-9]+/g, "_");
+  return key
+    .trim()
+    .toLowerCase()
+    .replaceAll(/[^a-z0-9]+/g, "_");
 }
 
 function evidenceRowFromSql(row: EvidenceSqlRow): WorkPackEvidenceRow {
@@ -478,10 +483,7 @@ const CONTRACT_EVIDENCE_ALIASES: Record<string, string[]> = {
   repo_readiness_inspected: ["repo_inspection", "startup_repo_readiness"],
   verifier_evidence_fresh: ["command_output"],
   launch_readiness_report_ready: ["launch_readiness_report"],
-  problem_hypothesis_recorded: [
-    "startup_hypothesis",
-    "startup_problem_hypothesis"
-  ],
+  problem_hypothesis_recorded: ["startup_hypothesis", "startup_problem_hypothesis"],
   customer_evidence_attached: ["startup_customer_interview"],
   disconfirming_review_complete: ["startup_disconfirming"],
   build_gate_decision_recorded: ["startup_decision"],

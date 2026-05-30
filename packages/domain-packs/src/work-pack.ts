@@ -92,9 +92,7 @@ export function domainPackRegistryEntryToWorkPack(
 ): WorkPack {
   return domainPackToWorkPack(entry.domain, {
     source: entry.source,
-    ...(options.extensions === undefined
-      ? {}
-      : { extensions: options.extensions }),
+    ...(options.extensions === undefined ? {} : { extensions: options.extensions }),
     ...(options.skills === undefined ? {} : { skills: options.skills })
   });
 }

@@ -255,8 +255,8 @@ export function parseDomainPackYaml(input: unknown): DomainPack {
     ...(parsed.evidence_requirement_evaluators === undefined
       ? {}
       : {
-          evidenceRequirementEvaluators:
-            parsed.evidence_requirement_evaluators.map((evaluator) => ({
+          evidenceRequirementEvaluators: parsed.evidence_requirement_evaluators.map(
+            (evaluator) => ({
               requirement: evaluator.requirement,
               ...(evaluator.description === undefined
                 ? {}
@@ -266,7 +266,8 @@ export function parseDomainPackYaml(input: unknown): DomainPack {
               taskStatuses: evaluator.task_statuses,
               eventTypes: evaluator.event_types,
               match: evaluator.match
-            }))
+            })
+          )
         }),
     ...(parsed.migrations === undefined
       ? {}

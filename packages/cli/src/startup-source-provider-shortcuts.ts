@@ -252,7 +252,7 @@ function parseGithubRepo(value: string): [string, string] {
     throw new Error("--github-repo must use owner/repo format");
   }
 
-  return [parts[0] as string, parts[1] as string];
+  return [parts[0]!, parts[1]!];
 }
 
 function requireValue(value: string | undefined, flag: string): string {

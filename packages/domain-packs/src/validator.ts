@@ -533,10 +533,7 @@ function assertEvidenceContractsReferenceWorkflows(input: {
   domain: DomainPack;
   issues: DomainPackValidationIssue[];
 }): void {
-  const workflows = new Set([
-    ...input.domain.goalTemplates,
-    ...input.domain.taskTypes
-  ]);
+  const workflows = new Set([...input.domain.goalTemplates, ...input.domain.taskTypes]);
 
   for (const contract of input.domain.evidenceContracts ?? []) {
     if (workflows.has(contract.workflow)) {

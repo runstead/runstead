@@ -30,18 +30,12 @@ describe("connector catalog", () => {
       "github_pr",
       "github_issue"
     ]);
-    expect(getRunsteadConnector("vercel")?.startupSourceConnectors).toEqual([
-      "vercel"
-    ]);
-    expect(getRunsteadConnector("sentry")?.startupSourceConnectors).toEqual([
-      "sentry"
-    ]);
+    expect(getRunsteadConnector("vercel")?.startupSourceConnectors).toEqual(["vercel"]);
+    expect(getRunsteadConnector("sentry")?.startupSourceConnectors).toEqual(["sentry"]);
     expect(getRunsteadConnector("posthog")?.startupSourceConnectors).toEqual([
       "posthog"
     ]);
-    expect(getRunsteadConnector("docs")?.startupSourceConnectors).toEqual([
-      "docs"
-    ]);
+    expect(getRunsteadConnector("docs")?.startupSourceConnectors).toEqual(["docs"]);
   });
 
   it("keeps draft-only email and web research as catalog contracts", () => {

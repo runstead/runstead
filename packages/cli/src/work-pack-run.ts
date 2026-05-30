@@ -71,15 +71,13 @@ export interface WorkPackWorkflowRunPlan {
   suggestedCommands: string[];
 }
 
-export interface QueueWorkPackWorkflowRunOptions
-  extends ResolveWorkPackWorkflowRunOptions {
+export interface QueueWorkPackWorkflowRunOptions extends ResolveWorkPackWorkflowRunOptions {
   title?: string;
   now?: Date;
 }
 
 export interface ExecuteWorkPackWorkflowRunOptions
-  extends QueueWorkPackWorkflowRunOptions,
-    Omit<RunOnceOptions, "cwd" | "now"> {
+  extends QueueWorkPackWorkflowRunOptions, Omit<RunOnceOptions, "cwd" | "now"> {
   maxTasks?: number;
 }
 
@@ -140,11 +138,10 @@ export async function resolveWorkPackWorkflowRun(
     (contract) => contract.workflow === options.workflow
   );
   const domainEvaluators = domainEvidenceRequirementEvaluators(entry.domain);
-  const evidenceContractEvaluators = evidenceContractRequirements(evidenceContract).flatMap(
-    (requirement) =>
-      domainEvaluators.filter(
-        (evaluator) => evaluator.requirement === requirement
-      )
+  const evidenceContractEvaluators = evidenceContractRequirements(
+    evidenceContract
+  ).flatMap((requirement) =>
+    domainEvaluators.filter((evaluator) => evaluator.requirement === requirement)
   );
 
   const extensionReadiness = await evaluateWorkPackExtensionReadiness({
@@ -182,7 +179,9 @@ export async function resolveWorkPackWorkflowRun(
   };
 }
 
-function domainEvidenceRequirementEvaluators(domain: DomainPackRegistryEntry["domain"]): {
+function domainEvidenceRequirementEvaluators(
+  domain: DomainPackRegistryEntry["domain"]
+): {
   requirement: string;
   description?: string;
   evidenceTypes: string[];
@@ -308,9 +307,7 @@ export async function executeWorkPackWorkflowRunUnlocked(
   };
 }
 
-export function formatWorkPackWorkflowRunPlan(
-  plan: WorkPackWorkflowRunPlan
-): string {
+export function formatWorkPackWorkflowRunPlan(plan: WorkPackWorkflowRunPlan): string {
   const capabilityPolicy = plan.entry.domain.capabilityPolicy;
 
   return [
@@ -393,9 +390,7 @@ function suggestedCommandsForWorkflow(input: {
     return [`runstead run --once --cwd ${input.cwd}`];
   }
 
-  return [
-    `runstead domain show ${input.pack} --cwd ${input.cwd}`
-  ];
+  return [`runstead domain show ${input.pack} --cwd ${input.cwd}`];
 }
 
 async function ensureWorkPackInstalled(input: {
@@ -462,7 +457,9 @@ async function queueTaskTypeWorkflow(input: {
 }): Promise<{ goal: Goal; tasks: Task[]; events: RunsteadEvent[] }> {
   const state = await requireRunsteadStateDb(input.cwd);
   const bundle = await loadDomainPackBundleFromDir(input.installedRoot);
-  const taskType = bundle.taskTypes.find((candidate) => candidate.id === input.workflow);
+  const taskType = bundle.taskTypes.find(
+    (candidate) => candidate.id === input.workflow
+  );
 
   if (taskType === undefined) {
     throw new Error(
@@ -561,9 +558,7 @@ function formatConnectorReadiness(readiness: WorkPackConnectorReadiness[]): stri
     .join(", ")})`;
 }
 
-function formatExtensionReadiness(
-  report: WorkPackExtensionReadinessReport
-): string {
+function formatExtensionReadiness(report: WorkPackExtensionReadinessReport): string {
   const issueSuffix =
     report.issues.length === 0 ? "" : `; issues=${report.issues.length}`;
 
@@ -598,10 +593,7 @@ function workPackWorkflowExecutionStatus(input: {
     return "waiting_approval";
   }
 
-  if (
-    lastTask.status === "completed" &&
-    input.taskResults.length >= input.taskCount
-  ) {
+  if (lastTask.status === "completed" && input.taskResults.length >= input.taskCount) {
     return "completed";
   }
 
@@ -626,9 +618,7 @@ function formatExecutedTaskLine(result: RunOnceResult): string {
   return `- ${result.task.type} ${result.task.id}: ${result.task.status}`;
 }
 
-function satisfiedCount(
-  verdicts: WorkPackEvidenceContractVerdict["outputs"]
-): number {
+function satisfiedCount(verdicts: WorkPackEvidenceContractVerdict["outputs"]): number {
   return verdicts.filter((verdict) => verdict.satisfied).length;
 }
 
@@ -637,9 +627,7 @@ function appendMissingEvidenceLines(
   verdict: WorkPackEvidenceContractVerdict
 ): void {
   const missingOutputs = verdict.outputs.filter((item) => !item.satisfied);
-  const missingCriteria = verdict.completionCriteria.filter(
-    (item) => !item.satisfied
-  );
+  const missingCriteria = verdict.completionCriteria.filter((item) => !item.satisfied);
 
   if (missingOutputs.length > 0) {
     lines.push("Missing outputs:");

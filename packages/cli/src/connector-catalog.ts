@@ -90,7 +90,8 @@ const RUNSTEAD_CONNECTOR_CATALOG: RunsteadConnectorDefinition[] = [
     id: "email",
     displayName: "Email",
     category: "communication",
-    summary: "Mailbox threads, contacts, safe draft creation, and send boundary evidence.",
+    summary:
+      "Mailbox threads, contacts, safe draft creation, and send boundary evidence.",
     credentialEnv: ["EMAIL_READ_TOKEN"],
     reads: ["mailbox", "email_thread", "contact"],
     writes: ["draft"],
@@ -134,16 +135,12 @@ export function listRunsteadConnectors(): RunsteadConnectorDefinition[] {
 export function getRunsteadConnector(
   id: string
 ): RunsteadConnectorDefinition | undefined {
-  const connector = RUNSTEAD_CONNECTOR_CATALOG.find(
-    (candidate) => candidate.id === id
-  );
+  const connector = RUNSTEAD_CONNECTOR_CATALOG.find((candidate) => candidate.id === id);
 
   return connector === undefined ? undefined : cloneRunsteadConnector(connector);
 }
 
-export function requireRunsteadConnector(
-  id: string
-): RunsteadConnectorDefinition {
+export function requireRunsteadConnector(id: string): RunsteadConnectorDefinition {
   const connector = getRunsteadConnector(id);
 
   if (connector === undefined) {

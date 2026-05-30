@@ -622,7 +622,7 @@ function numberValue(value: unknown): number {
 }
 
 function objectValue(value: unknown): JsonObject {
-  return isRecord(value) ? (value as JsonObject) : {};
+  return isRecord(value) ? value : {};
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

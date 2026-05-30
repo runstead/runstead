@@ -408,7 +408,7 @@ function autoImproveEligibility(
     scope: AutoImproveLearningScope;
     risk: SkillActivationRisk;
   }
-): "eligible" | string {
+): string {
   const proposal = objectValue(memory.provenance.proposal);
   const suggested = suggestedSkill(memory);
 

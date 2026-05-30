@@ -18,10 +18,8 @@ export function registerRunCommand(program: Command): Command {
     .option("--root <path>", "Additional domain pack root", collectValues, [])
     .option("--no-built-ins", "Exclude built-in domain packs")
     .option("--plan", "Print the workflow plan without queuing or executing")
-    .option(
-      "--max-tasks <count>",
-      "Maximum workflow tasks to execute",
-      (value) => parseRequiredPositiveInteger(value, "--max-tasks")
+    .option("--max-tasks <count>", "Maximum workflow tasks to execute", (value) =>
+      parseRequiredPositiveInteger(value, "--max-tasks")
     )
     .option("--worker <worker>", "Worker override for queued CI repair tasks")
     .option("--provider <provider>", "Model provider override for queued agent tasks")
@@ -102,9 +100,7 @@ async function runWorkPackWorkflow(input: {
       ? {}
       : { provider: input.options.provider }),
     ...(input.options.model === undefined ? {} : { model: input.options.model }),
-    ...(input.options.baseUrl === undefined
-      ? {}
-      : { baseUrl: input.options.baseUrl })
+    ...(input.options.baseUrl === undefined ? {} : { baseUrl: input.options.baseUrl })
   });
   const exitCode = executedWorkPackWorkflowRunExitCode(result);
 

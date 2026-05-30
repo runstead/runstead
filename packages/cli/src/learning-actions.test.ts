@@ -200,8 +200,10 @@ describe("learning actions", () => {
         status: "promoted"
       });
       expect(registry.activations).toHaveLength(1);
-      expect(registry.activations[0]).toMatchObject({
-        name: expect.stringMatching(/^repair-failing-test-/),
+      const activation = registry.activations[0];
+
+      expect(activation?.name).toMatch(/^repair-failing-test-/);
+      expect(activation).toMatchObject({
         status: "active",
         risk: "low",
         canaryPercent: 25,
@@ -213,7 +215,7 @@ describe("learning actions", () => {
         sourceMemoryId: candidate.id,
         activatedBy: "auto-curator"
       });
-      if (decision === undefined || decision.status !== "promoted") {
+      if (decision?.status !== "promoted") {
         throw new Error("Expected auto-improve to promote the candidate");
       }
 
