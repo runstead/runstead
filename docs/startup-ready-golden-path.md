@@ -28,14 +28,15 @@ Copy the fixture to a throwaway workspace:
 cp -R packages/domain-packs/packs/ai-native-startup/fixtures/tiny-todo /tmp/runstead-todo
 ```
 
-Run readiness:
+Run the fast local readiness path:
 
 ```bash
 runstead startup ready \
   --cwd /tmp/runstead-todo \
   --stage launch \
   --target local \
-  --worker codex_direct
+  --worker codex_cli \
+  --governance readiness
 ```
 
 Runstead should:
@@ -53,11 +54,10 @@ Runstead should:
 - write `startup-readiness-run-<run-id>.md` and the run JSON snapshot
 - return `local_launch_ready` or explicit blockers
 
-For the existing `tiny-todo` fixture, `codex_direct` is selected for the
-governed boundary, but the model loop is not called when Runstead can prove
-the repo through current command verifier and UI smoke evidence. For an
-empty repo scaffold, `codex_direct` needs a configured model provider
-because the worker must actually create the app.
+For the existing `tiny-todo` fixture, `codex_cli` is enough for the fast Level 1
+readiness wrapper because Runstead can prove the repo through command verifier
+and UI smoke evidence. Use `--worker codex_direct --governance governed` when
+the fixture is meant to exercise the Level 2 native proxy boundary.
 
 ## Empty Repo Dogfood
 

@@ -80,6 +80,7 @@ without making ops the first product surface.
 The short founder path is the readiness orchestrator:
 
 ```sh
+runstead startup ready --cwd /path/to/mvp --stage launch --target local --worker codex_cli --governance readiness
 runstead startup ready --cwd /path/to/mvp --stage launch --target local --worker codex_direct --governance governed
 runstead startup ready --cwd /path/to/mvp --stage launch --target production --plan
 runstead startup ready --cwd /path/to/mvp --resume <run-id>
@@ -87,11 +88,12 @@ runstead startup ready --cwd /path/to/mvp --force-build           # override gre
 runstead startup ready --cwd /path/to/mvp --app-template static-todo --app-type local-first-web   # empty repo
 ```
 
-`codex_direct` is the recommended worker when each model tool call must
-go through Runstead-native policy and audit. `codex_cli` and `claude_code`
-are the Level 1 wrapped-worker paths. `--governance auto` (default) keeps
-local and staging readiness on `codex_cli` but selects `codex_direct` for
-production targets.
+`codex_cli` is the fast local path when post-run verifier and UI evidence are
+enough. `codex_direct` is the strict path when each model tool call must go
+through Runstead-native policy and audit. `claude_code` is the analogous Level
+1 wrapped-worker path for teams standardized on Claude Code. `--governance
+auto` (default) keeps local and staging readiness on `codex_cli` but selects
+`codex_direct` for production targets.
 
 The artifact-first command surface remains available for precise evidence
 work before rerunning `startup ready`:

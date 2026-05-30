@@ -62,7 +62,41 @@ assurance and non-goal statement.
 
 ## Quick Start: AI-Coded MVP
 
-Run the end-to-end readiness path in an empty or existing MVP repository:
+For trusted local MVP work, start with the fast readiness wrapper around Codex
+CLI:
+
+```bash
+runstead startup ready \
+  --cwd /path/to/mvp \
+  --stage launch \
+  --target local \
+  --worker codex_cli \
+  --governance readiness
+```
+
+This initializes Runstead if needed, generates context and measurement
+artifacts, runs the bounded MVP build/repair loop or **skips the worker when the
+current app already has fresh verifier evidence** (the "green path"), discovers
+and runs verifier commands, executes UI smoke when a dev server is available,
+auto-repairs product-gap UI smoke failures within a bounded retry budget, writes
+launch and complete-check reports, and returns a target-aware verdict such as
+`local_launch_ready` or explicit blockers.
+
+For an empty local repo, add the scaffold profile:
+
+```bash
+runstead startup ready \
+  --cwd /path/to/empty-mvp \
+  --stage launch \
+  --target local \
+  --worker codex_cli \
+  --governance readiness \
+  --app-template static-todo \
+  --app-type local-first-web
+```
+
+Use the strict governed path when every exposed model tool call must pass
+through Runstead policy and audit:
 
 ```bash
 runstead startup ready \
@@ -75,20 +109,12 @@ runstead startup ready \
   --app-type local-first-web
 ```
 
-This initializes Runstead if needed, generates context and measurement
-artifacts, runs the bounded MVP build/repair loop or **skips the worker when the
-current app already has fresh verifier evidence** (the "green path"), discovers
-and runs verifier commands, executes UI smoke when a dev server is available,
-auto-repairs product-gap UI smoke failures within a bounded retry budget, writes
-launch and complete-check reports, and returns a target-aware verdict such as
-`local_launch_ready` or explicit blockers.
-
 `--app-template static-todo` is the built-in empty-repo scaffold profile for a
 local-first todo MVP; omit it for an existing app. The profile declares
 app-owned files (`index.html`, `styles.css`, `app.js`, `server.js`,
-`scripts/*.js`) so `codex_direct` can classify safe scaffold patches and reuse
-one approval grant across many writes — while dependency, secret, `.git`, and
-`.runstead/**` paths stay outside that grant.
+`scripts/*.js`). With `codex_direct`, Runstead can classify safe scaffold
+patches and reuse one approval grant across many writes — while dependency,
+secret, `.git`, and `.runstead/**` paths stay outside that grant.
 
 Add `--interactive` to supplement context and measurement evidence before the
 run; add `--guided` to print and persist next-step commands for every blocker.
@@ -148,7 +174,7 @@ For a repo-local example, run the todo golden path fixture:
 
 ```bash
 cp -R packages/domain-packs/packs/ai-native-startup/fixtures/tiny-todo /tmp/todo
-runstead startup ready --cwd /tmp/todo --stage launch --target local --worker codex_direct
+runstead startup ready --cwd /tmp/todo --stage launch --target local --worker codex_cli --governance readiness
 ```
 
 See [docs/ai-coded-mvp-readiness.md](docs/ai-coded-mvp-readiness.md) for the

@@ -4,9 +4,22 @@ Runstead's startup path is centered on one orchestrated readiness run. The goal
 is not to make an agent "finish"; it is to leave behind evidence, measurement,
 verifier output, UI smoke, reports, and a target-aware launch verdict.
 
-## Golden Command
+## Golden Commands
 
-The default founder-facing path:
+The fastest local founder-facing path uses Codex CLI as a Level 1 readiness
+wrapper:
+
+```bash
+runstead startup ready \
+  --cwd /path/to/mvp \
+  --stage launch \
+  --target local \
+  --worker codex_cli \
+  --governance readiness
+```
+
+Use the strict governed path when the run needs every exposed model tool call to
+go through Runstead policy and audit:
 
 ```bash
 runstead startup ready \
@@ -17,15 +30,15 @@ runstead startup ready \
   --governance governed
 ```
 
-For an empty repo, add the built-in scaffold profile:
+For an empty repo, add the built-in scaffold profile to either path:
 
 ```bash
 runstead startup ready \
   --cwd /path/to/empty-repo \
   --stage launch \
   --target local \
-  --worker codex_direct \
-  --governance governed \
+  --worker codex_cli \
+  --governance readiness \
   --app-template static-todo \
   --app-type local-first-web
 ```
