@@ -231,9 +231,10 @@ runstead run email-followup draft-pending-followups
 workflow tasks, executes them in workflow order, and reports whether the pack's
 evidence contract is complete. `--plan` previews capability policy, evidence
 outputs, completion criteria, connector readiness, workspace extension
-readiness, and suggested commands without executing. `--max-tasks <count>` is
-available for bounded approval-heavy runs. `runstead run --once` remains
-available for the existing queued-task executor.
+readiness, skill readiness, runtime environments, entrypoints, and suggested
+commands without executing. `--max-tasks <count>` is available for bounded
+approval-heavy runs. `runstead run --once` remains available for the existing
+queued-task executor.
 
 ## Connectors
 

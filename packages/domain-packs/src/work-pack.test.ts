@@ -52,6 +52,49 @@ describe("work packs", () => {
     );
     expect(workPack.resourceTypes).toContain("digest");
     expect(workPack.supportedWorkers).toContain("codex_cli");
+    expect(workPack.runtimeEnvironments).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "local",
+          backend: "sqlite",
+          capabilities: expect.arrayContaining(["approvals", "evidence_writes"])
+        }),
+        expect.objectContaining({
+          id: "team-control-plane",
+          backend: "postgres",
+          capabilities: expect.arrayContaining([
+            "scheduled_checks",
+            "webhook_intake",
+            "runner_heartbeat"
+          ])
+        })
+      ])
+    );
+    expect(workPack.entrypoints).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "cli-run",
+          status: "implemented",
+          environment: "local"
+        }),
+        expect.objectContaining({
+          id: "scheduled-check",
+          status: "modeled",
+          environment: "team-control-plane",
+          workflows: expect.arrayContaining(["weekly-research-digest"])
+        }),
+        expect.objectContaining({
+          id: "operator-dashboard",
+          kind: "dashboard",
+          environment: "team-control-plane"
+        }),
+        expect.objectContaining({
+          id: "webhook-gateway",
+          kind: "gateway",
+          accepts: expect.arrayContaining(["webhook_intake", "evidence_writes"])
+        })
+      ])
+    );
   });
 
   it("keeps extensions and skills optional for current domain-only packs", () => {
@@ -84,6 +127,19 @@ describe("work packs", () => {
         kind: "task_type",
         source: "domain.taskTypes"
       }
+    ]);
+    expect(workPack.runtimeEnvironments.map((environment) => environment.id)).toEqual([
+      "local",
+      "ci",
+      "team-control-plane"
+    ]);
+    expect(workPack.entrypoints.map((entrypoint) => entrypoint.id)).toEqual([
+      "cli-run",
+      "ci-dispatch",
+      "operator-api",
+      "operator-dashboard",
+      "scheduled-check",
+      "webhook-gateway"
     ]);
   });
 });

@@ -60,8 +60,8 @@ Domain content and runtime host:
 
 - `@runstead/domain-packs`: built-in `repo-maintenance`, `ai-native-startup`,
   `research-monitor`, and `email-followup` packs, plus Work Pack projection,
-  evidence contract evaluator schema, fixtures, evals, and authoring template
-  support
+  runtime entrypoint/environment contracts, evidence contract evaluator schema,
+  fixtures, evals, and authoring template support
 - `@runstead/cli`: local command surface; hosts the startup-ready
   orchestrator, the codex-direct worker, wrapped-worker integration, CI repair
   orchestrator, dashboard server, daemon, and webhook intake

@@ -2,6 +2,12 @@ import { z } from "zod";
 
 import type { DomainPack } from "./domain-pack.js";
 import type { DomainPackRegistryEntry, DomainPackRegistrySource } from "./registry.js";
+import {
+  defaultWorkPackEntrypoints,
+  defaultWorkPackRuntimeEnvironments,
+  WorkPackEntrypointSchema,
+  WorkPackRuntimeEnvironmentSchema
+} from "./work-pack-runtime.js";
 
 export const WorkPackComponentKindSchema = z.enum([
   "domain_pack",
@@ -35,6 +41,8 @@ export const WorkPackSchema = z.object({
   extensions: z.array(WorkPackComponentSchema),
   skills: z.array(WorkPackComponentSchema),
   workflows: z.array(WorkPackWorkflowSchema),
+  runtimeEnvironments: z.array(WorkPackRuntimeEnvironmentSchema),
+  entrypoints: z.array(WorkPackEntrypointSchema),
   resourceTypes: z.array(z.string().min(1)),
   supportedWorkers: z.array(z.string().min(1))
 });
@@ -55,6 +63,19 @@ export function domainPackToWorkPack(
   domain: DomainPack,
   options: DomainPackWorkPackOptions = {}
 ): WorkPack {
+  const workflows = [
+    ...domain.goalTemplates.map((id) => ({
+      id,
+      kind: "goal_template" as const,
+      source: "domain.goalTemplates"
+    })),
+    ...domain.taskTypes.map((id) => ({
+      id,
+      kind: "task_type" as const,
+      source: "domain.taskTypes"
+    }))
+  ];
+
   return WorkPackSchema.parse({
     schemaVersion: 1,
     id: domain.id,
@@ -69,18 +90,12 @@ export function domainPackToWorkPack(
     },
     extensions: options.extensions ?? [],
     skills: options.skills ?? [],
-    workflows: [
-      ...domain.goalTemplates.map((id) => ({
-        id,
-        kind: "goal_template" as const,
-        source: "domain.goalTemplates"
-      })),
-      ...domain.taskTypes.map((id) => ({
-        id,
-        kind: "task_type" as const,
-        source: "domain.taskTypes"
-      }))
-    ],
+    workflows,
+    runtimeEnvironments: defaultWorkPackRuntimeEnvironments(domain.supportedWorkers),
+    entrypoints: defaultWorkPackEntrypoints({
+      pack: domain.id,
+      workflows
+    }),
     resourceTypes: domain.scope?.resourceTypes ?? [],
     supportedWorkers: domain.supportedWorkers
   });

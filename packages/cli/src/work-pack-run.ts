@@ -13,6 +13,8 @@ import {
   resolveDomainPackRef,
   type DomainPackRegistryEntry,
   type WorkPack,
+  type WorkPackEntrypoint,
+  type WorkPackRuntimeEnvironment,
   type WorkPackWorkflow
 } from "@runstead/domain-packs";
 import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sqlite";
@@ -343,6 +345,8 @@ export function formatWorkPackWorkflowRunPlan(plan: WorkPackWorkflowRunPlan): st
     `Connectors: ${formatConnectorReadiness(plan.connectorReadiness)}`,
     `Extensions: ${formatExtensionReadiness(plan.extensionReadiness)}`,
     `Skills: ${formatSkillReadiness(plan.skillReadiness)}`,
+    `Runtime environments: ${formatRuntimeEnvironments(plan.workPack.runtimeEnvironments)}`,
+    `Entrypoints: ${formatEntrypoints(plan.workPack.entrypoints)}`,
     `Suggested commands: ${formatList(plan.suggestedCommands)}`
   ].join("\n");
 }
@@ -367,6 +371,8 @@ export function formatExecutedWorkPackWorkflowRun(
     `Connectors: ${formatConnectorReadiness(result.queued.plan.connectorReadiness)}`,
     `Extensions: ${formatExtensionReadiness(result.queued.plan.extensionReadiness)}`,
     `Skills: ${formatSkillReadiness(result.queued.plan.skillReadiness)}`,
+    `Runtime environments: ${formatRuntimeEnvironments(result.queued.plan.workPack.runtimeEnvironments)}`,
+    `Entrypoints: ${formatEntrypoints(result.queued.plan.workPack.entrypoints)}`,
     "Executed tasks:"
   ];
 
@@ -600,6 +606,28 @@ function formatSkillReadiness(report: WorkPackSkillReadinessReport): string {
   return `${report.readiness.length} (${report.readiness
     .map((skill) => `${skill.skill}:${skill.status}`)
     .join(", ")})${issueSuffix}`;
+}
+
+function formatRuntimeEnvironments(environments: WorkPackRuntimeEnvironment[]): string {
+  if (environments.length === 0) {
+    return "0";
+  }
+
+  return `${environments.length} (${environments
+    .map((environment) => `${environment.id}:${environment.backend}`)
+    .join(", ")})`;
+}
+
+function formatEntrypoints(entrypoints: WorkPackEntrypoint[]): string {
+  if (entrypoints.length === 0) {
+    return "0";
+  }
+
+  return `${entrypoints.length} (${entrypoints
+    .map(
+      (entrypoint) => `${entrypoint.id}:${entrypoint.status}/${entrypoint.environment}`
+    )
+    .join(", ")})`;
 }
 
 function workPackWorkflowExecutionStatus(input: {

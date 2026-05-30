@@ -47,6 +47,11 @@ describe("work pack run surface", () => {
     expect(report).toContain("Completion criteria: 4");
     expect(report).toContain("Connectors:");
     expect(report).toContain("Extensions:");
+    expect(report).toContain("Runtime environments: 3");
+    expect(report).toContain("Entrypoints: 6");
+    expect(report).toContain("cli-run:implemented/local");
+    expect(report).toContain("operator-dashboard:modeled/team-control-plane");
+    expect(report).toContain("webhook-gateway:modeled/team-control-plane");
     expect(report).toContain("runstead startup ready --cwd /tmp/runstead-mvp");
   });
 

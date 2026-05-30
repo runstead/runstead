@@ -31,6 +31,9 @@ Every Work Pack has:
 - zero or more `extension` components
 - zero or more `skill` components
 - workflows derived from the domain pack's `goal_templates` and `task_types`
+- runtime environments for local, CI, and team-control-plane execution
+- entrypoints for CLI runs, CI dispatch, operator API/dashboard usage,
+  scheduled checks, and webhook gateways
 - resource types and supported workers inherited from the domain pack
 
 The current built-in packs are domain-backed Work Packs. For example,
@@ -86,8 +89,8 @@ inspection evidence, governed local agents, manual-evidence blocks, or approval
 pauses according to their declared contract.
 
 Use `--plan` to preview the capability policy, evidence outputs, completion
-criteria, connector readiness, workspace extension readiness, and suggested
-commands without queuing or executing:
+criteria, connector readiness, workspace extension readiness, runtime
+environments, entrypoints, and suggested commands without queuing or executing:
 
 ```bash
 runstead run ai-native-startup build-mvp --plan
@@ -108,6 +111,11 @@ or declared by the Work Pack but absent from the workspace (`missing`).
 Plans also inspect activated skills for the selected domain and report whether
 their readiness metadata is satisfied. This keeps worker guidance discoverable
 without treating skills as evidence collectors or provider adapters.
+
+Work Pack plans also expose the multi-entry runtime surface. `cli-run` is the
+implemented local entrypoint today. CI dispatch, operator API, scheduled checks,
+and webhook gateway entries are modeled contracts that let future hosts attach
+to the same business workflow without redefining the domain pack.
 
 Connector readiness is reported in the same plan surface:
 

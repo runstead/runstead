@@ -15,3 +15,4 @@ export * from "./template.js";
 export * from "./task-type.js";
 export * from "./validator.js";
 export * from "./work-pack.js";
+export * from "./work-pack-runtime.js";
