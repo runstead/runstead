@@ -1,4 +1,4 @@
-import { access, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -41,6 +41,7 @@ describe("work pack run surface", () => {
     expect(report).toContain("Capability approvals: 4");
     expect(report).toContain("Completion criteria: 4");
     expect(report).toContain("Connectors:");
+    expect(report).toContain("Extensions:");
     expect(report).toContain("runstead startup ready --cwd /tmp/runstead-mvp");
   });
 
@@ -69,6 +70,129 @@ describe("work pack run surface", () => {
     );
     expect(report).toContain("web:catalog_only");
     expect(report).toContain("docs:ready");
+  });
+
+  it("reports workspace extension readiness for work pack runs", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-work-pack-ext-"));
+
+    try {
+      await initRunstead({ cwd: workspace });
+      await writeExtensionManifest(workspace, "growth-ready.json", {
+        schemaVersion: 1,
+        id: "growth-ready",
+        version: "0.1.0",
+        name: "Growth ready",
+        description: "Executable growth readiness collector.",
+        domains: ["ai-native-startup"],
+        collectors: [
+          {
+            id: "activation",
+            title: "Activation collector",
+            description: "Collect activation evidence.",
+            command: "node .runstead/extensions/growth-ready.js",
+            producesEvidenceTypes: ["startup_metric_snapshot"],
+            requiredSecrets: ["POSTHOG_API_KEY"],
+            safeForWrappedWorkers: true,
+            qualityTier: "machine_verified"
+          }
+        ]
+      });
+      await writeExtensionManifest(workspace, "growth-contract.json", {
+        schemaVersion: 1,
+        id: "growth-contract",
+        version: "0.1.0",
+        name: "Growth contract",
+        description: "Adapter-only growth readiness contract.",
+        domains: ["ai-native-startup"],
+        collectors: [
+          {
+            id: "activation-adapter",
+            title: "Activation adapter",
+            description: "Collect activation evidence through a future adapter.",
+            adapterId: "posthog",
+            producesEvidenceTypes: ["startup_metric_snapshot"],
+            safeForWrappedWorkers: true,
+            qualityTier: "machine_verified"
+          }
+        ]
+      });
+
+      const result = await resolveWorkPackWorkflowRun({
+        cwd: workspace,
+        pack: "ai-native-startup",
+        workflow: "build-mvp",
+        extensionEnv: {
+          POSTHOG_API_KEY: "posthog-token"
+        }
+      });
+      const report = formatWorkPackWorkflowRunPlan(result);
+
+      expect(result.extensionReadiness.readiness).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            extension: "growth-ready",
+            status: "ready"
+          }),
+          expect.objectContaining({
+            extension: "growth-contract",
+            status: "contract_only"
+          })
+        ])
+      );
+      expect(report).toContain("growth-ready:ready");
+      expect(report).toContain("growth-contract:contract_only");
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("flags extension manifests with missing credentials", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-work-pack-ext-env-"));
+
+    try {
+      await initRunstead({ cwd: workspace });
+      await writeExtensionManifest(workspace, "growth-ready.json", {
+        schemaVersion: 1,
+        id: "growth-ready",
+        version: "0.1.0",
+        name: "Growth ready",
+        description: "Executable growth readiness collector.",
+        domains: ["ai-native-startup"],
+        collectors: [
+          {
+            id: "activation",
+            title: "Activation collector",
+            description: "Collect activation evidence.",
+            command: "node .runstead/extensions/growth-ready.js",
+            producesEvidenceTypes: ["startup_metric_snapshot"],
+            requiredSecrets: ["POSTHOG_API_KEY"],
+            safeForWrappedWorkers: true,
+            qualityTier: "machine_verified"
+          }
+        ]
+      });
+
+      const result = await resolveWorkPackWorkflowRun({
+        cwd: workspace,
+        pack: "ai-native-startup",
+        workflow: "build-mvp",
+        extensionEnv: {}
+      });
+      const report = formatWorkPackWorkflowRunPlan(result);
+
+      expect(result.extensionReadiness.readiness).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            extension: "growth-ready",
+            status: "missing_secrets",
+            missingSecrets: ["POSTHOG_API_KEY"]
+          })
+        ])
+      );
+      expect(report).toContain("growth-ready:missing_secrets");
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
   });
 
   it("rejects workflows that are not declared by the pack", async () => {
@@ -297,3 +421,14 @@ describe("work pack run surface", () => {
     }
   });
 });
+
+async function writeExtensionManifest(
+  workspace: string,
+  name: string,
+  manifest: unknown
+): Promise<void> {
+  const root = join(workspace, ".runstead", "extensions");
+
+  await mkdir(root, { recursive: true });
+  await writeFile(join(root, name), `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+}

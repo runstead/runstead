@@ -33,6 +33,10 @@ import {
   evaluateWorkPackEvidenceContract,
   type WorkPackEvidenceContractVerdict
 } from "./work-pack-evidence-contract.js";
+import {
+  evaluateWorkPackExtensionReadiness,
+  type WorkPackExtensionReadinessReport
+} from "./work-pack-extension-readiness.js";
 
 export interface ResolveWorkPackWorkflowRunOptions {
   pack: string;
@@ -41,6 +45,7 @@ export interface ResolveWorkPackWorkflowRunOptions {
   roots?: string[];
   includeBuiltIns?: boolean;
   connectorEnv?: Record<string, string | undefined>;
+  extensionEnv?: Record<string, string | undefined>;
 }
 
 export interface WorkPackWorkflowRunPlan {
@@ -62,6 +67,7 @@ export interface WorkPackWorkflowRunPlan {
     }[];
   };
   connectorReadiness: WorkPackConnectorReadiness[];
+  extensionReadiness: WorkPackExtensionReadinessReport;
   suggestedCommands: string[];
 }
 
@@ -141,6 +147,13 @@ export async function resolveWorkPackWorkflowRun(
       )
   );
 
+  const extensionReadiness = await evaluateWorkPackExtensionReadiness({
+    cwd,
+    domain: entry.id,
+    components: workPack.extensions,
+    ...(options.extensionEnv === undefined ? {} : { env: options.extensionEnv })
+  });
+
   return {
     entry,
     workPack,
@@ -160,6 +173,7 @@ export async function resolveWorkPackWorkflowRun(
       evidenceRequirements: evidenceContractRequirements(evidenceContract),
       ...(options.connectorEnv === undefined ? {} : { env: options.connectorEnv })
     }),
+    extensionReadiness,
     suggestedCommands: suggestedCommandsForWorkflow({
       pack: entry.id,
       workflow: options.workflow,
@@ -314,6 +328,7 @@ export function formatWorkPackWorkflowRunPlan(
     `Evidence outputs: ${formatList(plan.evidenceContract?.outputs ?? [])}`,
     `Completion criteria: ${formatList(plan.evidenceContract?.completionCriteria ?? [])}`,
     `Connectors: ${formatConnectorReadiness(plan.connectorReadiness)}`,
+    `Extensions: ${formatExtensionReadiness(plan.extensionReadiness)}`,
     `Suggested commands: ${formatList(plan.suggestedCommands)}`
   ].join("\n");
 }
@@ -336,6 +351,7 @@ export function formatExecutedWorkPackWorkflowRun(
     `Satisfied outputs: ${satisfiedCount(result.evidenceVerdict.outputs)}/${result.evidenceVerdict.outputs.length}`,
     `Satisfied criteria: ${satisfiedCount(result.evidenceVerdict.completionCriteria)}/${result.evidenceVerdict.completionCriteria.length}`,
     `Connectors: ${formatConnectorReadiness(result.queued.plan.connectorReadiness)}`,
+    `Extensions: ${formatExtensionReadiness(result.queued.plan.extensionReadiness)}`,
     "Executed tasks:"
   ];
 
@@ -543,6 +559,21 @@ function formatConnectorReadiness(readiness: WorkPackConnectorReadiness[]): stri
   return `${readiness.length} (${readiness
     .map((connector) => `${connector.connector}:${connector.status}`)
     .join(", ")})`;
+}
+
+function formatExtensionReadiness(
+  report: WorkPackExtensionReadinessReport
+): string {
+  const issueSuffix =
+    report.issues.length === 0 ? "" : `; issues=${report.issues.length}`;
+
+  if (report.readiness.length === 0) {
+    return `0${issueSuffix}`;
+  }
+
+  return `${report.readiness.length} (${report.readiness
+    .map((extension) => `${extension.extension}:${extension.status}`)
+    .join(", ")})${issueSuffix}`;
 }
 
 function workPackWorkflowExecutionStatus(input: {

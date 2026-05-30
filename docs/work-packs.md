@@ -78,7 +78,8 @@ inspection evidence, governed local agents, manual-evidence blocks, or approval
 pauses according to their declared contract.
 
 Use `--plan` to preview the capability policy, evidence outputs, completion
-criteria, and suggested commands without queuing or executing:
+criteria, connector readiness, workspace extension readiness, and suggested
+commands without queuing or executing:
 
 ```bash
 runstead run ai-native-startup build-mvp --plan
@@ -90,3 +91,8 @@ before a worker starts.
 
 The older `runstead run --once` queue executor remains available for existing
 local tasks and daemon-driven queues.
+
+Work Pack plans load `.runstead/extensions/` manifests for the selected domain
+and report whether each extension is executable (`ready`), missing declared
+secrets (`missing_secrets`), only a non-executable contract (`contract_only`),
+or declared by the Work Pack but absent from the workspace (`missing`).
