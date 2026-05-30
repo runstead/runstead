@@ -249,6 +249,8 @@ describe("cli entrypoint", () => {
         "--cwd",
         "--root",
         "--no-built-ins",
+        "--plan",
+        "--max-tasks",
         "--worker",
         "--provider",
         "--model",

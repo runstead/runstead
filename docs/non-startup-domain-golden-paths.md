@@ -12,6 +12,7 @@ Use `research-monitor` for recurring cited research digests:
 runstead domain show research-monitor
 runstead domain validate packages/domain-packs/packs/research-monitor
 runstead domain maturity packages/domain-packs/packs/research-monitor
+runstead run research-monitor weekly-research-digest --plan
 ```
 
 The golden path is:
@@ -40,6 +41,7 @@ Use `email-followup` for draft-only inbox follow-ups:
 runstead domain show email-followup
 runstead domain validate packages/domain-packs/packs/email-followup
 runstead domain maturity packages/domain-packs/packs/email-followup
+runstead run email-followup draft-pending-followups --plan
 ```
 
 The golden path is:
@@ -68,6 +70,7 @@ Run the shared validation before changing pack contracts:
 ```sh
 pnpm --filter @runstead/domain-packs test
 pnpm --filter @runstead/cli exec vitest run src/domain-pack-command.test.ts
+pnpm --filter @runstead/cli exec vitest run src/work-pack-run.test.ts
 ```
 
 These tests make the non-startup proof executable instead of relying only on

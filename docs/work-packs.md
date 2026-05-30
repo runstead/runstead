@@ -69,7 +69,24 @@ runstead run research-monitor weekly-research-digest
 runstead run email-followup draft-pending-followups
 ```
 
-This surface resolves the pack, validates the workflow id, and prints the
-capability policy, evidence outputs, completion criteria, and current suggested
-execution command. The older `runstead run --once` queue executor is still
-available for existing local tasks while generic Work Pack execution fills in.
+This surface resolves the pack, installs it into `.runstead/domains` when
+needed, queues the workflow's generated tasks, executes those tasks in workflow
+order, and reports both execution status and evidence-contract status. The
+workflow executor uses the pack's task-type routing instead of hard-coded task
+names, so custom domain task types can run through command verifiers, repository
+inspection evidence, governed local agents, manual-evidence blocks, or approval
+pauses according to their declared contract.
+
+Use `--plan` to preview the capability policy, evidence outputs, completion
+criteria, and suggested commands without queuing or executing:
+
+```bash
+runstead run ai-native-startup build-mvp --plan
+```
+
+Use `--max-tasks <count>` to stop after a bounded number of workflow tasks. This
+is useful for approval-heavy packs where the first task may intentionally pause
+before a worker starts.
+
+The older `runstead run --once` queue executor remains available for existing
+local tasks and daemon-driven queues.

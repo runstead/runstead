@@ -73,9 +73,12 @@ The generated pack is intentionally conservative. It creates a single goal
 template, one manual-review task type, and a default policy that allows
 local evidence collection while requiring approval before external writes.
 
-`manual_review` has a built-in runtime route. `runstead run --once` marks
-the task `blocked` with `manual_review_required` instead of treating the
-starter task as an unknown custom task.
+`manual_review` has a built-in runtime route. `runstead run <pack> <workflow>`
+queues generated domain tasks and executes known generic routes from the task
+contract; manual-review tasks are marked `blocked` with
+`manual_review_required` instead of being treated as unknown custom tasks. Use
+`runstead run --once` when you explicitly want the legacy next-queued-task
+executor.
 
 ## Capability Policy
 
@@ -127,9 +130,11 @@ evidence_contracts:
 
 The validator rejects evidence contracts that reference unknown workflows. A
 workflow can be a `goal_templates` id or a `task_types` id, but built-in packs
-use the goal-template ids as the user-facing scenarios. Runtime commands can
-surface these contracts before execution so an operator can see the expected
-proof and completion semantics up front.
+use the goal-template ids as the user-facing scenarios. `runstead run --plan`
+surfaces these contracts before execution; `runstead run <pack> <workflow>`
+evaluates them after execution and keeps the workflow verdict incomplete when
+declared business evidence is missing, even if the underlying task execution
+finished.
 
 Installing, uninstalling, or upgrading a pack mutates the local
 `.runstead/domains` registry and requires the actor to have `domain.manage`.

@@ -201,7 +201,11 @@ runstead run research-monitor weekly-research-digest
 runstead run email-followup draft-pending-followups
 ```
 
-`runstead run --once` remains available for the existing queued-task executor.
+`runstead run <pack> <workflow>` installs the pack when needed, queues the
+workflow tasks, executes them in workflow order, and reports whether the pack's
+evidence contract is complete. Use `--plan` to preview without executing, and
+`--max-tasks <count>` for bounded approval-heavy runs. `runstead run --once`
+remains available for the existing queued-task executor.
 
 ## Connectors
 
