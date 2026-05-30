@@ -56,3 +56,20 @@ any domain pack into a Work Pack:
 
 `runstead domain show <pack>` now reports Work Pack workflows and components so
 operators can inspect the unified shape before running work.
+
+## Run Surface
+
+Use `runstead run <pack> <workflow>` as the canonical entry point for Work Pack
+execution:
+
+```bash
+runstead run ai-native-startup build-mvp
+runstead run repo-maintenance keep-ci-green
+runstead run research-monitor weekly-research-digest
+runstead run email-followup draft-pending-followups
+```
+
+This surface resolves the pack, validates the workflow id, and prints the
+capability policy, evidence outputs, completion criteria, and current suggested
+execution command. The older `runstead run --once` queue executor is still
+available for existing local tasks while generic Work Pack execution fills in.

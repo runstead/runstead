@@ -193,6 +193,16 @@ Current built-in domain packs are also Work Packs. Use `runstead domain show
 <pack>` to inspect the Work Pack workflows and components exposed by a pack.
 See [docs/work-packs.md](docs/work-packs.md) for the model.
 
+The canonical Work Pack run surface is:
+
+```bash
+runstead run ai-native-startup build-mvp
+runstead run research-monitor weekly-research-digest
+runstead run email-followup draft-pending-followups
+```
+
+`runstead run --once` remains available for the existing queued-task executor.
+
 ## Connectors
 
 Runstead has a unified connector catalog for provider and workspace data access:

@@ -247,6 +247,8 @@ describe("cli entrypoint", () => {
       expect.arrayContaining([
         "--once",
         "--cwd",
+        "--root",
+        "--no-built-ins",
         "--worker",
         "--provider",
         "--model",
