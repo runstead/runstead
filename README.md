@@ -36,7 +36,7 @@ Runstead turns agent work into reviewable execution records:
 
 Runstead is not a replacement for Codex CLI, Claude Code, CI, deployment
 platforms, or analytics. It is the control plane that makes their output
-bounded, evidenced, auditable, resumable, and team-shareable.
+bounded, evidenced, auditable, and resumable.
 
 ## Worker Modes
 
@@ -354,9 +354,12 @@ states, withholds target readiness tiers unless the collected status is
 ## Team Mode (Experimental)
 
 The default product path is local workstations and CI jobs with the bundled
-`@runstead/state-sqlite` backend. For shared team deployments,
-`@runstead/state-postgres` implements the same `RuntimeControlPlaneBackend`
-contract over Postgres:
+`@runstead/state-sqlite` backend. New MVP readiness users can skip this
+section. Team mode is an experimental deployment track for operators who need a
+shared backend after the local/CI flow is already working.
+
+For shared team deployments, `@runstead/state-postgres` implements the same
+`RuntimeControlPlaneBackend` contract over Postgres:
 
 - atomic event append with `expectedRevision` optimistic concurrency
 - idempotency-keyed appends
@@ -375,6 +378,8 @@ satisfy identical event/lock/artifact semantics.
 runner identity, IdP/RBAC, central secret handling, and shared artifact
 storage on top of the adapter. See
 [docs/security-model.md](docs/security-model.md) for the boundary.
+The Postgres adapter is not, by itself, a complete team product or a
+multi-tenant security boundary.
 
 `runstead doctor` now reports the selected runtime backend. SQLite is the
 default. Team mode is explicit. Start by generating a checked env template:

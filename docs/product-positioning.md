@@ -11,7 +11,7 @@ The founder-facing version is:
 The product should not be positioned as a founder coach, a project
 management tool, a Claude or Codex wrapper, or a generic agent framework.
 Its durable value is the execution layer that makes AI work bounded,
-evidenced, verifiable, auditable, resumable, and team-shareable.
+evidenced, verifiable, auditable, and resumable.
 
 ## Wedge
 
@@ -37,7 +37,8 @@ Runstead owns:
 - readiness reports, stage gates, and a unified release-decision engine
 - third-party extension contracts via `@runstead/sdk`
 - a local dashboard with a protected, opt-in operator console
-- a team-control-plane contract that `@runstead/state-postgres` satisfies
+- an experimental team-control-plane contract that `@runstead/state-postgres`
+  satisfies after the local/CI path is already working
 
 Worker agents own:
 
@@ -101,7 +102,7 @@ Runstead should not become:
 
 It should keep returning to governed, evidence-backed execution: goals,
 policies, verifiers, evidence, checkpoints, audits, stage gates, reports,
-resume paths, and team-shareable artifacts.
+and resume paths.
 
 ## Roadmap Shape
 
@@ -111,7 +112,8 @@ The current near-term focus:
   resilience, scaffolded approval reuse)
 - mature the extension ecosystem (more example collectors, adapter
   contracts, freshness enforcement)
-- harden the team-control-plane path (Postgres conformance, runner
-  identity, shared artifact store)
+- harden the experimental team-control-plane path after the local/CI readiness
+  loop remains clear (Postgres conformance, runner identity, shared artifact
+  store)
 - keep the documentation honest about what a chosen worker mode can and
   cannot prove

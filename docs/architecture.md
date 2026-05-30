@@ -143,11 +143,15 @@ files (`startup-ready.ts`, `codex-direct-worker.ts`) are stable re-exports.
 - `git-actions.ts`, `evidence-actions.ts`, `policy-actions.ts`,
   `result.ts`, `constants.ts`, `prompts.ts`
 
-## Storage And Team Mode
+## Storage And Experimental Team Mode
 
 The default shipped product is local workstations and CI: SQLite state, local
 artifacts, a manager lock under `.runstead`, and execution leases for
 stale-run recovery.
+
+Team mode is a separate experimental deployment track. It should not be
+presented as the default first-run experience or as a complete organization
+product without the operational controls below.
 
 `@runstead/state-sqlite` and `@runstead/state-postgres` implement
 `RuntimeControlPlaneBackend`. SQLite is the default local workstation/CI
