@@ -52,49 +52,56 @@ describe("work packs", () => {
     );
     expect(workPack.resourceTypes).toContain("digest");
     expect(workPack.supportedWorkers).toContain("codex_cli");
-    expect(workPack.runtimeEnvironments).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          id: "local",
-          backend: "sqlite",
-          capabilities: expect.arrayContaining(["approvals", "evidence_writes"])
-        }),
-        expect.objectContaining({
-          id: "team-control-plane",
-          backend: "postgres",
-          capabilities: expect.arrayContaining([
-            "scheduled_checks",
-            "webhook_intake",
-            "runner_heartbeat"
-          ])
-        })
-      ])
+    const runtimeEnvironmentById = new Map(
+      workPack.runtimeEnvironments.map((environment) => [environment.id, environment])
     );
-    expect(workPack.entrypoints).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          id: "cli-run",
-          status: "implemented",
-          environment: "local"
-        }),
-        expect.objectContaining({
-          id: "scheduled-check",
-          status: "modeled",
-          environment: "team-control-plane",
-          workflows: expect.arrayContaining(["weekly-research-digest"])
-        }),
-        expect.objectContaining({
-          id: "operator-dashboard",
-          kind: "dashboard",
-          environment: "team-control-plane"
-        }),
-        expect.objectContaining({
-          id: "webhook-gateway",
-          kind: "gateway",
-          accepts: expect.arrayContaining(["webhook_intake", "evidence_writes"])
-        })
-      ])
+    const localEnvironment = runtimeEnvironmentById.get("local");
+    expect(localEnvironment).toMatchObject({
+      id: "local",
+      backend: "sqlite"
+    });
+    expect(localEnvironment?.capabilities).toContain("approvals");
+    expect(localEnvironment?.capabilities).toContain("evidence_writes");
+
+    const teamEnvironment = runtimeEnvironmentById.get("team-control-plane");
+    expect(teamEnvironment).toMatchObject({
+      id: "team-control-plane",
+      backend: "postgres"
+    });
+    expect(teamEnvironment?.capabilities).toContain("scheduled_checks");
+    expect(teamEnvironment?.capabilities).toContain("webhook_intake");
+    expect(teamEnvironment?.capabilities).toContain("runner_heartbeat");
+
+    const entrypointById = new Map(
+      workPack.entrypoints.map((entrypoint) => [entrypoint.id, entrypoint])
     );
+    expect(entrypointById.get("cli-run")).toMatchObject({
+      id: "cli-run",
+      status: "implemented",
+      environment: "local"
+    });
+
+    const scheduledCheck = entrypointById.get("scheduled-check");
+    expect(scheduledCheck).toMatchObject({
+      id: "scheduled-check",
+      status: "modeled",
+      environment: "team-control-plane"
+    });
+    expect(scheduledCheck?.workflows).toContain("weekly-research-digest");
+
+    expect(entrypointById.get("operator-dashboard")).toMatchObject({
+      id: "operator-dashboard",
+      kind: "dashboard",
+      environment: "team-control-plane"
+    });
+
+    const webhookGateway = entrypointById.get("webhook-gateway");
+    expect(webhookGateway).toMatchObject({
+      id: "webhook-gateway",
+      kind: "gateway"
+    });
+    expect(webhookGateway?.accepts).toContain("webhook_intake");
+    expect(webhookGateway?.accepts).toContain("evidence_writes");
   });
 
   it("keeps extensions and skills optional for current domain-only packs", () => {
