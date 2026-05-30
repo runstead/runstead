@@ -71,6 +71,42 @@ evidence_contracts:
       - protected_paths_untouched
       - audit_event_recorded
 
+evidence_requirement_evaluators:
+  - requirement: repo_readiness
+    evidence_types:
+      - repo_inspection
+  - requirement: command_output
+    evidence_types:
+      - command_output
+  - requirement: verifier_report
+    evidence_types:
+      - command_output
+  - requirement: git_diff_scope
+    evidence_types:
+      - command_output
+  - requirement: ci_repair_summary
+    evidence_types:
+      - github_workflow_run
+  - requirement: verifiers_pass_or_blockers_recorded
+    evidence_types:
+      - command_output
+    task_statuses:
+      - blocked
+      - waiting_approval
+  - requirement: diff_scope_reviewed
+    evidence_types:
+      - command_output
+  - requirement: protected_paths_untouched
+    task_types:
+      - run_local_verifiers
+    task_statuses:
+      - completed
+  - requirement: audit_event_recorded
+    event_types:
+      - goal.created
+      - task.created
+      - task.completed
+
 security:
   untrusted_inputs:
     - ci_log

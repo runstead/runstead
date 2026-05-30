@@ -30,6 +30,9 @@ export interface DomainPackManifest {
   reportSections: NonNullable<DomainPack["reportSections"]>;
   capabilityPolicy?: DomainPack["capabilityPolicy"];
   evidenceContracts: NonNullable<DomainPack["evidenceContracts"]>;
+  evidenceRequirementEvaluators: NonNullable<
+    DomainPack["evidenceRequirementEvaluators"]
+  >;
   evalQuality?: DomainPack["evalQuality"];
   files: DomainPackManifestFile[];
 }
@@ -134,6 +137,19 @@ const DomainPackManifestSchema = z.object({
       })
     )
     .default([]),
+  evidenceRequirementEvaluators: z
+    .array(
+      z.object({
+        requirement: z.string().min(1),
+        description: z.string().min(1).optional(),
+        evidenceTypes: z.array(z.string().min(1)),
+        taskTypes: z.array(z.string().min(1)),
+        taskStatuses: z.array(z.string().min(1)),
+        eventTypes: z.array(z.string().min(1)),
+        match: z.enum(["any", "all"])
+      })
+    )
+    .default([]),
   evalQuality: z
     .object({
       minimumScore: z.number().min(0).max(1),
@@ -194,6 +210,7 @@ export async function buildDomainPackManifest(
       ? {}
       : { capabilityPolicy: domain.capabilityPolicy }),
     evidenceContracts: domain.evidenceContracts ?? [],
+    evidenceRequirementEvaluators: domain.evidenceRequirementEvaluators ?? [],
     ...(domain.evalQuality === undefined ? {} : { evalQuality: domain.evalQuality }),
     files: files.sort((left, right) => left.path.localeCompare(right.path))
   };
@@ -444,6 +461,7 @@ function manifestMetadata(
       ? {}
       : { capabilityPolicy: manifest.capabilityPolicy }),
     evidenceContracts: manifest.evidenceContracts,
+    evidenceRequirementEvaluators: manifest.evidenceRequirementEvaluators,
     ...(manifest.evalQuality === undefined ? {} : { evalQuality: manifest.evalQuality })
   };
 }

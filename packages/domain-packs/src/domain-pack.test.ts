@@ -76,5 +76,18 @@ describe("repo-maintenance pack", () => {
         ]
       }
     ]);
+    expect(pack.evidenceRequirementEvaluators).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          requirement: "repo_readiness",
+          evidenceTypes: ["repo_inspection"]
+        }),
+        expect.objectContaining({
+          requirement: "protected_paths_untouched",
+          taskTypes: ["run_local_verifiers"],
+          taskStatuses: ["completed"]
+        })
+      ])
+    );
   });
 });

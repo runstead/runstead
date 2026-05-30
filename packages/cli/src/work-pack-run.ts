@@ -46,6 +46,15 @@ export interface WorkPackWorkflowRunPlan {
     workflow: string;
     outputs: string[];
     completionCriteria: string[];
+    evaluators?: {
+      requirement: string;
+      description?: string;
+      evidenceTypes: string[];
+      taskTypes: string[];
+      taskStatuses: string[];
+      eventTypes: string[];
+      match: "any" | "all";
+    }[];
   };
   suggestedCommands: string[];
 }
@@ -118,18 +127,70 @@ export async function resolveWorkPackWorkflowRun(
   const evidenceContract = entry.domain.evidenceContracts?.find(
     (contract) => contract.workflow === options.workflow
   );
+  const domainEvaluators = domainEvidenceRequirementEvaluators(entry.domain);
+  const evidenceContractEvaluators = evidenceContractRequirements(evidenceContract).flatMap(
+    (requirement) =>
+      domainEvaluators.filter(
+        (evaluator) => evaluator.requirement === requirement
+      )
+  );
 
   return {
     entry,
     workPack,
     workflow,
-    ...(evidenceContract === undefined ? {} : { evidenceContract }),
+    ...(evidenceContract === undefined
+      ? {}
+      : {
+          evidenceContract: {
+            ...evidenceContract,
+            ...(evidenceContractEvaluators.length === 0
+              ? {}
+              : { evaluators: evidenceContractEvaluators })
+          }
+        }),
     suggestedCommands: suggestedCommandsForWorkflow({
       pack: entry.id,
       workflow: options.workflow,
       cwd
     })
   };
+}
+
+function domainEvidenceRequirementEvaluators(domain: DomainPackRegistryEntry["domain"]): {
+  requirement: string;
+  description?: string;
+  evidenceTypes: string[];
+  taskTypes: string[];
+  taskStatuses: string[];
+  eventTypes: string[];
+  match: "any" | "all";
+}[] {
+  const value = (
+    domain as DomainPackRegistryEntry["domain"] & {
+      evidenceRequirementEvaluators?: {
+        requirement: string;
+        description?: string;
+        evidenceTypes: string[];
+        taskTypes: string[];
+        taskStatuses: string[];
+        eventTypes: string[];
+        match: "any" | "all";
+      }[];
+    }
+  ).evidenceRequirementEvaluators;
+
+  return value ?? [];
+}
+
+function evidenceContractRequirements(
+  contract: WorkPackWorkflowRunPlan["evidenceContract"] | undefined
+): string[] {
+  if (contract === undefined) {
+    return [];
+  }
+
+  return [...contract.outputs, ...contract.completionCriteria];
 }
 
 export async function queueWorkPackWorkflowRun(

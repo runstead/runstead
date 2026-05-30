@@ -44,6 +44,15 @@ describe("createDomainPackTemplate", () => {
           completionCriteria: ["manual_review_complete", "evidence_attached"]
         }
       ]);
+      expect(validation.domain?.evidenceRequirementEvaluators).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            requirement: "manual_review_complete",
+            taskTypes: ["manual_review"],
+            taskStatuses: ["blocked", "completed"]
+          })
+        ])
+      );
       expect(validation.goalTemplates[0]?.domain).toBe("customer-ops");
       expect(validation.taskTypes[0]?.domain).toBe("customer-ops");
       expect(validation.fixtures.map((fixture) => fixture.id)).toEqual([

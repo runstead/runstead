@@ -113,6 +113,94 @@ evidence_contracts:
       - support_and_gtm_verified
       - scale_gate_passed
 
+evidence_requirement_evaluators:
+  - requirement: startup_hypothesis
+    evidence_types:
+      - startup_hypothesis
+      - startup_problem_hypothesis
+      - startup_user_hypothesis
+      - startup_solution_hypothesis
+  - requirement: customer_evidence
+    evidence_types:
+      - startup_customer_interview
+      - startup_metric
+  - requirement: disconfirming_evidence
+    evidence_types:
+      - startup_disconfirming
+  - requirement: mvp_build_gate
+    evidence_types:
+      - startup_decision
+  - requirement: problem_hypothesis_recorded
+    evidence_types:
+      - startup_problem_hypothesis
+      - startup_hypothesis
+  - requirement: customer_evidence_attached
+    evidence_types:
+      - startup_customer_interview
+      - startup_metric
+  - requirement: disconfirming_review_complete
+    evidence_types:
+      - startup_disconfirming
+  - requirement: build_gate_decision_recorded
+    evidence_types:
+      - startup_decision
+  - requirement: startup_agent_context
+    evidence_types:
+      - startup_agent_context
+  - requirement: startup_measurement_framework
+    evidence_types:
+      - startup_measurement_framework
+  - requirement: startup_repo_readiness
+    evidence_types:
+      - repo_inspection
+      - startup_repo_readiness
+  - requirement: command_output
+    evidence_types:
+      - command_output
+  - requirement: launch_readiness_report
+    evidence_types:
+      - launch_readiness_report
+  - requirement: agent_context_current
+    evidence_types:
+      - startup_agent_context
+  - requirement: measurement_framework_defined
+    evidence_types:
+      - startup_measurement_framework
+  - requirement: verifier_evidence_fresh
+    evidence_types:
+      - command_output
+  - requirement: launch_readiness_report_ready
+    evidence_types:
+      - launch_readiness_report
+  - requirement: founder_bottleneck_map
+    evidence_types:
+      - startup_founder_bottleneck
+  - requirement: workflow_automation_registry
+    evidence_types:
+      - startup_workflow_registry
+  - requirement: ops_sop
+    evidence_types:
+      - startup_ops_sop
+  - requirement: support_triage
+    evidence_types:
+      - startup_support_triage
+  - requirement: gtm_artifact_review
+    evidence_types:
+      - startup_gtm_artifact
+  - requirement: bottlenecks_mapped
+    evidence_types:
+      - startup_founder_bottleneck
+  - requirement: automations_registered
+    evidence_types:
+      - startup_workflow_registry
+  - requirement: support_and_gtm_verified
+    evidence_types:
+      - startup_support_triage
+      - startup_gtm_artifact
+  - requirement: scale_gate_passed
+    evidence_types:
+      - startup_decision
+
 security:
   untrusted_inputs:
     - customer_interview

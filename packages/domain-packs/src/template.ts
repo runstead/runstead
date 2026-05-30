@@ -184,6 +184,24 @@ evidence_contracts:
       - manual_review_complete
       - evidence_attached
 
+evidence_requirement_evaluators:
+  - requirement: manual_review
+    evidence_types:
+      - manual_review
+  - requirement: runstead.evidence
+    evidence_types:
+      - runstead.evidence
+  - requirement: manual_review_complete
+    task_types:
+      - manual_review
+    task_statuses:
+      - blocked
+      - completed
+  - requirement: evidence_attached
+    evidence_types:
+      - manual_review
+      - runstead.evidence
+
 security:
   untrusted_inputs:
     - external_content

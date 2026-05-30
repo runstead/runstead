@@ -6,6 +6,17 @@ import type { RunOnceResult } from "./run-types.js";
 export interface WorkPackEvidenceContract {
   outputs: string[];
   completionCriteria: string[];
+  evaluators?: WorkPackEvidenceRequirementEvaluator[];
+}
+
+export interface WorkPackEvidenceRequirementEvaluator {
+  requirement: string;
+  description?: string;
+  evidenceTypes: string[];
+  taskTypes: string[];
+  taskStatuses: string[];
+  eventTypes: string[];
+  match: "any" | "all";
 }
 
 export interface WorkPackEvidenceRequirementVerdict {
@@ -54,13 +65,23 @@ export function evaluateWorkPackEvidenceContract(input: {
   }
 
   const outputs = input.contract.outputs.map((id) =>
-    evaluateEvidenceRequirement({ id, evidence, kind: "output" })
+    evaluateEvidenceRequirement({
+      id,
+      evidence,
+      kind: "output",
+      ...optionalEvaluator(input.contract?.evaluators, id),
+      taskResults: input.taskResults,
+      stateDb: input.stateDb,
+      goal: input.goal,
+      tasks: input.tasks
+    })
   );
   const completionCriteria = input.contract.completionCriteria.map((id) =>
     evaluateEvidenceRequirement({
       id,
       evidence,
       kind: "completion_criterion",
+      ...optionalEvaluator(input.contract?.evaluators, id),
       taskResults: input.taskResults,
       stateDb: input.stateDb,
       goal: input.goal,
@@ -123,11 +144,19 @@ function evaluateEvidenceRequirement(input: {
   id: string;
   evidence: WorkPackEvidenceRow[];
   kind: "output" | "completion_criterion";
+  evaluator?: WorkPackEvidenceRequirementEvaluator;
   taskResults?: RunOnceResult[];
   stateDb?: string;
   goal?: Goal;
   tasks?: Task[];
 }): WorkPackEvidenceRequirementVerdict {
+  if (input.evaluator !== undefined) {
+    return evaluateDomainSpecificRequirement({
+      ...input,
+      evaluator: input.evaluator
+    });
+  }
+
   const evidenceTypes = evidenceTypesForContractKey(input.id);
   const matches = input.evidence.filter((row) => evidenceTypes.includes(row.type));
 
@@ -151,6 +180,107 @@ function evaluateEvidenceRequirement(input: {
     satisfied: false,
     evidenceIds: [],
     reason: `missing ${input.kind} evidence; expected one of ${evidenceTypes.join(", ")}`
+  };
+}
+
+function evaluateDomainSpecificRequirement(input: {
+  id: string;
+  evidence: WorkPackEvidenceRow[];
+  kind: "output" | "completion_criterion";
+  evaluator: WorkPackEvidenceRequirementEvaluator;
+  taskResults?: RunOnceResult[];
+  stateDb?: string;
+  goal?: Goal;
+  tasks?: Task[];
+}): WorkPackEvidenceRequirementVerdict {
+  const signals: RequirementSignalVerdict[] = [];
+
+  if (input.evaluator.evidenceTypes.length > 0) {
+    const evidenceMatches = input.evidence.filter((row) =>
+      input.evaluator.evidenceTypes.includes(row.type)
+    );
+
+    signals.push({
+      satisfied: evidenceMatches.length > 0,
+      evidenceIds: evidenceMatches.map((row) => row.id),
+      reason:
+        evidenceMatches.length > 0
+          ? `covered by evidence type ${evidenceMatches[0]?.type ?? "unknown"}`
+          : `missing evidence type ${input.evaluator.evidenceTypes.join(", ")}`
+    });
+  }
+
+  if (input.evaluator.taskTypes.length > 0) {
+    const taskMatches = currentWorkflowTasks({
+      tasks: input.tasks ?? [],
+      taskResults: input.taskResults ?? []
+    }).filter((task) => input.evaluator.taskTypes.includes(task.type));
+    const acceptedStatuses =
+      input.evaluator.taskStatuses.length === 0
+        ? ["completed"]
+        : input.evaluator.taskStatuses;
+    const satisfied = taskMatches.some((task) =>
+      acceptedStatuses.includes(task.status)
+    );
+
+    signals.push({
+      satisfied,
+      evidenceIds: [],
+      reason: satisfied
+        ? `covered by task status ${taskMatches
+            .filter((task) => acceptedStatuses.includes(task.status))
+            .map((task) => `${task.type}:${task.status}`)
+            .join(", ")}`
+        : `missing task status ${input.evaluator.taskTypes.join(", ")} -> ${acceptedStatuses.join(", ")}`
+    });
+  }
+
+  if (input.evaluator.eventTypes.length > 0) {
+    const eventCount =
+      input.stateDb === undefined || input.goal === undefined || input.tasks === undefined
+        ? 0
+        : countWorkflowAuditEvents({
+            stateDb: input.stateDb,
+            goal: input.goal,
+            tasks: input.tasks,
+            eventTypes: input.evaluator.eventTypes
+          });
+
+    signals.push({
+      satisfied: eventCount > 0,
+      evidenceIds: [],
+      reason:
+        eventCount > 0
+          ? `${eventCount} matching workflow event(s) recorded`
+          : `missing event type ${input.evaluator.eventTypes.join(", ")}`
+    });
+  }
+
+  if (signals.length === 0) {
+    return {
+      id: input.id,
+      satisfied: false,
+      evidenceIds: [],
+      reason: "domain-specific evaluator declared no evidence, task, or event signals"
+    };
+  }
+
+  const satisfied =
+    input.evaluator.match === "all"
+      ? signals.every((signal) => signal.satisfied)
+      : signals.some((signal) => signal.satisfied);
+  const evidenceIds = signals.flatMap((signal) => signal.evidenceIds);
+
+  return {
+    id: input.id,
+    satisfied,
+    evidenceIds,
+    reason: satisfied
+      ? signals
+          .filter((signal) => signal.satisfied)
+          .map((signal) => signal.reason)
+          .join("; ")
+      : signals.map((signal) => signal.reason).join("; ")
   };
 }
 
@@ -220,10 +350,15 @@ function countWorkflowAuditEvents(input: {
   stateDb: string;
   goal: Goal;
   tasks: Task[];
+  eventTypes?: string[];
 }): number {
   const database = openRunsteadDatabase(input.stateDb);
   const aggregateIds = [input.goal.id, ...input.tasks.map((task) => task.id)];
   const placeholders = aggregateIds.map(() => "?").join(", ");
+  const eventTypeFilter =
+    input.eventTypes === undefined || input.eventTypes.length === 0
+      ? ""
+      : ` AND type IN (${input.eventTypes.map(() => "?").join(", ")})`;
 
   try {
     const row = database
@@ -232,14 +367,52 @@ function countWorkflowAuditEvents(input: {
           SELECT COUNT(*) AS count
           FROM events
           WHERE aggregate_id IN (${placeholders})
+          ${eventTypeFilter}
         `
       )
-      .get(...aggregateIds) as { count: number };
+      .get(...aggregateIds, ...(input.eventTypes ?? [])) as { count: number };
 
     return row.count;
   } finally {
     database.close();
   }
+}
+
+function evaluatorForRequirement(
+  evaluators: WorkPackEvidenceRequirementEvaluator[] | undefined,
+  requirement: string
+): WorkPackEvidenceRequirementEvaluator | undefined {
+  return evaluators?.find((evaluator) => evaluator.requirement === requirement);
+}
+
+function optionalEvaluator(
+  evaluators: WorkPackEvidenceRequirementEvaluator[] | undefined,
+  requirement: string
+): { evaluator: WorkPackEvidenceRequirementEvaluator } | Record<string, never> {
+  const evaluator = evaluatorForRequirement(evaluators, requirement);
+
+  return evaluator === undefined ? {} : { evaluator };
+}
+
+function currentWorkflowTasks(input: {
+  tasks: Task[];
+  taskResults: RunOnceResult[];
+}): Task[] {
+  const currentById = new Map(input.tasks.map((task) => [task.id, task]));
+
+  for (const result of input.taskResults) {
+    if (result.ranTask) {
+      currentById.set(result.task.id, result.task);
+    }
+  }
+
+  return [...currentById.values()];
+}
+
+interface RequirementSignalVerdict {
+  satisfied: boolean;
+  evidenceIds: string[];
+  reason: string;
 }
 
 function evidenceTypesForContractKey(key: string): string[] {

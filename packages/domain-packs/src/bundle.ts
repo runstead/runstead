@@ -126,6 +126,19 @@ const DomainPackBundleArtifactSchema: z.ZodType<DomainPackBundleArtifact> = z.ob
         })
       )
       .default([]),
+    evidenceRequirementEvaluators: z
+      .array(
+        z.object({
+          requirement: z.string().min(1),
+          description: z.string().min(1).optional(),
+          evidenceTypes: z.array(z.string().min(1)),
+          taskTypes: z.array(z.string().min(1)),
+          taskStatuses: z.array(z.string().min(1)),
+          eventTypes: z.array(z.string().min(1)),
+          match: z.enum(["any", "all"])
+        })
+      )
+      .default([]),
     evalQuality: z
       .object({
         minimumScore: z.number().min(0).max(1),

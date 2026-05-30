@@ -84,6 +84,44 @@ evidence_contracts:
       - publish_gate_recorded
       - archive_record_created
 
+evidence_requirement_evaluators:
+  - requirement: source_inventory
+    evidence_types:
+      - source_inventory
+  - requirement: source_reliability_assessment
+    evidence_types:
+      - source_reliability_assessment
+  - requirement: citation_ledger
+    evidence_types:
+      - citation_ledger
+  - requirement: contradiction_review
+    evidence_types:
+      - contradiction_review
+  - requirement: digest_draft
+    evidence_types:
+      - digest_draft
+  - requirement: publish_approval
+    evidence_types:
+      - publish_approval
+  - requirement: archive_record
+    evidence_types:
+      - archive_record
+  - requirement: sources_fresh
+    evidence_types:
+      - source_inventory
+  - requirement: claims_cited
+    evidence_types:
+      - citation_ledger
+  - requirement: contradictions_reviewed
+    evidence_types:
+      - contradiction_review
+  - requirement: publish_gate_recorded
+    evidence_types:
+      - publish_approval
+  - requirement: archive_record_created
+    evidence_types:
+      - archive_record
+
 security:
   untrusted_inputs:
     - webpage_content

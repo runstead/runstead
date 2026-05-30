@@ -199,7 +199,7 @@ describe("work pack run surface", () => {
       expect(outputVerdict("command_output")).toBe(true);
       expect(outputVerdict("repo_readiness")).toBe(false);
       expect(criterionVerdict("verifiers_pass_or_blockers_recorded")).toBe(true);
-      expect(criterionVerdict("protected_paths_untouched")).toBe(false);
+      expect(criterionVerdict("protected_paths_untouched")).toBe(true);
       expect(report).toContain("Evidence contract: incomplete");
       expect(report).toContain("Missing outputs:");
       expect(report).toContain("repo_readiness");

@@ -119,6 +119,7 @@ export async function validateDomainPackDir(
     collectDuplicateReferences("goal_template", domain.goalTemplates, issues);
     collectDuplicateReferences("task_type", domain.taskTypes, issues);
     assertEvidenceContractsReferenceWorkflows({ domain, issues });
+    assertEvidenceRequirementEvaluators({ domain, issues });
 
     for (const templateId of domain.goalTemplates) {
       const templatePath = referencePath({
@@ -548,6 +549,61 @@ function assertEvidenceContractsReferenceWorkflows(input: {
       message: `Evidence contract references unknown workflow: ${contract.workflow}`,
       path: "domain.yaml"
     });
+  }
+}
+
+function assertEvidenceRequirementEvaluators(input: {
+  domain: DomainPack;
+  issues: DomainPackValidationIssue[];
+}): void {
+  const requirements = new Set(
+    (input.domain.evidenceContracts ?? []).flatMap((contract) => [
+      ...contract.outputs,
+      ...contract.completionCriteria
+    ])
+  );
+  const evaluators = new Map(
+    (input.domain.evidenceRequirementEvaluators ?? []).map((evaluator) => [
+      evaluator.requirement,
+      evaluator
+    ])
+  );
+
+  for (const requirement of requirements) {
+    if (evaluators.has(requirement)) {
+      continue;
+    }
+
+    input.issues.push({
+      severity: "warning",
+      code: "evidence_contract_requirement_evaluator_missing",
+      message: `Evidence contract requirement ${requirement} does not declare a domain-specific evaluator`,
+      path: "domain.yaml"
+    });
+  }
+
+  for (const evaluator of evaluators.values()) {
+    if (!requirements.has(evaluator.requirement)) {
+      input.issues.push({
+        severity: "warning",
+        code: "evidence_requirement_evaluator_unknown_requirement",
+        message: `Evidence requirement evaluator references unknown contract requirement: ${evaluator.requirement}`,
+        path: "domain.yaml"
+      });
+    }
+
+    if (
+      evaluator.evidenceTypes.length === 0 &&
+      evaluator.taskTypes.length === 0 &&
+      evaluator.eventTypes.length === 0
+    ) {
+      input.issues.push({
+        severity: "warning",
+        code: "evidence_requirement_evaluator_empty",
+        message: `Evidence requirement evaluator ${evaluator.requirement} does not declare evidence, task, or event signals`,
+        path: "domain.yaml"
+      });
+    }
   }
 }
 

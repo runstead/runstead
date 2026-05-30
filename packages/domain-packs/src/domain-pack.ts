@@ -33,6 +33,16 @@ export const DomainPackEvidenceContractSchema = z.object({
   completionCriteria: z.array(z.string().min(1)).min(1)
 });
 
+export const DomainPackEvidenceRequirementEvaluatorSchema = z.object({
+  requirement: z.string().min(1),
+  description: z.string().min(1).optional(),
+  evidenceTypes: z.array(z.string().min(1)).default([]),
+  taskTypes: z.array(z.string().min(1)).default([]),
+  taskStatuses: z.array(z.string().min(1)).default([]),
+  eventTypes: z.array(z.string().min(1)).default([]),
+  match: z.enum(["any", "all"]).default("any")
+});
+
 export const DomainPackMigrationSchema = z.object({
   fromVersion: z.string().regex(SEMVER_PATTERN),
   toVersion: z.string().regex(SEMVER_PATTERN),
@@ -83,6 +93,9 @@ export const DomainPackSchema = z.object({
   security: DomainPackSecuritySchema.optional(),
   capabilityPolicy: DomainPackCapabilityPolicySchema.optional(),
   evidenceContracts: z.array(DomainPackEvidenceContractSchema).optional(),
+  evidenceRequirementEvaluators: z
+    .array(DomainPackEvidenceRequirementEvaluatorSchema)
+    .optional(),
   migrations: z.array(DomainPackMigrationSchema).optional(),
   repoTemplates: z.array(DomainPackRepoTemplateSchema).optional(),
   gateThresholds: z.record(z.string(), DomainPackGateThresholdSchema).optional(),
@@ -131,6 +144,15 @@ const DomainPackEvidenceContractYamlSchema = z.object({
   outputs: z.array(z.string().min(1)).min(1),
   completion_criteria: z.array(z.string().min(1)).min(1)
 });
+const DomainPackEvidenceRequirementEvaluatorYamlSchema = z.object({
+  requirement: z.string().min(1),
+  description: z.string().min(1).optional(),
+  evidence_types: z.array(z.string().min(1)).default([]),
+  task_types: z.array(z.string().min(1)).default([]),
+  task_statuses: z.array(z.string().min(1)).default([]),
+  event_types: z.array(z.string().min(1)).default([]),
+  match: z.enum(["any", "all"]).default("any")
+});
 
 const DomainPackYamlSchema = z.object({
   id: z.string().regex(DOMAIN_PACK_ID_PATTERN),
@@ -161,6 +183,9 @@ const DomainPackYamlSchema = z.object({
     .optional(),
   capability_policy: DomainPackCapabilityPolicyYamlSchema.optional(),
   evidence_contracts: z.array(DomainPackEvidenceContractYamlSchema).optional(),
+  evidence_requirement_evaluators: z
+    .array(DomainPackEvidenceRequirementEvaluatorYamlSchema)
+    .optional(),
   migrations: z.array(DomainPackMigrationYamlSchema).optional(),
   repo_templates: z.array(DomainPackRepoTemplateYamlSchema).optional(),
   gate_thresholds: z.record(z.string(), DomainPackGateThresholdYamlSchema).optional(),
@@ -226,6 +251,22 @@ export function parseDomainPackYaml(input: unknown): DomainPack {
             outputs: contract.outputs,
             completionCriteria: contract.completion_criteria
           }))
+        }),
+    ...(parsed.evidence_requirement_evaluators === undefined
+      ? {}
+      : {
+          evidenceRequirementEvaluators:
+            parsed.evidence_requirement_evaluators.map((evaluator) => ({
+              requirement: evaluator.requirement,
+              ...(evaluator.description === undefined
+                ? {}
+                : { description: evaluator.description }),
+              evidenceTypes: evaluator.evidence_types,
+              taskTypes: evaluator.task_types,
+              taskStatuses: evaluator.task_statuses,
+              eventTypes: evaluator.event_types,
+              match: evaluator.match
+            }))
         }),
     ...(parsed.migrations === undefined
       ? {}

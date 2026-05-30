@@ -86,6 +86,44 @@ evidence_contracts:
       - send_not_performed
       - memory_updated
 
+evidence_requirement_evaluators:
+  - requirement: thread_inventory
+    evidence_types:
+      - thread_inventory
+  - requirement: followup_reason
+    evidence_types:
+      - followup_reason
+  - requirement: recipient_review
+    evidence_types:
+      - recipient_review
+  - requirement: draft_preview
+    evidence_types:
+      - draft_preview
+  - requirement: tone_review
+    evidence_types:
+      - tone_review
+  - requirement: send_block
+    evidence_types:
+      - send_block
+  - requirement: followup_memory
+    evidence_types:
+      - followup_memory
+  - requirement: followup_reason_recorded
+    evidence_types:
+      - followup_reason
+  - requirement: recipients_checked
+    evidence_types:
+      - recipient_review
+  - requirement: draft_preview_attached
+    evidence_types:
+      - draft_preview
+  - requirement: send_not_performed
+    evidence_types:
+      - send_block
+  - requirement: memory_updated
+    evidence_types:
+      - followup_memory
+
 security:
   untrusted_inputs:
     - email_body
