@@ -7,6 +7,7 @@ import {
   type Task
 } from "@runstead/core";
 import type { TaskType } from "@runstead/domain-packs";
+import type { LocalAgentWorkerKind } from "./local-agent.js";
 
 import {
   inspectBuildCommand,
@@ -124,7 +125,11 @@ export function buildDomainTask(options: BuildDomainTaskOptions): {
       repositoryPath: goalRepositoryPath(options.goal, cwd),
       taskType: options.taskType.id,
       description: options.taskType.description,
-      workerRouting: options.taskType.workerRouting
+      workerRouting: options.taskType.workerRouting,
+      ...domainTaskAgentInput({
+        goal: options.goal,
+        taskType: options.taskType
+      })
     },
     verifiers: [...options.taskType.verifiers.required],
     createdAt,
@@ -148,6 +153,45 @@ export function buildDomainTask(options: BuildDomainTaskOptions): {
     task,
     event
   };
+}
+
+function domainTaskAgentInput(input: {
+  goal: Goal;
+  taskType: TaskType;
+}): Partial<Task["input"]> {
+  const worker = firstAgentWorker(input.taskType.workerRouting);
+
+  if (worker === undefined) {
+    return {};
+  }
+
+  return {
+    prompt: [
+      `Run the ${input.goal.domain} domain task ${input.taskType.id}.`,
+      "",
+      `Goal: ${input.goal.title}`,
+      `Task description: ${input.taskType.description}`,
+      `Required verifiers: ${input.taskType.verifiers.required.join(", ")}`,
+      "",
+      "Work within the Runstead capability policy for this domain pack.",
+      "Record a concise completion summary and call out missing evidence explicitly."
+    ].join("\n"),
+    worker,
+    mode: "read-only",
+    learningReview: false
+  };
+}
+
+function firstAgentWorker(
+  routing: TaskType["workerRouting"]
+): LocalAgentWorkerKind | undefined {
+  const workers = [routing.preferred, ...(routing.fallback ?? [])];
+
+  return workers.find(isAgentWorker);
+}
+
+function isAgentWorker(value: string): value is LocalAgentWorkerKind {
+  return value === "codex_cli" || value === "codex_direct" || value === "claude_code";
 }
 
 interface LocalVerifierCommand {

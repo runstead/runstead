@@ -11,6 +11,7 @@ import type {
   BlockTaskOptions,
   ClaimTaskOptions,
   ClaimTaskResult,
+  CompleteTaskOptions,
   UpdateTaskResult
 } from "./tasks-types.js";
 
@@ -127,6 +128,50 @@ export function blockTask(options: BlockTaskOptions): UpdateTaskResult {
       reason: options.reason
     },
     createdAt: blockedAt
+  };
+  const database = openRunsteadDatabase(stateDb);
+
+  try {
+    appendEventAndProject(database, {
+      event,
+      projection: {
+        type: "task",
+        value: task
+      }
+    });
+  } finally {
+    database.close();
+  }
+
+  return {
+    task,
+    event,
+    stateDb
+  };
+}
+
+export function completeTask(options: CompleteTaskOptions): UpdateTaskResult {
+  const stateDb = resolveTaskStateDb(options.cwd);
+  const completedAt = (options.now ?? new Date()).toISOString();
+  const task: Task = {
+    ...options.task,
+    status: "completed",
+    output: {
+      ...(options.task.output ?? {}),
+      ...(options.output ?? {})
+    },
+    updatedAt: completedAt
+  };
+  const event: RunsteadEvent = {
+    eventId: createRunsteadId("evt"),
+    type: "task.completed",
+    aggregateType: "task",
+    aggregateId: task.id,
+    payload: {
+      previousStatus: options.task.status,
+      ...(options.output ?? {})
+    },
+    createdAt: completedAt
   };
   const database = openRunsteadDatabase(stateDb);
 

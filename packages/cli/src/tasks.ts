@@ -5,7 +5,7 @@ export {
 } from "./task-builders.js";
 export { createRunLocalVerifiersTask } from "./task-create.js";
 export { listTasks, showTask } from "./task-read.js";
-export { blockTask, claimTask } from "./task-transitions.js";
+export { blockTask, claimTask, completeTask } from "./task-transitions.js";
 export type {
   BuildDomainTaskOptions,
   BuildRunLocalVerifiersTaskOptions
@@ -14,6 +14,7 @@ export type {
   BlockTaskOptions,
   ClaimTaskOptions,
   ClaimTaskResult,
+  CompleteTaskOptions,
   CreateRunLocalVerifiersTaskOptions,
   CreateTaskResult,
   ListTasksOptions,

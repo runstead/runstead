@@ -36,6 +36,13 @@ export interface BlockTaskOptions {
   now?: Date;
 }
 
+export interface CompleteTaskOptions {
+  cwd?: string;
+  task: Task;
+  output?: JsonObject;
+  now?: Date;
+}
+
 export interface ClaimTaskResult {
   task: Task;
   event: RunsteadEvent;

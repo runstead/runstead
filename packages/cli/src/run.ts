@@ -1,6 +1,7 @@
 import { resolve } from "node:path";
 
 import { isCiRepairPullRequestResumeTask } from "./ci-repair-orchestrator.js";
+import { isGenericDomainTask, runGenericDomainTask } from "./domain-task-execution.js";
 import { isLocalAgentTask, runLocalAgentTask } from "./local-agent.js";
 import { withRunsteadManagerLock } from "./manager-lock.js";
 import {
@@ -75,6 +76,34 @@ export async function runOnceUnlocked(
 
   if (task !== undefined && isRunnableCiRepairTask(task)) {
     return runRunnableCiRepairTask({ cwd, task, options });
+  }
+
+  if (task !== undefined && isGenericDomainTask(task)) {
+    const result = await runGenericDomainTask({ cwd, task, options });
+
+    if (result.localAgentResult !== undefined) {
+      return {
+        cwd,
+        ranTask: true,
+        task: result.task,
+        localAgentResult: result.localAgentResult
+      };
+    }
+
+    if (result.commandResults !== undefined) {
+      return {
+        cwd,
+        ranTask: true,
+        task: result.task,
+        commandResults: result.commandResults
+      };
+    }
+
+    return {
+      cwd,
+      ranTask: true,
+      task: result.task
+    };
   }
 
   if (task?.type === "manual_review") {

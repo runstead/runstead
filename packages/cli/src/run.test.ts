@@ -13,6 +13,7 @@ import { createLocalAgentTask, LOCAL_AGENT_TASK_TYPE } from "./local-agent.js";
 import { setRunsteadConfigValue } from "./config.js";
 import { formatRunOnceReport, runOnce, runOnceExitCode } from "./run.js";
 import type { RunCiRepairOrchestratorResult } from "./ci-repair-orchestrator.js";
+import { queueWorkPackWorkflowRun } from "./work-pack-run.js";
 
 describe("runOnce", () => {
   it("throws before creating state in an uninitialized workspace", async () => {
@@ -646,6 +647,191 @@ describe("runOnce", () => {
         }
       });
       expect(formatRunOnceReport(result)).toContain("Blocked: unsupported_task_type");
+      expect(runOnceExitCode(result)).toBe(1);
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("runs queued work-pack task-type workflows through generic repo inspection", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-run-domain-inspect-"));
+
+    try {
+      await initRunstead({ cwd: workspace });
+      const queued = await queueWorkPackWorkflowRun({
+        cwd: workspace,
+        pack: "repo-maintenance",
+        workflow: "repo_inspect",
+        now: new Date("2026-05-14T08:00:00.000Z")
+      });
+
+      const result = await runOnce({
+        cwd: workspace,
+        now: new Date("2026-05-14T08:02:00.000Z")
+      });
+
+      expect(result).toMatchObject({
+        ranTask: true,
+        task: {
+          id: queued.tasks[0]?.id,
+          type: "repo_inspect",
+          status: "completed",
+          output: {
+            summary: "Repository inspection evidence recorded.",
+            verifiers: ["evidence:repo_inspection"]
+          }
+        }
+      });
+      expect(result.ranTask ? result.task.output?.evidenceIds : undefined).toEqual([
+        expect.stringMatching(/^ev_/)
+      ]);
+
+      const database = openRunsteadDatabase(queued.stateDb);
+
+      try {
+        const evidenceRows = database
+          .prepare("SELECT type, subject_type FROM evidence ORDER BY created_at")
+          .all() as { type: string; subject_type: string }[];
+
+        expect(evidenceRows).toEqual(
+          expect.arrayContaining([
+            {
+              type: "repo_inspection",
+              subject_type: "repository"
+            }
+          ])
+        );
+      } finally {
+        database.close();
+      }
+      expect(formatRunOnceReport(result)).toContain(`Task: ${queued.tasks[0]?.id}`);
+      expect(runOnceExitCode(result)).toBe(0);
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("runs arbitrary domain task types with configured command verifiers", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-run-domain-command-"));
+
+    try {
+      await initRunstead({ cwd: workspace });
+      const goal = await createGoal({
+        cwd: workspace,
+        domain: "repo-maintenance",
+        now: new Date("2026-05-14T08:00:00.000Z")
+      });
+      const command = nodeCommand("process.exit(0)");
+      const task: Task = {
+        id: "task_domain_custom_command",
+        goalId: goal.goal.id,
+        domain: "repo-maintenance",
+        type: "custom_domain_check",
+        status: "queued",
+        priority: "medium",
+        attempt: 0,
+        maxAttempts: 1,
+        input: {
+          taskType: "custom_domain_check",
+          workerRouting: {
+            preferred: "shell"
+          },
+          commands: [
+            {
+              name: "test",
+              command
+            }
+          ]
+        },
+        verifiers: ["command:test"],
+        createdAt: "2026-05-14T07:59:00.000Z",
+        updatedAt: "2026-05-14T07:59:00.000Z"
+      };
+
+      insertTask(goal.stateDb, task);
+      await allowVerifierCommand(workspace, command);
+
+      const result = await runOnce({
+        cwd: workspace,
+        now: new Date("2026-05-14T08:02:00.000Z")
+      });
+
+      expect(result).toMatchObject({
+        ranTask: true,
+        task: {
+          id: task.id,
+          type: "custom_domain_check",
+          status: "completed"
+        },
+        commandResults: [
+          {
+            verifier: "test",
+            exitCode: 0,
+            timedOut: false
+          }
+        ]
+      });
+      expect(runOnceExitCode(result)).toBe(0);
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("blocks generic domain tasks without automatable evidence as evidence required", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-run-domain-evidence-"));
+
+    try {
+      await initRunstead({ cwd: workspace });
+      const goal = await createGoal({
+        cwd: workspace,
+        domain: "repo-maintenance",
+        now: new Date("2026-05-14T08:00:00.000Z")
+      });
+      const task: Task = {
+        id: "task_domain_external_evidence",
+        goalId: goal.goal.id,
+        domain: "customer-ops",
+        type: "review_customer_signal",
+        status: "queued",
+        priority: "medium",
+        attempt: 0,
+        maxAttempts: 1,
+        input: {
+          taskType: "review_customer_signal",
+          workerRouting: {
+            preferred: "shell",
+            fallback: ["codex_cli"]
+          }
+        },
+        verifiers: ["customer:evidence_attached"],
+        createdAt: "2026-05-14T07:59:00.000Z",
+        updatedAt: "2026-05-14T07:59:00.000Z"
+      };
+
+      insertTask(goal.stateDb, task);
+
+      const result = await runOnce({
+        cwd: workspace,
+        now: new Date("2026-05-14T08:02:00.000Z")
+      });
+
+      expect(result).toMatchObject({
+        ranTask: true,
+        task: {
+          id: task.id,
+          type: "review_customer_signal",
+          status: "blocked",
+          output: {
+            reason: "evidence_required",
+            verifiers: ["customer:evidence_attached"],
+            workerRouting: {
+              preferred: "shell",
+              fallback: ["codex_cli"]
+            }
+          }
+        }
+      });
+      expect(formatRunOnceReport(result)).toContain("Blocked: evidence_required");
       expect(runOnceExitCode(result)).toBe(1);
     } finally {
       await rm(workspace, { force: true, recursive: true });
