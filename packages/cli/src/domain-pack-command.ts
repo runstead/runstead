@@ -3,6 +3,7 @@ import { join } from "node:path";
 import {
   buildDomainPackManifest,
   assessDomainPackMaturity,
+  domainPackRegistryEntryToWorkPack,
   resolveDomainPackRef,
   validateDomainPackDir,
   type DomainPackManifest,
@@ -58,9 +59,11 @@ export async function showDomainPack(
 
 export function formatDomainPackShowResult(result: ShowDomainPackResult): string {
   const domain = result.entry.domain;
+  const workPack = domainPackRegistryEntryToWorkPack(result.entry);
 
   return [
     `Domain pack: ${domain.id}`,
+    `Work pack: ${workPack.id}`,
     `Name: ${domain.name}`,
     `Version: ${domain.version}`,
     `Source: ${result.entry.source}`,
@@ -73,6 +76,12 @@ export function formatDomainPackShowResult(result: ShowDomainPackResult): string
     `Repo templates: ${formatCountedList(domain.repoTemplates?.map((template) => template.id) ?? [])}`,
     `Gate thresholds: ${formatCountedList(Object.keys(domain.gateThresholds ?? {}))}`,
     `Report sections: ${formatCountedList(domain.reportSections?.map((section) => section.id) ?? [])}`,
+    `Workflows: ${formatCountedList(workPack.workflows.map((workflow) => `${workflow.id}:${workflow.kind}`))}`,
+    `Work pack components: ${formatCountedList([
+      `${workPack.domain.id}:${workPack.domain.kind}`,
+      ...workPack.extensions.map((component) => `${component.id}:${component.kind}`),
+      ...workPack.skills.map((component) => `${component.id}:${component.kind}`)
+    ])}`,
     `Migrations: ${formatCountedList(domain.migrations?.map((migration) => `${migration.fromVersion}->${migration.toVersion}`) ?? [])}`,
     `Required tools: ${formatCountedList(domain.requiredTools)}`,
     `Supported workers: ${formatCountedList(domain.supportedWorkers)}`,

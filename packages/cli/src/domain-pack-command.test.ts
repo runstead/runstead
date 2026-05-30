@@ -9,6 +9,13 @@ describe("domain pack command helpers", () => {
 
     expect(result.entry.id).toBe("repo-maintenance");
     expect(report).toContain("Domain pack: repo-maintenance");
+    expect(report).toContain("Work pack: repo-maintenance");
+    expect(report).toContain(
+      "Workflows: 4 (keep-ci-green:goal_template, repo_inspect:task_type, run_local_verifiers:task_type, ci_repair:task_type)"
+    );
+    expect(report).toContain(
+      "Work pack components: 1 (repo-maintenance:domain_pack)"
+    );
     expect(report).toContain("Fixtures: 1 (js-test-failure)");
     expect(report).toContain("Evals: 1 (js-test-failure-smoke)");
     expect(report).toContain("Manifest files:");

@@ -13,3 +13,4 @@ export * from "./repo-maintenance.js";
 export * from "./template.js";
 export * from "./task-type.js";
 export * from "./validator.js";
+export * from "./work-pack.js";
