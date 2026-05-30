@@ -684,7 +684,9 @@ describe("startup source connectors", () => {
         connector: "posthog",
         adapterProvider: "posthog",
         requiredTokenEnv: "POSTHOG_API_KEY",
-        defaultFreshnessDays: 14
+        defaultFreshnessDays: 14,
+        collectCommand:
+          "runstead startup source collect --connector posthog --target production --posthog-environment <environment-id> --posthog-insight <insight-id>"
       })
     );
     expect(formatStartupSourceRefreshPlan(plan)).toContain(
@@ -705,7 +707,7 @@ describe("startup source connectors", () => {
       ?.connectors.find((connector) => connector.connector === "github_actions");
 
     expect(github?.collectCommand).toBe(
-      "runstead startup source collect --cwd '/tmp/runstead source workspace' --connector github_actions --target staging --source-uri <provider-api-url>"
+      "runstead startup source collect --cwd '/tmp/runstead source workspace' --connector github_actions --target staging --github-repo <owner/repo> --github-run-id <run-id>"
     );
   });
 

@@ -151,5 +151,49 @@ describe("source provider runtime", () => {
       status: "failed",
       summary: "PostHog metric activation value 8"
     });
+    expect(
+      collectRuntimeSourceProviderPayload({
+        adapter: { connector: "sentry", provider: "sentry" },
+        definition: { displayName: "Sentry" },
+        responseStatus: 200,
+        responseOk: true,
+        responsePayload: {
+          version: "todo@1.2.3",
+          newGroups: 0,
+          project: {
+            name: "todo"
+          }
+        }
+      })
+    ).toMatchObject({
+      status: "passed",
+      summary: "Sentry release blockers: 0",
+      payload: {
+        release: "todo@1.2.3",
+        project: "todo"
+      }
+    });
+    expect(
+      collectRuntimeSourceProviderPayload({
+        adapter: { connector: "posthog", provider: "posthog" },
+        definition: { displayName: "PostHog" },
+        responseStatus: 200,
+        responseOk: true,
+        responsePayload: {
+          id: 42,
+          short_id: "activation",
+          name: "Activation",
+          result: [{ aggregated_value: 12 }]
+        }
+      })
+    ).toMatchObject({
+      status: "passed",
+      summary: "PostHog metric Activation value 12",
+      payload: {
+        metric: "Activation",
+        value: 12,
+        realUserData: true
+      }
+    });
   });
 });

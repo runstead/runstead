@@ -1,10 +1,22 @@
 import { requireRbacPermission } from "../cli-rbac.js";
 import { parsePositiveInteger } from "../startup-command-parsers.js";
+import { resolveStartupSourceCollectSource } from "../startup-source-provider-shortcuts.js";
 
 export interface StartupSourceCollectCommandOptions {
   cwd?: string;
-  connector: string;
-  sourceUri: string;
+  connector?: string;
+  sourceUri?: string;
+  githubRepo?: string;
+  githubRunId?: string;
+  vercelDeployment?: string;
+  vercelTeam?: string;
+  sentryOrg?: string;
+  sentryRelease?: string;
+  sentryProjectId?: string;
+  posthogEnvironment?: string;
+  posthogProject?: string;
+  posthogInsight?: string;
+  posthogHost?: string;
   target?: string;
   token?: string;
   capturedAt?: string;
@@ -27,10 +39,11 @@ export async function collectStartupSourceCommand(
 
   const { collectStartupSourceEvidence } =
     await import("../startup-source-connectors.js");
+  const source = resolveStartupSourceCollectSource(options);
   const result = await collectStartupSourceEvidence({
     ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-    connector: options.connector,
-    uri: options.sourceUri,
+    connector: source.connector,
+    uri: source.sourceUri,
     ...(options.target === undefined ? {} : { target: options.target }),
     ...(options.token === undefined ? {} : { token: options.token }),
     ...(options.capturedAt === undefined ? {} : { capturedAt: options.capturedAt }),
@@ -46,6 +59,9 @@ export async function collectStartupSourceCommand(
 
   console.log(`Collected source evidence: ${result.evidence.id}`);
   console.log(`Connector: ${result.connector}`);
+  if (source.shortcut !== undefined) {
+    console.log(`Shortcut: ${source.shortcut}`);
+  }
   console.log(`Adapter: ${result.adapter.provider}`);
   console.log(`Collection: ${result.collection.status}`);
   console.log(`Evidence type: startup_${result.evidenceType}`);

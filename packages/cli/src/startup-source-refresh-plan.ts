@@ -63,6 +63,7 @@ export function createStartupSourceRefreshPlan(
       connectors: requirement.connectors.map((connector, index) =>
         refreshPlanConnector({
           connector: parseStartupSourceConnector(connector),
+          target: requirement.target,
           collectCommand: requirement.collectCommands[index],
           ...(options.cwd === undefined ? {} : { cwd: options.cwd })
         })
@@ -110,6 +111,7 @@ export function formatStartupSourceRefreshPlan(plan: StartupSourceRefreshPlan): 
 
 function refreshPlanConnector(input: {
   connector: StartupSourceConnector;
+  target: StartupSourceTarget;
   collectCommand: string | undefined;
   cwd?: string;
 }): StartupSourceRefreshPlanConnector {
@@ -132,6 +134,7 @@ function refreshPlanConnector(input: {
     defaultFreshnessDays: definition.defaultFreshnessDays,
     collectCommand: sourceCollectCommand({
       connector: input.connector,
+      target: input.target,
       collectCommand: input.collectCommand,
       ...(input.cwd === undefined ? {} : { cwd: input.cwd })
     })
@@ -140,12 +143,14 @@ function refreshPlanConnector(input: {
 
 function sourceCollectCommand(input: {
   connector: StartupSourceConnector;
+  target: StartupSourceTarget;
   collectCommand: string | undefined;
   cwd?: string;
 }): string {
   const command =
+    directSourceCollectCommand(input.connector, input.target) ??
     input.collectCommand ??
-    `runstead startup source collect --connector ${input.connector} --target <target> --source-uri <provider-api-url>`;
+    `runstead startup source collect --connector ${input.connector} --target ${input.target} --source-uri <provider-api-url>`;
 
   if (input.cwd === undefined) {
     return command;
@@ -155,6 +160,24 @@ function sourceCollectCommand(input: {
     /^runstead startup source collect\b/u,
     `runstead startup source collect --cwd ${shellQuote(input.cwd)}`
   );
+}
+
+function directSourceCollectCommand(
+  connector: StartupSourceConnector,
+  target: StartupSourceTarget
+): string | undefined {
+  switch (connector) {
+    case "github_actions":
+      return `runstead startup source collect --connector github_actions --target ${target} --github-repo <owner/repo> --github-run-id <run-id>`;
+    case "vercel":
+      return `runstead startup source collect --connector vercel --target ${target} --vercel-deployment <deployment-id-or-url>`;
+    case "sentry":
+      return `runstead startup source collect --connector sentry --target ${target} --sentry-org <org> --sentry-release <release-version> --sentry-project-id <project-id>`;
+    case "posthog":
+      return `runstead startup source collect --connector posthog --target ${target} --posthog-environment <environment-id> --posthog-insight <insight-id>`;
+    default:
+      return undefined;
+  }
 }
 
 function shellQuote(value: string): string {

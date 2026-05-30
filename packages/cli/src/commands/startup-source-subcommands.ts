@@ -87,11 +87,25 @@ export function addStartupSourceCollectCommand(startupSource: Command): void {
   startupSource
     .command("collect")
     .description(
-      "Collect structured evidence from an executable provider adapter before recording it."
+      "Collect structured evidence from provider shortcuts or an executable adapter URI."
     )
     .option("--cwd <path>", "Workspace directory")
-    .requiredOption("--connector <kind>", STARTUP_SOURCE_EXECUTABLE_CONNECTOR_HELP)
-    .requiredOption("--source-uri <uri>", "Provider API URI to collect")
+    .option(
+      "--connector <kind>",
+      `${STARTUP_SOURCE_EXECUTABLE_CONNECTOR_HELP}; inferred for provider shortcuts`
+    )
+    .option("--source-uri <uri>", "Provider API URI to collect")
+    .option("--github-repo <owner/repo>", "GitHub repository for Actions collection")
+    .option("--github-run-id <id>", "GitHub Actions workflow run id")
+    .option("--vercel-deployment <id-or-url>", "Vercel deployment id or hostname")
+    .option("--vercel-team <id>", "Vercel team id for the deployment lookup")
+    .option("--sentry-org <slug>", "Sentry organization slug")
+    .option("--sentry-release <version>", "Sentry release version")
+    .option("--sentry-project-id <id>", "Sentry project id for release filtering")
+    .option("--posthog-environment <id>", "PostHog environment id")
+    .option("--posthog-project <id>", "Deprecated alias for --posthog-environment")
+    .option("--posthog-insight <id>", "PostHog insight id")
+    .option("--posthog-host <url>", "PostHog host URL")
     .option(
       "--target <target>",
       "Readiness target this source supports: local, staging, or production"

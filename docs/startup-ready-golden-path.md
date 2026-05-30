@@ -227,7 +227,13 @@ runstead startup source collect \
   --cwd /tmp/runstead-todo \
   --connector github_actions \
   --target staging \
-  --source-uri https://api.github.com/repos/acme/todo/actions/runs/1
+  --github-repo acme/todo \
+  --github-run-id 1
+runstead startup source collect \
+  --cwd /tmp/runstead-todo \
+  --connector vercel \
+  --target staging \
+  --vercel-deployment dpl_123
 runstead startup source verify \
   --cwd /tmp/runstead-todo \
   --connector vercel \

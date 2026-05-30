@@ -119,8 +119,8 @@ runstead startup evidence add --cwd /path/to/mvp --type traffic_gate --summary "
 runstead startup evidence add --cwd /path/to/mvp --type post_launch_watch --summary "..." --owner founder
 runstead startup evidence manual-change --cwd /path/to/mvp --operator founder --reason "..." --diff-summary "..." --file package.json --gate launch
 runstead startup source list
-runstead startup source record --cwd /path/to/mvp --connector vercel --target staging --source-uri https://vercel.com/acme/app/deployments/dpl_123 --summary "..." --status pass
-runstead startup source verify --cwd /path/to/mvp --connector sentry --target production --source-uri https://sentry.io/... --expect-status 200 --expect-text "no open release blockers"
+runstead startup source collect --cwd /path/to/mvp --connector vercel --target staging --vercel-deployment dpl_123
+runstead startup source collect --cwd /path/to/mvp --connector sentry --target production --sentry-org acme --sentry-release app@abc123 --sentry-project-id 42
 runstead startup gate check --cwd /path/to/mvp --stage launch
 ```
 

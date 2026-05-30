@@ -312,26 +312,38 @@ function collectSentryPayload(payload: JsonObject): RuntimeSourceProviderCollect
   const blockers =
     numberPayloadValue(payload, "openReleaseBlockers") ??
     numberPayloadValue(payload, "issueCount") ??
+    numberPayloadValue(payload, "newGroups") ??
     arrayPayloadLength(payload, "issues");
   const status: RuntimeSourceProviderCollection["status"] =
     blockers === undefined ? "unknown" : blockers === 0 ? "passed" : "failed";
   const blockerSummary = blockers === undefined ? "unknown" : String(blockers);
+  const project = recordPayloadValue(payload, "project");
 
   return {
     status,
     summary: `Sentry release blockers: ${blockerSummary}`,
     payload: {
       openReleaseBlockers: blockers ?? "unknown",
-      release: stringPayloadValue(payload, "release") ?? "unknown",
-      project: stringPayloadValue(payload, "project") ?? "unknown"
+      release:
+        stringPayloadValue(payload, "release") ??
+        stringPayloadValue(payload, "version") ??
+        "unknown",
+      project:
+        stringPayloadValue(payload, "project") ??
+        (project === undefined ? undefined : stringPayloadValue(project, "name")) ??
+        "unknown"
     }
   };
 }
 
 function collectPosthogPayload(payload: JsonObject): RuntimeSourceProviderCollection {
-  const value = numberPayloadValue(payload, "value");
+  const value =
+    numberPayloadValue(payload, "value") ?? posthogInsightNumericValue(payload.result);
   const threshold = numberPayloadValue(payload, "threshold");
-  const realUserData = Boolean(payload.realUserData);
+  const realUserData =
+    payload.realUserData === true ||
+    (payload.id !== undefined &&
+      (payload.short_id !== undefined || payload.result !== undefined));
   const passed =
     value !== undefined &&
     realUserData &&
@@ -341,9 +353,18 @@ function collectPosthogPayload(payload: JsonObject): RuntimeSourceProviderCollec
 
   return {
     status,
-    summary: `PostHog metric ${stringPayloadValue(payload, "metric") ?? "activation"} value ${value ?? "unknown"}`,
+    summary: `PostHog metric ${
+      stringPayloadValue(payload, "metric") ??
+      stringPayloadValue(payload, "name") ??
+      stringPayloadValue(payload, "derived_name") ??
+      "activation"
+    } value ${value ?? "unknown"}`,
     payload: {
-      metric: stringPayloadValue(payload, "metric") ?? "activation",
+      metric:
+        stringPayloadValue(payload, "metric") ??
+        stringPayloadValue(payload, "name") ??
+        stringPayloadValue(payload, "derived_name") ??
+        "activation",
       value: value ?? "unknown",
       ...(threshold === undefined ? {} : { threshold }),
       window: stringPayloadValue(payload, "window") ?? "unknown",
@@ -358,6 +379,19 @@ function stringPayloadValue(payload: JsonObject, field: string): string | undefi
   return typeof value === "string" && value.trim().length > 0 ? value : undefined;
 }
 
+function recordPayloadValue(
+  payload: JsonObject,
+  field: string
+): Record<string, unknown> | undefined {
+  const value = payload[field];
+
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return undefined;
+  }
+
+  return value as Record<string, unknown>;
+}
+
 function normalizeProviderState(value: string | undefined): string | undefined {
   return value?.trim().toLowerCase();
 }
@@ -366,6 +400,45 @@ function numberPayloadValue(payload: JsonObject, field: string): number | undefi
   const value = payload[field];
 
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function numberRecordValue(
+  payload: Record<string, unknown>,
+  field: string
+): number | undefined {
+  const value = payload[field];
+
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function posthogInsightNumericValue(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const result = posthogInsightNumericValue(item);
+
+      if (result !== undefined) {
+        return result;
+      }
+    }
+
+    return undefined;
+  }
+
+  if (typeof value !== "object" || value === null) {
+    return undefined;
+  }
+
+  const record = value as Record<string, unknown>;
+
+  return (
+    numberRecordValue(record, "value") ??
+    numberRecordValue(record, "count") ??
+    numberRecordValue(record, "aggregated_value")
+  );
 }
 
 function arrayPayloadLength(payload: JsonObject, field: string): number | undefined {

@@ -383,21 +383,24 @@ runstead startup evidence manual-change \
 runstead startup source list
 runstead startup source plan --cwd /path/to/mvp --target production
 runstead startup source record --cwd /path/to/mvp --connector vercel --target staging --source-uri https://vercel.com/acme/todo/deployments/dpl_123 --summary "Staging deployment smoke passed" --status pass
-runstead startup source collect --cwd /path/to/mvp --connector github_actions --target staging --source-uri https://api.github.com/repos/acme/todo/actions/runs/123
-runstead startup source collect --cwd /path/to/mvp --connector posthog --target production --source-uri https://app.posthog.com/api/projects/1/insights/activation
+runstead startup source collect --cwd /path/to/mvp --connector github_actions --target staging --github-repo acme/todo --github-run-id 123
+runstead startup source collect --cwd /path/to/mvp --connector vercel --target staging --vercel-deployment dpl_123
+runstead startup source collect --cwd /path/to/mvp --connector posthog --target production --posthog-environment 1 --posthog-insight activation
+runstead startup source collect --cwd /path/to/mvp --connector sentry --target production --sentry-org acme --sentry-release todo@abc123 --sentry-project-id 42
 runstead startup source verify --cwd /path/to/mvp --connector render --target production --source-uri https://todo.onrender.com/health --expect-status 200 --expect-text "ok"
-runstead startup source record --cwd /path/to/mvp --connector posthog --target production --source-uri https://app.posthog.com/project/1/insights/activation --summary "Activation funnel uses real-user analytics" --status pass
-runstead startup source verify --cwd /path/to/mvp --connector sentry --target production --source-uri https://sentry.io/organizations/acme/issues/?project=todo --expect-status 200 --expect-text "no open release blockers"
 ```
 
 `startup evidence manual-change` is for operator interventions that happen
 outside an agent loop. Launch reports show these records under Change
 Authorship, separate from agent and verifier evidence.
 
-`startup source collect` uses executable provider adapters for common systems
-such as GitHub Actions, Vercel, Render, Sentry, and PostHog. `startup source
-verify` remains the generic HTTP escape hatch because it performs a live check
-before recording the evidence artifact. Named deployment connectors
+`startup source collect` uses direct provider shortcut flags for common systems
+such as GitHub Actions, Vercel, Sentry, and PostHog, then resolves those flags
+to the provider API URI before recording the evidence artifact. `--source-uri`
+is still available as the generic escape hatch for adapters that do not yet
+have a first-class collect flow. `startup source verify` remains the generic
+HTTP escape hatch because it performs a live check before recording the
+evidence artifact. Named deployment connectors
 (`vercel`, `fly`, `render`) and production connectors such as `sentry` and
 `posthog` accept `--target`, so their artifacts carry readiness tiers like
 `staging_deployment`, `production_deployment`, or `real_user_analytics`.

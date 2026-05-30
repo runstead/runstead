@@ -624,9 +624,20 @@ describe("cli entrypoint", () => {
         "--actor",
         "--connector",
         "--cwd",
+        "--github-repo",
+        "--github-run-id",
+        "--posthog-environment",
+        "--posthog-host",
+        "--posthog-insight",
+        "--posthog-project",
+        "--sentry-org",
+        "--sentry-project-id",
+        "--sentry-release",
         "--source-uri",
         "--target",
-        "--token"
+        "--token",
+        "--vercel-deployment",
+        "--vercel-team"
       ])
     );
     expect(contextGenerate?.options.map((option) => option.long)).toEqual(
