@@ -1,4 +1,5 @@
 export * from "./bundle.js";
+export * from "./capability-boundary.js";
 export * from "./compatibility.js";
 export * from "./domain-pack.js";
 export * from "./ai-native-startup.js";

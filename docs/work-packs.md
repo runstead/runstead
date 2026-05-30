@@ -17,6 +17,11 @@ that lets users think in one object:
 Work Pack = domain pack + optional extensions + optional skills
 ```
 
+Use [capability-boundaries.md](capability-boundaries.md) when deciding where a
+new capability belongs. Work Packs should compose domain contracts, extensions,
+and skills; they should not become a dumping ground for provider adapters or
+low-level tools.
+
 ## Shape
 
 Every Work Pack has:

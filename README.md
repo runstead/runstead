@@ -584,6 +584,8 @@ Product and lifecycle:
   connectors, startup source adapters, extension examples, and known gaps
 - [docs/work-packs.md](docs/work-packs.md): unified Work Pack model for domain
   packs, extensions, and skills
+- [docs/capability-boundaries.md](docs/capability-boundaries.md): choosing
+  between domain packs, extensions, skills, connectors, and tools
 - [docs/connectors.md](docs/connectors.md): canonical connector catalog for
   provider and workspace data access
 - [docs/product-positioning.md](docs/product-positioning.md): product stance

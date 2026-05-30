@@ -93,3 +93,5 @@ The skill surface is intentionally smaller than the SDK extension surface:
 
 Choose skills for "this is how I fix X when it happens" workflows, and
 extensions for "this is how I prove X is ready before I launch" workflows.
+See [capability-boundaries.md](capability-boundaries.md) for the full boundary
+between domain packs, extensions, skills, connectors, and tools.
