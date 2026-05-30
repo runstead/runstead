@@ -36,6 +36,7 @@ business evidence status.
 | Provider adapters            | HTTP collection, auth header shaping, response parsing, secret redaction          | `@runstead/runtime` source-provider helpers plus CLI collection         |
 | Extensions                   | Workspace or package-provided facets, collectors, verifiers, gates                | `.runstead/extensions/*`, `@runstead/sdk`                               |
 | Skill readiness              | Activated worker guidance dependency, fallback, platform, and worker fit          | `skill.yaml readiness`, `runstead run --plan`                           |
+| Evidence Memory Tree         | Wiki-style domain/connector/type/profile organization for recorded evidence       | `@runstead/evidence` `buildEvidenceMemoryTree`                          |
 | Evidence contract evaluators | Domain-specific completion semantics                                              | `evidence_requirement_evaluators` in `domain.yaml`                      |
 
 ## Built-In Domain Packs

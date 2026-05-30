@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+export * from "./memory-tree.js";
+
 export const EvidenceQualityTierSchema = z.enum([
   "none",
   "self_reported",

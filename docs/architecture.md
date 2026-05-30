@@ -34,7 +34,8 @@ Contract packages (stable, side-effect free, no Node-specific hosting):
   pass/fail classification
 - `@runstead/evidence`: evidence quality tier ladder
   (none → self_reported → local_artifact → machine_verified →
-  external_observed), source trust ladder, evidence source schema
+  external_observed), source trust ladder, evidence source schema, and the
+  Evidence Memory Tree projection model
 - `@runstead/workers`: worker capability and governance-level contracts
 - `@runstead/sdk`: public extension manifest, `defineRunsteadExtension`,
   `validateRunsteadExtension`, `compileRunsteadExtensionRuntime`,

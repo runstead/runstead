@@ -590,6 +590,8 @@ Product and lifecycle:
   between domain packs, extensions, skills, connectors, and tools
 - [docs/connectors.md](docs/connectors.md): canonical connector catalog for
   provider and workspace data access
+- [docs/evidence-memory.md](docs/evidence-memory.md): Evidence Memory Tree model
+  for wiki-like evidence organization
 - [docs/product-positioning.md](docs/product-positioning.md): product stance
   and boundaries
 - [docs/startup-lifecycle.md](docs/startup-lifecycle.md): stage model and
