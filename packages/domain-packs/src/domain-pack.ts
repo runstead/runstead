@@ -20,6 +20,13 @@ export const DomainPackSecuritySchema = z.object({
   protectedPaths: z.array(z.string().min(1))
 });
 
+export const DomainPackCapabilityPolicySchema = z.object({
+  reads: z.array(z.string().min(1)),
+  writes: z.array(z.string().min(1)),
+  approvalsRequired: z.array(z.string().min(1)),
+  denied: z.array(z.string().min(1))
+});
+
 export const DomainPackMigrationSchema = z.object({
   fromVersion: z.string().regex(SEMVER_PATTERN),
   toVersion: z.string().regex(SEMVER_PATTERN),
@@ -68,6 +75,7 @@ export const DomainPackSchema = z.object({
   requiredTools: z.array(z.string().min(1)),
   supportedWorkers: z.array(z.string().min(1)),
   security: DomainPackSecuritySchema.optional(),
+  capabilityPolicy: DomainPackCapabilityPolicySchema.optional(),
   migrations: z.array(DomainPackMigrationSchema).optional(),
   repoTemplates: z.array(DomainPackRepoTemplateSchema).optional(),
   gateThresholds: z.record(z.string(), DomainPackGateThresholdSchema).optional(),
@@ -105,6 +113,12 @@ const DomainPackEvalQualityYamlSchema = z.object({
   minimum_score: z.number().min(0).max(1),
   required_contracts: z.array(z.string().min(1)).min(1)
 });
+const DomainPackCapabilityPolicyYamlSchema = z.object({
+  reads: z.array(z.string().min(1)).default([]),
+  writes: z.array(z.string().min(1)).default([]),
+  approvals_required: z.array(z.string().min(1)).default([]),
+  denied: z.array(z.string().min(1)).default([])
+});
 
 const DomainPackYamlSchema = z.object({
   id: z.string().regex(DOMAIN_PACK_ID_PATTERN),
@@ -133,6 +147,7 @@ const DomainPackYamlSchema = z.object({
       protected_paths: z.array(z.string().min(1))
     })
     .optional(),
+  capability_policy: DomainPackCapabilityPolicyYamlSchema.optional(),
   migrations: z.array(DomainPackMigrationYamlSchema).optional(),
   repo_templates: z.array(DomainPackRepoTemplateYamlSchema).optional(),
   gate_thresholds: z.record(z.string(), DomainPackGateThresholdYamlSchema).optional(),
@@ -180,6 +195,16 @@ export function parseDomainPackYaml(input: unknown): DomainPack {
             untrustedInputs: parsed.security.untrusted_inputs,
             protectedPaths: parsed.security.protected_paths
           },
+    ...(parsed.capability_policy === undefined
+      ? {}
+      : {
+          capabilityPolicy: {
+            reads: parsed.capability_policy.reads,
+            writes: parsed.capability_policy.writes,
+            approvalsRequired: parsed.capability_policy.approvals_required,
+            denied: parsed.capability_policy.denied
+          }
+        }),
     ...(parsed.migrations === undefined
       ? {}
       : {

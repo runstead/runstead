@@ -165,6 +165,16 @@ required_tools:
 supported_workers:
   - shell
 
+capability_policy:
+  reads:
+    - workspace_item
+  writes:
+    - runstead.evidence
+  approvals_required:
+    - external_write
+  denied:
+    - secret_read
+
 security:
   untrusted_inputs:
     - external_content

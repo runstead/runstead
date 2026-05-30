@@ -82,6 +82,10 @@ export function formatDomainPackShowResult(result: ShowDomainPackResult): string
       ...workPack.extensions.map((component) => `${component.id}:${component.kind}`),
       ...workPack.skills.map((component) => `${component.id}:${component.kind}`)
     ])}`,
+    `Capability reads: ${formatCountedList(domain.capabilityPolicy?.reads ?? [])}`,
+    `Capability writes: ${formatCountedList(domain.capabilityPolicy?.writes ?? [])}`,
+    `Capability approvals: ${formatCountedList(domain.capabilityPolicy?.approvalsRequired ?? [])}`,
+    `Capability denied: ${formatCountedList(domain.capabilityPolicy?.denied ?? [])}`,
     `Migrations: ${formatCountedList(domain.migrations?.map((migration) => `${migration.fromVersion}->${migration.toVersion}`) ?? [])}`,
     `Required tools: ${formatCountedList(domain.requiredTools)}`,
     `Supported workers: ${formatCountedList(domain.supportedWorkers)}`,

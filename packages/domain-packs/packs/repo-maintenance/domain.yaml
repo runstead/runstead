@@ -39,6 +39,24 @@ supported_workers:
   - codex_cli
   - codex_direct
 
+capability_policy:
+  reads:
+    - filesystem.repo
+    - git.status
+    - git.diff
+    - github.workflow_run
+  writes:
+    - filesystem.patch
+    - git.branch
+    - github.pull_request_comment
+  approvals_required:
+    - dependency_install
+    - protected_path_write
+    - external_comment
+  denied:
+    - secret_read
+    - production_infra_write
+
 security:
   untrusted_inputs:
     - ci_log

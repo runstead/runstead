@@ -48,6 +48,25 @@ supported_workers:
   - codex_cli
   - codex_direct
 
+capability_policy:
+  reads:
+    - web.source
+    - pdf.source
+    - search_result
+    - docs.workspace
+  writes:
+    - digest_draft
+    - citation_ledger
+    - archive_record
+  approvals_required:
+    - external_publish
+    - distribution_write
+    - protected_archive_write
+  denied:
+    - secret_read
+    - external_send_without_approval
+    - uncited_claim_publish
+
 security:
   untrusted_inputs:
     - webpage_content

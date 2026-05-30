@@ -31,6 +31,12 @@ describe("createDomainPackTemplate", () => {
       ]);
       expect(validation.valid).toBe(true);
       expect(validation.domain?.id).toBe("customer-ops");
+      expect(validation.domain?.capabilityPolicy?.reads).toEqual([
+        "workspace_item"
+      ]);
+      expect(validation.domain?.capabilityPolicy?.approvalsRequired).toEqual([
+        "external_write"
+      ]);
       expect(validation.goalTemplates[0]?.domain).toBe("customer-ops");
       expect(validation.taskTypes[0]?.domain).toBe("customer-ops");
       expect(validation.fixtures.map((fixture) => fixture.id)).toEqual([

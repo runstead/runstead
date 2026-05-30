@@ -28,6 +28,7 @@ export interface DomainPackManifest {
   repoTemplates: NonNullable<DomainPack["repoTemplates"]>;
   gateThresholds: NonNullable<DomainPack["gateThresholds"]>;
   reportSections: NonNullable<DomainPack["reportSections"]>;
+  capabilityPolicy?: DomainPack["capabilityPolicy"];
   evalQuality?: DomainPack["evalQuality"];
   files: DomainPackManifestFile[];
 }
@@ -115,6 +116,14 @@ const DomainPackManifestSchema = z.object({
       })
     )
     .default([]),
+  capabilityPolicy: z
+    .object({
+      reads: z.array(z.string().min(1)),
+      writes: z.array(z.string().min(1)),
+      approvalsRequired: z.array(z.string().min(1)),
+      denied: z.array(z.string().min(1))
+    })
+    .optional(),
   evalQuality: z
     .object({
       minimumScore: z.number().min(0).max(1),
@@ -171,6 +180,9 @@ export async function buildDomainPackManifest(
     repoTemplates: domain.repoTemplates ?? [],
     gateThresholds: domain.gateThresholds ?? {},
     reportSections: domain.reportSections ?? [],
+    ...(domain.capabilityPolicy === undefined
+      ? {}
+      : { capabilityPolicy: domain.capabilityPolicy }),
     ...(domain.evalQuality === undefined ? {} : { evalQuality: domain.evalQuality }),
     files: files.sort((left, right) => left.path.localeCompare(right.path))
   };

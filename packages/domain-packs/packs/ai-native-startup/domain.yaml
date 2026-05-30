@@ -53,6 +53,29 @@ supported_workers:
   - codex_cli
   - codex_direct
 
+capability_policy:
+  reads:
+    - filesystem.repo
+    - git.status
+    - customer_evidence
+    - analytics_snapshot
+    - support_request
+  writes:
+    - filesystem.patch
+    - runstead.evidence
+    - runstead.report
+    - local_app_scaffold
+  approvals_required:
+    - dependency_install
+    - deployment
+    - billing_change
+    - external_write
+  denied:
+    - secret_read
+    - production_infra_write
+    - billing_mutation
+    - compliance_claim_without_review
+
 security:
   untrusted_inputs:
     - customer_interview

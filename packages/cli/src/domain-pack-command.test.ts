@@ -16,6 +16,12 @@ describe("domain pack command helpers", () => {
     expect(report).toContain(
       "Work pack components: 1 (repo-maintenance:domain_pack)"
     );
+    expect(report).toContain(
+      "Capability reads: 4 (filesystem.repo, git.status, git.diff, github.workflow_run)"
+    );
+    expect(report).toContain(
+      "Capability denied: 2 (secret_read, production_infra_write)"
+    );
     expect(report).toContain("Fixtures: 1 (js-test-failure)");
     expect(report).toContain("Evals: 1 (js-test-failure-smoke)");
     expect(report).toContain("Manifest files:");

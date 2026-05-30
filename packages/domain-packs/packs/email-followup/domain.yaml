@@ -50,6 +50,25 @@ supported_workers:
   - codex_cli
   - codex_direct
 
+capability_policy:
+  reads:
+    - mailbox.thread
+    - email.body
+    - email.attachment_text
+    - contact.record
+  writes:
+    - email.draft
+    - followup_memory
+  approvals_required:
+    - external_send
+    - ambiguous_recipient
+    - protected_memory_write
+  denied:
+    - email.send
+    - email.reply_send
+    - send_message_external
+    - secret_read
+
 security:
   untrusted_inputs:
     - email_body

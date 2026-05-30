@@ -48,5 +48,15 @@ describe("repo-maintenance pack", () => {
     });
     expect(pack.security?.protectedPaths).toContain(".env");
     expect(pack.security?.protectedPaths).toContain("infra/prod/**");
+    expect(pack.capabilityPolicy).toMatchObject({
+      reads: ["filesystem.repo", "git.status", "git.diff", "github.workflow_run"],
+      writes: ["filesystem.patch", "git.branch", "github.pull_request_comment"],
+      approvalsRequired: [
+        "dependency_install",
+        "protected_path_write",
+        "external_comment"
+      ],
+      denied: ["secret_read", "production_infra_write"]
+    });
   });
 });

@@ -77,6 +77,36 @@ local evidence collection while requiring approval before external writes.
 the task `blocked` with `manual_review_required` instead of treating the
 starter task as an unknown custom task.
 
+## Capability Policy
+
+Every built-in pack declares `capability_policy` in `domain.yaml`. This is the
+pack-level summary of what the work is expected to touch before detailed policy
+rules are evaluated:
+
+```yaml
+capability_policy:
+  reads:
+    - filesystem.repo
+  writes:
+    - runstead.evidence
+  approvals_required:
+    - external_write
+  denied:
+    - secret_read
+```
+
+Use this section to make pack boundaries obvious to operators and extension
+authors:
+
+- `reads` declares resources the pack can inspect
+- `writes` declares resources the pack can create or modify
+- `approvals_required` declares side effects that must route through approval
+- `denied` declares resources or actions the pack must not perform
+
+The detailed `policies/*.yaml` file remains the executable decision policy.
+`capability_policy` is the pack-level contract surfaced by catalog, show, and
+run commands so users can see the boundary before work starts.
+
 Installing, uninstalling, or upgrading a pack mutates the local
 `.runstead/domains` registry and requires the actor to have `domain.manage`.
 Read-only SDK commands such as `domain validate`, `domain manifest`, and
