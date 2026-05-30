@@ -1,6 +1,10 @@
 import type { Command } from "commander";
 
-import { collectValues, parseCiRepairWorkerKind } from "../cli-parsers.js";
+import {
+  collectValues,
+  parseCiRepairWorkerKind,
+  parseRequiredPositiveInteger
+} from "../cli-parsers.js";
 import { requireRbacPermission } from "../cli-rbac.js";
 
 export function registerRunCommand(program: Command): Command {
@@ -13,6 +17,12 @@ export function registerRunCommand(program: Command): Command {
     .option("--cwd <path>", "Workspace directory")
     .option("--root <path>", "Additional domain pack root", collectValues, [])
     .option("--no-built-ins", "Exclude built-in domain packs")
+    .option("--plan", "Print the workflow plan without queuing or executing")
+    .option(
+      "--max-tasks <count>",
+      "Maximum workflow tasks to execute",
+      (value) => parseRequiredPositiveInteger(value, "--max-tasks")
+    )
     .option("--worker <worker>", "Worker override for queued CI repair tasks")
     .option("--provider <provider>", "Model provider override for queued agent tasks")
     .option("--model <model>", "Model override for queued agent tasks")
@@ -39,19 +49,69 @@ export function registerRunCommand(program: Command): Command {
           );
         }
 
-        const { formatWorkPackWorkflowRunPlan, resolveWorkPackWorkflowRun } =
-          await import("../work-pack-run.js");
-        const result = await resolveWorkPackWorkflowRun({
-          pack,
-          workflow,
-          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-          roots: options.root,
-          includeBuiltIns: options.builtIns !== false
-        });
+        if (options.plan === true) {
+          const { formatWorkPackWorkflowRunPlan, resolveWorkPackWorkflowRun } =
+            await import("../work-pack-run.js");
+          const result = await resolveWorkPackWorkflowRun({
+            pack,
+            workflow,
+            ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+            roots: options.root,
+            includeBuiltIns: options.builtIns !== false
+          });
 
-        console.log(formatWorkPackWorkflowRunPlan(result));
+          console.log(formatWorkPackWorkflowRunPlan(result));
+          return;
+        }
+
+        await runWorkPackWorkflow({ pack, workflow, options });
       }
     );
+}
+
+async function runWorkPackWorkflow(input: {
+  pack: string;
+  workflow: string;
+  options: RunCommandOptions;
+}): Promise<void> {
+  await requireRbacPermission({
+    ...(input.options.cwd === undefined ? {} : { cwd: input.options.cwd }),
+    actor: input.options.actor,
+    permission: "task.run",
+    action: "run work-pack workflow"
+  });
+
+  const {
+    executedWorkPackWorkflowRunExitCode,
+    executeWorkPackWorkflowRun,
+    formatExecutedWorkPackWorkflowRun
+  } = await import("../work-pack-run.js");
+  const result = await executeWorkPackWorkflowRun({
+    pack: input.pack,
+    workflow: input.workflow,
+    ...(input.options.cwd === undefined ? {} : { cwd: input.options.cwd }),
+    roots: input.options.root,
+    includeBuiltIns: input.options.builtIns !== false,
+    ...(input.options.maxTasks === undefined
+      ? {}
+      : { maxTasks: input.options.maxTasks }),
+    ...(input.options.worker === undefined
+      ? {}
+      : { worker: parseCiRepairWorkerKind(input.options.worker) }),
+    ...(input.options.provider === undefined
+      ? {}
+      : { provider: input.options.provider }),
+    ...(input.options.model === undefined ? {} : { model: input.options.model }),
+    ...(input.options.baseUrl === undefined
+      ? {}
+      : { baseUrl: input.options.baseUrl })
+  });
+  const exitCode = executedWorkPackWorkflowRunExitCode(result);
+
+  console.log(formatExecutedWorkPackWorkflowRun(result));
+  if (exitCode !== 0) {
+    process.exitCode = exitCode;
+  }
 }
 
 async function runQueuedTaskOnce(options: RunCommandOptions): Promise<void> {
@@ -85,6 +145,8 @@ interface RunCommandOptions {
   cwd?: string;
   root: string[];
   builtIns?: boolean;
+  plan?: boolean;
+  maxTasks?: number;
   worker?: string;
   provider?: string;
   model?: string;

@@ -6,7 +6,11 @@ import { describe, expect, it } from "vitest";
 
 import { initRunstead } from "./init.js";
 import { listTasks } from "./tasks.js";
+import type { WorkerProcessRunner } from "./wrapped-worker.js";
 import {
+  executedWorkPackWorkflowRunExitCode,
+  executeWorkPackWorkflowRun,
+  formatExecutedWorkPackWorkflowRun,
   formatWorkPackWorkflowRunPlan,
   queueWorkPackWorkflowRun,
   resolveWorkPackWorkflowRun
@@ -114,6 +118,106 @@ describe("work pack run surface", () => {
         type: "run_local_verifiers",
         status: "queued"
       });
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("executes queued task-type workflows through the workflow executor", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-work-pack-execute-"));
+
+    try {
+      await initRunstead({ cwd: workspace });
+
+      const executed = await executeWorkPackWorkflowRun({
+        cwd: workspace,
+        pack: "repo-maintenance",
+        workflow: "repo_inspect",
+        now: new Date("2026-05-30T00:00:00.000Z")
+      });
+      const report = formatExecutedWorkPackWorkflowRun(executed);
+
+      expect(executed).toMatchObject({
+        status: "completed",
+        executedTaskCount: 1,
+        queued: {
+          goal: {
+            domain: "repo-maintenance",
+            title: "Run repo_inspect"
+          }
+        },
+        taskResults: [
+          {
+            ranTask: true,
+            task: {
+              type: "repo_inspect",
+              status: "completed"
+            }
+          }
+        ]
+      });
+      expect(report).toContain("Status: completed");
+      expect(report).toContain("Tasks: 1/1");
+      expect(report).toContain("- repo_inspect");
+      expect(executedWorkPackWorkflowRunExitCode(executed)).toBe(0);
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("executes startup internal workflow tasks by exact workflow order", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-work-pack-startup-"));
+    const workerPrompts: string[] = [];
+    const workerRunner: WorkerProcessRunner = (_command, args) => {
+      workerPrompts.push(args.join("\n"));
+
+      return Promise.resolve({
+        stdout: JSON.stringify({
+          summary: "generated startup context",
+          files_changed: [],
+          commands_run: [],
+          risks: [],
+          needs_approval: false,
+          approval_reason: null
+        }),
+        stderr: "",
+        exitCode: 0
+      });
+    };
+
+    try {
+      await initRunstead({ cwd: workspace });
+
+      const executed = await executeWorkPackWorkflowRun({
+        cwd: workspace,
+        pack: "ai-native-startup",
+        workflow: "build-mvp",
+        maxTasks: 1,
+        workerRunner,
+        now: new Date("2026-05-30T00:00:00.000Z")
+      });
+      const report = formatExecutedWorkPackWorkflowRun(executed);
+
+      expect(executed.status).toBe("waiting_approval");
+      expect(executed.executedTaskCount).toBe(1);
+      expect(executed.taskResults[0]).toMatchObject({
+        ranTask: true,
+        task: {
+          type: "generate_agent_context",
+          status: "waiting_approval"
+        }
+      });
+      expect(executed.queued.tasks.map((task) => task.type)).toEqual([
+        "generate_agent_context",
+        "define_measurement_framework",
+        "inspect_repo_readiness",
+        "run_mvp_verifiers"
+      ]);
+      expect(workerPrompts).toEqual([]);
+      expect(report).toContain("Status: waiting_approval");
+      expect(report).toContain("Tasks: 1/4");
+      expect(report).toContain("- generate_agent_context");
+      expect(executedWorkPackWorkflowRunExitCode(executed)).toBe(1);
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }

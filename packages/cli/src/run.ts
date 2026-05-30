@@ -1,5 +1,7 @@
 import { resolve } from "node:path";
 
+import type { Task } from "@runstead/core";
+
 import { isCiRepairPullRequestResumeTask } from "./ci-repair-orchestrator.js";
 import { isGenericDomainTask, runGenericDomainTask } from "./domain-task-execution.js";
 import { isLocalAgentTask, runLocalAgentTask } from "./local-agent.js";
@@ -38,10 +40,27 @@ export async function runOnceUnlocked(
 ): Promise<RunOnceResult> {
   const task = pickNextQueuedTask(cwd);
 
-  if (task?.type === "run_local_verifiers") {
+  if (task === undefined) {
+    return {
+      cwd,
+      ranTask: false,
+      reason: "no_queued_task"
+    };
+  }
+
+  return runQueuedTaskUnlocked(cwd, task, options);
+}
+
+export async function runQueuedTaskUnlocked(
+  cwd: string,
+  task: Task,
+  options: RunOnceOptions
+): Promise<RunOnceResult> {
+  if (task.type === "run_local_verifiers") {
     const result = await runTaskVerifiersUnlocked({
       cwd,
-      taskId: task.id
+      taskId: task.id,
+      ...(options.now === undefined ? {} : { now: options.now })
     });
 
     return {
@@ -52,7 +71,7 @@ export async function runOnceUnlocked(
     };
   }
 
-  if (task !== undefined && isLocalAgentTask(task)) {
+  if (isLocalAgentTask(task)) {
     const result = await runLocalAgentTask({
       cwd,
       taskId: task.id,
@@ -70,15 +89,15 @@ export async function runOnceUnlocked(
     };
   }
 
-  if (task !== undefined && isCiRepairPullRequestResumeTask(task)) {
+  if (isCiRepairPullRequestResumeTask(task)) {
     return runCiRepairPullRequestResumeTask({ cwd, task, options });
   }
 
-  if (task !== undefined && isRunnableCiRepairTask(task)) {
+  if (isRunnableCiRepairTask(task)) {
     return runRunnableCiRepairTask({ cwd, task, options });
   }
 
-  if (task !== undefined && isGenericDomainTask(task)) {
+  if (isGenericDomainTask(task)) {
     const result = await runGenericDomainTask({ cwd, task, options });
 
     if (result.localAgentResult !== undefined) {
@@ -106,7 +125,7 @@ export async function runOnceUnlocked(
     };
   }
 
-  if (task?.type === "manual_review") {
+  if (task.type === "manual_review") {
     const blocked = blockTask({
       cwd,
       task,
@@ -126,27 +145,19 @@ export async function runOnceUnlocked(
     };
   }
 
-  if (task !== undefined) {
-    const blocked = blockTask({
-      cwd,
-      task,
-      reason: "unsupported_task_type",
-      output: {
-        supportedTaskTypes: RUN_ONCE_SUPPORTED_TASK_TYPES
-      },
-      ...(options.now === undefined ? {} : { now: options.now })
-    });
-
-    return {
-      cwd,
-      ranTask: true,
-      task: blocked.task
-    };
-  }
+  const blocked = blockTask({
+    cwd,
+    task,
+    reason: "unsupported_task_type",
+    output: {
+      supportedTaskTypes: RUN_ONCE_SUPPORTED_TASK_TYPES
+    },
+    ...(options.now === undefined ? {} : { now: options.now })
+  });
 
   return {
     cwd,
-    ranTask: false,
-    reason: "no_queued_task"
+    ranTask: true,
+    task: blocked.task
   };
 }

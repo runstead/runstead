@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
 import {
   createRunsteadId,
@@ -20,7 +20,10 @@ import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sql
 import { installDomainPack } from "./domain-pack-install.js";
 import { createGoal } from "./goals.js";
 import { buildGeneratedGoalTasks } from "./goals-generated-tasks.js";
+import { withRunsteadManagerLock } from "./manager-lock.js";
 import { inspectGitRepository } from "./repo-inspection.js";
+import { runQueuedTaskUnlocked } from "./run.js";
+import type { RunOnceOptions, RunOnceResult } from "./run-types.js";
 import { requireRunsteadStateDb, resolveRunsteadRootSync } from "./runstead-root.js";
 
 export interface ResolveWorkPackWorkflowRunOptions {
@@ -49,6 +52,12 @@ export interface QueueWorkPackWorkflowRunOptions
   now?: Date;
 }
 
+export interface ExecuteWorkPackWorkflowRunOptions
+  extends QueueWorkPackWorkflowRunOptions,
+    Omit<RunOnceOptions, "cwd" | "now"> {
+  maxTasks?: number;
+}
+
 export interface QueuedWorkPackWorkflowRun {
   plan: WorkPackWorkflowRunPlan;
   goal: Goal;
@@ -56,6 +65,21 @@ export interface QueuedWorkPackWorkflowRun {
   events: RunsteadEvent[];
   installedPack: boolean;
   stateDb: string;
+}
+
+export type ExecutedWorkPackWorkflowRunStatus =
+  | "completed"
+  | "partial"
+  | "queued"
+  | "blocked"
+  | "waiting_approval"
+  | "failed";
+
+export interface ExecutedWorkPackWorkflowRun {
+  queued: QueuedWorkPackWorkflowRun;
+  taskResults: RunOnceResult[];
+  status: ExecutedWorkPackWorkflowRunStatus;
+  executedTaskCount: number;
 }
 
 export async function resolveWorkPackWorkflowRun(
@@ -141,6 +165,48 @@ export async function queueWorkPackWorkflowRun(
   };
 }
 
+export async function executeWorkPackWorkflowRun(
+  options: ExecuteWorkPackWorkflowRunOptions
+): Promise<ExecutedWorkPackWorkflowRun> {
+  const cwd = resolve(options.cwd ?? process.cwd());
+
+  return withRunsteadManagerLock({ cwd }, () =>
+    executeWorkPackWorkflowRunUnlocked(cwd, options)
+  );
+}
+
+export async function executeWorkPackWorkflowRunUnlocked(
+  cwd: string,
+  options: ExecuteWorkPackWorkflowRunOptions
+): Promise<ExecutedWorkPackWorkflowRun> {
+  const queued = await queueWorkPackWorkflowRun({
+    ...options,
+    cwd
+  });
+  const maxTasks = Math.max(0, options.maxTasks ?? queued.tasks.length);
+  const taskResults: RunOnceResult[] = [];
+
+  for (const task of queued.tasks.slice(0, maxTasks)) {
+    const result = await runQueuedTaskUnlocked(cwd, task, options);
+
+    taskResults.push(result);
+
+    if (!result.ranTask || result.task.status !== "completed") {
+      break;
+    }
+  }
+
+  return {
+    queued,
+    taskResults,
+    status: workPackWorkflowExecutionStatus({
+      taskResults,
+      taskCount: queued.tasks.length
+    }),
+    executedTaskCount: taskResults.filter((result) => result.ranTask).length
+  };
+}
+
 export function formatWorkPackWorkflowRunPlan(
   plan: WorkPackWorkflowRunPlan
 ): string {
@@ -162,6 +228,40 @@ export function formatWorkPackWorkflowRunPlan(
     `Completion criteria: ${formatList(plan.evidenceContract?.completionCriteria ?? [])}`,
     `Suggested commands: ${formatList(plan.suggestedCommands)}`
   ].join("\n");
+}
+
+export function formatExecutedWorkPackWorkflowRun(
+  result: ExecutedWorkPackWorkflowRun
+): string {
+  const contract = result.queued.plan.evidenceContract;
+  const lines = [
+    "Runstead work pack run",
+    `Pack: ${result.queued.plan.workPack.id}`,
+    `Workflow: ${result.queued.plan.workflow.id}`,
+    `Status: ${result.status}`,
+    `Installed pack: ${result.queued.installedPack ? "yes" : "no"}`,
+    `Goal: ${result.queued.goal.id} (${result.queued.goal.title})`,
+    `Tasks: ${result.executedTaskCount}/${result.queued.tasks.length}`,
+    `Evidence outputs: ${formatList(contract?.outputs ?? [])}`,
+    `Completion criteria: ${formatList(contract?.completionCriteria ?? [])}`,
+    "Executed tasks:"
+  ];
+
+  if (result.taskResults.length === 0) {
+    lines.push("- 0");
+  } else {
+    for (const taskResult of result.taskResults) {
+      lines.push(formatExecutedTaskLine(taskResult));
+    }
+  }
+
+  return lines.join("\n");
+}
+
+export function executedWorkPackWorkflowRunExitCode(
+  result: ExecutedWorkPackWorkflowRun
+): number {
+  return result.status === "completed" ? 0 : 1;
 }
 
 function suggestedCommandsForWorkflow(input: {
@@ -335,6 +435,56 @@ function formatList(values: string[]): string {
   }
 
   return `${values.length} (${values.join(", ")})`;
+}
+
+function workPackWorkflowExecutionStatus(input: {
+  taskResults: RunOnceResult[];
+  taskCount: number;
+}): ExecutedWorkPackWorkflowRunStatus {
+  const lastTask = lastExecutedTask(input.taskResults);
+
+  if (lastTask === undefined) {
+    return "queued";
+  }
+
+  if (lastTask.status === "failed") {
+    return "failed";
+  }
+
+  if (lastTask.status === "blocked") {
+    return "blocked";
+  }
+
+  if (lastTask.status === "waiting_approval") {
+    return "waiting_approval";
+  }
+
+  if (
+    lastTask.status === "completed" &&
+    input.taskResults.length >= input.taskCount
+  ) {
+    return "completed";
+  }
+
+  return "partial";
+}
+
+function lastExecutedTask(taskResults: RunOnceResult[]): Task | undefined {
+  for (const result of taskResults.toReversed()) {
+    if (result.ranTask) {
+      return result.task;
+    }
+  }
+
+  return undefined;
+}
+
+function formatExecutedTaskLine(result: RunOnceResult): string {
+  if (!result.ranTask) {
+    return `- idle: ${result.reason}`;
+  }
+
+  return `- ${result.task.type} ${result.task.id}: ${result.task.status}`;
 }
 
 function workspacePackExists(root: string, ref: string): boolean {
