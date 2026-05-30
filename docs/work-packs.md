@@ -105,6 +105,10 @@ and report whether each extension is executable (`ready`), missing declared
 secrets (`missing_secrets`), only a non-executable contract (`contract_only`),
 or declared by the Work Pack but absent from the workspace (`missing`).
 
+Plans also inspect activated skills for the selected domain and report whether
+their readiness metadata is satisfied. This keeps worker guidance discoverable
+without treating skills as evidence collectors or provider adapters.
+
 Connector readiness is reported in the same plan surface:
 
 - `ready`: executable adapter and credentials are available

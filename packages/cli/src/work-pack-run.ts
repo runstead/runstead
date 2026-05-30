@@ -37,6 +37,10 @@ import {
   evaluateWorkPackExtensionReadiness,
   type WorkPackExtensionReadinessReport
 } from "./work-pack-extension-readiness.js";
+import {
+  evaluateWorkPackSkillReadiness,
+  type WorkPackSkillReadinessReport
+} from "./work-pack-skill-readiness.js";
 
 export interface ResolveWorkPackWorkflowRunOptions {
   pack: string;
@@ -46,6 +50,7 @@ export interface ResolveWorkPackWorkflowRunOptions {
   includeBuiltIns?: boolean;
   connectorEnv?: Record<string, string | undefined>;
   extensionEnv?: Record<string, string | undefined>;
+  skillEnv?: Record<string, string | undefined>;
 }
 
 export interface WorkPackWorkflowRunPlan {
@@ -68,6 +73,7 @@ export interface WorkPackWorkflowRunPlan {
   };
   connectorReadiness: WorkPackConnectorReadiness[];
   extensionReadiness: WorkPackExtensionReadinessReport;
+  skillReadiness: WorkPackSkillReadinessReport;
   suggestedCommands: string[];
 }
 
@@ -144,11 +150,24 @@ export async function resolveWorkPackWorkflowRun(
     domainEvaluators.filter((evaluator) => evaluator.requirement === requirement)
   );
 
+  const connectorReadiness = evaluateWorkPackConnectorReadiness({
+    domain: entry.id,
+    evidenceRequirements: evidenceContractRequirements(evidenceContract),
+    ...(options.connectorEnv === undefined ? {} : { env: options.connectorEnv })
+  });
   const extensionReadiness = await evaluateWorkPackExtensionReadiness({
     cwd,
     domain: entry.id,
     components: workPack.extensions,
     ...(options.extensionEnv === undefined ? {} : { env: options.extensionEnv })
+  });
+  const skillReadiness = await evaluateWorkPackSkillReadiness({
+    cwd,
+    domain: entry.id,
+    components: workPack.skills,
+    connectorReadiness,
+    supportedWorkers: entry.domain.supportedWorkers,
+    ...(options.skillEnv === undefined ? {} : { env: options.skillEnv })
   });
 
   return {
@@ -165,12 +184,9 @@ export async function resolveWorkPackWorkflowRun(
               : { evaluators: evidenceContractEvaluators })
           }
         }),
-    connectorReadiness: evaluateWorkPackConnectorReadiness({
-      domain: entry.id,
-      evidenceRequirements: evidenceContractRequirements(evidenceContract),
-      ...(options.connectorEnv === undefined ? {} : { env: options.connectorEnv })
-    }),
+    connectorReadiness,
     extensionReadiness,
+    skillReadiness,
     suggestedCommands: suggestedCommandsForWorkflow({
       pack: entry.id,
       workflow: options.workflow,
@@ -326,6 +342,7 @@ export function formatWorkPackWorkflowRunPlan(plan: WorkPackWorkflowRunPlan): st
     `Completion criteria: ${formatList(plan.evidenceContract?.completionCriteria ?? [])}`,
     `Connectors: ${formatConnectorReadiness(plan.connectorReadiness)}`,
     `Extensions: ${formatExtensionReadiness(plan.extensionReadiness)}`,
+    `Skills: ${formatSkillReadiness(plan.skillReadiness)}`,
     `Suggested commands: ${formatList(plan.suggestedCommands)}`
   ].join("\n");
 }
@@ -349,6 +366,7 @@ export function formatExecutedWorkPackWorkflowRun(
     `Satisfied criteria: ${satisfiedCount(result.evidenceVerdict.completionCriteria)}/${result.evidenceVerdict.completionCriteria.length}`,
     `Connectors: ${formatConnectorReadiness(result.queued.plan.connectorReadiness)}`,
     `Extensions: ${formatExtensionReadiness(result.queued.plan.extensionReadiness)}`,
+    `Skills: ${formatSkillReadiness(result.queued.plan.skillReadiness)}`,
     "Executed tasks:"
   ];
 
@@ -568,6 +586,19 @@ function formatExtensionReadiness(report: WorkPackExtensionReadinessReport): str
 
   return `${report.readiness.length} (${report.readiness
     .map((extension) => `${extension.extension}:${extension.status}`)
+    .join(", ")})${issueSuffix}`;
+}
+
+function formatSkillReadiness(report: WorkPackSkillReadinessReport): string {
+  const issueSuffix =
+    report.issues.length === 0 ? "" : `; issues=${report.issues.length}`;
+
+  if (report.readiness.length === 0) {
+    return `0${issueSuffix}`;
+  }
+
+  return `${report.readiness.length} (${report.readiness
+    .map((skill) => `${skill.skill}:${skill.status}`)
     .join(", ")})${issueSuffix}`;
 }
 

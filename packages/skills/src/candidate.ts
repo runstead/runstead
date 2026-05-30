@@ -5,6 +5,7 @@ import { basename, join, resolve } from "node:path";
 import { stringify as stringifyYaml } from "yaml";
 
 import type { SkillPackageValidationResult } from "./validator.js";
+import type { SkillPackage } from "./skill-package.js";
 import { validateSkillPackageDir } from "./validator.js";
 
 export interface CreateSkillCandidateOptions {
@@ -20,6 +21,7 @@ export interface CreateSkillCandidateOptions {
   author?: string;
   scopeRepos?: string[];
   permissions?: Record<string, string>;
+  readiness?: SkillPackage["readiness"];
 }
 
 export interface CreateSkillCandidateResult {
@@ -59,6 +61,9 @@ export async function createSkillCandidatePackage(
           }),
       allowed_tools: options.allowedTools,
       denied_tools: options.deniedTools,
+      ...(options.readiness === undefined
+        ? {}
+        : { readiness: skillReadinessYaml(options.readiness) }),
       permissions: options.permissions ?? defaultPermissions(),
       verifiers: options.verifierCommands.map((command) => ({ command })),
       provenance: {
@@ -97,6 +102,34 @@ export async function createSkillCandidatePackage(
   return {
     root,
     validation: await validateSkillPackageDir(root)
+  };
+}
+
+function skillReadinessYaml(
+  readiness: SkillPackage["readiness"]
+): Record<string, unknown> {
+  return {
+    ...(readiness.platforms.length === 0 ? {} : { platforms: readiness.platforms }),
+    ...(readiness.requiredEnv.length === 0
+      ? {}
+      : {
+          required_env: readiness.requiredEnv
+        }),
+    ...(readiness.requiredConnectors.length === 0
+      ? {}
+      : { required_connectors: readiness.requiredConnectors }),
+    ...(readiness.requiredTools.length === 0
+      ? {}
+      : { required_tools: readiness.requiredTools }),
+    ...(readiness.requiredWorkers.length === 0
+      ? {}
+      : { required_workers: readiness.requiredWorkers }),
+    ...(readiness.fallbackForConnectors.length === 0
+      ? {}
+      : { fallback_for_connectors: readiness.fallbackForConnectors }),
+    ...(readiness.fallbackForTools.length === 0
+      ? {}
+      : { fallback_for_tools: readiness.fallbackForTools })
   };
 }
 

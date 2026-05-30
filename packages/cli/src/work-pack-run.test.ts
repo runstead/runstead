@@ -2,9 +2,14 @@ import { access, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { createSkillCandidatePackage, promoteSkillPackage } from "@runstead/skills";
 import { describe, expect, it } from "vitest";
 
 import { initRunstead } from "./init.js";
+import {
+  activateSkillPackage,
+  loadSkillActivationRegistry
+} from "./skill-activations.js";
 import { listTasks } from "./tasks.js";
 import type { WorkerProcessRunner } from "./wrapped-worker.js";
 import {
@@ -190,6 +195,75 @@ describe("work pack run surface", () => {
         ])
       );
       expect(report).toContain("growth-ready:missing_secrets");
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("reports activated skill readiness for work pack runs", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-work-pack-skill-"));
+
+    try {
+      await initRunstead({ cwd: workspace });
+      const skillRoot = join(workspace, "skills", "research-digest-reviewer");
+
+      await createSkillCandidatePackage({
+        root: skillRoot,
+        name: "research-digest-reviewer",
+        domain: "research-monitor",
+        description: "Review research digest sources before release.",
+        triggers: ["weekly-research-digest"],
+        allowedTools: ["filesystem.read"],
+        deniedTools: ["secret.read"],
+        verifierCommands: ["printf ok"],
+        provenanceTasks: ["task_research"],
+        readiness: {
+          platforms: [],
+          requiredEnv: [{ name: "DOCS_API_TOKEN", purpose: "Docs archive access" }],
+          requiredConnectors: ["docs"],
+          requiredTools: ["filesystem.read"],
+          requiredWorkers: ["codex_cli"],
+          fallbackForConnectors: [],
+          fallbackForTools: []
+        }
+      });
+      await promoteSkillPackage({ root: skillRoot, promotedBy: "maintainer" });
+      activateSkillPackage({
+        root: join(workspace, ".runstead"),
+        skillRoot,
+        status: "active",
+        risk: "low",
+        canaryPercent: 100,
+        rollbackOnRegression: true
+      });
+      expect(
+        loadSkillActivationRegistry(join(workspace, ".runstead")).activations
+      ).toHaveLength(1);
+
+      const result = await resolveWorkPackWorkflowRun({
+        cwd: workspace,
+        pack: "research-monitor",
+        workflow: "weekly-research-digest",
+        connectorEnv: {
+          DOCS_API_TOKEN: "docs-token"
+        },
+        skillEnv: {
+          DOCS_API_TOKEN: "docs-token"
+        }
+      });
+      const report = formatWorkPackWorkflowRunPlan(result);
+
+      expect(result.skillReadiness.issues).toEqual([]);
+      expect(result.skillReadiness.readiness).toEqual([
+        expect.objectContaining({
+          skill: "research-digest-reviewer",
+          status: "ready",
+          requiredConnectors: ["docs"],
+          requiredTools: ["filesystem.read"],
+          requiredWorkers: ["codex_cli"]
+        })
+      ]);
+      expect(report).toContain("Skills: 1 (research-digest-reviewer:ready)");
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }

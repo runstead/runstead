@@ -95,3 +95,33 @@ Choose skills for "this is how I fix X when it happens" workflows, and
 extensions for "this is how I prove X is ready before I launch" workflows.
 See [capability-boundaries.md](capability-boundaries.md) for the full boundary
 between domain packs, extensions, skills, connectors, and tools.
+
+## Readiness Metadata
+
+Skill packages can declare Hermes-style readiness metadata in `skill.yaml` so
+Runstead can explain whether an activated skill is usable for a Work Pack run:
+
+```yaml
+readiness:
+  platforms: [linux, macos]
+  required_env:
+    - name: DOCS_API_TOKEN
+      purpose: archive digest evidence
+  required_connectors: [docs]
+  required_tools: [filesystem.read]
+  required_workers: [codex_cli]
+  fallback_for_connectors: [web]
+  fallback_for_tools: [browser.navigate]
+```
+
+`runstead run <pack> <workflow> --plan` reports activated skill readiness next
+to connector and extension readiness:
+
+- `ready`: platform, env, connector, tool, and worker requirements are present
+- `missing_requirements`: one or more declared requirements are absent
+- `fallback_suppressed`: the skill is a fallback and a primary connector or
+  tool is already available
+- `platform_unsupported`: the skill does not support the current platform
+- `disabled`: the activation exists but is disabled
+- `missing`: the Work Pack declares a skill component, but no matching
+  activation is loaded

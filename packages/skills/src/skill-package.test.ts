@@ -57,6 +57,15 @@ describe("parseSkillPackageYaml", () => {
         domain: "repo-maintenance",
         description: "Diagnose pnpm failures.",
         triggers: ["ci_failure", { log_contains: "pnpm" }],
+        readiness: {
+          platforms: ["linux"],
+          required_env: [{ name: "GITHUB_TOKEN", purpose: "GitHub API access" }],
+          required_connectors: ["github"],
+          required_tools: ["filesystem.read"],
+          required_workers: ["codex_cli"],
+          fallback_for_connectors: ["github"],
+          fallback_for_tools: ["browser.navigate"]
+        },
         allowed_tools: ["filesystem.read"],
         denied_tools: ["secret.read"],
         permissions: {
@@ -73,6 +82,15 @@ describe("parseSkillPackageYaml", () => {
     expect(skill).toMatchObject({
       name: "fix-pnpm-ci-failures",
       allowedTools: ["filesystem.read"],
+      readiness: {
+        platforms: ["linux"],
+        requiredEnv: [{ name: "GITHUB_TOKEN", purpose: "GitHub API access" }],
+        requiredConnectors: ["github"],
+        requiredTools: ["filesystem.read"],
+        requiredWorkers: ["codex_cli"],
+        fallbackForConnectors: ["github"],
+        fallbackForTools: ["browser.navigate"]
+      },
       provenance: {
         createdFromTasks: ["task_001"]
       }
