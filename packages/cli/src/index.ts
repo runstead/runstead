@@ -11,6 +11,7 @@ import { registerCheckpointCommand } from "./commands/checkpoint.js";
 import { registerCiRepairCommand } from "./commands/ci-repair.js";
 import { registerCodexCommand } from "./commands/codex.js";
 import { registerConfigCommand } from "./commands/config.js";
+import { registerConnectorCommand } from "./commands/connector.js";
 import { registerCoreCommands } from "./commands/core.js";
 import { registerDaemonCommand } from "./commands/daemon.js";
 import { registerDashboardCommand } from "./commands/dashboard.js";
@@ -49,6 +50,18 @@ export interface CreateProgramOptions {
 }
 
 export { formatCliError, RunsteadCliError } from "./cli-errors.js";
+export {
+  formatRunsteadConnector,
+  formatRunsteadConnectorList,
+  getRunsteadConnector,
+  listRunsteadConnectors,
+  requireRunsteadConnector
+} from "./connector-catalog.js";
+export type {
+  RunsteadConnectorDefinition,
+  RunsteadConnectorId,
+  RunsteadConnectorMaturity
+} from "./connector-catalog.js";
 export {
   collectValues,
   parseCiRepairWorkerKind,
@@ -92,6 +105,7 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
   registerCiRepairCommand(program);
   registerCodexCommand(program);
   registerConfigCommand(program);
+  registerConnectorCommand(program);
   registerAgentCommand(program);
   registerDashboardCommand(program);
   registerDoctorCommand(program);

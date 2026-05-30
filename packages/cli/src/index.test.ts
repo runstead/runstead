@@ -389,6 +389,22 @@ describe("cli entrypoint", () => {
     );
   });
 
+  it("exposes unified connector catalog commands", () => {
+    const connector = createProgram().commands.find(
+      (command) => command.name() === "connector"
+    );
+
+    expect(connector?.commands.map((command) => command.name())).toEqual([
+      "list",
+      "show"
+    ]);
+    for (const commandName of ["list", "show"]) {
+      const command = connector?.commands.find((item) => item.name() === commandName);
+
+      expect(command?.options.map((option) => option.long)).toContain("--json");
+    }
+  });
+
   it("exposes repository archiving", () => {
     const repo = createProgram().commands.find((command) => command.name() === "repo");
 

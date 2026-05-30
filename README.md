@@ -193,6 +193,14 @@ Current built-in domain packs are also Work Packs. Use `runstead domain show
 <pack>` to inspect the Work Pack workflows and components exposed by a pack.
 See [docs/work-packs.md](docs/work-packs.md) for the model.
 
+## Connectors
+
+Runstead has a unified connector catalog for provider and workspace data access:
+GitHub, Vercel, Sentry, PostHog, Email, Web, and Docs. Use `runstead connector
+list` or `runstead connector show <connector>` to inspect each connector's
+credentials, read/write surface, evidence types, and existing startup source
+adapter mappings. See [docs/connectors.md](docs/connectors.md) for the catalog.
+
 ## Readiness Extensions
 
 Drop YAML or JSON manifests into `.runstead/extensions/` to add domain-specific
@@ -525,6 +533,10 @@ Product and lifecycle:
 
 - [docs/roadmap.md](docs/roadmap.md): current implementation backlog and
   validation order
+- [docs/work-packs.md](docs/work-packs.md): unified Work Pack model for domain
+  packs, extensions, and skills
+- [docs/connectors.md](docs/connectors.md): canonical connector catalog for
+  provider and workspace data access
 - [docs/product-positioning.md](docs/product-positioning.md): product stance
   and boundaries
 - [docs/startup-lifecycle.md](docs/startup-lifecycle.md): stage model and
@@ -558,8 +570,6 @@ Architecture and governance:
 - [docs/daemon.md](docs/daemon.md): daemon mode, heartbeats, webhook intake
 - [docs/skills.md](docs/skills.md): experimental, non-readiness-path skill
   package lifecycle
-- [docs/work-packs.md](docs/work-packs.md): unified Work Pack model for domain
-  packs, extensions, and skills
 
 Extension and pack authoring:
 
