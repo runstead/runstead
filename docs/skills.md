@@ -1,8 +1,8 @@
 # Skills
 
-Skill packages are still experimental and are not part of the default
-autonomous runtime. A candidate can be created, validated, tested, and then
-manually promoted only after its package tests pass:
+Skill packages are still experimental, isolated from the default MVP readiness
+path, and not part of `startup ready`. A candidate can be created, validated,
+tested, and then manually promoted only after its package tests pass:
 
 ```sh
 runstead skill candidate create fix-pnpm-ci-failures \
@@ -21,10 +21,61 @@ runstead skill deprecate ./skills/fix-pnpm-ci-failures \
   --reason "superseded by a safer workflow"
 ```
 
-Promotion updates `skill.yaml` from `candidate` to `promoted` and appends
-the promotion decision to `changelog.md`. It does not automatically attach
-the skill to future tasks. Deprecation updates `skill.yaml` from `promoted`
-to `deprecated` and records the reason in `changelog.md`.
+Promotion updates `skill.yaml` from `candidate` to `promoted`, appends the
+promotion decision to `changelog.md`, and does not attach the skill to future
+tasks. Deprecation updates `skill.yaml` from `promoted` to `deprecated` and
+records the reason in `changelog.md`.
+
+## Experimental Automatic Improvement
+
+The automatic improvement loop is a secondary operator-triggered path. It can
+turn quarantined `skill_candidate` learning proposals into activated,
+repo-scoped skills when they pass the low-risk auto-promotion gate, but it is
+not run by startup readiness or included in readiness verdict inputs:
+
+```sh
+runstead learning auto-improve \
+  --cwd /path/to/repo \
+  --scope repo \
+  --risk low \
+  --canary 25
+```
+
+The automatic path is intentionally constrained:
+
+- only quarantined `skill_candidate` proposals are eligible
+- operators must invoke `runstead learning auto-improve`; readiness runs do not
+  invoke it
+- low-risk auto-promotion requires repo scope, `skill_test`, and no high-impact
+  allowed tools such as secrets, external writes, dependency updates, policy
+  writes, deployments, pushes, or PR creation
+- generated skill packages still run `skill validate`, `skill test`, and
+  `skill promote`
+- activated skills are registered in `.runstead/skills/activations.json`
+- local-agent prompts receive only matching active skills for the same repo,
+  task type, mode, and canary bucket
+- every activation, context retrieval, task outcome, and rollback is audited in
+  the Runstead event log
+
+Shadow mode is the recommended first rollout step. It promotes and registers a
+skill without injecting it into prompts:
+
+```sh
+runstead learning auto-improve --cwd /path/to/repo --shadow
+```
+
+List and manually disable activated skills:
+
+```sh
+runstead skill activation list --cwd /path/to/repo
+runstead skill activation deactivate <activation-id> \
+  --cwd /path/to/repo \
+  --reason "regressed verifier pass rate"
+```
+
+When `rollbackOnRegression` is enabled, Runstead automatically disables an
+activated skill after a later task that used it ends in `failed`, `blocked`, or
+`interrupted`.
 
 Skill package validation fails closed when required package files are
 symlinks or resolve outside the package root. Keep `skill.yaml`,

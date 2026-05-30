@@ -3,10 +3,14 @@ import type { Command } from "commander";
 import { collectValues } from "../cli-parsers.js";
 import {
   runSkillCandidateCreateCommand,
+  runSkillActivationDeactivateCommand,
+  runSkillActivationListCommand,
   runSkillDeprecateCommand,
   runSkillPromoteCommand,
   runSkillTestCommand,
   runSkillValidateCommand,
+  type SkillActivationDeactivateCommandOptions,
+  type SkillActivationListCommandOptions,
   type SkillCandidateCreateCommandOptions,
   type SkillDeprecateCommandOptions,
   type SkillPromoteCommandOptions
@@ -20,6 +24,9 @@ export function registerSkillCommand(program: Command): Command {
   const skillCandidate = skill
     .command("candidate")
     .description("Manage skill candidates.");
+  const skillActivation = skill
+    .command("activation")
+    .description("Manage experimental activated promoted skills.");
 
   skillCandidate
     .command("create")
@@ -37,6 +44,25 @@ export function registerSkillCommand(program: Command): Command {
     .option("--author <id>", "Skill candidate author")
     .action((name: string, options: SkillCandidateCreateCommandOptions) =>
       runSkillCandidateCreateCommand(name, options)
+    );
+
+  skillActivation
+    .command("list")
+    .description("List experimental activated skill packages for a workspace.")
+    .option("--cwd <path>", "Workspace directory")
+    .action((options: SkillActivationListCommandOptions) =>
+      runSkillActivationListCommand(options)
+    );
+
+  skillActivation
+    .command("deactivate")
+    .description("Disable an experimental activated skill package.")
+    .argument("<activation-id>", "Skill activation id")
+    .option("--cwd <path>", "Workspace directory")
+    .option("--disabled-by <id>", "Deactivator identity", "local-admin")
+    .option("--reason <text>", "Deactivation reason")
+    .action((activationId: string, options: SkillActivationDeactivateCommandOptions) =>
+      runSkillActivationDeactivateCommand(activationId, options)
     );
 
   skill

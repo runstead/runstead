@@ -1,4 +1,5 @@
-import { basename } from "node:path";
+import { realpathSync } from "node:fs";
+import { basename, resolve } from "node:path";
 
 import {
   createRunsteadId,
@@ -113,17 +114,29 @@ function selectContextMemories(input: {
 }
 
 function taskContextMemoryScopes(options: BuildTaskContextPackOptions): string[] {
-  const repository = findRepositoryByLocalPath(options.database, options.cwd);
+  const repositoryPath = canonicalContextPath(options.cwd);
+  const repository =
+    findRepositoryByLocalPath(options.database, options.cwd) ??
+    findRepositoryByLocalPath(options.database, repositoryPath);
   const taskType = options.task.type.trim();
 
   return [
     `repo:${options.cwd}`,
+    ...(repositoryPath === options.cwd ? [] : [`repo:${repositoryPath}`]),
     ...(repository === undefined ? [] : [`repo:${repository.alias}`]),
     `repo:${basename(options.cwd)}`,
     `domain:${options.task.domain}`,
     ...(taskType.length === 0 ? [] : [`task_type:${taskType}`]),
     "global"
   ].filter(uniqueStrings);
+}
+
+function canonicalContextPath(path: string): string {
+  try {
+    return realpathSync(path);
+  } catch {
+    return resolve(path);
+  }
 }
 
 function filterConflictedMemories(memories: MemoryRecord[]): MemoryRecord[] {

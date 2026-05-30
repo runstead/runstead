@@ -8,7 +8,7 @@ import {
 } from "@runstead/core";
 import { appendEventAndProject, openRunsteadDatabase } from "@runstead/state-sqlite";
 import type { CreateSkillCandidateResult } from "@runstead/skills";
-import { createSkillCandidatePackage } from "@runstead/skills";
+import { createSkillCandidatePackage, promoteSkillPackage } from "@runstead/skills";
 
 import { showGoal } from "./goals.js";
 import {
@@ -16,8 +16,17 @@ import {
   type ReviewLocalAgentLearningResult
 } from "./learning-review.js";
 import { memoryEventPayload } from "./memory-record-builders.js";
-import { readMemoryRecord } from "./memory-query.js";
-import { requireRunsteadStateDbSync } from "./runstead-root.js";
+import { readMemoryRecord, readMemoryRecords } from "./memory-query.js";
+import {
+  requireRunsteadRootSync,
+  requireRunsteadStateDbSync
+} from "./runstead-root.js";
+import {
+  activateSkillPackage,
+  type SkillActivationRecord,
+  type SkillActivationRisk,
+  type SkillActivationStatus
+} from "./skill-activations.js";
 import { showTask } from "./tasks.js";
 
 export interface ReviewLearningForTaskOptions {
@@ -66,6 +75,38 @@ export interface CreateSkillFromLearningCandidateResult {
   event: RunsteadEvent;
   stateDb: string;
 }
+
+export type AutoImproveLearningScope = "repo" | "global";
+
+export interface AutoImproveLearningOptions {
+  cwd?: string;
+  scope?: AutoImproveLearningScope;
+  risk?: SkillActivationRisk;
+  limit?: number;
+  canaryPercent?: number;
+  activationStatus?: SkillActivationStatus;
+  rollbackOnRegression?: boolean;
+  promotedBy?: string;
+  now?: Date;
+}
+
+export interface AutoImproveLearningResult {
+  stateDb: string;
+  decisions: AutoImproveLearningDecision[];
+}
+
+export type AutoImproveLearningDecision =
+  | {
+      candidateId: string;
+      status: "promoted";
+      skillRoot: string;
+      activation: SkillActivationRecord;
+    }
+  | {
+      candidateId: string;
+      status: "skipped";
+      reason: string;
+    };
 
 export function reviewLearningForTask(
   options: ReviewLearningForTaskOptions
@@ -231,6 +272,99 @@ export async function createSkillFromLearningCandidate(
   }
 }
 
+export async function autoImproveLearning(
+  options: AutoImproveLearningOptions = {}
+): Promise<AutoImproveLearningResult> {
+  const cwd = resolve(options.cwd ?? process.cwd());
+  const root = requireRunsteadRootSync(cwd).root;
+  const stateDb = requireRunsteadStateDbSync(cwd).stateDb;
+  const decisions: AutoImproveLearningDecision[] = [];
+  const candidates = quarantinedSkillCandidates({
+    stateDb,
+    ...(options.limit === undefined ? {} : { limit: options.limit })
+  });
+
+  for (const candidate of candidates) {
+    const eligibility = autoImproveEligibility(candidate, {
+      cwd,
+      scope: options.scope ?? "repo",
+      risk: options.risk ?? "low"
+    });
+
+    if (eligibility !== "eligible") {
+      decisions.push({
+        candidateId: candidate.id,
+        status: "skipped",
+        reason: eligibility
+      });
+      continue;
+    }
+
+    try {
+      const skillName = autoImproveSkillName(candidate);
+      const skillResult = await createSkillFromLearningCandidate({
+        cwd,
+        candidateId: candidate.id,
+        name: skillName,
+        dir: join(cwd, "skills", skillName),
+        scopeRepos: options.scope === "global" ? [] : [cwd],
+        author: options.promotedBy ?? "runstead:auto-improve",
+        ...(options.now === undefined ? {} : { now: options.now })
+      });
+      await promoteSkillPackage({
+        root: skillResult.skill.root,
+        promotedBy: options.promotedBy ?? "runstead:auto-improve",
+        ...(options.now === undefined ? {} : { now: options.now })
+      });
+      const database = openRunsteadDatabase(stateDb);
+      let activation: SkillActivationRecord;
+
+      try {
+        activation = activateSkillPackage({
+          root,
+          database,
+          skillRoot: skillResult.skill.root,
+          status: options.activationStatus ?? "active",
+          risk: options.risk ?? "low",
+          canaryPercent: options.canaryPercent ?? 100,
+          rollbackOnRegression: options.rollbackOnRegression ?? true,
+          activatedBy: options.promotedBy ?? "runstead:auto-improve",
+          sourceMemoryId: candidate.id,
+          scopeRepos: options.scope === "global" ? [] : [cwd],
+          taskTypes: ["local_agent_task"],
+          ...(options.now === undefined ? {} : { now: options.now })
+        });
+      } finally {
+        database.close();
+      }
+
+      promoteLearningMemoryCandidate({
+        cwd,
+        candidateId: candidate.id,
+        promotedBy: options.promotedBy ?? "runstead:auto-improve",
+        ...(options.now === undefined ? {} : { now: options.now })
+      });
+      decisions.push({
+        candidateId: candidate.id,
+        status: "promoted",
+        skillRoot: skillResult.skill.root,
+        activation
+      });
+    } catch (error) {
+      decisions.push({
+        candidateId: candidate.id,
+        status: "skipped",
+        reason: error instanceof Error ? error.message : String(error)
+      });
+    }
+  }
+
+  return {
+    stateDb,
+    decisions
+  };
+}
+
 function requireMemoryCandidate(
   database: ReturnType<typeof openRunsteadDatabase>,
   id: string
@@ -248,6 +382,98 @@ function suggestedSkill(memory: MemoryRecord): JsonObject {
   const proposal = objectValue(memory.provenance.proposal);
 
   return objectValue(proposal.suggestedSkill);
+}
+
+function quarantinedSkillCandidates(input: {
+  stateDb: string;
+  limit?: number;
+}): MemoryRecord[] {
+  const database = openRunsteadDatabase(input.stateDb);
+
+  try {
+    return readMemoryRecords(database, {
+      status: "quarantined",
+      type: "skill_candidate",
+      ...(input.limit === undefined ? {} : { limit: input.limit })
+    });
+  } finally {
+    database.close();
+  }
+}
+
+function autoImproveEligibility(
+  memory: MemoryRecord,
+  options: {
+    cwd: string;
+    scope: AutoImproveLearningScope;
+    risk: SkillActivationRisk;
+  }
+): "eligible" | string {
+  const proposal = objectValue(memory.provenance.proposal);
+  const suggested = suggestedSkill(memory);
+
+  if (proposal.suggestedPromotionAction !== "create-skill") {
+    return "candidate does not request skill creation";
+  }
+
+  if (proposal.requiredVerifier !== "skill_test") {
+    return "candidate does not require skill_test verification";
+  }
+
+  if (options.risk === "low" && memory.confidence < 0.5) {
+    return "low-risk auto-improvement requires confidence >= 0.5";
+  }
+
+  if (options.scope === "global" && options.risk === "low") {
+    return "global auto-improvement requires --risk medium or --risk high";
+  }
+
+  if (options.scope === "repo" && memory.scope !== `repo:${options.cwd}`) {
+    return `repo-scoped auto-improvement requires scope repo:${options.cwd}`;
+  }
+
+  const allowedTools = stringArray(suggested, "allowedTools");
+  const deniedTools = stringArray(suggested, "deniedTools");
+
+  if (allowedTools.some(isHighImpactTool)) {
+    return "candidate allows high-impact tools";
+  }
+
+  if (!deniedTools.includes("secret.read") || !deniedTools.includes("external.write")) {
+    return "candidate must deny secret.read and external.write";
+  }
+
+  return "eligible";
+}
+
+function autoImproveSkillName(memory: MemoryRecord): string {
+  const suggested = suggestedSkill(memory);
+  const base = stringValue(suggested, "name") ?? fallbackSkillName(memory);
+  const suffix = memory.id
+    .toLowerCase()
+    .replace(/^mem_/, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .slice(0, 8);
+
+  return `${base}-${suffix}`
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function isHighImpactTool(tool: string): boolean {
+  return [
+    "secret.read",
+    "external.write",
+    "policy.write",
+    "auth.write",
+    "deployment.write",
+    "package.install",
+    "package.update",
+    "git.push",
+    "github.pr.create"
+  ].includes(tool);
 }
 
 function fallbackSkillName(memory: MemoryRecord): string {

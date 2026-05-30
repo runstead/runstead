@@ -181,9 +181,31 @@ describe("cli entrypoint", () => {
     const createSkill = learning?.commands.find(
       (command) => command.name() === "create-skill"
     );
+    const autoImprove = learning?.commands.find(
+      (command) => command.name() === "auto-improve"
+    );
 
     expect(learning?.commands.map((command) => command.name())).toEqual(
-      expect.arrayContaining(["review", "proposals", "promote-memory", "create-skill"])
+      expect.arrayContaining([
+        "auto-improve",
+        "review",
+        "proposals",
+        "promote-memory",
+        "create-skill"
+      ])
+    );
+    expect(autoImprove?.options.map((option) => option.long)).toEqual(
+      expect.arrayContaining([
+        "--cwd",
+        "--scope",
+        "--risk",
+        "--limit",
+        "--canary",
+        "--shadow",
+        "--no-rollback-on-regression",
+        "--promoted-by",
+        "--actor"
+      ])
     );
     expect(review?.options.map((option) => option.long)).toEqual(
       expect.arrayContaining(["--cwd", "--actor"])
@@ -954,6 +976,7 @@ describe("cli entrypoint", () => {
 
     expect(skill?.commands.map((command) => command.name())).toContain("promote");
     expect(skill?.commands.map((command) => command.name())).toContain("deprecate");
+    expect(skill?.commands.map((command) => command.name())).toContain("activation");
     expect(
       skill?.commands
         .find((command) => command.name() === "promote")
@@ -964,6 +987,12 @@ describe("cli entrypoint", () => {
         .find((command) => command.name() === "deprecate")
         ?.options.map((option) => option.long)
     ).toEqual(expect.arrayContaining(["--deprecated-by", "--reason"]));
+    expect(
+      skill?.commands
+        .find((command) => command.name() === "activation")
+        ?.commands.find((command) => command.name() === "deactivate")
+        ?.options.map((option) => option.long)
+    ).toEqual(expect.arrayContaining(["--cwd", "--disabled-by", "--reason"]));
   });
 
   it("exposes RBAC actor selection on GitHub App mode", () => {

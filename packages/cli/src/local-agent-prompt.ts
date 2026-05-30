@@ -11,6 +11,10 @@ import {
   formatTaskContextPackPrompt,
   type TaskContextPack
 } from "./task-context-pack.js";
+import {
+  formatTaskSkillContextPrompt,
+  type TaskSkillContextPack
+} from "./skill-activations.js";
 import type { RunTaskVerifierCommandResult } from "./verifier-runner.js";
 
 export function localAgentTaskInput(input: {
@@ -94,7 +98,10 @@ export function localAgentTaskInput(input: {
 
 export function buildLocalAgentPrompt(
   task: Task,
-  options: { contextPack?: TaskContextPack | undefined } = {}
+  options: {
+    contextPack?: TaskContextPack | undefined;
+    skillContextPack?: TaskSkillContextPack | undefined;
+  } = {}
 ): string {
   const prompt = requiredTaskString(task, "prompt");
   const mode = localAgentTaskMode(task);
@@ -103,6 +110,7 @@ export function buildLocalAgentPrompt(
     prompt,
     "",
     ...formatTaskContextPackPrompt(options.contextPack),
+    ...formatTaskSkillContextPrompt(options.skillContextPack),
     "Runstead local-agent mode:",
     `- mode: ${mode}`,
     ...localAgentModePromptRules(task),

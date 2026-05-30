@@ -29,6 +29,7 @@ import {
   localAgentDeniedActions
 } from "./local-agent-prompt.js";
 import type { PolicyProfile } from "./policy.js";
+import { buildTaskSkillContextPack } from "./skill-activations.js";
 import { buildTaskContextPack } from "./task-context-pack.js";
 import {
   startWrappedWorker,
@@ -66,6 +67,16 @@ export async function runLocalAgentWorker(
           cwd: options.cwd,
           database: options.database,
           goal: options.goal,
+          task: options.task,
+          ...(options.now === undefined ? {} : { now: options.now })
+        })
+      : undefined;
+  const skillContextPack =
+    options.pendingPatchResume === undefined
+      ? buildTaskSkillContextPack({
+          cwd: options.cwd,
+          root: options.root,
+          database: options.database,
           task: options.task,
           ...(options.now === undefined ? {} : { now: options.now })
         })
@@ -121,7 +132,7 @@ export async function runLocalAgentWorker(
       modelProviderNetworkDomains: options.modelProviderNetworkDomains,
       evidenceDir: join(options.root, "evidence"),
       transport: options.transport,
-      prompt: buildLocalAgentPrompt(options.task, { contextPack }),
+      prompt: buildLocalAgentPrompt(options.task, { contextPack, skillContextPack }),
       ...(maxTurns === undefined ? {} : { maxTurns }),
       ...localAgentTaskToolBudget(options.task),
       ...localAgentTaskModelRequestTiming(options.task),
@@ -145,7 +156,9 @@ export async function runLocalAgentWorker(
         (command) => `${command.name}: ${command.command}`
       ),
       policySummary: "repo-maintenance policy enforced by Runstead local agent",
-      instructions: [buildLocalAgentPrompt(options.task, { contextPack })],
+      instructions: [
+        buildLocalAgentPrompt(options.task, { contextPack, skillContextPack })
+      ],
       ...(options.model === undefined ? {} : { model: options.model }),
       ...(options.checkpoint === undefined
         ? {}

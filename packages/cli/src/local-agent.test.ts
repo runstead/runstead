@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { openRunsteadDatabase } from "@runstead/state-sqlite";
+import { createSkillCandidatePackage, promoteSkillPackage } from "@runstead/skills";
 import { describe, expect, it } from "vitest";
 
 import { decideApproval, showApproval } from "./approvals.js";
@@ -28,6 +29,7 @@ import {
 } from "./local-agent.js";
 import { quarantineMemoryCandidate, recordProjectFact } from "./memory.js";
 import { registerRepository } from "./repositories.js";
+import { activateSkillPackage } from "./skill-activations.js";
 import { showTask } from "./tasks.js";
 import { showGoal } from "./goals.js";
 
@@ -1047,6 +1049,126 @@ describe("local agent task primitives", () => {
         });
       } finally {
         database.close();
+      }
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("injects active promoted skills into local agent prompts and records outcomes", async () => {
+    const workspace = await mkdtemp(
+      join(tmpdir(), "runstead-local-agent-skill-context-")
+    );
+    const requests: CodexResponsesRequest[] = [];
+    const transport: CodexDirectTransport = {
+      createResponse(request) {
+        requests.push(request);
+
+        return Promise.resolve({
+          id: "resp_local_agent_skill_context",
+          status: "completed",
+          outputText: "Used active skill context.",
+          toolCalls: [],
+          finishReason: "stop",
+          outputItems: []
+        });
+      }
+    };
+
+    try {
+      const initialized = await initRunstead({
+        cwd: workspace,
+        profile: "trusted-local"
+      });
+      const skillRoot = join(workspace, "skills", "repo-test-repair");
+
+      await createSkillCandidatePackage({
+        root: skillRoot,
+        name: "repo-test-repair",
+        domain: "repo-maintenance",
+        description: "Use the repo test verifier before and after small repairs.",
+        triggers: ["failing local test"],
+        allowedTools: ["workspace.read", "workspace.write", "verifier.run"],
+        deniedTools: ["secret.read", "external.write"],
+        verifierCommands: ["pnpm test"],
+        provenanceTasks: ["task_prior"],
+        scopeRepos: [workspace]
+      });
+      await promoteSkillPackage({
+        root: skillRoot,
+        promotedBy: "maintainer",
+        now: new Date("2026-05-16T08:04:00.000Z")
+      });
+
+      const database = openRunsteadDatabase(initialized.stateDb);
+
+      try {
+        activateSkillPackage({
+          root: join(workspace, ".runstead"),
+          database,
+          skillRoot,
+          status: "active",
+          risk: "low",
+          canaryPercent: 100,
+          rollbackOnRegression: true,
+          activatedBy: "maintainer",
+          scopeRepos: [workspace],
+          taskTypes: [LOCAL_AGENT_TASK_TYPE],
+          now: new Date("2026-05-16T08:05:00.000Z")
+        });
+      } finally {
+        database.close();
+      }
+
+      const created = await createLocalAgentTask({
+        cwd: workspace,
+        prompt: "Inspect this repo with active skills.",
+        worker: "codex_direct",
+        model: "gpt-5.3-codex",
+        mode: "read-only"
+      });
+
+      await runLocalAgentTask({
+        cwd: workspace,
+        taskId: created.task.id,
+        transport,
+        now: new Date("2026-05-16T08:06:00.000Z")
+      });
+
+      const firstInput = requests[0]?.input[0];
+      const prompt =
+        firstInput !== undefined && "role" in firstInput && firstInput.role === "user"
+          ? firstInput.content
+          : "";
+      const auditDatabase = openRunsteadDatabase(created.stateDb);
+
+      try {
+        const contextEvent = auditDatabase
+          .prepare(
+            "SELECT payload_json FROM events WHERE type = 'skill.context_pack_built'"
+          )
+          .get() as { payload_json: string };
+        const outcomeEvent = auditDatabase
+          .prepare(
+            "SELECT payload_json FROM events WHERE type = 'skill.activation_outcome_recorded'"
+          )
+          .get() as { payload_json: string };
+
+        expect(prompt).toContain("Runstead active skills:");
+        expect(prompt).toContain("repo-test-repair@0.1.0");
+        expect(prompt).toContain("Use the repo test verifier");
+        expect(JSON.parse(contextEvent.payload_json)).toMatchObject({
+          taskId: created.task.id,
+          resultCount: 1,
+          skillNames: ["repo-test-repair"]
+        });
+        expect(JSON.parse(outcomeEvent.payload_json)).toMatchObject({
+          taskId: created.task.id,
+          taskStatus: "completed",
+          regression: false
+        });
+      } finally {
+        auditDatabase.close();
       }
     } finally {
       await rm(workspace, { force: true, recursive: true });

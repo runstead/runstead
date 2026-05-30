@@ -37,10 +37,43 @@ export interface LearningCreateSkillCommandOptions {
   actor: string;
 }
 
+export interface LearningAutoImproveCommandOptions {
+  cwd?: string;
+  scope: string;
+  risk: string;
+  limit?: string;
+  canary?: string;
+  shadow?: boolean;
+  rollbackOnRegression?: boolean;
+  promotedBy: string;
+  actor: string;
+}
+
 export function registerLearningCommand(program: Command): Command {
   const learning = program
     .command("learning")
     .description("Review and promote governed learning proposals. Experimental.");
+
+  learning
+    .command("auto-improve")
+    .description(
+      "Experimental secondary loop: validate, promote, and repo-scope low-risk skill candidates."
+    )
+    .option("--cwd <path>", "Workspace directory")
+    .option("--scope <scope>", "Activation scope: repo or global", "repo")
+    .option("--risk <risk>", "Maximum auto-promotion risk: low, medium, or high", "low")
+    .option("--limit <number>", "Maximum skill candidates to evaluate")
+    .option("--canary <percent>", "Activation canary percentage from 0 to 100", "100")
+    .option("--shadow", "Promote and register in shadow mode without prompt injection")
+    .option(
+      "--no-rollback-on-regression",
+      "Do not auto-disable activated skills when a later task regresses"
+    )
+    .option("--promoted-by <id>", "Promotion identity", "runstead:auto-improve")
+    .option("--actor <id>", "RBAC subject for learning promotion", "local-admin")
+    .action((options: LearningAutoImproveCommandOptions) =>
+      runLearningAutoImproveCommand(options)
+    );
 
   learning
     .command("review")
@@ -96,6 +129,42 @@ export function registerLearningCommand(program: Command): Command {
     );
 
   return learning;
+}
+
+export async function runLearningAutoImproveCommand(
+  options: LearningAutoImproveCommandOptions
+): Promise<void> {
+  await requireRbacPermission({
+    ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+    actor: options.actor,
+    permission: "memory.write",
+    action: "experimental auto-improve learning skills"
+  });
+
+  const { autoImproveLearning } = await import("../learning-actions.js");
+  const limit = parseOptionalInteger(options.limit, "--limit");
+  const result = await autoImproveLearning({
+    ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+    scope: parseAutoImproveScope(options.scope),
+    risk: parseAutoImproveRisk(options.risk),
+    ...(limit === undefined ? {} : { limit }),
+    canaryPercent: parseCanaryPercent(options.canary),
+    activationStatus: options.shadow === true ? "shadow" : "active",
+    rollbackOnRegression: options.rollbackOnRegression !== false,
+    promotedBy: options.promotedBy
+  });
+
+  console.log("Experimental learning auto-improve");
+  console.log(`Decisions: ${result.decisions.length}`);
+  for (const decision of result.decisions) {
+    if (decision.status === "promoted") {
+      console.log(
+        `  promoted ${decision.candidateId} -> ${decision.activation.id} ${decision.activation.status} ${decision.skillRoot}`
+      );
+    } else {
+      console.log(`  skipped ${decision.candidateId}: ${decision.reason}`);
+    }
+  }
 }
 
 export async function runLearningReviewCommand(
@@ -200,4 +269,30 @@ export async function runLearningCreateSkillCommand(
 
   console.log(`Created skill candidate: ${result.skill.root}`);
   console.log(`Source memory: ${result.memory.id}`);
+}
+
+function parseAutoImproveScope(value: string): "repo" | "global" {
+  if (value === "repo" || value === "global") {
+    return value;
+  }
+
+  throw new Error("--scope must be repo or global");
+}
+
+function parseAutoImproveRisk(value: string): "low" | "medium" | "high" {
+  if (value === "low" || value === "medium" || value === "high") {
+    return value;
+  }
+
+  throw new Error("--risk must be low, medium, or high");
+}
+
+function parseCanaryPercent(value: string | undefined): number {
+  const parsed = parseOptionalInteger(value ?? "100", "--canary");
+
+  if (parsed === undefined || parsed < 0 || parsed > 100) {
+    throw new Error("--canary must be an integer from 0 to 100");
+  }
+
+  return parsed;
 }

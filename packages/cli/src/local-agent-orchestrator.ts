@@ -31,6 +31,7 @@ import { runLocalAgentWorker } from "./local-agent-worker-run.js";
 import type { RunLocalAgentTaskResult } from "./local-agent-types.js";
 import type { PolicyProfile } from "./policy.js";
 import { finishWorkerRun, startWorkerRun } from "./runtime-audit.js";
+import { recordTaskSkillActivationOutcomes } from "./skill-activations.js";
 import type { WorkerProcessProgress, WorkerProcessRunner } from "./wrapped-worker.js";
 
 export interface RunLocalAgentTaskWithDatabaseOptions {
@@ -132,6 +133,12 @@ export async function runLocalAgentTaskWithDatabase(
       }),
       ...(options.now === undefined ? {} : { now: options.now })
     });
+    recordTaskSkillActivationOutcomes({
+      root: options.root,
+      database: options.database,
+      task: finalTask,
+      ...(options.now === undefined ? {} : { now: options.now })
+    });
     const learningReview = localAgentTaskLearningReviewEnabled(finalTask)
       ? reviewLocalAgentLearning({
           cwd: options.cwd,
@@ -179,6 +186,12 @@ export async function runLocalAgentTaskWithDatabase(
       workerRun: orchestratorRun,
       status: failure.workerStatus,
       output: failure.output,
+      ...(options.now === undefined ? {} : { now: options.now })
+    });
+    recordTaskSkillActivationOutcomes({
+      root: options.root,
+      database: options.database,
+      task: finalTask,
       ...(options.now === undefined ? {} : { now: options.now })
     });
     const learningReview = localAgentTaskLearningReviewEnabled(finalTask)

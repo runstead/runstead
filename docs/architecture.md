@@ -39,7 +39,8 @@ Contract packages (stable, side-effect free, no Node-specific hosting):
 - `@runstead/sdk`: public extension manifest, `defineRunsteadExtension`,
   `validateRunsteadExtension`, `compileRunsteadExtensionRuntime`,
   `extensionReadinessEvidenceRequirements`
-- `@runstead/skills`: experimental skill package validation and lifecycle
+- `@runstead/skills`: experimental skill package validation and lifecycle for
+  a secondary learning loop outside startup readiness verdicts
 
 Storage backends:
 

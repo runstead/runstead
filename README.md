@@ -494,7 +494,8 @@ Contract packages (stable surface for extensions and external runtimes):
 - `@runstead/evidence`: evidence quality tier and source trust contracts
 - `@runstead/workers`: worker capability and governance-level contracts
 - `@runstead/sdk`: public extension manifest, validation, and runtime compile
-- `@runstead/skills`: skill package lifecycle utilities
+- `@runstead/skills`: experimental skill package lifecycle utilities for a
+  secondary learning loop outside MVP readiness
 
 Concrete implementations and host surfaces:
 
@@ -544,7 +545,8 @@ Architecture and governance:
   patch class
 - [docs/verifier.md](docs/verifier.md): verifier evidence model
 - [docs/daemon.md](docs/daemon.md): daemon mode, heartbeats, webhook intake
-- [docs/skills.md](docs/skills.md): experimental skill package lifecycle
+- [docs/skills.md](docs/skills.md): experimental, non-readiness-path skill
+  package lifecycle
 
 Extension and pack authoring:
 

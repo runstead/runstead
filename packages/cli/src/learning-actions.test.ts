@@ -7,11 +7,13 @@ import { describe, expect, it } from "vitest";
 
 import { initRunstead } from "./init.js";
 import {
+  autoImproveLearning,
   createSkillFromLearningCandidate,
   promoteLearningMemoryCandidate
 } from "./learning-actions.js";
 import { listLearningProposals } from "./learning-proposals.js";
 import { quarantineMemoryCandidate } from "./memory.js";
+import { loadSkillActivationRegistry } from "./skill-activations.js";
 
 describe("learning actions", () => {
   it("promotes quarantined learning memory after review", async () => {
@@ -125,6 +127,99 @@ describe("learning actions", () => {
       expect(skillYaml).toContain("name: repo-inspection-review");
       expect(skillYaml).toContain("status: candidate");
       expect(result.skill.validation.valid).toBe(true);
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("auto-improves low-risk repo-scoped skill candidates into active skills", async () => {
+    const workspace = join(tmpdir(), `runstead-learning-auto-${process.pid}`);
+
+    try {
+      await rm(workspace, { force: true, recursive: true });
+      await initRunstead({ cwd: workspace });
+      const candidate = quarantineMemoryCandidate({
+        cwd: workspace,
+        scope: `repo:${workspace}`,
+        type: "skill_candidate",
+        content: "Reusable failing-test repair skill candidate.",
+        sourceRefs: ["task:task_003"],
+        taskId: "task_003",
+        candidateKey: "learning:task_003:skill_candidate:ghi789",
+        proposal: {
+          requiredVerifier: "skill_test",
+          suggestedPromotionAction: "create-skill",
+          suggestedSkill: {
+            name: "repair-failing-test",
+            domain: "repo-maintenance",
+            triggers: ["Fix a failing local test"],
+            allowedTools: ["workspace.read", "workspace.write", "verifier.run"],
+            deniedTools: ["secret.read", "external.write"],
+            verifierCommands: ["pnpm test"]
+          }
+        },
+        now: new Date("2026-05-16T10:10:00.000Z")
+      }).memory;
+
+      const result = await autoImproveLearning({
+        cwd: workspace,
+        limit: 1,
+        canaryPercent: 25,
+        promotedBy: "auto-curator",
+        now: new Date("2026-05-16T10:11:00.000Z")
+      });
+      const decision = result.decisions[0];
+      const registry = loadSkillActivationRegistry(join(workspace, ".runstead"));
+      const database = openRunsteadDatabase(result.stateDb);
+
+      try {
+        const memory = database
+          .prepare("SELECT status, confidence FROM memory_records WHERE id = ?")
+          .get(candidate.id) as { status: string; confidence: number };
+        const events = database
+          .prepare(
+            "SELECT type FROM events WHERE type IN ('learning.skill_candidate_created', 'skill.activation_updated', 'memory.candidate_promoted') ORDER BY id"
+          )
+          .all() as { type: string }[];
+
+        expect(memory).toMatchObject({
+          status: "verified",
+          confidence: 0.9
+        });
+        expect(events.map((event) => event.type)).toEqual([
+          "learning.skill_candidate_created",
+          "skill.activation_updated",
+          "memory.candidate_promoted"
+        ]);
+      } finally {
+        database.close();
+      }
+
+      expect(decision).toMatchObject({
+        candidateId: candidate.id,
+        status: "promoted"
+      });
+      expect(registry.activations).toHaveLength(1);
+      expect(registry.activations[0]).toMatchObject({
+        name: expect.stringMatching(/^repair-failing-test-/),
+        status: "active",
+        risk: "low",
+        canaryPercent: 25,
+        rollbackOnRegression: true,
+        scope: {
+          repos: [workspace],
+          taskTypes: ["local_agent_task"]
+        },
+        sourceMemoryId: candidate.id,
+        activatedBy: "auto-curator"
+      });
+      if (decision === undefined || decision.status !== "promoted") {
+        throw new Error("Expected auto-improve to promote the candidate");
+      }
+
+      expect(await readFile(join(decision.skillRoot, "skill.yaml"), "utf8")).toContain(
+        "status: promoted"
+      );
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }
