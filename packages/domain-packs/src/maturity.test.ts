@@ -29,6 +29,7 @@ describe("assessDomainPackMaturity", () => {
       "gate-thresholds",
       "report-sections",
       "eval-quality",
+      "evidence-evaluators",
       "fixture-coverage"
     ]);
     expect(report).toContain("Status: passed");

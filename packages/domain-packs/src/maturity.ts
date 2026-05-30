@@ -87,6 +87,22 @@ export async function assessDomainPackMaturity(
       ]
     }),
     maturityCheck({
+      id: "evidence-evaluators",
+      label: "Evidence contracts have domain-specific evaluator coverage",
+      passed:
+        evidenceRequirements(domain).length > 0 &&
+        evidenceRequirements(domain).every((requirement) =>
+          (domain?.evidenceRequirementEvaluators ?? []).some(
+            (evaluator) => evaluator.requirement === requirement
+          )
+        ),
+      score: 10,
+      evidence: [
+        `requirements=${evidenceRequirements(domain).length}`,
+        `evaluators=${domain?.evidenceRequirementEvaluators?.length ?? 0}`
+      ]
+    }),
+    maturityCheck({
       id: "fixture-coverage",
       label: "Fixture and eval coverage exercise pack behavior",
       passed: validation.fixtures.length >= 3 && validation.evals.length >= 3,
@@ -108,6 +124,19 @@ export async function assessDomainPackMaturity(
     requiredScore,
     checks
   };
+}
+
+function evidenceRequirements(
+  domain: Awaited<ReturnType<typeof validateDomainPackDir>>["domain"]
+): string[] {
+  return [
+    ...new Set(
+      (domain?.evidenceContracts ?? []).flatMap((contract) => [
+        ...contract.outputs,
+        ...contract.completionCriteria
+      ])
+    )
+  ];
 }
 
 export function formatDomainPackMaturityResult(

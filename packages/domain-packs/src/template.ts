@@ -28,6 +28,7 @@ export async function createDomainPackTemplate(
   const description =
     options.description ?? `Custom ${name} domain pack for governed work.`;
   const files = [
+    "AUTHORING.md",
     "domain.yaml",
     "goal-templates/default-goal.yaml",
     "task-types/manual_review.yaml",
@@ -43,6 +44,11 @@ export async function createDomainPackTemplate(
   await mkdir(join(root, "fixtures", "manual-review-smoke"), { recursive: true });
   await mkdir(join(root, "evals"), { recursive: true });
 
+  await writeIfMissing(
+    join(root, "AUTHORING.md"),
+    authoringGuide({ id, name }),
+    options.force
+  );
   await writeIfMissing(
     join(root, "domain.yaml"),
     domainYaml({ id, name, description }),
@@ -133,6 +139,37 @@ function titleFromId(id: string): string {
     .split("-")
     .map((part) => `${part[0]?.toUpperCase() ?? ""}${part.slice(1)}`)
     .join(" ");
+}
+
+function authoringGuide(input: { id: string; name: string }): string {
+  return `# ${input.name} Domain Pack Authoring
+
+This pack is a governed business workflow contract. Do not treat it as a prompt
+folder. Before adding worker guidance, define the domain surface in this order:
+
+1. Business resources: update \`scope.resource_types\` with the durable objects
+   this pack manages.
+2. Workflows: model user-facing scenarios in \`goal-templates/*.yaml\`.
+3. Task contracts: add one \`task-types/*.yaml\` file per recurring unit of
+   work, including verifier requirements and worker routing.
+4. Capability policy: update \`capability_policy\` and \`policies/*.yaml\` so
+   reads, writes, denied surfaces, and approvals match the domain.
+5. Evidence contract: declare workflow outputs and completion criteria in
+   \`evidence_contracts\`.
+6. Evidence evaluators: add \`evidence_requirement_evaluators\` for every output
+   and criterion, using evidence types, task status, or event types that prove
+   completion.
+7. Fixtures and evals: add local fixtures and benchmark rows that exercise the
+   contract without relying on live provider credentials.
+
+Validation gates:
+
+\`\`\`sh
+runstead domain validate ${input.id}
+runstead domain maturity ${input.id}
+runstead run ${input.id} default-goal --plan
+\`\`\`
+`;
 }
 
 function domainYaml(input: { id: string; name: string; description: string }): string {

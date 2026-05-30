@@ -21,6 +21,7 @@ describe("createDomainPackTemplate", () => {
       const validation = await validateDomainPackDir(result.root);
 
       expect(result.files.map((file) => file.slice(result.root.length + 1))).toEqual([
+        "AUTHORING.md",
         "domain.yaml",
         "goal-templates/default-goal.yaml",
         "task-types/manual_review.yaml",

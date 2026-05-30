@@ -71,7 +71,9 @@ runstead domain validate ./customer-ops
 
 The generated pack is intentionally conservative. It creates a single goal
 template, one manual-review task type, and a default policy that allows
-local evidence collection while requiring approval before external writes.
+local evidence collection while requiring approval before external writes. It
+also writes `AUTHORING.md` and evaluator stubs so a new domain starts as a
+task-policy-evidence contract rather than a prompt bundle.
 
 `manual_review` has a built-in runtime route. `runstead run <pack> <workflow>`
 queues generated domain tasks and executes known generic routes from the task
@@ -135,6 +137,27 @@ surfaces these contracts before execution; `runstead run <pack> <workflow>`
 evaluates them after execution and keeps the workflow verdict incomplete when
 declared business evidence is missing, even if the underlying task execution
 finished.
+
+Every evidence output and completion criterion should have a matching
+`evidence_requirement_evaluators` entry. Evaluators describe which evidence
+types, task statuses, or event types prove a business requirement:
+
+```yaml
+evidence_requirement_evaluators:
+  - requirement: evidence_attached
+    evidence_types:
+      - manual_review
+      - runstead.evidence
+  - requirement: manual_review_complete
+    task_types:
+      - manual_review
+    task_statuses:
+      - blocked
+      - completed
+```
+
+The maturity gate checks evaluator coverage so a domain pack cannot look mature
+while leaving business completion semantics implicit.
 
 Installing, uninstalling, or upgrading a pack mutates the local
 `.runstead/domains` registry and requires the actor to have `domain.manage`.
