@@ -42,18 +42,40 @@ describe("connector catalog", () => {
     expect(getRunsteadConnector("email")).toMatchObject({
       maturity: "catalog",
       writes: ["draft"],
-      supportedDomains: ["email-followup"]
+      supportedDomains: ["email-followup"],
+      surfaces: ["tool", "evidence_source", "profile_signal", "trigger_source"]
     });
     expect(getRunsteadConnector("web")).toMatchObject({
       maturity: "catalog",
-      supportedDomains: ["research-monitor"]
+      supportedDomains: ["research-monitor"],
+      surfaces: ["tool", "evidence_source", "profile_signal", "trigger_source"]
     });
+  });
+
+  it("models connectors as tool, evidence, profile, and trigger lifecycle surfaces", () => {
+    expect(getRunsteadConnector("github")?.surfaces).toEqual([
+      "tool",
+      "evidence_source",
+      "profile_signal",
+      "trigger_source"
+    ]);
+    expect(getRunsteadConnector("posthog")?.surfaces).toEqual([
+      "evidence_source",
+      "profile_signal"
+    ]);
+    expect(getRunsteadConnector("sentry")?.surfaces).toEqual([
+      "evidence_source",
+      "trigger_source"
+    ]);
   });
 
   it("formats connector reports for the CLI", () => {
     expect(formatRunsteadConnectorList()).toContain("github   code_hosting");
     expect(formatRunsteadConnector(requireRunsteadConnector("posthog"))).toContain(
       "Evidence types: 2 (startup_measurement_framework, startup_metric_snapshot)"
+    );
+    expect(formatRunsteadConnector(requireRunsteadConnector("github"))).toContain(
+      "Surfaces: 4 (tool, evidence_source, profile_signal, trigger_source)"
     );
     expect(() => requireRunsteadConnector("unknown")).toThrow(
       "Connector not found: unknown"

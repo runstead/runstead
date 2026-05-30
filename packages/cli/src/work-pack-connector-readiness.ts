@@ -2,7 +2,8 @@ import {
   listRunsteadConnectors,
   type RunsteadConnectorDefinition,
   type RunsteadConnectorId,
-  type RunsteadConnectorMaturity
+  type RunsteadConnectorMaturity,
+  type RunsteadConnectorSurface
 } from "./connector-catalog.js";
 
 export type WorkPackConnectorReadinessStatus =
@@ -17,6 +18,7 @@ export interface WorkPackConnectorReadiness {
   credentialEnv: string[];
   missingCredentialEnv: string[];
   evidenceTypes: string[];
+  surfaces: RunsteadConnectorSurface[];
   reason: string;
 }
 
@@ -54,6 +56,7 @@ function connectorReadiness(
       credentialEnv: [...connector.credentialEnv],
       missingCredentialEnv,
       evidenceTypes: [...connector.evidenceTypes],
+      surfaces: [...connector.surfaces],
       reason: "connector contract exists, but no executable adapter is registered"
     };
   }
@@ -66,6 +69,7 @@ function connectorReadiness(
       credentialEnv: [...connector.credentialEnv],
       missingCredentialEnv,
       evidenceTypes: [...connector.evidenceTypes],
+      surfaces: [...connector.surfaces],
       reason: `missing credential env ${missingCredentialEnv.join(", ")}`
     };
   }
@@ -77,6 +81,7 @@ function connectorReadiness(
     credentialEnv: [...connector.credentialEnv],
     missingCredentialEnv: [],
     evidenceTypes: [...connector.evidenceTypes],
+    surfaces: [...connector.surfaces],
     reason: "connector adapter and credentials are available"
   };
 }

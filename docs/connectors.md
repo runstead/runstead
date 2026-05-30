@@ -40,8 +40,30 @@ The connector report declares:
 - readable resources
 - writable resources, when any
 - evidence types produced by the connector
+- lifecycle surfaces: `tool`, `evidence_source`, `profile_signal`, and
+  `trigger_source`
 - domain packs that currently use the connector
 - existing startup source connectors, when the connector is executable
+
+## Lifecycle Surfaces
+
+OpenHuman-style connector modeling treats a connector as more than an adapter
+handle. Each connector declares the roles it can play across a long-running
+workflow:
+
+- `tool`: a worker or operator can use the connector as a bounded action surface
+  for reads, writes, or drafts
+- `evidence_source`: the connector can produce evidence records used by
+  domain contracts and readiness evaluators
+- `profile_signal`: the connector can describe a repo, product, customer,
+  source, or workspace profile that affects planning
+- `trigger_source`: the connector can produce events that start, resume, or
+  schedule governed work
+
+These surfaces are independent of maturity. For example, `email` and `web`
+already declare draft/research lifecycle surfaces even though they are still
+catalog-only; `github` declares all four surfaces and already has executable
+startup source mappings.
 
 ## Relationship To Startup Sources
 

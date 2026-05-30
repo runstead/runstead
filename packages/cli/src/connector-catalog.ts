@@ -12,6 +12,11 @@ export const RUNSTEAD_CONNECTOR_IDS = [
 
 export type RunsteadConnectorId = (typeof RUNSTEAD_CONNECTOR_IDS)[number];
 export type RunsteadConnectorMaturity = "executable" | "catalog";
+export type RunsteadConnectorSurface =
+  | "tool"
+  | "evidence_source"
+  | "profile_signal"
+  | "trigger_source";
 
 export interface RunsteadConnectorDefinition {
   id: RunsteadConnectorId;
@@ -24,6 +29,7 @@ export interface RunsteadConnectorDefinition {
   evidenceTypes: string[];
   supportedDomains: string[];
   startupSourceConnectors: StartupSourceConnector[];
+  surfaces: RunsteadConnectorSurface[];
   maturity: RunsteadConnectorMaturity;
 }
 
@@ -45,6 +51,7 @@ const RUNSTEAD_CONNECTOR_CATALOG: RunsteadConnectorDefinition[] = [
     ],
     supportedDomains: ["repo-maintenance", "ai-native-startup"],
     startupSourceConnectors: ["github_actions", "github_pr", "github_issue"],
+    surfaces: ["tool", "evidence_source", "profile_signal", "trigger_source"],
     maturity: "executable"
   },
   {
@@ -58,6 +65,7 @@ const RUNSTEAD_CONNECTOR_CATALOG: RunsteadConnectorDefinition[] = [
     evidenceTypes: ["deployment", "startup_repo_readiness"],
     supportedDomains: ["ai-native-startup"],
     startupSourceConnectors: ["vercel"],
+    surfaces: ["evidence_source", "trigger_source"],
     maturity: "executable"
   },
   {
@@ -71,6 +79,7 @@ const RUNSTEAD_CONNECTOR_CATALOG: RunsteadConnectorDefinition[] = [
     evidenceTypes: ["startup_security_baseline", "startup_repo_readiness"],
     supportedDomains: ["ai-native-startup"],
     startupSourceConnectors: ["sentry"],
+    surfaces: ["evidence_source", "trigger_source"],
     maturity: "executable"
   },
   {
@@ -84,6 +93,7 @@ const RUNSTEAD_CONNECTOR_CATALOG: RunsteadConnectorDefinition[] = [
     evidenceTypes: ["startup_measurement_framework", "startup_metric_snapshot"],
     supportedDomains: ["ai-native-startup"],
     startupSourceConnectors: ["posthog"],
+    surfaces: ["evidence_source", "profile_signal"],
     maturity: "executable"
   },
   {
@@ -98,6 +108,7 @@ const RUNSTEAD_CONNECTOR_CATALOG: RunsteadConnectorDefinition[] = [
     evidenceTypes: ["thread_inventory", "recipient_review", "draft_preview"],
     supportedDomains: ["email-followup"],
     startupSourceConnectors: [],
+    surfaces: ["tool", "evidence_source", "profile_signal", "trigger_source"],
     maturity: "catalog"
   },
   {
@@ -111,6 +122,7 @@ const RUNSTEAD_CONNECTOR_CATALOG: RunsteadConnectorDefinition[] = [
     evidenceTypes: ["source_inventory", "retrieval_log", "citation_ledger"],
     supportedDomains: ["research-monitor"],
     startupSourceConnectors: [],
+    surfaces: ["tool", "evidence_source", "profile_signal", "trigger_source"],
     maturity: "catalog"
   },
   {
@@ -124,6 +136,7 @@ const RUNSTEAD_CONNECTOR_CATALOG: RunsteadConnectorDefinition[] = [
     evidenceTypes: ["institutional_memory", "source_inventory", "archive_record"],
     supportedDomains: ["ai-native-startup", "research-monitor"],
     startupSourceConnectors: ["docs"],
+    surfaces: ["tool", "evidence_source", "profile_signal"],
     maturity: "executable"
   }
 ];
@@ -178,7 +191,8 @@ export function formatRunsteadConnector(
     `Writes: ${formatList(connector.writes)}`,
     `Evidence types: ${formatList(connector.evidenceTypes)}`,
     `Supported domains: ${formatList(connector.supportedDomains)}`,
-    `Startup source connectors: ${formatList(connector.startupSourceConnectors)}`
+    `Startup source connectors: ${formatList(connector.startupSourceConnectors)}`,
+    `Surfaces: ${formatList(connector.surfaces)}`
   ].join("\n");
 }
 
@@ -192,7 +206,8 @@ function cloneRunsteadConnector(
     writes: [...connector.writes],
     evidenceTypes: [...connector.evidenceTypes],
     supportedDomains: [...connector.supportedDomains],
-    startupSourceConnectors: [...connector.startupSourceConnectors]
+    startupSourceConnectors: [...connector.startupSourceConnectors],
+    surfaces: [...connector.surfaces]
   };
 }
 

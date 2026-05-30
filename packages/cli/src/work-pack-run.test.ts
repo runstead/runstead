@@ -75,11 +75,13 @@ describe("work pack run surface", () => {
       expect.arrayContaining([
         expect.objectContaining({
           connector: "web",
-          status: "catalog_only"
+          status: "catalog_only",
+          surfaces: ["tool", "evidence_source", "profile_signal", "trigger_source"]
         }),
         expect.objectContaining({
           connector: "docs",
-          status: "ready"
+          status: "ready",
+          surfaces: ["tool", "evidence_source", "profile_signal"]
         })
       ])
     );

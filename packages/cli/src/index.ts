@@ -60,7 +60,8 @@ export {
 export type {
   RunsteadConnectorDefinition,
   RunsteadConnectorId,
-  RunsteadConnectorMaturity
+  RunsteadConnectorMaturity,
+  RunsteadConnectorSurface
 } from "./connector-catalog.js";
 export {
   collectValues,
