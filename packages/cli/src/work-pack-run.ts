@@ -25,6 +25,10 @@ import { inspectGitRepository } from "./repo-inspection.js";
 import { runQueuedTaskUnlocked } from "./run.js";
 import type { RunOnceOptions, RunOnceResult } from "./run-types.js";
 import { requireRunsteadStateDb, resolveRunsteadRootSync } from "./runstead-root.js";
+import {
+  evaluateWorkPackEvidenceContract,
+  type WorkPackEvidenceContractVerdict
+} from "./work-pack-evidence-contract.js";
 
 export interface ResolveWorkPackWorkflowRunOptions {
   pack: string;
@@ -79,6 +83,7 @@ export interface ExecutedWorkPackWorkflowRun {
   queued: QueuedWorkPackWorkflowRun;
   taskResults: RunOnceResult[];
   status: ExecutedWorkPackWorkflowRunStatus;
+  evidenceVerdict: WorkPackEvidenceContractVerdict;
   executedTaskCount: number;
 }
 
@@ -195,6 +200,15 @@ export async function executeWorkPackWorkflowRunUnlocked(
       break;
     }
   }
+  const evidenceVerdict = evaluateWorkPackEvidenceContract({
+    stateDb: queued.stateDb,
+    ...(queued.plan.evidenceContract === undefined
+      ? {}
+      : { contract: queued.plan.evidenceContract }),
+    goal: queued.goal,
+    tasks: queued.tasks,
+    taskResults
+  });
 
   return {
     queued,
@@ -203,6 +217,7 @@ export async function executeWorkPackWorkflowRunUnlocked(
       taskResults,
       taskCount: queued.tasks.length
     }),
+    evidenceVerdict,
     executedTaskCount: taskResults.filter((result) => result.ranTask).length
   };
 }
@@ -242,8 +257,11 @@ export function formatExecutedWorkPackWorkflowRun(
     `Installed pack: ${result.queued.installedPack ? "yes" : "no"}`,
     `Goal: ${result.queued.goal.id} (${result.queued.goal.title})`,
     `Tasks: ${result.executedTaskCount}/${result.queued.tasks.length}`,
+    `Evidence contract: ${result.evidenceVerdict.status}`,
     `Evidence outputs: ${formatList(contract?.outputs ?? [])}`,
     `Completion criteria: ${formatList(contract?.completionCriteria ?? [])}`,
+    `Satisfied outputs: ${satisfiedCount(result.evidenceVerdict.outputs)}/${result.evidenceVerdict.outputs.length}`,
+    `Satisfied criteria: ${satisfiedCount(result.evidenceVerdict.completionCriteria)}/${result.evidenceVerdict.completionCriteria.length}`,
     "Executed tasks:"
   ];
 
@@ -255,13 +273,19 @@ export function formatExecutedWorkPackWorkflowRun(
     }
   }
 
+  appendMissingEvidenceLines(lines, result.evidenceVerdict);
+
   return lines.join("\n");
 }
 
 export function executedWorkPackWorkflowRunExitCode(
   result: ExecutedWorkPackWorkflowRun
 ): number {
-  return result.status === "completed" ? 0 : 1;
+  if (result.status !== "completed") {
+    return 1;
+  }
+
+  return result.evidenceVerdict.status === "incomplete" ? 1 : 0;
 }
 
 function suggestedCommandsForWorkflow(input: {
@@ -485,6 +509,36 @@ function formatExecutedTaskLine(result: RunOnceResult): string {
   }
 
   return `- ${result.task.type} ${result.task.id}: ${result.task.status}`;
+}
+
+function satisfiedCount(
+  verdicts: WorkPackEvidenceContractVerdict["outputs"]
+): number {
+  return verdicts.filter((verdict) => verdict.satisfied).length;
+}
+
+function appendMissingEvidenceLines(
+  lines: string[],
+  verdict: WorkPackEvidenceContractVerdict
+): void {
+  const missingOutputs = verdict.outputs.filter((item) => !item.satisfied);
+  const missingCriteria = verdict.completionCriteria.filter(
+    (item) => !item.satisfied
+  );
+
+  if (missingOutputs.length > 0) {
+    lines.push("Missing outputs:");
+    for (const item of missingOutputs) {
+      lines.push(`- ${item.id}: ${item.reason}`);
+    }
+  }
+
+  if (missingCriteria.length > 0) {
+    lines.push("Missing criteria:");
+    for (const item of missingCriteria) {
+      lines.push(`- ${item.id}: ${item.reason}`);
+    }
+  }
 }
 
 function workspacePackExists(root: string, ref: string): boolean {

@@ -1,4 +1,4 @@
-import { access, mkdtemp, rm } from "node:fs/promises";
+import { access, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -165,6 +165,50 @@ describe("work pack run surface", () => {
     }
   });
 
+  it("keeps completed workflows incomplete when evidence contracts are missing", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "runstead-work-pack-contract-"));
+
+    try {
+      await writeFile(
+        join(workspace, "package.json"),
+        `${JSON.stringify({
+          scripts: {
+            test: "node -e \"process.exit(0)\"",
+            lint: "node -e \"process.exit(0)\""
+          }
+        })}\n`,
+        "utf8"
+      );
+      await initRunstead({ cwd: workspace });
+
+      const executed = await executeWorkPackWorkflowRun({
+        cwd: workspace,
+        pack: "repo-maintenance",
+        workflow: "keep-ci-green",
+        now: new Date("2100-05-30T00:00:00.000Z")
+      });
+      const report = formatExecutedWorkPackWorkflowRun(executed);
+      const outputVerdict = (id: string): boolean | undefined =>
+        executed.evidenceVerdict.outputs.find((item) => item.id === id)?.satisfied;
+      const criterionVerdict = (id: string): boolean | undefined =>
+        executed.evidenceVerdict.completionCriteria.find((item) => item.id === id)
+          ?.satisfied;
+
+      expect(executed.status).toBe("completed");
+      expect(executed.evidenceVerdict.status).toBe("incomplete");
+      expect(outputVerdict("command_output")).toBe(true);
+      expect(outputVerdict("repo_readiness")).toBe(false);
+      expect(criterionVerdict("verifiers_pass_or_blockers_recorded")).toBe(true);
+      expect(criterionVerdict("protected_paths_untouched")).toBe(false);
+      expect(report).toContain("Evidence contract: incomplete");
+      expect(report).toContain("Missing outputs:");
+      expect(report).toContain("repo_readiness");
+      expect(executedWorkPackWorkflowRunExitCode(executed)).toBe(1);
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
+
   it("executes startup internal workflow tasks by exact workflow order", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "runstead-work-pack-startup-"));
     const workerPrompts: string[] = [];
@@ -199,6 +243,7 @@ describe("work pack run surface", () => {
       const report = formatExecutedWorkPackWorkflowRun(executed);
 
       expect(executed.status).toBe("waiting_approval");
+      expect(executed.evidenceVerdict.status).toBe("incomplete");
       expect(executed.executedTaskCount).toBe(1);
       expect(executed.taskResults[0]).toMatchObject({
         ranTask: true,
@@ -215,6 +260,7 @@ describe("work pack run surface", () => {
       ]);
       expect(workerPrompts).toEqual([]);
       expect(report).toContain("Status: waiting_approval");
+      expect(report).toContain("Evidence contract: incomplete");
       expect(report).toContain("Tasks: 1/4");
       expect(report).toContain("- generate_agent_context");
       expect(executedWorkPackWorkflowRunExitCode(executed)).toBe(1);
