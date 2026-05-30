@@ -64,7 +64,8 @@ Domain content and runtime host:
   fixtures, evals, and authoring template support
 - `@runstead/cli`: local command surface; hosts the startup-ready
   orchestrator, the codex-direct worker, wrapped-worker integration, CI repair
-  orchestrator, dashboard server, daemon, and webhook intake
+  orchestrator, dashboard server, daemon, webhook intake, and Work Pack
+  interaction-surface reporting
 - `@runstead/testkit`: control-plane conformance suite
   (`runRuntimeControlPlaneBackendConformance`), fixture and temp-workspace
   helpers

@@ -29,6 +29,7 @@ business evidence status.
 | ---------------------------- | --------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
 | Work Pack                    | Operator-facing unit for reusable AI work                                         | `runstead run <pack> <workflow>`, `runstead domain show <pack>`         |
 | Runtime entrypoints          | CLI, CI, operator API, schedule, and gateway entry contracts per Work Pack        | `workPack.entrypoints`, `workPack.runtimeEnvironments`                  |
+| Interaction surface          | Approval, evidence, scheduled-check, and webhook-intake routes for a Work Pack    | `runstead run <pack> <workflow> --plan`                                 |
 | Domain pack                  | Business contract for goals, tasks, policy, evidence, evaluators, fixtures, evals | `packages/domain-packs/packs/*`, `runstead domain *`                    |
 | Connector catalog            | Canonical provider/workspace connector names and maturity                         | `runstead connector list`, `runstead connector show <id>`               |
 | Startup source connectors    | Target-aware external evidence contracts for launch readiness                     | `runstead startup source record/collect/verify`, `startup ready --plan` |

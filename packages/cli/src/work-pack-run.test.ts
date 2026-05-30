@@ -52,6 +52,11 @@ describe("work pack run surface", () => {
     expect(report).toContain("cli-run:implemented/local");
     expect(report).toContain("operator-dashboard:modeled/team-control-plane");
     expect(report).toContain("webhook-gateway:modeled/team-control-plane");
+    expect(report).toContain("Interactions: 4");
+    expect(report).toContain("approval:implemented:cli-run/local");
+    expect(report).toContain(
+      "webhook_intake:modeled:webhook-gateway/team-control-plane"
+    );
     expect(report).toContain("runstead startup ready --cwd /tmp/runstead-mvp");
   });
 

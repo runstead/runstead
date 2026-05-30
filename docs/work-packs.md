@@ -90,7 +90,8 @@ pauses according to their declared contract.
 
 Use `--plan` to preview the capability policy, evidence outputs, completion
 criteria, connector readiness, workspace extension readiness, runtime
-environments, entrypoints, and suggested commands without queuing or executing:
+environments, entrypoints, interaction surface, and suggested commands without
+queuing or executing:
 
 ```bash
 runstead run ai-native-startup build-mvp --plan
@@ -116,6 +117,20 @@ Work Pack plans also expose the multi-entry runtime surface. `cli-run` is the
 implemented local entrypoint today. CI dispatch, operator API, scheduled checks,
 and webhook gateway entries are modeled contracts that let future hosts attach
 to the same business workflow without redefining the domain pack.
+
+The interaction surface maps those entrypoints to business operations:
+
+- `approval`: human approval or denial through CLI, dashboard, operator API, or
+  gateway
+- `evidence`: evidence writes from CLI, operator UI/API, scheduled checks, or
+  gateway intake
+- `scheduled_check`: cron-style recurring checks against the same Work Pack
+  workflow contract
+- `webhook_intake`: external gateway events that create or drive governed work
+
+Each interaction is reported as `implemented`, `modeled`,
+`missing_entrypoint`, or `missing_runtime_capability` so operators can see
+which interfaces are real today and which are contract-only.
 
 Connector readiness is reported in the same plan surface:
 

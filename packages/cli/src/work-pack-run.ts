@@ -40,6 +40,10 @@ import {
   type WorkPackExtensionReadinessReport
 } from "./work-pack-extension-readiness.js";
 import {
+  evaluateWorkPackInteractionSurface,
+  type WorkPackInteractionSurfaceReport
+} from "./work-pack-interaction-surface.js";
+import {
   evaluateWorkPackSkillReadiness,
   type WorkPackSkillReadinessReport
 } from "./work-pack-skill-readiness.js";
@@ -76,6 +80,7 @@ export interface WorkPackWorkflowRunPlan {
   connectorReadiness: WorkPackConnectorReadiness[];
   extensionReadiness: WorkPackExtensionReadinessReport;
   skillReadiness: WorkPackSkillReadinessReport;
+  interactionSurface: WorkPackInteractionSurfaceReport;
   suggestedCommands: string[];
 }
 
@@ -171,6 +176,7 @@ export async function resolveWorkPackWorkflowRun(
     supportedWorkers: entry.domain.supportedWorkers,
     ...(options.skillEnv === undefined ? {} : { env: options.skillEnv })
   });
+  const interactionSurface = evaluateWorkPackInteractionSurface(workPack);
 
   return {
     entry,
@@ -189,6 +195,7 @@ export async function resolveWorkPackWorkflowRun(
     connectorReadiness,
     extensionReadiness,
     skillReadiness,
+    interactionSurface,
     suggestedCommands: suggestedCommandsForWorkflow({
       pack: entry.id,
       workflow: options.workflow,
@@ -347,6 +354,7 @@ export function formatWorkPackWorkflowRunPlan(plan: WorkPackWorkflowRunPlan): st
     `Skills: ${formatSkillReadiness(plan.skillReadiness)}`,
     `Runtime environments: ${formatRuntimeEnvironments(plan.workPack.runtimeEnvironments)}`,
     `Entrypoints: ${formatEntrypoints(plan.workPack.entrypoints)}`,
+    `Interactions: ${formatInteractionSurface(plan.interactionSurface)}`,
     `Suggested commands: ${formatList(plan.suggestedCommands)}`
   ].join("\n");
 }
@@ -373,6 +381,7 @@ export function formatExecutedWorkPackWorkflowRun(
     `Skills: ${formatSkillReadiness(result.queued.plan.skillReadiness)}`,
     `Runtime environments: ${formatRuntimeEnvironments(result.queued.plan.workPack.runtimeEnvironments)}`,
     `Entrypoints: ${formatEntrypoints(result.queued.plan.workPack.entrypoints)}`,
+    `Interactions: ${formatInteractionSurface(result.queued.plan.interactionSurface)}`,
     "Executed tasks:"
   ];
 
@@ -627,6 +636,23 @@ function formatEntrypoints(entrypoints: WorkPackEntrypoint[]): string {
     .map(
       (entrypoint) => `${entrypoint.id}:${entrypoint.status}/${entrypoint.environment}`
     )
+    .join(", ")})`;
+}
+
+function formatInteractionSurface(report: WorkPackInteractionSurfaceReport): string {
+  if (report.interactions.length === 0) {
+    return "0";
+  }
+
+  return `${report.interactions.length} (${report.interactions
+    .map((interaction) => {
+      const route =
+        interaction.entrypoint === undefined
+          ? ""
+          : `:${interaction.entrypoint}/${interaction.environment ?? "unknown"}`;
+
+      return `${interaction.kind}:${interaction.status}${route}`;
+    })
     .join(", ")})`;
 }
 
