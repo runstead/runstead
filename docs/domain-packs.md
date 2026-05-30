@@ -5,6 +5,18 @@ templates and contracts, not runtime state.
 
 ## Built-In Packs
 
+The current built-ins are:
+
+| Pack                | Workflows                                    | Task types                                                                                                      | Main boundary                                                                                       |
+| ------------------- | -------------------------------------------- | --------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `repo-maintenance`  | `keep-ci-green`                              | `repo_inspect`, `run_local_verifiers`, `ci_repair`                                                              | repository inspection, verifier execution, CI repair, GitHub workflow and PR/comment evidence       |
+| `ai-native-startup` | `validate-problem`, `build-mvp`, `scale-ops` | validation, agent context, measurement, repo readiness, MVP verifier, launch, support, GTM, and scale-ops tasks | startup/product readiness with approval-gated dependency, deployment, billing, and external writes  |
+| `research-monitor`  | `weekly-research-digest`                     | source discovery, source scanning, reliability, summarization, conflict triage, release gate, archive memory    | cited research output with source freshness, citation, contradiction, publish, and archive evidence |
+| `email-followup`    | `draft-pending-followups`                    | thread scan, follow-up classification, recipient verification, draft creation, safety review, memory archive    | draft-only email follow-up with send actions denied                                                 |
+
+See [capability-matrix.md](capability-matrix.md) for the connector and adapter
+matrix behind these packs.
+
 `repo-maintenance` is the original control-loop pack:
 
 - `keep-ci-green` goal template
@@ -158,6 +170,10 @@ evidence_requirement_evaluators:
 
 The maturity gate checks evaluator coverage so a domain pack cannot look mature
 while leaving business completion semantics implicit.
+
+This is the key difference between a Runstead domain pack and a prompt bundle:
+the pack has to declare what the business workflow means, what it may touch,
+what evidence proves completion, and how that evidence is evaluated.
 
 Installing, uninstalling, or upgrading a pack mutates the local
 `.runstead/domains` registry and requires the actor to have `domain.manage`.

@@ -59,7 +59,9 @@ Storage backends:
 Domain content and runtime host:
 
 - `@runstead/domain-packs`: built-in `repo-maintenance`, `ai-native-startup`,
-  and `research-monitor` packs
+  `research-monitor`, and `email-followup` packs, plus Work Pack projection,
+  evidence contract evaluator schema, fixtures, evals, and authoring template
+  support
 - `@runstead/cli`: local command surface; hosts the startup-ready
   orchestrator, the codex-direct worker, wrapped-worker integration, CI repair
   orchestrator, dashboard server, daemon, and webhook intake
@@ -235,6 +237,18 @@ executeStartupReadinessExtensions           ← in @runstead/cli
        runs each collector command through runGovernedToolAction,
        parses JSON evidence, records it as startup evidence
 ```
+
+## Capability Inventory
+
+The detailed current inventory is maintained in
+[capability-matrix.md](capability-matrix.md). It records:
+
+- built-in domain packs and workflows
+- canonical connector maturity
+- startup source connector/provider adapter coverage
+- extension examples and readiness statuses
+- explicit gaps where a connector or domain is modeled but not fully
+  executable yet
 
 ## ADRs
 

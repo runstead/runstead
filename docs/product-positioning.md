@@ -1,7 +1,8 @@
 # Product Positioning
 
-Runstead is the control plane for governed AI-native execution, starting
-with repo maintenance and launch-ready software delivery.
+Runstead is the control plane for governed AI-native execution, starting with
+repo maintenance and launch-ready software delivery, and expanding through
+domain-modeled Work Packs.
 
 The founder-facing version is:
 
@@ -26,11 +27,20 @@ incidents, support workflows, technical debt, and deployment risk. Runstead
 reuses the repo-maintenance control loop here instead of becoming a
 chat-first idea validation product.
 
+The architecture is broader than the wedge. Work Packs let Runstead support
+non-startup domains such as cited research monitoring and draft-only email
+follow-up without changing the core execution model. New domains still need
+explicit task, policy, evidence, evaluator, fixture, and eval design; broad
+architecture does not mean every domain is prebuilt.
+
 ## Product Boundaries
 
 Runstead owns:
 
 - durable goals and task records
+- Work Pack composition across domain packs, connectors, extensions, and skills
+- domain-specific evidence contracts and requirement evaluators
+- connector and extension readiness reporting
 - scoped autonomy policies and reusable approval grants
 - verifier discovery and execution evidence
 - checkpoints, execution leases, audit logs, and resume paths
@@ -110,8 +120,11 @@ The current near-term focus:
 
 - close residual gaps in the founder readiness loop (recover paths,
   resilience, scaffolded approval reuse)
-- mature the extension ecosystem (more example collectors, adapter
-  contracts, freshness enforcement)
+- mature the connector and extension ecosystem (turn catalog-only `web` and
+  `email` into executable adapters, deepen provider-specific parsers, and add
+  more example collectors)
+- add more business domain packs only when their task types, policies,
+  evidence contracts, evaluators, fixtures, and evals are explicit
 - harden the experimental team-control-plane path after the local/CI readiness
   loop remains clear (Postgres conformance, runner identity, shared artifact
   store)

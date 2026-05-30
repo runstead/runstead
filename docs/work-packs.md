@@ -57,6 +57,9 @@ any domain pack into a Work Pack:
 `runstead domain show <pack>` now reports Work Pack workflows and components so
 operators can inspect the unified shape before running work.
 
+For the current built-in pack, connector, adapter, and extension inventory, see
+[capability-matrix.md](capability-matrix.md).
+
 ## Run Surface
 
 Use `runstead run <pack> <workflow>` as the canonical entry point for Work Pack
@@ -96,3 +99,14 @@ Work Pack plans load `.runstead/extensions/` manifests for the selected domain
 and report whether each extension is executable (`ready`), missing declared
 secrets (`missing_secrets`), only a non-executable contract (`contract_only`),
 or declared by the Work Pack but absent from the workspace (`missing`).
+
+Connector readiness is reported in the same plan surface:
+
+- `ready`: executable adapter and credentials are available
+- `missing_credentials`: adapter exists, but required environment variables are
+  missing
+- `catalog_only`: connector is modeled but not executable yet
+
+The plan output is intentionally a maturity audit, not just a command preview.
+It should make unsupported external systems visible before an operator starts a
+workflow.

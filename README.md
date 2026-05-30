@@ -1,13 +1,16 @@
 # Runstead
 
-Runstead is the control plane for AI-coded products that need evidence,
-measurement, gates, and audit trails before they are treated as ready.
+Runstead is the control plane for governed AI work. Its first product wedge is
+AI-coded products that need evidence, measurement, gates, and audit trails
+before they are treated as ready.
 
 Coding agents execute. Runstead governs the work around them: goals, policies,
 checkpoints, dependency boundaries, verifiers, launch evidence, stage gates,
 reports, resume paths, and a local operator console.
 
-The current product focus is **AI-coded MVP / startup launch readiness**:
+The current product focus is **AI-coded MVP / startup launch readiness**, but
+the implementation now uses a broader Work Pack architecture for reusable,
+domain-modeled AI workflows:
 
 > Help teams move agent-built products from MVP to launch to scale with evidence
 > and gates, not just "the agent finished."
@@ -37,6 +40,28 @@ Runstead turns agent work into reviewable execution records:
 Runstead is not a replacement for Codex CLI, Claude Code, CI, deployment
 platforms, or analytics. It is the control plane that makes their output
 bounded, evidenced, auditable, and resumable.
+
+## Current Capability Shape
+
+Runstead is not an "everything is implemented" automation suite. It has the
+architecture of a broader AI work platform:
+
+- **Work Packs** compose domain packs, optional workspace extensions, and
+  optional skills into one runnable unit.
+- **Domain packs** define task types, goal templates, capability policy,
+  evidence contracts, domain-specific requirement evaluators, fixtures, and
+  evals.
+- **Connectors** name external and workspace data sources and report whether
+  each source is executable or catalog-only.
+- **Readiness extensions** add workspace or third-party collectors, verifiers,
+  facets, and gates without forking Runstead.
+- **Evidence-first completion** means a workflow can finish execution but still
+  report an incomplete business evidence contract.
+
+The detailed implementation matrix lives in
+[docs/capability-matrix.md](docs/capability-matrix.md). It lists built-in
+domains, connector maturity, startup source adapters, extension examples, and
+the remaining explicit gaps.
 
 ## Worker Modes
 
@@ -196,6 +221,7 @@ See [docs/work-packs.md](docs/work-packs.md) for the model.
 The canonical Work Pack run surface is:
 
 ```bash
+runstead run repo-maintenance keep-ci-green
 runstead run ai-native-startup build-mvp
 runstead run research-monitor weekly-research-digest
 runstead run email-followup draft-pending-followups
@@ -203,9 +229,11 @@ runstead run email-followup draft-pending-followups
 
 `runstead run <pack> <workflow>` installs the pack when needed, queues the
 workflow tasks, executes them in workflow order, and reports whether the pack's
-evidence contract is complete. Use `--plan` to preview without executing, and
-`--max-tasks <count>` for bounded approval-heavy runs. `runstead run --once`
-remains available for the existing queued-task executor.
+evidence contract is complete. `--plan` previews capability policy, evidence
+outputs, completion criteria, connector readiness, workspace extension
+readiness, and suggested commands without executing. `--max-tasks <count>` is
+available for bounded approval-heavy runs. `runstead run --once` remains
+available for the existing queued-task executor.
 
 ## Connectors
 
@@ -213,7 +241,9 @@ Runstead has a unified connector catalog for provider and workspace data access:
 GitHub, Vercel, Sentry, PostHog, Email, Web, and Docs. Use `runstead connector
 list` or `runstead connector show <connector>` to inspect each connector's
 credentials, read/write surface, evidence types, and existing startup source
-adapter mappings. See [docs/connectors.md](docs/connectors.md) for the catalog.
+adapter mappings. See [docs/connectors.md](docs/connectors.md) for the catalog
+and [docs/capability-matrix.md](docs/capability-matrix.md) for the full
+connector/source-adapter/domain map.
 
 ## Readiness Extensions
 
@@ -222,6 +252,9 @@ facets, evidence collectors, verifiers, and gates without forking Runstead.
 `runstead startup ready` discovers them, compiles them with `@runstead/sdk`,
 runs any declared collector `command` through governed local execution, and
 applies the resulting evidence requirements to the readiness verdict.
+`runstead run <pack> <workflow> --plan` also reports extension readiness for
+the selected domain, including `ready`, `missing_secrets`, `contract_only`, and
+`missing` states.
 
 Collector metadata is enforced as policy, not advisory:
 
@@ -547,6 +580,8 @@ Product and lifecycle:
 
 - [docs/roadmap.md](docs/roadmap.md): current implementation backlog and
   validation order
+- [docs/capability-matrix.md](docs/capability-matrix.md): current domains,
+  connectors, startup source adapters, extension examples, and known gaps
 - [docs/work-packs.md](docs/work-packs.md): unified Work Pack model for domain
   packs, extensions, and skills
 - [docs/connectors.md](docs/connectors.md): canonical connector catalog for
